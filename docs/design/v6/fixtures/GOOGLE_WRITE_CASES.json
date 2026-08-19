@@ -1,0 +1,50 @@
+{
+  "version": 6,
+  "cases": [
+    {
+      "id": "GW01",
+      "role": "reader",
+      "expected": "reject"
+    },
+    {
+      "id": "GW02",
+      "role": "freeBusyReader",
+      "expected": "reject"
+    },
+    {
+      "id": "GW03",
+      "role": "writerWithoutPrivateAccess",
+      "expected": "pass"
+    },
+    {
+      "id": "GW04",
+      "role": "writer",
+      "expected": "pass"
+    },
+    {
+      "id": "GW05",
+      "role": "owner",
+      "expected": "pass"
+    },
+    {
+      "id": "GW06",
+      "timezone": "America/New_York",
+      "expected": "CALENDAR_TIMEZONE_UNSUPPORTED"
+    },
+    {
+      "id": "GW07",
+      "scenario": "title_patch",
+      "expected": "preserve_unowned_fields"
+    },
+    {
+      "id": "GW08",
+      "scenario": "private_props_merge",
+      "expected": "preserve_unrelated_keys"
+    },
+    {
+      "id": "GW09",
+      "scenario": "create_update",
+      "expected_sendUpdates": "none"
+    }
+  ]
+}

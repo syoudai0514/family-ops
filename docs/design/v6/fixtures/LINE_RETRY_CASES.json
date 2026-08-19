@@ -1,0 +1,35 @@
+{
+  "version": 6,
+  "cases": [
+    {
+      "id": "LR01",
+      "scenario": "timeout_retry_before_expiry",
+      "expected": "same_key"
+    },
+    {
+      "id": "LR02",
+      "scenario": "409 accepted",
+      "expected": "reconciled_sent"
+    },
+    {
+      "id": "LR03",
+      "scenario": "after_23h_safety_expiry",
+      "expected": "delivery_unknown_no_call"
+    },
+    {
+      "id": "LR04",
+      "scenario": "business_ttl_expired",
+      "expected": "no_late_send"
+    },
+    {
+      "id": "LR05",
+      "scenario": "429_at_monthly_cap",
+      "expected": "fallback"
+    },
+    {
+      "id": "LR06",
+      "scenario": "429_below_monthly_cap",
+      "expected": "transient_retry"
+    }
+  ]
+}

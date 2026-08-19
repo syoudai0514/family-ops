@@ -1,0 +1,16 @@
+[
+  {"id":"Q-01","queue":"webhook_inbox","scenario":"worker dies after claim","expected":"lease expiry makes row reclaimable; exactly one business mutation"},
+  {"id":"Q-02","queue":"notification_outbox","scenario":"LINE push timeout after provider accepted","expected":"same X-Line-Retry-Key used; no duplicate provider execution"},
+  {"id":"Q-03","queue":"google_sync_jobs","scenario":"transient API/network error during processing","expected":"same row processing->queued, next_attempt_at set, lease cleared, attempts retained"},
+  {"id":"Q-04","queue":"google_sync_jobs","scenario":"webhook arrives while queued in backoff","expected":"no second active row; reason merged and next attempt may be pulled earlier according enqueue contract"},
+  {"id":"Q-05","queue":"google_sync_jobs","scenario":"webhook arrives while processing","expected":"rerun_requested=true"},
+  {"id":"Q-06","queue":"google_sync_jobs","scenario":"processing succeeds with rerun_requested","expected":"same row atomically becomes queued with rerun=false and no lost trigger"},
+  {"id":"Q-07","queue":"google_sync_jobs","scenario":"worker dies during processing","expected":"lease expiry allows reclaim; one active job invariant preserved"},
+  {"id":"Q-08","queue":"pending_actions","scenario":"DB-only action dies after business commit before terminal mark","expected":"business/mutation idempotency replays result without duplicate"},
+  {"id":"Q-09","queue":"all","scenario":"two workers claim same due row","expected":"one fresh lease token only"},
+  {"id":"Q-10","queue":"all","scenario":"stale worker reports success after lease reassigned","expected":"id+lease_token guard rejects terminal update"},
+  {"id":"Q-11","queue":"all","scenario":"max attempts exceeded","expected":"dead; no automatic execution"},
+  {"id":"Q-12","queue":"routine dispatcher","scenario":"cron invokes same local slot twice","expected":"scheduled_dispatch_receipt prevents duplicate notification outbox"},
+  {"id":"Q-13","queue":"worker endpoint","scenario":"missing CRON_WORKER_TOKEN","expected":"401 before claim"},
+  {"id":"Q-14","queue":"worker endpoint","scenario":"wrong CRON_WORKER_TOKEN","expected":"401; token not logged"}
+]

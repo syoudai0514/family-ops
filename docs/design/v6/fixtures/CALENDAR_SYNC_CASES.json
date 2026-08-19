@@ -1,0 +1,237 @@
+{
+  "version": 5,
+  "exact_query_contract": {
+    "canonical_initial": {
+      "singleEvents": false,
+      "showDeleted": true,
+      "maxResults": 2500,
+      "forbidden": [
+        "syncToken",
+        "timeMin",
+        "timeMax",
+        "orderBy",
+        "q",
+        "updatedMin",
+        "privateExtendedProperty",
+        "sharedExtendedProperty"
+      ]
+    },
+    "canonical_incremental": {
+      "singleEvents": false,
+      "showDeleted": true,
+      "maxResults": 2500,
+      "requires": [
+        "syncToken"
+      ],
+      "forbidden": [
+        "timeMin",
+        "timeMax",
+        "orderBy",
+        "q",
+        "updatedMin",
+        "privateExtendedProperty",
+        "sharedExtendedProperty"
+      ]
+    },
+    "rolling_projection": {
+      "singleEvents": true,
+      "showDeleted": false,
+      "maxResults": 2500,
+      "orderBy": "startTime",
+      "requires": [
+        "timeMin",
+        "timeMax"
+      ],
+      "forbidden": [
+        "syncToken"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "G-01",
+      "scenario": "old/new watch overlap",
+      "expected": "both recognized channels 2xx and coalesce same calendar job"
+    },
+    {
+      "id": "G-02",
+      "scenario": "stopped/expired/unknown watch notification",
+      "expected": "2xx ignore + structured warning; no job"
+    },
+    {
+      "id": "G-03",
+      "scenario": "webhook missed",
+      "expected": "30-minute periodic sync converges cache"
+    },
+    {
+      "id": "G-04",
+      "scenario": "webhook and periodic simultaneously",
+      "expected": "one active sync job; reasons coalesced"
+    },
+    {
+      "id": "G-05",
+      "scenario": "app open cache stale",
+      "expected": "enqueue without blocking cached UI"
+    },
+    {
+      "id": "G-06",
+      "scenario": "canonical incremental query",
+      "expected": "syncToken used only with compatible fixed params"
+    },
+    {
+      "id": "G-07",
+      "scenario": "page2 failure",
+      "expected": "nextSyncToken unchanged; live cache remains consistent"
+    },
+    {
+      "id": "G-08",
+      "scenario": "410 full sync page2 failure",
+      "expected": "staging not committed; old cache/token remain"
+    },
+    {
+      "id": "G-09",
+      "scenario": "410 full sync success",
+      "expected": "atomic canonical reconcile then new syncToken"
+    },
+    {
+      "id": "G-10",
+      "scenario": "untitled normal event",
+      "expected": "title null accepted; UI fallback only"
+    },
+    {
+      "id": "G-11",
+      "scenario": "deleted event with id only",
+      "expected": "sync succeeds; active projection removed; token advances"
+    },
+    {
+      "id": "G-12",
+      "scenario": "minimal cancelled recurring exception",
+      "expected": "canonical tombstone retained; active occurrence absent"
+    },
+    {
+      "id": "G-13",
+      "scenario": "moved recurring exception",
+      "expected": "projection uses moved time"
+    },
+    {
+      "id": "G-14",
+      "scenario": "transparent timed event",
+      "expected": "stored but ignored for conflict"
+    },
+    {
+      "id": "G-15",
+      "scenario": "all-day event",
+      "expected": "exclusive end preserved; ignored for conflict MVP"
+    },
+    {
+      "id": "G-16",
+      "scenario": "Papa creates Mama appointment via Family Ops",
+      "expected": "busy member=Mama; creator display may be Papa"
+    },
+    {
+      "id": "G-17",
+      "scenario": "family busy event",
+      "expected": "both members in busy-member table"
+    },
+    {
+      "id": "G-18",
+      "scenario": "direct Google event with no Family Ops metadata",
+      "expected": "busy owner unknown; creator not auto-used"
+    },
+    {
+      "id": "G-19",
+      "scenario": "create event backend success response lost",
+      "expected": "retry same deterministic event ID; one remote event"
+    },
+    {
+      "id": "G-20",
+      "scenario": "create retry receives 409 duplicate",
+      "expected": "GET same ID and reconcile operation marker/hash"
+    },
+    {
+      "id": "G-21",
+      "scenario": "same operation ID different payload",
+      "expected": "local idempotency conflict before provider mutation"
+    },
+    {
+      "id": "G-22",
+      "scenario": "update response lost",
+      "expected": "GET/reconcile before retry"
+    },
+    {
+      "id": "G-23",
+      "scenario": "update etag stale 412 remote changed",
+      "expected": "no blind overwrite; Calendar conflict returned"
+    },
+    {
+      "id": "G-24",
+      "scenario": "sync transient failure",
+      "expected": "processing job returns to queued with backoff"
+    },
+    {
+      "id": "G-25",
+      "scenario": "webhook during sync backoff",
+      "expected": "no second active job; reason/rerun retained"
+    },
+    {
+      "id": "G-26",
+      "scenario": "webhook during processing",
+      "expected": "rerun_requested true; after success same row queued"
+    },
+    {
+      "id": "G-27",
+      "scenario": "stale sync worker completion",
+      "expected": "lease token mismatch prevents terminal update"
+    },
+    {
+      "id": "G-28",
+      "scenario": "sync owner refresh revoked",
+      "expected": "reauth_required; cached data remains"
+    },
+    {
+      "id": "G-29",
+      "scenario": "cross-household calendar credential relation",
+      "expected": "DB composite FK failure"
+    },
+    {
+      "id": "G-30",
+      "scenario": "OAuth Testing refresh token invalid_grant after test period",
+      "expected": "reauth flow and setup docs explain testing limitation"
+    },
+    {
+      "id": "GCQ01",
+      "scenario": "incremental with timeMin accidentally set",
+      "expected": "unit_contract_reject_before_http"
+    },
+    {
+      "id": "GCQ02",
+      "scenario": "projection contains syncToken",
+      "expected": "unit_contract_reject_before_http"
+    },
+    {
+      "id": "GCQ03",
+      "scenario": "410 full sync page2 fails",
+      "expected": "old_live_cache_and_token_unchanged"
+    },
+    {
+      "id": "GCQ04",
+      "scenario": "full staging same google id repeated",
+      "expected": "deterministic_upsert"
+    },
+    {
+      "id": "GCQ05",
+      "scenario": "recurring master expanded",
+      "expected": "instances_from_singleEvents_true_no_local_rrule_parser"
+    },
+    {
+      "id": "GCQ06",
+      "scenario": "manual busy series classification then projection rebuild",
+      "expected": "classification_reapplied"
+    },
+    {
+      "id": "GCQ07",
+      "scenario": "manual one-instance override",
+      "expected": "instance_override_wins_series_default"
+    }
+  ]
+}

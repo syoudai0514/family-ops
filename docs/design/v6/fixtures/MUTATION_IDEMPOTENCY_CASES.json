@@ -1,0 +1,78 @@
+{
+  "version": 5,
+  "cases": [
+    {
+      "id": "M-01",
+      "action": "create-task",
+      "scenario": "double tap",
+      "expected": "one task, same result replay"
+    },
+    {
+      "id": "M-02",
+      "action": "send-request",
+      "scenario": "response lost and retry",
+      "expected": "one request/notification business event"
+    },
+    {
+      "id": "M-03",
+      "action": "add-shopping-item",
+      "scenario": "concurrent same operation",
+      "expected": "one item"
+    },
+    {
+      "id": "M-04",
+      "action": "create-handover",
+      "scenario": "same operation different text",
+      "expected": "IDEMPOTENCY_CONFLICT"
+    },
+    {
+      "id": "M-05",
+      "action": "reassign-once",
+      "scenario": "same operation replay after assignment changed",
+      "expected": "same prior result, no duplicate notification"
+    },
+    {
+      "id": "M-06",
+      "action": "routine-complete-all",
+      "scenario": "LINE redelivery",
+      "expected": "no duplicate task event/state regression"
+    },
+    {
+      "id": "M-07",
+      "action": "accept-request",
+      "scenario": "two concurrent accepts",
+      "expected": "one linked task"
+    },
+    {
+      "id": "M-08",
+      "action": "calendar-create",
+      "scenario": "same local operation retry",
+      "expected": "same Google deterministic ID"
+    },
+    {
+      "id": "MI-HH01",
+      "scenario": "create-household replay same operation",
+      "expected": "same_household_result"
+    },
+    {
+      "id": "MI-HH02",
+      "scenario": "join same operation different invite token",
+      "expected": "IDEMPOTENCY_CONFLICT"
+    },
+    {
+      "id": "MI-HH03",
+      "scenario": "two concurrent users claim final adult seat",
+      "expected": "exactly_one_success"
+    },
+    {
+      "id": "MI-HH04",
+      "scenario": "third adult claim",
+      "expected": "HOUSEHOLD_FULL"
+    },
+    {
+      "id": "MI-OA01",
+      "scenario": "OAuth state callback replay",
+      "expected": "OAUTH_STATE_USED"
+    }
+  ]
+}

@@ -1,0 +1,243 @@
+household:
+  timezone: Asia/Tokyo
+
+members:
+  - key: papa
+    display_name: パパ
+  - key: mama
+    display_name: ママ
+
+# NOTE:
+# - actual dropoff/pickup clock times must be collected during setup.
+# - evening role assignment is a setup proposal and requires explicit confirmation.
+# - special preparation is normalized into ordinary task definitions/rules.
+
+task_definitions:
+  - code: dropoff
+    title: 送り
+    category: dropoff
+    routine_phase: morning
+    completion_mode: whole
+    sort_order: 10
+
+  - code: pickup
+    title: お迎え
+    category: pickup
+    routine_phase: evening
+    completion_mode: whole
+    sort_order: 20
+
+  - code: prep_monday_bedding
+    title: 昼寝用寝具を入れる
+    category: preparation
+    routine_phase: morning
+    completion_mode: whole
+    sort_order: 30
+
+  - code: prep_monday_uwabaki
+    title: 洗った上履きを持っていく
+    category: preparation
+    routine_phase: morning
+    completion_mode: whole
+    sort_order: 31
+
+  - code: prep_tuesday_gym
+    title: 年長の体操教室用品を準備する
+    category: preparation
+    routine_phase: morning
+    completion_mode: whole
+    sort_order: 32
+
+  - code: prep_thursday_english
+    title: 英語用品を準備する
+    category: preparation
+    routine_phase: morning
+    completion_mode: whole
+    sort_order: 33
+
+  - code: dinner
+    title: 夕食対応
+    category: meal
+    routine_phase: evening
+    completion_mode: subtasks
+    sort_order: 100
+    subtasks:
+      - title: 食事を準備
+        required: true
+      - title: 配膳
+        required: true
+      - title: 子どもに食べさせる
+        required: true
+      - title: 食卓片付け
+        required: true
+
+  - code: bath
+    title: お風呂
+    category: bath
+    routine_phase: evening
+    completion_mode: whole
+    sort_order: 110
+
+  - code: laundry
+    title: 洗濯
+    category: laundry
+    routine_phase: evening
+    completion_mode: subtasks
+    sort_order: 120
+    subtasks:
+      - title: 回す
+        required: true
+      - title: 干す/乾燥
+        required: true
+      - title: 取り込む
+        required: true
+      - title: 畳む
+        required: true
+      - title: 収納
+        required: true
+
+  - code: dishes
+    title: 食器洗い
+    category: dishes
+    routine_phase: evening
+    completion_mode: whole
+    sort_order: 130
+
+  - code: cleaning
+    title: 掃除
+    category: cleaning
+    routine_phase: evening
+    completion_mode: subtasks
+    sort_order: 140
+    subtasks:
+      - title: リビング床
+        required: true
+      - title: 食べこぼし
+        required: true
+      - title: テーブル
+        required: true
+
+  - code: smile_zemi
+    title: スマイルゼミ
+    category: learning
+    routine_phase: evening
+    completion_mode: whole
+    sort_order: 150
+
+  - code: media_30min
+    title: スマイルゼミ後のテレビ/ゲーム30分管理
+    category: child_routine
+    routine_phase: evening
+    completion_mode: whole
+    sort_order: 160
+
+recurrence_rules:
+  # scheduled_local_time intentionally null until setup asks actual times.
+  - task: dropoff
+    weekday: 1
+    assignee_strategy: fixed
+    assignee: papa
+    scheduled_local_time: null
+  - task: dropoff
+    weekday: 2
+    assignee_strategy: fixed
+    assignee: papa
+    scheduled_local_time: null
+  - task: dropoff
+    weekday: 3
+    assignee_strategy: fixed
+    assignee: papa
+    scheduled_local_time: null
+  - task: dropoff
+    weekday: 4
+    assignee_strategy: fixed
+    assignee: mama
+    scheduled_local_time: null
+  - task: dropoff
+    weekday: 5
+    assignee_strategy: fixed
+    assignee: papa
+    scheduled_local_time: null
+
+  - task: pickup
+    weekday: 1
+    assignee_strategy: fixed
+    assignee: papa
+    scheduled_local_time: null
+  - task: pickup
+    weekday: 2
+    assignee_strategy: fixed
+    assignee: mama
+    scheduled_local_time: null
+  - task: pickup
+    weekday: 3
+    assignee_strategy: fixed
+    assignee: mama
+    scheduled_local_time: null
+  - task: pickup
+    weekday: 4
+    assignee_strategy: fixed
+    assignee: mama
+    scheduled_local_time: null
+  - task: pickup
+    weekday: 5
+    assignee_strategy: fixed
+    assignee: papa
+    scheduled_local_time: null
+
+  # Preparation follows that day's dropoff assignee.
+  - task: prep_monday_bedding
+    weekday: 1
+    assignee_strategy: dropoff_assignee
+    assignee: null
+  - task: prep_monday_uwabaki
+    weekday: 1
+    assignee_strategy: dropoff_assignee
+    assignee: null
+  - task: prep_tuesday_gym
+    weekday: 2
+    assignee_strategy: dropoff_assignee
+    assignee: null
+  - task: prep_thursday_english
+    weekday: 4
+    assignee_strategy: dropoff_assignee
+    assignee: null
+
+routine_notification_schedules:
+  - kind: daily_assignment
+    local_time: "07:00"
+    enabled: true
+  - kind: dropoff_checklist
+    local_time: "07:00"
+    enabled: true
+  - kind: dropoff_checkin
+    local_time: "08:30"
+    enabled: true
+  - kind: pickup_checklist
+    local_time: "16:00"
+    enabled: true
+  - kind: nonpickup_evening_checklist
+    local_time: "20:00"
+    enabled: true
+  - kind: pickup_checkin
+    local_time: "20:30"
+    enabled: true
+  - kind: nonpickup_evening_checkin
+    local_time: "22:00"
+    enabled: true
+
+  - kind: nonworkday_morning_digest
+    local_time: "09:00"
+    enabled: true
+  - kind: nonworkday_checkin
+    local_time: "20:00"
+    enabled: true
+
+evening_routine_proposals:
+  - {task: dinner, strategy: nonpickup_adult, weekdays: [1,2,3,4,5]}
+  - {task: bath, strategy: nonpickup_adult, weekdays: [1,2,3,4,5]}
+  - {task: laundry, strategy: nonpickup_adult, weekdays: [1,2,3,4,5]}
+  - {task: dishes, strategy: nonpickup_adult, weekdays: [1,2,3,4,5]}
+  - {task: cleaning, strategy: nonpickup_adult, weekdays: [1,2,3,4,5]}
+  - {task: smile_zemi, strategy: nonpickup_adult, weekdays: [1,2,3,4,5]}
+  - {task: media_30min, strategy: nonpickup_adult, weekdays: [1,2,3,4,5]}

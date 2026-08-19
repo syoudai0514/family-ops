@@ -1,0 +1,30 @@
+{
+  "version": 6,
+  "cases": [
+    {
+      "id": "EV01",
+      "scenario": "fresh_before_setup",
+      "expected": "setup_required"
+    },
+    {
+      "id": "EV02",
+      "scenario": "confirm_nonpickup",
+      "expected": "rules_materialized"
+    },
+    {
+      "id": "EV03",
+      "scenario": "disabled_task",
+      "expected": "no_instance"
+    },
+    {
+      "id": "EV04",
+      "scenario": "pickup_change",
+      "expected": "role_future_recomputed"
+    },
+    {
+      "id": "EV05",
+      "scenario": "A_B_A",
+      "expected": "reactivate_A_increment_generation"
+    }
+  ]
+}

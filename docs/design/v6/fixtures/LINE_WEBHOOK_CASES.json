@@ -1,0 +1,52 @@
+[
+  {
+    "id": "L01",
+    "case": "valid signature new event",
+    "expected": "inbox one row, 2xx"
+  },
+  {
+    "id": "L02",
+    "case": "invalid signature",
+    "expected": "4xx/no inbox"
+  },
+  {
+    "id": "L03",
+    "case": "same webhookEventId twice",
+    "expected": "one inbox/one mutation"
+  },
+  {
+    "id": "L04",
+    "case": "redelivery after processor failure",
+    "expected": "retry, no duplicate mutation"
+  },
+  {
+    "id": "L05",
+    "case": "out-of-order older message after newer state",
+    "expected": "no state rollback"
+  },
+  {
+    "id": "L06",
+    "case": "postback same pending action twice",
+    "expected": "one execution"
+  },
+  {
+    "id": "L07",
+    "case": "expired pending action",
+    "expected": "not executed"
+  },
+  {
+    "id": "L08",
+    "case": "foreign pending action id",
+    "expected": "deny"
+  },
+  {
+    "id": "L09",
+    "case": "processor transient LINE API failure",
+    "expected": "outbox retry"
+  },
+  {
+    "id": "L10",
+    "case": "permanent failure max attempts",
+    "expected": "dead-letter"
+  }
+]

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "LL01",
+      "scenario": "first link",
+      "expected": "active_link_created_token_consumed"
+    },
+    {
+      "id": "LL02",
+      "scenario": "same line id attempts second familyops user",
+      "expected": "LINE_ID_ALREADY_LINKED"
+    },
+    {
+      "id": "LL03",
+      "scenario": "same familyops user attempts second active line id",
+      "expected": "LINE_ID_ALREADY_LINKED"
+    },
+    {
+      "id": "LL04",
+      "scenario": "unlink then relink new line id",
+      "expected": "success"
+    },
+    {
+      "id": "LL05",
+      "scenario": "expired link token",
+      "expected": "reject"
+    },
+    {
+      "id": "LL06",
+      "scenario": "used token replay",
+      "expected": "reject"
+    },
+    {
+      "id": "LL07",
+      "scenario": "cross household token/user mismatch",
+      "expected": "reject_db_or_transaction"
+    },
+    {
+      "id": "LL08",
+      "scenario": "webhook from unlinked source.userId",
+      "expected": "LINE_NOT_LINKED_no_mutation"
+    },
+    {
+      "id": "LL09",
+      "scenario": "postback payload contains another user id",
+      "expected": "ignore_payload_identity_use_verified_source"
+    }
+  ]
+}

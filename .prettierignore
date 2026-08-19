@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+apps/web/dist
+supabase/.branches
+supabase/.temp
+docs/design

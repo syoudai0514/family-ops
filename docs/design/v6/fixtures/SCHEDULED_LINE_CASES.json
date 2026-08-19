@@ -1,0 +1,186 @@
+{
+  "version": 6,
+  "timezone": "Asia/Tokyo",
+  "cases": [
+    {
+      "id": "SL-02",
+      "scenario": "Sunday digest cron executes twice",
+      "expected": "scheduled dispatch receipt dedup; one outbox message per recipient"
+    },
+    {
+      "id": "SL-03",
+      "scenario": "07:00 Papa dropoff / Mama pickup",
+      "expected": "both receive assignment; Papa receives morning checklist bundled in same message"
+    },
+    {
+      "id": "SL-04",
+      "scenario": "07:00 recipient has no dropoff checklist items except dropoff",
+      "expected": "dropoff task itself is shown; no empty checklist section"
+    },
+    {
+      "id": "SL-05",
+      "scenario": "weekend has no dropoff/pickup task",
+      "expected": "daily role checklist messages skipped; no hardcoded weekday send"
+    },
+    {
+      "id": "SL-06",
+      "scenario": "08:30 morning session fully completed in PWA at 07:40",
+      "expected": "no LINE reminder"
+    },
+    {
+      "id": "SL-07",
+      "scenario": "08:30 morning session partial",
+      "expected": "only incomplete actionable items shown"
+    },
+    {
+      "id": "SL-08",
+      "scenario": "16:00 pickup assignee Mama",
+      "expected": "Mama receives pickup plus evening tasks assigned to Mama"
+    },
+    {
+      "id": "SL-09",
+      "scenario": "20:00 non-pickup adult Papa",
+      "expected": "Papa receives only evening tasks assigned to Papa"
+    },
+    {
+      "id": "SL-10",
+      "scenario": "20:00 non-pickup adult has zero evening tasks",
+      "expected": "no checklist message and no unnecessary session"
+    },
+    {
+      "id": "SL-11",
+      "scenario": "20:30 pickup all complete",
+      "expected": "no pickup reminder"
+    },
+    {
+      "id": "SL-12",
+      "scenario": "22:00 non-pickup partial",
+      "expected": "incomplete items only"
+    },
+    {
+      "id": "SL-13",
+      "scenario": "same recipient same minute has daily_assignment and dropoff_checklist",
+      "expected": "single bundled LINE push with two sections"
+    },
+    {
+      "id": "SL-14",
+      "scenario": "LINE notification send timeout",
+      "expected": "notification outbox retries using same provider retry key"
+    },
+    {
+      "id": "SL-15",
+      "scenario": "user taps LINE 全部完了 twice",
+      "expected": "mutation receipt replays; one completion/event effect"
+    },
+    {
+      "id": "SL-16",
+      "scenario": "user completes via LINE then opens PWA",
+      "expected": "same canonical task/session state visible"
+    },
+    {
+      "id": "SL-17",
+      "scenario": "user completes via PWA then taps stale LINE item",
+      "expected": "idempotent current state or safe terminal response; no rewind"
+    },
+    {
+      "id": "SL-18",
+      "scenario": "pickup reassigned before 16:00",
+      "expected": "16:00 targets new assignee only"
+    },
+    {
+      "id": "SL-19",
+      "scenario": "pickup reassigned at 17:00 after checklist",
+      "expected": "old session superseded, both get immediate change notification, old 20:30 reminder suppressed"
+    },
+    {
+      "id": "SL-20",
+      "scenario": "dropoff reassigned at 07:30 after morning checklist",
+      "expected": "old 08:30 reminder suppressed; new assignee session created if needed and assignment change notified"
+    },
+    {
+      "id": "SL-21",
+      "scenario": "pickup assignee null",
+      "expected": "no role auto-guess; both receive one unassigned warning according dedup policy"
+    },
+    {
+      "id": "SL-22",
+      "scenario": "household adult count not equal 2 for non-pickup derivation",
+      "expected": "do not guess target; settings warning"
+    },
+    {
+      "id": "SL-23",
+      "scenario": "custom daily assignment time 06:45",
+      "expected": "dispatch at household-local 06:45, not default 07:00"
+    },
+    {
+      "id": "SL-25",
+      "scenario": "weekly calendar cache stale >60m",
+      "expected": "digest still sends household assignments and stale-calendar warning"
+    },
+    {
+      "id": "SL-26",
+      "scenario": "Google reauth_required on Sunday",
+      "expected": "digest task/assignment section sends; Calendar warning included"
+    },
+    {
+      "id": "SL-27",
+      "scenario": "weekly digest includes once reassignment",
+      "expected": "display actual planned assignee from generated/overridden task instance"
+    },
+    {
+      "id": "SL-28",
+      "scenario": "special preparation Monday",
+      "expected": "normalized morning task appears in weekly digest and morning checklist if assigned"
+    },
+    {
+      "id": "SL-29",
+      "scenario": "LINE PWA deep link logged out",
+      "expected": "login then returnTo same session without bearer secret"
+    },
+    {
+      "id": "SL-30",
+      "scenario": "old superseded session PWA link opened",
+      "expected": "readable context, mutation disabled, link to current Today/session"
+    },
+    {
+      "id": "SL-V5-01",
+      "scenario": "schedule edited before today's send",
+      "expected": "one_send_at_new_slot"
+    },
+    {
+      "id": "SL-V5-02",
+      "scenario": "schedule edited after today's send",
+      "expected": "no_auto_resend"
+    },
+    {
+      "id": "SL-V5-03",
+      "scenario": "reminder due after soft budget",
+      "expected": "in_app_fallback_no_line"
+    },
+    {
+      "id": "SL-V5-04",
+      "scenario": "weekly preflight duplicate cron",
+      "expected": "one_google_sync_enqueue"
+    },
+    {
+      "id": "SL-V6-01",
+      "scenario": "Sunday 09:00",
+      "expected": "today_plus_next_week"
+    },
+    {
+      "id": "SL-V6-02",
+      "scenario": "Sunday 12:00",
+      "expected": "no_dispatch"
+    },
+    {
+      "id": "SL-V6-03",
+      "scenario": "holiday weekday",
+      "expected": "weekday_role_suppressed"
+    },
+    {
+      "id": "SL-V6-04",
+      "scenario": "one adult complete at nonworkday20",
+      "expected": "suppress_one_recipient"
+    }
+  ]
+}
