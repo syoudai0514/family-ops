@@ -210,4 +210,82 @@ RR_ACTIVE_COUNT=$(psql_svc "select count(*) from public.recurrence_rules where h
 
 echo "OK: exactly one concurrent overlapping recurrence_rules insert won the exclusion constraint race, the other was rejected at the DB level"
 
+echo "== concurrency: change-recurrence's own path collides on recurrence_rules_no_overlap under real concurrency (MI-RR02) =="
+# WP3 follow-up to MI-RR01 above: that test proves the raw exclusion
+# constraint itself is race-safe. This proves server_tx_change_recurrence's
+# own SELECT-existing-then-INSERT-new code path is equally race-safe end to
+# end. server_tx_change_recurrence deliberately does not take an app-level
+# `SELECT ... FOR UPDATE` lock on the existing-rule lookup — per
+# 08_RECURRING_TASKS_AND_RULES.md #9 ("no fallback SELECT FOR UPDATE
+# implementation choice"), the exclusion constraint alone is the
+# enforcement mechanism — so a plain "launch both, add jitter" race (as
+# used above for a raw single-statement INSERT) is not by itself a reliable
+# reproduction here: a fully-serialized pair of calls is *correct*
+# behavior (the second legitimately sees the first's committed row and
+# bumps to the next version instead of colliding). To force a genuine
+# concurrent read-then-write window deterministically without touching the
+# function under test, each racer wraps its call in an explicit
+# REPEATABLE READ transaction: both transactions' BEGIN (and therefore
+# their fixed snapshot) happen within a few milliseconds of each other
+# (both processes are launched back-to-back via `&`), so whichever call's
+# jittered SELECT-existing-rule step still runs before the other's COMMIT
+# (near-certain here, since BEGIN — not the later jittered work — is what
+# fixes the snapshot) reads "no existing rule" under an unchanged snapshot
+# regardless of the other's progress and attempts the same first-time
+# insert; the exclusion constraint check on INSERT always evaluates against
+# the true committed state (not the transaction's snapshot), so the second
+# writer's insert deterministically collides with the first's committed
+# row, exactly reproducing the concurrent-first-time-creation race two
+# independent household setup wizards or double-submitted client requests
+# could trigger. Exactly one of the two calls must succeed, and the
+# loser's exclusion_violation must be translated into the public
+# RECURRENCE_OVERLAP error code rather than a bare/leaked Postgres
+# exception.
+
+CR_OWNER=$(uuidgen)
+psql_svc "insert into auth.users (id) values ('$CR_OWNER');" >/dev/null
+CR_HH=$(psql_svc "select (public.server_tx_create_household('$CR_OWNER', gen_random_uuid(), 'Change Recurrence Race HH', 'Owner')->>'household_id');")
+# 'bath' is bootstrapped automatically by server_tx_create_household, same
+# reuse-not-duplicate rationale as MI-RR01's use of 'dinner'.
+CR_TASK_DEF=$(psql_svc "select id from public.task_definitions where household_id = '$CR_HH' and code = 'bath';")
+
+run_change_recurrence() {
+  local outfile="$1"
+  psql -v ON_ERROR_STOP=1 -d "$TEST_DB" -q -t -A <<SQL > "$outfile" 2>&1 &
+set role service_role;
+begin transaction isolation level repeatable read;
+select pg_sleep(random() * 0.2);
+select public.server_tx_change_recurrence(
+  '$CR_OWNER', gen_random_uuid(), '$CR_TASK_DEF', 5, 'default', 'fixed', '$CR_OWNER', null, 60, null
+)::text;
+commit;
+SQL
+}
+
+CR_A=$(mktemp); CR_B=$(mktemp)
+run_change_recurrence "$CR_A"
+run_change_recurrence "$CR_B"
+wait
+
+CR_SUCCESS_COUNT=0
+grep -q '"rule_id"' "$CR_A" && CR_SUCCESS_COUNT=$((CR_SUCCESS_COUNT + 1))
+grep -q '"rule_id"' "$CR_B" && CR_SUCCESS_COUNT=$((CR_SUCCESS_COUNT + 1))
+
+if [ "$CR_SUCCESS_COUNT" -ne 1 ]; then
+  echo "--- change-recurrence A output ---"; cat "$CR_A"
+  echo "--- change-recurrence B output ---"; cat "$CR_B"
+  fail "expected exactly one of two concurrent first-time change-recurrence calls for the same tuple to succeed, got $CR_SUCCESS_COUNT"
+fi
+
+if ! grep -q "RECURRENCE_OVERLAP" "$CR_A" "$CR_B"; then
+  echo "--- change-recurrence A output ---"; cat "$CR_A"
+  echo "--- change-recurrence B output ---"; cat "$CR_B"
+  fail "expected the losing change-recurrence call to surface RECURRENCE_OVERLAP"
+fi
+
+CR_ACTIVE_COUNT=$(psql_svc "select count(*) from public.recurrence_rules where household_id = '$CR_HH' and task_definition_id = '$CR_TASK_DEF' and weekday = 5 and slot_key = 'default' and active;")
+[ "$CR_ACTIVE_COUNT" -eq 1 ] || fail "expected exactly 1 active recurrence_rules row to survive the change-recurrence race, got $CR_ACTIVE_COUNT"
+
+echo "OK: exactly one concurrent change-recurrence call for the same tuple won the exclusion constraint race, the other surfaced RECURRENCE_OVERLAP"
+
 echo "== all concurrency tests passed =="

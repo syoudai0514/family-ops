@@ -176,6 +176,12 @@ verify_jwt = true
 [functions.update-routine-schedule]
 verify_jwt = true
 
+[functions.change-recurrence]
+verify_jwt = true
+
+[functions.reassign-task-once]
+verify_jwt = true
+
 # v6 review fix (WP2, docs/adr/0002): no named endpoint exists in the
 # vendored v6 design's 52-function matrix for "initial dropoff/pickup times
 # and weekly assignee setup" (10_WORK_PACKAGES.md's WP2 line item) — see
@@ -185,6 +191,23 @@ verify_jwt = true
 # explicitly allowlists it by name rather than silently loosening the check
 # for everything else.
 [functions.configure-dropoff-pickup]
+verify_jwt = true
+
+# v6 review fix (WP5, docs/adr/0003): the vendored 52-function matrix in
+# docs/design/v6/supabase/config.toml has no propose-ai-draft,
+# confirm-request-draft, or confirm-handover-draft entries — the AI-draft
+# propose/confirm split is a genuine naming gap in the vendored design, not
+# an invented v7 feature (18_MUTATION_CONTRACT_MATRIX.md #13 describes the
+# flow in prose without settling on Edge Function names). All three are
+# explicitly allowlisted in scripts/check-edge-auth-matrix.mjs's
+# GAP_FILL_FUNCTIONS rather than silently loosening the check.
+[functions.propose-ai-draft]
+verify_jwt = true
+
+[functions.confirm-request-draft]
+verify_jwt = true
+
+[functions.confirm-handover-draft]
 verify_jwt = true
 
 # External provider — verify_jwt = false (signature validated in-handler
