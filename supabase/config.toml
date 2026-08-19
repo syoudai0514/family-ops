@@ -32,7 +32,14 @@ max_rows = 1000
 
 [db]
 port = 54322
-major_version = 16
+# v6 review fix (P1-D, real CI run): Supabase CLI 2.115.0 (pinned above)
+# rejects major_version = 16 outright at config-parse time ("Invalid
+# db.major_version: 16") before even attempting to start a container — its
+# own `supabase init` template now defaults to 17. This is a local
+# Postgres-container version pin for the real Supabase stack only; it is
+# independent of the plain-Postgres `db` CI job (scripts/run_sql_tests.sh),
+# which runs its own postgres:16 service directly and is unaffected.
+major_version = 17
 
 [studio]
 enabled = true
