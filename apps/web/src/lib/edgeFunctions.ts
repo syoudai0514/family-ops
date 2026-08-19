@@ -32,6 +32,10 @@ export const EDGE_FUNCTIONS = {
   markNotificationRead: 'mark-notification-read',
   updateNotificationPreferences: 'update-notification-preferences',
   updateRoutineSchedule: 'update-routine-schedule',
+  // WP8 (routine LINE automation) — /checkin/:sessionId (features/checkin).
+  getRoutineSession: 'get-routine-session',
+  completeRoutineSession: 'complete-routine-session',
+  routineSessionItemAction: 'routine-session-item-action',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

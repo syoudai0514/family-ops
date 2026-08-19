@@ -184,3 +184,46 @@ dev environment — see below.
    "Decision" #3 for why (the design only specifies this content as part of
    WP8's not-yet-built daily-assignment dispatcher message, with no
    independent trigger condition or copy of its own).
+
+## Scheduled LINE household routines (WP8 — routine automation)
+
+1. **Schedule `dispatch-routine-automation` every 1 minute**
+   (`docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md` #13 "Scheduler worker ...
+   every 1 minute"), the exact same mechanism already used for
+   `process-line-inbox` / `process-pending-actions` / `send-notifications`
+   (`pg_cron` → `net.http_post` with the `X-Family-Ops-Worker-Token` header,
+   or an external scheduler). No new secret is required — it reuses the
+   existing `CRON_WORKER_TOKEN`.
+2. No new provider secret is needed for the dispatcher itself — it only ever
+   inserts into `private.notification_outbox`; the actual LINE push is
+   `send-notifications`' job (already covered above) and reuses the same
+   `LINE_CHANNEL_ACCESS_TOKEN`.
+3. **`APP_BASE_URL`** (referenced by `docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md`
+   #8 for the `{APP_BASE_URL}/checkin/{session_id}` deep link) should already
+   be configured from an earlier WP for other PWA deep links; no WP8-specific
+   value is needed beyond ensuring the `/checkin/:sessionId` route (see final
+   report) is deployed at that same base URL.
+4. **Known follow-up, not P0/P1 but load-bearing for the LINE-side
+   interaction loop** — see `docs/adr/0007-wp8-routine-session-scope-decisions.md`
+   decisions 1 and 5: `process-line-inbox`'s `handlePostback` has no branch
+   yet for routine-session postback actions (the RPC layer,
+   `server_tx_routine_session_item_action` / `server_tx_complete_routine_session`,
+   is fully built and tested for `p_source='line'` calls — only the webhook
+   -> RPC wiring is outstanding), and `send-notifications` sends plain-text
+   LINE messages only, with no quick-reply/template button support to attach
+   the `[全部完了] [項目ごとに入力] [今回は不要] [PWAで開く]` actions to. Until
+   both land, the PWA deep link included as plain text in each routine
+   message is the only actionable affordance from LINE itself.
+5. **Live-API verification** of an actual scheduled push arriving in a real
+   LINE chat at the correct Asia/Tokyo minute requires the same real
+   `LINE_CHANNEL_ACCESS_TOKEN`/LINE account already noted above — not
+   available in this dev environment. `tests/sql/22_routine_line_automation.sql`
+   exhaustively covers the dispatcher's own logic (idempotency under
+   simulated cron retry, 07:00 bundling, weekend/holiday suppression,
+   reminder suppression + auto-close, reassignment session supersede +
+   immediate change notification, the unassigned-pickup/zero-item edge
+   cases, custom schedule times, same-day no-auto-resend, and the
+   notification-preference-off "session persists, LINE suppressed" case) and
+   the routine-session action RPCs (LINE-postback-shaped and PWA-shaped
+   calls, idempotent replay, stale-tap safety, access control) end to end
+   against a local Postgres instance.

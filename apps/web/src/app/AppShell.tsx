@@ -6,6 +6,7 @@ import { Shopping } from '../features/shopping/Shopping';
 import { Handovers } from '../features/handovers/Handovers';
 import { Notifications } from '../features/notifications/Notifications';
 import { RoutineSchedule } from '../features/settings/RoutineSchedule';
+import { CheckinPage } from '../features/checkin/CheckinPage';
 
 const NAV_ITEMS = [
   { to: '/today', label: '今日' },
@@ -39,6 +40,7 @@ export function AppShell() {
         <Route path="/handovers" element={<Handovers />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/settings" element={<RoutineSchedule />} />
+        <Route path="/checkin/:sessionId" element={<CheckinPage />} />
         <Route path="*" element={<Today />} />
       </Routes>
     </div>

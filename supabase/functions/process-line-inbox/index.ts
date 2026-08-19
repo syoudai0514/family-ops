@@ -32,10 +32,14 @@
 //
 // Routine-session checklist automation (dispatch-routine-automation,
 // get-routine-session/complete-routine-session/routine-session-item-action)
-// is WP8 — not built here. This worker's postback vocabulary
-// (confirm_pending/cancel_pending/complete_task) is generic, not
-// routine-session-shaped, so it does not collide with WP8 adding its own
-// postback actions later.
+// is WP8. Its RPCs are called directly here too (docs/design/v6/
+// 17_ROUTINE_LINE_AUTOMATION.md #8 "Routine 完了 postbacks may call user
+// mutation Edge directly"; #9 "LINEとPWAは同じmutation APIを使う") — see
+// docs/adr/0007 decision 1, which this closes:
+//   action=routine_item&session_id=...&task_instance_id=...&value=complete|partner_handled|skip
+//   action=routine_complete&session_id=...&value=complete_all|skip_incomplete
+// p_source is always 'line' for both, so task_events / mutation results
+// correctly attribute the channel per #9.
 import { createServiceRoleClient, requireWorkerToken } from "../_shared/auth.ts";
 import { withServiceHandler, jsonResponse } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -167,6 +171,41 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
       p_complete_remaining_subtasks: fields.complete_remaining === "true",
     });
     if (error) console.error("process-line-inbox: complete_task postback failed", error.message);
+    return;
+  }
+
+  if (fields.action === "routine_item" && fields.session_id && fields.task_instance_id && fields.value) {
+    if (!["complete", "partner_handled", "skip"].includes(fields.value)) {
+      console.warn("process-line-inbox: invalid routine_item value", { value: fields.value });
+      return;
+    }
+    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
+    const { error } = await client.rpc("server_tx_routine_session_item_action", {
+      p_actor_id: actor.user_id,
+      p_operation_id: operationId,
+      p_session_id: fields.session_id,
+      p_task_instance_id: fields.task_instance_id,
+      p_action: fields.value,
+      p_source: "line",
+    });
+    if (error) console.error("process-line-inbox: routine_item postback failed", error.message);
+    return;
+  }
+
+  if (fields.action === "routine_complete" && fields.session_id && fields.value) {
+    if (!["complete_all", "skip_incomplete"].includes(fields.value)) {
+      console.warn("process-line-inbox: invalid routine_complete value", { value: fields.value });
+      return;
+    }
+    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
+    const { error } = await client.rpc("server_tx_complete_routine_session", {
+      p_actor_id: actor.user_id,
+      p_operation_id: operationId,
+      p_session_id: fields.session_id,
+      p_disposition: fields.value,
+      p_source: "line",
+    });
+    if (error) console.error("process-line-inbox: routine_complete postback failed", error.message);
     return;
   }
 
