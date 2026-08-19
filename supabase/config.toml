@@ -280,3 +280,12 @@ verify_jwt = false
 
 [functions.dispatch-routine-automation]
 verify_jwt = false
+
+[functions.materialize-recurring]
+verify_jwt = false
+
+[functions.sync-jp-holidays]
+verify_jwt = false
+
+[functions.cleanup-expired-private-data]
+verify_jwt = false

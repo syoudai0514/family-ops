@@ -227,3 +227,49 @@ dev environment — see below.
    the routine-session action RPCs (LINE-postback-shaped and PWA-shaped
    calls, idempotent replay, stale-tap safety, access control) end to end
    against a local Postgres instance.
+
+## Recurrence / holiday sync / cleanup workers (gap-close: previously
+## normative but unbuilt functions)
+
+Three cron workers specified in `docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md`
+(#13, #14, #19) had no implementation from any prior work package until now.
+All three follow the same worker auth pattern already documented above
+(`X-Family-Ops-Worker-Token` = `CRON_WORKER_TOKEN`, already required by
+every other worker function).
+
+1. **`materialize-recurring`** — schedule daily at **00:10 Asia/Tokyo**
+   (`= 15:10 UTC`). Advances every active recurrence rule's materialized
+   task-instance window to today..+14 days. Without this running daily, the
+   recurrence engine's rolling window stops advancing once the initial
+   materialization (done at rule creation/change time) runs out.
+2. **`sync-jp-holidays`** — schedule weekly, **Sunday 03:00 JST**
+   (`= Saturday 18:00 UTC`). Fetches the Cabinet Office CSV
+   (`JP_HOLIDAY_CSV_URL`, defaults to
+   `https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu_kyujitsu.csv` if
+   the env var isn't set — this URL is public, not a secret) and upserts
+   `private.jp_holidays`, which `dispatch-routine-automation`'s
+   weekend/holiday (土日祝) handling already reads. Falls back to the
+   checked-in fixture (`supabase/functions/sync-jp-holidays/fixture.ts`,
+   mirroring `docs/design/v6/fixtures/JP_HOLIDAYS_2026_2027.json`) if the
+   live fetch fails or parses to zero rows — upserts never delete existing
+   rows, so a bad fetch degrades to "holiday data doesn't advance past what
+   fixture already has," never data loss. **The live CSV fetch/decode
+   (Shift-JIS vs UTF-8 detection) cannot be exercised from this dev
+   environment — verify the parser actually produces sane rows against a
+   real fetch before relying on it in production; if the Cabinet Office CSV
+   format is genuinely Shift-JIS as historically documented, no action
+   needed, but if it has moved to UTF-8 (Deno's `TextDecoder("shift-jis")`
+   support itself should also be spot-checked), the detection logic in
+   `supabase/functions/sync-jp-holidays/index.ts` should still handle it
+   automatically since it tries UTF-8 first — this is a "verify it behaves
+   as intended," not a "definitely needs a code change," item.**
+3. **`cleanup-expired-private-data`** — schedule daily at **03:30 Asia/Tokyo**
+   (`= 18:30 UTC`). Runs the fixed retention sweep from
+   `09_API_AND_EDGE_FUNCTIONS.md` #14 across `raw_inputs`, LINE link tokens,
+   household invites, `webhook_inbox`, `notification_outbox`, Google staging/
+   write-operations/watch-channel metadata, and calendar tombstones. No
+   external secret needed — pure internal retention housekeeping. See
+   `supabase/migrations/20260819000090_recurring_holiday_cleanup_workers.sql`'s
+   header comment for the one rule (cancelled-recurring-exception tombstone
+   retention) that required a documented interpretation rather than a
+   literal transcription of the design doc's prose.
