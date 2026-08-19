@@ -28,6 +28,17 @@ function base64Decode(b64: string): Uint8Array {
   return bytes;
 }
 
+// Deno's pinned TypeScript version types crypto.subtle's BufferSource
+// parameters as requiring a concrete ArrayBuffer-backed view, not the wider
+// ArrayBufferLike (which also admits SharedArrayBuffer) that `.slice()`/a
+// manually-built Uint8Array can carry. Re-copying through a fresh ArrayBuffer
+// sidesteps the mismatch regardless of which TypeScript version resolves it.
+function toArrayBuffer(view: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(view.byteLength);
+  new Uint8Array(copy).set(view);
+  return copy;
+}
+
 async function loadKey(): Promise<CryptoKey> {
   const keyB64 = Deno.env.get("GOOGLE_TOKEN_ENCRYPTION_KEY");
   if (!keyB64) {
@@ -37,7 +48,7 @@ async function loadKey(): Promise<CryptoKey> {
   if (raw.length !== 32) {
     throw new Error("GOOGLE_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes (AES-256)");
   }
-  return await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  return await crypto.subtle.importKey("raw", toArrayBuffer(raw), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 // Returns a single base64 blob: iv (12 bytes) || ciphertext+tag. The
@@ -47,7 +58,7 @@ export async function encryptRefreshToken(plaintext: string): Promise<{ cipherte
   const key = await loadKey();
   const iv = crypto.getRandomValues(new Uint8Array(GCM_IV_BYTES));
   const encoded = new TextEncoder().encode(plaintext);
-  const cipherBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+  const cipherBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(encoded));
   const combined = new Uint8Array(iv.length + cipherBuf.byteLength);
   combined.set(iv, 0);
   combined.set(new Uint8Array(cipherBuf), iv.length);
@@ -62,7 +73,7 @@ export async function decryptRefreshToken(ciphertext: string, encryptionVersion:
   const combined = base64Decode(ciphertext);
   const iv = combined.slice(0, GCM_IV_BYTES);
   const cipherBytes = combined.slice(GCM_IV_BYTES);
-  const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipherBytes);
+  const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(cipherBytes));
   return new TextDecoder().decode(plainBuf);
 }
 
