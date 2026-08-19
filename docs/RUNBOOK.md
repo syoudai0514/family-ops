@@ -1,4 +1,36 @@
-# Family Ops — Operational Runbook (WP1)
+# Family Ops — Operational Runbook
+
+## LINE production setup: Webhook redelivery must be turned ON
+
+Before linking a real LINE Official Account for production use, the
+**Webhook redelivery** toggle in the LINE Developers Console (Messaging API
+channel settings) is a mandatory checklist item — not optional, not a
+"nice to have." This repo's LINE ingestion design depends on it:
+
+- `line-webhook-receiver` (`supabase/functions/line-webhook-receiver/index.ts`)
+  returns a non-2xx status whenever it cannot durably persist the inbound
+  event (see `docs/design/v6/06_LINE_INTEGRATION.md` "13. Failure/recovery"
+  and the v6 review fix P1-3 in this repo's history: the webhook must never
+  ack `200` on a DB persistence failure it cannot guarantee happened).
+- The entire retry/idempotency contract this repo implements — durable
+  `private.webhook_inbox`, `provider_event_id` dedup, lease/reclaim,
+  `LINE_RETRY_CASES` fixture scenarios — only has anything to recover
+  *from* if LINE's platform actually retries a failed delivery. If Webhook
+  redelivery is left OFF, a transient failure (worker restart, brief DB
+  unavailability, a deploy in flight) causes LINE to silently drop that
+  webhook call forever: no retry ever arrives, and the durable-inbox /
+  retry-key machinery in this codebase never gets a second chance to run.
+- This is exactly the "webhook redelivery" test scenario listed in
+  `docs/design/v6/06_LINE_INTEGRATION.md` #14 ("Tests") — that scenario is
+  meaningless against a real LINE Official Account unless this setting is
+  on before go-live.
+
+**Production go-live checklist requirement**: confirm Webhook redelivery is
+**ON** in the LINE Developers Console for the production channel, and
+verify it with a real forced-failure test (e.g. temporarily point the
+webhook URL at an endpoint that 5xxs, confirm LINE retries) before
+accepting real user traffic. Re-verify after any LINE channel
+recreation/migration, since this setting is not carried over automatically.
 
 ## Never hard-delete an `auth.users` row from the Supabase Dashboard
 

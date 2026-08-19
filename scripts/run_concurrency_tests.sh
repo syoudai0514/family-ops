@@ -151,4 +151,63 @@ grep -q '"permitted": true' "$R4" && PERMITS2=$((PERMITS2 + 1))
 [ "$PERMITS2" -eq 1 ] || { cat "$R3" "$R4"; fail "LQA02: two parallel critical reservations at provider_consumed=199 must yield at most one permit, got $PERMITS2"; }
 echo "OK: LQA02 — parallel critical reservations at 199 yield at most one permit"
 
+echo "== concurrency: recurrence_rules_no_overlap under a true-parallel race (MI-RR01) =="
+# v6 P2 follow-up (post-WP1-review): 15_DDL_CONTRACT.md #6 requires the
+# no-overlap invariant to be an exact DB exclusion constraint, not an
+# app-only lock fallback — this proves two real backends racing to insert
+# overlapping active recurrence_rules for the same
+# (household_id, task_definition_id, weekday, slot_key) actually collide at
+# the Postgres level (exclude using gist), the same way MI-HH03 above proves
+# the last-adult-seat race at the DB level rather than trusting app code to
+# serialize it.
+
+RR_OWNER=$(uuidgen)
+psql_svc "insert into auth.users (id) values ('$RR_OWNER');" >/dev/null
+RR_HH=$(psql_svc "select (public.server_tx_create_household('$RR_OWNER', gen_random_uuid(), 'Recurrence Race HH', 'Owner')->>'household_id');")
+# 'dinner' is bootstrapped automatically by server_tx_create_household (v6
+# review fix P1-A / canonical task bootstrap) — reuse it rather than
+# inserting a conflicting duplicate task_definitions row.
+RR_TASK_DEF=$(psql_svc "select id from public.task_definitions where household_id = '$RR_HH' and code = 'dinner';")
+
+run_insert_rule() {
+  local outfile="$1"
+  psql -v ON_ERROR_STOP=1 -d "$TEST_DB" -q -t -A <<SQL > "$outfile" 2>&1 &
+set role service_role;
+select pg_sleep(random() * 0.2);
+insert into public.recurrence_rules
+  (household_id, task_definition_id, weekday, slot_key, assignee_strategy,
+   effective_from, effective_to, active, created_by)
+values
+  ('$RR_HH', '$RR_TASK_DEF', 3, 'default', 'unassigned',
+   current_date, null, true, '$RR_OWNER')
+returning id::text;
+SQL
+}
+
+RR_A=$(mktemp); RR_B=$(mktemp)
+run_insert_rule "$RR_A"
+run_insert_rule "$RR_B"
+wait
+
+RR_SUCCESS_COUNT=0
+grep -qE '^[0-9a-f-]{36}$' "$RR_A" && RR_SUCCESS_COUNT=$((RR_SUCCESS_COUNT + 1))
+grep -qE '^[0-9a-f-]{36}$' "$RR_B" && RR_SUCCESS_COUNT=$((RR_SUCCESS_COUNT + 1))
+
+if [ "$RR_SUCCESS_COUNT" -ne 1 ]; then
+  echo "--- insert A output ---"; cat "$RR_A"
+  echo "--- insert B output ---"; cat "$RR_B"
+  fail "expected exactly one of two concurrent overlapping recurrence_rules inserts to succeed, got $RR_SUCCESS_COUNT"
+fi
+
+if ! grep -qi "recurrence_rules_no_overlap\|conflicting key value violates exclusion constraint" "$RR_A" "$RR_B"; then
+  echo "--- insert A output ---"; cat "$RR_A"
+  echo "--- insert B output ---"; cat "$RR_B"
+  fail "expected the losing insert to fail on the recurrence_rules_no_overlap exclusion constraint"
+fi
+
+RR_ACTIVE_COUNT=$(psql_svc "select count(*) from public.recurrence_rules where household_id = '$RR_HH' and task_definition_id = '$RR_TASK_DEF' and weekday = 3 and slot_key = 'default' and active;")
+[ "$RR_ACTIVE_COUNT" -eq 1 ] || fail "expected exactly 1 active overlapping-window recurrence_rules row to survive the race, got $RR_ACTIVE_COUNT"
+
+echo "OK: exactly one concurrent overlapping recurrence_rules insert won the exclusion constraint race, the other was rejected at the DB level"
+
 echo "== all concurrency tests passed =="
