@@ -43,6 +43,19 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   AI_INVARIANT_VIOLATION: 422,
   AI_UNAVAILABLE: 503,
   RAW_INPUT_EXPIRED: 410,
+  // WP7 additions (Google Calendar boundary; see docs/adr/0005 — these were
+  // first served from googleCalendar.ts's own GOOGLE_ERROR_STATUS map for
+  // collision-avoidance reasons during parallel WP6/WP7 development, and are
+  // now folded into the shared catalogue as that ADR's own recommended
+  // follow-up):
+  GOOGLE_OAUTH_STATE_INVALID: 400,
+  CALENDAR_TIMEZONE_UNSUPPORTED: 422,
+  CALENDAR_NO_ELIGIBLE_CALENDAR: 422,
+  CALENDAR_ETAG_CONFLICT: 409,
+  CALENDAR_REAUTH_REQUIRED: 409,
+  CALENDAR_UNAVAILABLE: 503,
+  CALENDAR_EVENT_NOT_FOUND: 404,
+  GOOGLE_SYNC_LEASE_LOST: 409,
 };
 
 // v6 review fix (P2): any code we don't explicitly classify as a client
@@ -87,6 +100,14 @@ const KNOWN_CODES = new Set([
   "AI_INVARIANT_VIOLATION",
   "AI_UNAVAILABLE",
   "RAW_INPUT_EXPIRED",
+  "GOOGLE_OAUTH_STATE_INVALID",
+  "CALENDAR_TIMEZONE_UNSUPPORTED",
+  "CALENDAR_NO_ELIGIBLE_CALENDAR",
+  "CALENDAR_ETAG_CONFLICT",
+  "CALENDAR_REAUTH_REQUIRED",
+  "CALENDAR_UNAVAILABLE",
+  "CALENDAR_EVENT_NOT_FOUND",
+  "GOOGLE_SYNC_LEASE_LOST",
 ]);
 
 export function isKnownErrorCode(code: string): boolean {
@@ -131,6 +152,22 @@ export function describeCode(code: string): string {
       return "AI機能に一時的に接続できません。しばらくしてから再度お試しください";
     case "RAW_INPUT_EXPIRED":
       return "下書きの有効期限が切れています。もう一度入力し直してください";
+    case "GOOGLE_OAUTH_STATE_INVALID":
+      return "連携の有効期限が切れました。もう一度連携をやり直してください";
+    case "CALENDAR_TIMEZONE_UNSUPPORTED":
+      return "選択したカレンダーのタイムゾーンに対応していません";
+    case "CALENDAR_NO_ELIGIBLE_CALENDAR":
+      return "書き込み可能なカレンダーが見つかりませんでした";
+    case "CALENDAR_ETAG_CONFLICT":
+      return "予定が他の場所で変更されています。最新の内容を確認してください";
+    case "CALENDAR_REAUTH_REQUIRED":
+      return "Googleカレンダーとの連携が切れています。再連携してください";
+    case "CALENDAR_UNAVAILABLE":
+      return "Googleカレンダーに一時的に接続できません。しばらくしてから再度お試しください";
+    case "CALENDAR_EVENT_NOT_FOUND":
+      return "対象の予定が見つかりませんでした";
+    case "GOOGLE_SYNC_LEASE_LOST":
+      return "同期処理が別のワーカーに引き継がれました";
     default:
       return code;
   }

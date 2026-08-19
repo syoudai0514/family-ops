@@ -182,6 +182,27 @@ verify_jwt = true
 [functions.reassign-task-once]
 verify_jwt = true
 
+[functions.create-line-link-token]
+verify_jwt = true
+
+[functions.unlink-line-account]
+verify_jwt = true
+
+[functions.google-calendar-oauth-start]
+verify_jwt = true
+
+[functions.ensure-calendar-fresh]
+verify_jwt = true
+
+[functions.classify-calendar-busy-members]
+verify_jwt = true
+
+[functions.create-calendar-event]
+verify_jwt = true
+
+[functions.update-calendar-event]
+verify_jwt = true
+
 # v6 review fix (WP2, docs/adr/0002): no named endpoint exists in the
 # vendored v6 design's 52-function matrix for "initial dropoff/pickup times
 # and weekly assignee setup" (10_WORK_PACKAGES.md's WP2 line item) — see
@@ -216,8 +237,34 @@ verify_jwt = true
 [functions.line-webhook-receiver]
 verify_jwt = false
 
+[functions.google-calendar-webhook]
+verify_jwt = false
+
+# Browser top-level redirect from Google's OAuth consent screen — verify_jwt
+# = false because there is no JWT on this request at all (docs/adr/0004):
+# authenticated entirely by the single-use, TTL'd private.google_oauth_states
+# state_hash row, not a bearer token.
+
+[functions.google-calendar-oauth-callback]
+verify_jwt = false
+
 # Cron worker — verify_jwt = false (X-Family-Ops-Worker-Token constant-time
 # compared in-handler before any DB access)
 
 [functions.send-notifications]
+verify_jwt = false
+
+[functions.process-line-inbox]
+verify_jwt = false
+
+[functions.process-pending-actions]
+verify_jwt = false
+
+[functions.renew-google-watch]
+verify_jwt = false
+
+[functions.enqueue-periodic-google-sync]
+verify_jwt = false
+
+[functions.process-google-sync]
 verify_jwt = false
