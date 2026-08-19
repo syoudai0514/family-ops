@@ -1,23 +1,22 @@
 # CONTINUATION — Family Ops v6 implementation
 
-Written because this session is near its usage limit (resets 18:10 UTC on
-2026-08-19). This file is the single source of truth for resuming work. Read
-it fully before doing anything else.
+Updated after WP9 landed (previous version was written near a session usage
+limit; that limit has since reset and work resumed). This file is the
+single source of truth for resuming work. Read it fully before doing
+anything else.
 
 ## 1. Current HEAD commit hash
 
 ```
-fb8ec3b6b5b32f099252133ebf4066330d83d20c1
+7b070141ba10bd3457f2aad2c4acf5793942d415
 ```
-(branch `claude/family-ops-v6-implementation-6x4mft`, already pushed to
-`origin` — confirmed identical to `origin/claude/family-ops-v6-implementation-6x4mft`.)
+(branch `claude/family-ops-v6-implementation-6x4mft`, pushed to `origin`.)
+Previous milestone `fb8ec3b` (CI fix) was confirmed all-green on all 4 CI
+jobs; `7b07014`'s CI was still running at the time of this update — check
+PR #1's check runs before assuming green.
 
-**CI status for this commit: ALL GREEN.** PR #1
-(`syoudai0514/family-ops#1`), all 4 required checks `success`:
-- `db (migrations / RLS / RPC / idempotency / quota)`
-- `web (lint / typecheck / test / build)`
-- `edge-functions (deno lint / check / auth-matrix lint)`
-- `supabase-integration (real CLI stack)`
+A WP8 (scheduled LINE routines dispatcher) background agent is running
+against this HEAD as this file is written — see section 3.
 
 Do NOT push anything to `main` — this branch only, per standing instructions.
 
@@ -37,7 +36,9 @@ All committed and pushed to the branch above, in this commit order:
 | `0858582` | **WP5** | Gemini AI-draft — `propose-ai-draft`, `confirm-request-draft`, `confirm-handover-draft`, invariant-check unit tests (44/44) |
 | `b236162` | **WP6** | LINE foundation — `create-line-link-token`, `unlink-line-account`, `process-line-inbox` (NL grammar + postback handling), `process-pending-actions`, lease/reclaim/dead-letter on both queues |
 | `f1f5bc9` | **WP7** | Google Calendar — full OAuth/watch/sync-queue/canonical-sync/projection/writes (10 Edge Functions), AES-256-GCM token encryption |
-| `fb8ec3b` | CI fix | `cryptoHelper.ts` failed `deno check` under CI's pinned Deno 2.9.5/TypeScript 6.0.3 (stricter typed-array generics than this dev environment's previously-installed 2.1.4). Fixed with an explicit `toArrayBuffer()` copy before every `crypto.subtle.*` call. **Verified by upgrading this environment's own `deno` to 2.9.5 and reproducing + confirming the fix against the exact CI toolchain** (this environment's `deno --version` is now permanently 2.9.5 — use it for all future `deno check`/`deno lint` verification, don't trust an older local Deno). |
+| `fb8ec3b` | CI fix | `cryptoHelper.ts` failed `deno check` under CI's pinned Deno 2.9.5/TypeScript 6.0.3 (stricter typed-array generics than this dev environment's previously-installed 2.1.4). Fixed with an explicit `toArrayBuffer()` copy before every `crypto.subtle.*` call. **Verified by upgrading this environment's own `deno` to 2.9.5 and reproducing + confirming the fix against the exact CI toolchain** (this environment's `deno --version` is now permanently 2.9.5 — use it for all future `deno check`/`deno lint` verification, don't trust an older local Deno). All 4 CI jobs confirmed green on this commit. |
+| `72aeaa7` | — | first version of this CONTINUATION.md (written near a session usage limit) |
+| `7b07014` | **WP9** | notification delivery — `private.notification_outbox` was permanently empty before this (nothing ever inserted into it); added a trigger bridging WP2's in-app notifications into it with bundling, plus `send-notifications` rewritten to actually drain the outbox, reserve LINE quota, and push via the LINE Messaging API with 409/429/5xx handling. Deliberately did NOT build a standalone calendar-conflict notification (documented in `docs/adr/0006` as correctly belonging to WP8's not-yet-built dispatcher instead). |
 
 Both WP3+WP5 and WP6+WP7 batches also included a **consolidation pass**
 (same commits) that centrally added their `[functions.*]` entries to
@@ -55,18 +56,23 @@ temporary WP7 error-code split later folded into `errors.ts`). Read
 
 ## 3. In-progress work packages and their actual state
 
-**WP8 (scheduled LINE routine dispatcher), WP9 (notification delivery +
-fatigue audit), WP4 (realtime/history frontend)**: three background agents
-were launched in parallel for these. **All three failed immediately on the
-session usage limit** ("You've hit your session limit · resets 6:10pm
-(UTC)") before writing any files — confirmed via `git status --short`
-showing zero changes at the time of failure. **Effective progress on all
-three: 0%.** There is nothing to reconcile or clean up; they need a full
-fresh start, not a resume.
+**WP9 is DONE** (see table above, commit `7b07014`) — the earlier "0%
+progress, failed on session limit" note for WP9 no longer applies; it was
+fully relaunched as a single agent (not part of a 3-way parallel batch) and
+completed successfully, independently verified (deno lint/check, full SQL
+suite), committed, and pushed.
 
-The prompts used to launch them are reconstructable from this session's
-transcript, but see "Concrete next steps" below for a corrected version
-(launch fewer agents per batch this time).
+**WP8 (scheduled LINE routine dispatcher)**: a fresh single-agent attempt
+was launched against HEAD `7b07014` and is running now. Check
+`git status --short` for untracked WP8 files before assuming it's still
+mid-flight or has finished — if this file wasn't updated again after WP8's
+completion, treat WP8 as unknown-state and verify from disk/git first.
+
+**WP4 (realtime/history frontend)**: not yet relaunched. Was part of the
+earlier 3-way parallel batch that failed entirely on the session limit
+before writing anything — zero progress, nothing to reconcile. Launch it
+fresh, alone or paired with at most one other agent (not three at once —
+that combination has now failed the session limit twice in this project).
 
 ## 4. Incomplete work
 
@@ -74,15 +80,12 @@ transcript, but see "Concrete next steps" below for a corrected version
   unread indicator, Today refresh after partner mutation. Not started.
 - **WP8** — `dispatch-routine-automation`, `get-routine-session`,
   `complete-routine-session`, `routine-session-item-action`, PWA
-  `/checkin/:sessionId`. Not started. Implements
+  `/checkin/:sessionId`. In progress or just completed — check current state
+  first (see section 3). Implements
   `docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md` "exactly" per
-  `10_WORK_PACKAGES.md`.
-- **WP9** — notification UX/fatigue audit. Not started. Includes a real
-  scope item flagged by WP6: **`send-notifications`'s actual LINE push-send
-  loop was never built** (only the WP1-era auth-boundary stub is deployed).
-  This blocks any real outbound LINE delivery, including WP8's routine
-  check-in prompts and WP5's AI-draft confirm/cancel quick-replies. This is
-  the single most functionally-impactful remaining gap.
+  `10_WORK_PACKAGES.md`. Also owns inserting the calendar-conflict
+  notification content that WP9 deliberately deferred (see `docs/adr/0006`)
+  — don't forget this sub-item when scoping/reviewing WP8.
 - **WP11** — production readiness runbooks (iPhone PWA E2E, Supabase Free
   pause/recovery, Calendar OAuth production, LINE/Gemini quota & fallback,
   cron worker token rotation, dead-letter runbook, Google webhook
