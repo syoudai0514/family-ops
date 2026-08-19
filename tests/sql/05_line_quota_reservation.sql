@@ -119,6 +119,99 @@ begin
 end;
 $$;
 
+-- v6 review fix (P2): commit/release/reserve/mark_ambiguous idempotency and
+-- correct state transitions.
+do $$
+declare
+  v_hh jsonb;
+  v_hh_id uuid;
+  v_out uuid;
+  v_r1 jsonb;
+  v_r2 jsonb;
+  v_reservation_id uuid;
+  v_before int;
+  v_after int;
+begin
+  insert into auth.users (id) values ('c0000000-0000-0000-0000-000000000002');
+  v_hh := public.server_tx_create_household('c0000000-0000-0000-0000-000000000002', gen_random_uuid(), 'Quota Idempotency HH', 'Owner');
+  v_hh_id := (v_hh->>'household_id')::uuid;
+
+  -- earlier do-blocks in this file already pushed the real "current month"
+  -- quota state close to its cap; reset it so this sub-test's reserve calls
+  -- are predictably permitted.
+  update private.notification_outbox
+  set quota_reservation_id = null
+  where quota_reservation_id in (
+    select id from private.line_quota_reservations where billing_month = date_trunc('month', now())::date
+  );
+  delete from private.line_quota_reservations where billing_month = date_trunc('month', now())::date;
+  update private.line_quota_state
+  set provider_consumed = 0, local_counted_success = 0
+  where billing_month = date_trunc('month', now())::date;
+
+  insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key)
+  values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000002', 'line', 'test', '{}'::jsonb, 'idem-1')
+  returning id into v_out;
+
+  -- reserve is idempotent per notification_outbox_id: retrying the same
+  -- outbox row must return the same reservation, not error or re-decide.
+  v_r1 := public.server_tx_reserve_line_quota(v_out, 'normal');
+  v_r2 := public.server_tx_reserve_line_quota(v_out, 'normal');
+  if (v_r1->>'reservation_id') <> (v_r2->>'reservation_id') then
+    raise exception 'FAIL quota-idempotency: retried reserve for the same outbox row must return the same reservation_id';
+  end if;
+  if not (v_r2->>'replay')::boolean then
+    raise exception 'FAIL quota-idempotency: retried reserve must report replay=true';
+  end if;
+
+  v_reservation_id := (v_r1->>'reservation_id')::uuid;
+
+  select local_counted_success into v_before
+  from private.line_quota_state where billing_month = date_trunc('month', now())::date;
+
+  -- double-commit must not double-increment local_counted_success
+  perform public.server_tx_commit_line_quota_reservation(v_reservation_id);
+  perform public.server_tx_commit_line_quota_reservation(v_reservation_id);
+
+  select local_counted_success into v_after
+  from private.line_quota_state where billing_month = date_trunc('month', now())::date;
+  if v_after <> v_before + 1 then
+    raise exception 'FAIL quota-idempotency: double-commit must only increment local_counted_success once (before=%, after=%)', v_before, v_after;
+  end if;
+
+  -- releasing a committed reservation is an invalid transition, not silently accepted
+  begin
+    perform public.server_tx_release_line_quota_reservation(v_reservation_id);
+    raise exception 'FAIL quota-idempotency: releasing an already-committed reservation must be rejected';
+  exception
+    when others then
+      if sqlerrm <> 'INVALID_STATE_TRANSITION' then
+        raise exception 'FAIL quota-idempotency: expected INVALID_STATE_TRANSITION, got %', sqlerrm;
+      end if;
+  end;
+
+  -- double-release is idempotent (no error), unlike an invalid transition
+  declare
+    v_out2 uuid;
+    v_reservation2 uuid;
+  begin
+    insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key)
+    values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000002', 'line', 'test', '{}'::jsonb, 'idem-2')
+    returning id into v_out2;
+
+    v_r1 := public.server_tx_reserve_line_quota(v_out2, 'normal');
+    v_reservation2 := (v_r1->>'reservation_id')::uuid;
+
+    perform public.server_tx_release_line_quota_reservation(v_reservation2);
+    perform public.server_tx_release_line_quota_reservation(v_reservation2); -- must not raise
+
+    if (select status from private.line_quota_reservations where id = v_reservation2) <> 'released' then
+      raise exception 'FAIL quota-idempotency: reservation must remain released after double-release';
+    end if;
+  end;
+end;
+$$;
+
 reset role;
 
 select 'line_quota_reservation: PASS' as result;

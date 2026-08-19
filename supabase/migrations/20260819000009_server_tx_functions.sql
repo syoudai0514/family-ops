@@ -86,17 +86,19 @@ begin
   insert into public.household_members (household_id, user_id, member_role, joined_at)
   values (v_household_id, p_actor_id, 'adult', now());
 
+  -- v6 review fix (P1-1): 9-kind model, weekly_digest/Sunday 12:00 retired.
   insert into public.household_routine_schedules
     (household_id, schedule_kind, weekday, local_time, updated_by)
   values
-    (v_household_id, 'weekly_digest', 7, time '12:00', p_actor_id),
     (v_household_id, 'daily_assignment', null, time '07:00', p_actor_id),
     (v_household_id, 'dropoff_checklist', null, time '07:00', p_actor_id),
     (v_household_id, 'dropoff_checkin', null, time '08:30', p_actor_id),
     (v_household_id, 'pickup_checklist', null, time '16:00', p_actor_id),
     (v_household_id, 'pickup_checkin', null, time '20:30', p_actor_id),
     (v_household_id, 'nonpickup_evening_checklist', null, time '20:00', p_actor_id),
-    (v_household_id, 'nonpickup_evening_checkin', null, time '22:00', p_actor_id);
+    (v_household_id, 'nonpickup_evening_checkin', null, time '22:00', p_actor_id),
+    (v_household_id, 'nonworkday_morning_digest', null, time '09:00', p_actor_id),
+    (v_household_id, 'nonworkday_checkin', null, time '20:00', p_actor_id);
 
   insert into public.notification_preferences (household_id, user_id)
   values (v_household_id, p_actor_id);
@@ -361,9 +363,32 @@ declare
   v_threshold int;
   v_permitted boolean;
   v_reservation_id uuid;
+  v_existing record;
 begin
   if p_priority not in ('critical', 'normal', 'reminder') then
     raise exception 'INVALID_INPUT';
+  end if;
+  if p_notification_outbox_id is null then
+    raise exception 'INVALID_INPUT';
+  end if;
+
+  -- v6 review fix (P2): idempotent replay. notification_outbox_id is UNIQUE
+  -- on line_quota_reservations, so a retried reserve call for the same
+  -- outbox row (e.g. after the Edge Function's own response was lost) must
+  -- return the already-decided outcome instead of erroring on the unique
+  -- violation or re-deciding admission against a now-different quota state.
+  select * into v_existing
+  from private.line_quota_reservations
+  where notification_outbox_id = p_notification_outbox_id
+  for update;
+
+  if found then
+    return jsonb_build_object(
+      'permitted', v_existing.status in ('reserved', 'ambiguous', 'committed'),
+      'reservation_id', v_existing.id,
+      'billing_month', v_existing.billing_month,
+      'replay', true
+    );
   end if;
 
   insert into private.line_quota_state (billing_month, provider_limit, provider_consumed)
@@ -382,8 +407,12 @@ begin
 
   v_effective_hard_limit := least(v_state.provider_limit, v_state.app_hard_cap);
   v_effective_usage := greatest(v_state.provider_consumed, v_state.local_counted_success) + v_active_reserved;
+  -- v6 review fix (P2): reminder/normal priority reads soft_budget directly
+  -- rather than deriving an equivalent value from hard_limit - reserve, so
+  -- the two columns can be tuned independently without silently drifting
+  -- from the documented "reminder actually uses soft_budget" contract.
   v_threshold := case when p_priority = 'critical' then v_effective_hard_limit
-                       else v_effective_hard_limit - v_state.reserve end;
+                       else v_state.soft_budget end;
   v_permitted := (v_effective_usage + 1) <= v_threshold;
 
   if v_permitted then
@@ -403,7 +432,8 @@ begin
     'reservation_id', v_reservation_id,
     'effective_usage_before', v_effective_usage,
     'effective_hard_limit', v_effective_hard_limit,
-    'billing_month', v_billing_month
+    'billing_month', v_billing_month,
+    'replay', false
   );
 end;
 $$;
@@ -413,6 +443,11 @@ revoke all on function public.server_tx_reserve_line_quota(uuid, text) from anon
 revoke all on function public.server_tx_reserve_line_quota(uuid, text) from authenticated;
 grant execute on function public.server_tx_reserve_line_quota(uuid, text) to service_role;
 
+-- v6 review fix (P2): explicit state machine — reserved/ambiguous can
+-- transition to committed or released; committed/released are terminal.
+-- Re-calling commit on an already-committed reservation is an idempotent
+-- no-op (must NOT double-increment local_counted_success); calling it on a
+-- released reservation is a genuine conflict, not a replay.
 create or replace function public.server_tx_commit_line_quota_reservation(p_reservation_id uuid)
 returns void
 language plpgsql
@@ -420,15 +455,24 @@ security invoker
 set search_path = ''
 as $$
 declare
+  v_status text;
   v_month date;
 begin
-  select billing_month into v_month
+  select status, billing_month into v_status, v_month
   from private.line_quota_reservations
   where id = p_reservation_id
   for update;
 
   if not found then
     raise exception 'INVALID_INPUT';
+  end if;
+
+  if v_status = 'committed' then
+    return; -- idempotent replay
+  end if;
+
+  if v_status not in ('reserved', 'ambiguous') then
+    raise exception 'INVALID_STATE_TRANSITION';
   end if;
 
   perform 1 from private.line_quota_state where billing_month = v_month for update;
@@ -454,14 +498,29 @@ language plpgsql
 security invoker
 set search_path = ''
 as $$
+declare
+  v_status text;
 begin
-  update private.line_quota_reservations
-  set status = 'released', released_at = now()
-  where id = p_reservation_id;
+  select status into v_status
+  from private.line_quota_reservations
+  where id = p_reservation_id
+  for update;
 
   if not found then
     raise exception 'INVALID_INPUT';
   end if;
+
+  if v_status = 'released' then
+    return; -- idempotent replay
+  end if;
+
+  if v_status not in ('reserved', 'ambiguous') then
+    raise exception 'INVALID_STATE_TRANSITION';
+  end if;
+
+  update private.line_quota_reservations
+  set status = 'released', released_at = now()
+  where id = p_reservation_id;
 end;
 $$;
 
@@ -479,14 +538,29 @@ language plpgsql
 security invoker
 set search_path = ''
 as $$
+declare
+  v_status text;
 begin
-  update private.line_quota_reservations
-  set status = 'ambiguous'
-  where id = p_reservation_id and status = 'reserved';
+  select status into v_status
+  from private.line_quota_reservations
+  where id = p_reservation_id
+  for update;
 
   if not found then
     raise exception 'INVALID_INPUT';
   end if;
+
+  if v_status = 'ambiguous' then
+    return; -- idempotent replay
+  end if;
+
+  if v_status <> 'reserved' then
+    raise exception 'INVALID_STATE_TRANSITION';
+  end if;
+
+  update private.line_quota_reservations
+  set status = 'ambiguous'
+  where id = p_reservation_id;
 end;
 $$;
 

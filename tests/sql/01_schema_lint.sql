@@ -53,6 +53,32 @@ begin
 end;
 $$;
 
+-- P1-1: weekly_digest / Sunday 12:00 must never come back as a valid
+-- schedule_kind; the 9-kind non-workday model must be exactly what the
+-- CHECK constraint allows.
+do $$
+declare
+  v_def text;
+begin
+  select pg_get_constraintdef(c.oid) into v_def
+  from pg_constraint c
+  join pg_class t on t.oid = c.conrelid
+  join pg_namespace n on n.oid = t.relnamespace
+  where n.nspname = 'public' and t.relname = 'household_routine_schedules'
+    and c.contype = 'c' and pg_get_constraintdef(c.oid) ilike '%schedule_kind%';
+
+  if v_def is null then
+    raise exception 'FAIL schema-lint: household_routine_schedules.schedule_kind CHECK missing';
+  end if;
+  if v_def ilike '%weekly_digest%' then
+    raise exception 'FAIL schema-lint: weekly_digest must not be an allowed schedule_kind (retired)';
+  end if;
+  if v_def not ilike '%nonworkday_morning_digest%' or v_def not ilike '%nonworkday_checkin%' then
+    raise exception 'FAIL schema-lint: nonworkday_morning_digest/nonworkday_checkin must be allowed schedule_kind values';
+  end if;
+end;
+$$;
+
 -- every documented private table exists (15_DDL_CONTRACT.md #18)
 do $$
 declare

@@ -33,7 +33,8 @@ scripts/                     Dev/CI helper scripts
 
 ## Prerequisites
 
-- Node.js 20+ (CI uses 22)
+- Node.js `^22.13.0 || >=24.0.0` (matches `package.json` engines and the strictest
+  transitive dependency requirement; CI uses Node 22)
 - PostgreSQL 16 client + server binaries (`psql`, `initdb`, `pg_ctl`) for local
   migration/RLS/RPC testing without a hosted Supabase project
 - [Deno](https://deno.com/) 2.x for Edge Function lint/typecheck
@@ -79,6 +80,18 @@ directly — those are `SECURITY INVOKER`, `EXECUTE` is revoked from
 `PUBLIC/anon/authenticated`, and only `service_role` (used exclusively from
 Edge Functions) can call them. See `docs/design/v6/04_SECURITY_RLS_PRIVACY.md`
 and `15_DDL_CONTRACT.md`.
+
+Edge Functions never touch `private.webhook_inbox` or
+`private.notification_outbox` via the Data API `.from()` client, even under
+`service_role` — they go through `public.server_tx_ingest_line_webhook_event`
+and `public.server_tx_count_queued_notifications`. `private` is not in
+`[api] schemas`, so a Data API call would 404 against a real project anyway,
+but the RPC boundary is enforced by convention regardless of that config, per
+`docs/design/v6/15_DDL_CONTRACT.md` #8.
+
+See `docs/RUNBOOK.md` for operational safety notes, including why an
+`auth.users` row must never be hard-deleted from the Supabase Dashboard once
+the household has any history.
 
 ### Running the SQL test suite locally
 

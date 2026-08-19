@@ -8,6 +8,16 @@
 // pending-action creation, routine completion) is WP6 scope
 // (process-line-inbox). This function's job is narrow and safety-critical:
 // verify the signature, durably dedup the event, return fast.
+//
+// v6 review fixes:
+// - P1-2: never touch private.webhook_inbox via the Data API `.from()`
+//   client — go through public.server_tx_ingest_line_webhook_event (the
+//   only Edge-to-DB interface for private-schema state; see
+//   docs/design/v6/15_DDL_CONTRACT.md #8).
+// - P1-3: 200 is returned only for a signature-valid, successfully-durable
+//   (new-or-duplicate) event. A genuine DB failure while persisting a new
+//   event propagates as 5xx so LINE's own delivery retries it — silently
+//   swallowing that failure and returning 200 would drop the event forever.
 import { createServiceRoleClient, verifyLineSignature } from "../_shared/auth.ts";
 import { withServiceHandler } from "../_shared/handler.ts";
 
@@ -33,7 +43,9 @@ Deno.serve(withServiceHandler(async (req: Request) => {
     const parsed = JSON.parse(rawBody) as { events?: LineWebhookEvent[] };
     events = parsed.events ?? [];
   } catch {
-    // LINE expects 200 even for payloads we can't use, to avoid redelivery storms.
+    // Not a DB failure — there is nothing to persist. LINE expects 200 even
+    // for payloads we can't use, to avoid pointless redelivery storms for a
+    // request that will never parse differently on retry.
     return new Response("ok", { status: 200 });
   }
 
@@ -43,17 +55,27 @@ Deno.serve(withServiceHandler(async (req: Request) => {
     const providerEventId = event.webhookEventId;
     if (!providerEventId) continue; // cannot dedup without an id; skip safely
 
-    // Durable inbox insert; UNIQUE(provider, provider_event_id) makes
-    // redelivery a no-op. Actor identity is never taken from event.source
-    // here — process-line-inbox (WP6) resolves it via
-    // private.line_user_links from the verified source.userId only.
-    await serviceClient.from("webhook_inbox").insert({
-      provider: "line",
-      provider_event_id: providerEventId,
-      source_external_user_id: event.source?.userId ?? null,
-      payload: event,
-    }).select().maybeSingle();
-    // Ignore unique-violation errors from redelivery — dedup is the point.
+    // UNIQUE(provider, provider_event_id) inside the RPC makes redelivery of
+    // an already-durable event a no-op (is_new=false). Actor identity is
+    // never taken from event.source here — process-line-inbox (WP6) resolves
+    // it via private.line_user_links from the verified source.userId only.
+    const { error } = await serviceClient.rpc("server_tx_ingest_line_webhook_event", {
+      p_provider_event_id: providerEventId,
+      p_source_external_user_id: event.source?.userId ?? null,
+      p_payload: event,
+    });
+
+    if (error) {
+      // Genuine persistence failure (not a duplicate — that path never
+      // errors). Abort and let the caller (LINE) retry the whole delivery;
+      // already-durable events in this same payload are safely no-ops next
+      // time thanks to the provider_event_id UNIQUE constraint.
+      console.error("line-webhook-receiver: failed to persist webhook event", {
+        providerEventId,
+        message: error.message,
+      });
+      return new Response("internal error", { status: 500 });
+    }
   }
 
   return new Response("ok", { status: 200 });

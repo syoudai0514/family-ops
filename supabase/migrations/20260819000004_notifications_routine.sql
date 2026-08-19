@@ -48,16 +48,24 @@ create trigger set_updated_at
 -- Routine automation schedules
 -- ---------------------------------------------------------------------------
 
+-- v6 review fix (P1-1): weekly_digest / Sunday 12:00 is fully retired. The
+-- schedule model is exactly 9 kinds — 7 fixed weekday kinds plus the two
+-- non-workday kinds that fire on Sat/Sun/JP-holiday instead of the weekday
+-- set. Sunday's next-week bundle is carried inside nonworkday_morning_digest
+-- (see docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md #2-#3), not a separate
+-- schedule row. No kind needs a specific weekday anymore, so the weekday
+-- column has no valid non-null value for any current kind.
 create table public.household_routine_schedules (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households (id),
   schedule_kind text not null
     check (
       schedule_kind in (
-        'weekly_digest', 'daily_assignment',
+        'daily_assignment',
         'dropoff_checklist', 'dropoff_checkin',
         'pickup_checklist', 'pickup_checkin',
-        'nonpickup_evening_checklist', 'nonpickup_evening_checkin'
+        'nonpickup_evening_checklist', 'nonpickup_evening_checkin',
+        'nonworkday_morning_digest', 'nonworkday_checkin'
       )
     ),
   weekday smallint null check (weekday is null or weekday between 1 and 7),
@@ -70,10 +78,7 @@ create table public.household_routine_schedules (
   unique (household_id, schedule_kind),
   foreign key (household_id, updated_by)
     references public.household_members (household_id, user_id),
-  check (
-    (schedule_kind = 'weekly_digest' and weekday is not null)
-    or (schedule_kind <> 'weekly_digest' and weekday is null)
-  )
+  check (weekday is null)
 );
 
 create index household_routine_schedules_enabled_kind_idx

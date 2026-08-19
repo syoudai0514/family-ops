@@ -60,10 +60,38 @@ begin
   exception
     when insufficient_privilege then null;
   end;
+
+  -- P1-2: the webhook/outbox RPCs are just as service_role-only as the rest
+  begin
+    perform public.server_tx_ingest_line_webhook_event('evt-1', 'Uxxxx', '{}'::jsonb);
+    raise exception 'FAIL rpc: authenticated must not be able to execute server_tx_ingest_line_webhook_event directly';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.server_tx_count_queued_notifications();
+    raise exception 'FAIL rpc: authenticated must not be able to execute server_tx_count_queued_notifications directly';
+  exception
+    when insufficient_privilege then null;
+  end;
 end;
 $$;
 reset role;
 reset request.jwt.claim.sub;
+
+set role anon;
+do $$
+begin
+  begin
+    perform public.server_tx_ingest_line_webhook_event('evt-1', 'Uxxxx', '{}'::jsonb);
+    raise exception 'FAIL rpc: anon must not be able to execute server_tx_ingest_line_webhook_event';
+  exception
+    when insufficient_privilege then null;
+  end;
+end;
+$$;
+reset role;
 
 -- service_role CAN execute them (this is how Edge Functions call them)
 set role service_role;

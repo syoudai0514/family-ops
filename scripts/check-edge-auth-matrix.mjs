@@ -80,6 +80,20 @@ for (const name of deployed) {
   }
 }
 
+// v6 review fix (P1-7): Google Sign-In is the only onboarding path (see
+// docs/design/v6/01_ARCHITECTURE.md), so enable_signup must stay true and
+// the Google external provider must stay enabled — a regression here would
+// silently lock every new family out of creating a household.
+const actualConfigText = readFileSync(actualConfigPath, 'utf8');
+if (!/\benable_signup\s*=\s*true\b/.test(actualConfigText)) {
+  console.error('FAIL: supabase/config.toml [auth] enable_signup must be true (Google Sign-In is the onboarding path)');
+  failed = true;
+}
+if (!/\[auth\.external\.google\][^[]*\benabled\s*=\s*true\b/.test(actualConfigText)) {
+  console.error('FAIL: supabase/config.toml [auth.external.google] must be enabled = true');
+  failed = true;
+}
+
 if (failed) {
   process.exit(1);
 }

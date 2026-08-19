@@ -90,3 +90,73 @@ jobs:
 
       - name: Edge auth matrix lint (config.toml vs EDGE_FUNCTION_AUTH_MATRIX.md)
         run: node scripts/check-edge-auth-matrix.mjs
+
+  supabase-integration:
+    # v6 review fix (P1-6): the plain-PostgreSQL suite (job `db`, above)
+    # proves migration/RLS/RPC/grant *logic* precisely but runs against a
+    # hand-built shim of Supabase's auth/anon/authenticated/service_role
+    # contract (tests/sql/00_local_auth_shim.sql), not the real stack. This
+    # job runs the same kind of assertions through the actual Supabase CLI
+    # (real Postgres + GoTrue + PostgREST + Kong + edge-runtime), so the
+    # environment boundary itself — not just the SQL — is under test:
+    #   - private.webhook_inbox/notification_outbox are unreachable through
+    #     the real Data API (PostgREST), for anon/authenticated/service_role
+    #     alike, because `private` is absent from [api] schemas
+    #   - Edge Function verify_jwt is enforced by the real gateway (missing
+    #     JWT -> 401 before the handler runs) and worker-token auth is
+    #     enforced in-handler
+    #   - line-webhook-receiver durably persists a real webhook call end to
+    #     end (HTTP -> Edge Function -> RPC -> Postgres row)
+    #   - RLS blocks a real cross-household Data API read, and never blocks
+    #     a same-household one
+    # NOTE: this job could not be executed end to end inside the sandbox
+    # this branch was developed in (`supabase start`'s docker image pulls
+    # were blocked by that sandbox's network policy — confirmed via
+    # `docker run hello-world` returning 403 Forbidden on the image layer
+    # fetch, even though the Docker *daemon* itself started fine). It runs
+    # here on GitHub Actions' own runners, which have normal registry
+    # access. See docs/RUNBOOK.md.
+    name: supabase-integration (real CLI stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Write local Edge Function secrets (CI-only, never committed)
+        run: |
+          cat > supabase/functions/.env <<'EOF'
+          LINE_CHANNEL_SECRET=ci-test-line-channel-secret
+          CRON_WORKER_TOKEN=ci-test-worker-token-0123456789abcdef
+          EOF
+
+      - name: supabase start
+        run: |
+          supabase start \
+            --exclude realtime,storage-api,imgproxy,studio,mailpit,logflare,vector,supavisor,postgres-meta
+
+      - name: Capture local stack connection info
+        run: supabase status -o env >> "$GITHUB_ENV"
+
+      - name: Reset DB (apply every migration from empty)
+        run: supabase db reset
+
+      - name: Seed jp_holidays fixture
+        run: node scripts/seed_jp_holidays.mjs "$(echo "$DB_URL" | sed -E 's#.*/([^/?]+).*#\1#')"
+        env:
+          PGHOST: localhost
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+
+      - name: Real-stack integration tests
+        run: bash scripts/run_supabase_integration_tests.sh
+        env:
+          LINE_CHANNEL_SECRET: ci-test-line-channel-secret
+          CRON_WORKER_TOKEN: ci-test-worker-token-0123456789abcdef
+
+      - name: supabase stop
+        if: always()
+        run: supabase stop

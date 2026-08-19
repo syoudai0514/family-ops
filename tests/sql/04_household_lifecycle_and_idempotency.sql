@@ -33,9 +33,31 @@ begin
     raise exception 'FAIL household-create: replay must return the same household_id';
   end if;
 
-  -- default routine schedules were seeded (no silent empty-night state)
-  if (select count(*) from public.household_routine_schedules where household_id = v_hh) <> 8 then
-    raise exception 'FAIL household-create: expected 8 seeded routine schedule rows';
+  -- default routine schedules were seeded (no silent empty-night state);
+  -- 9-kind model per the v6 review fix (weekly_digest/Sunday 12:00 retired)
+  if (select count(*) from public.household_routine_schedules where household_id = v_hh) <> 9 then
+    raise exception 'FAIL household-create: expected 9 seeded routine schedule rows';
+  end if;
+
+  if exists (
+    select 1 from public.household_routine_schedules
+    where household_id = v_hh and schedule_kind = 'weekly_digest'
+  ) then
+    raise exception 'FAIL household-create: weekly_digest schedule_kind must not exist (retired)';
+  end if;
+
+  if not exists (
+    select 1 from public.household_routine_schedules
+    where household_id = v_hh and schedule_kind = 'nonworkday_morning_digest' and local_time = time '09:00'
+  ) then
+    raise exception 'FAIL household-create: nonworkday_morning_digest at 09:00 must be seeded';
+  end if;
+
+  if not exists (
+    select 1 from public.household_routine_schedules
+    where household_id = v_hh and schedule_kind = 'nonworkday_checkin' and local_time = time '20:00'
+  ) then
+    raise exception 'FAIL household-create: nonworkday_checkin at 20:00 must be seeded';
   end if;
 
   -- same operation_id, different payload => IDEMPOTENCY_CONFLICT (MI-HH01 variant)

@@ -30,10 +30,15 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   INVITE_USED: 410,
   INVITE_TOKEN_ALREADY_ISSUED: 409,
   EDGE_WORKER_UNAUTHORIZED: 401,
+  INTERNAL_ERROR: 500,
 };
 
+// v6 review fix (P2): any code we don't explicitly classify as a client
+// error is treated as a server fault (500), not silently downgraded to 400.
+// A missing entry in HTTP_STATUS_BY_CODE should fail loud in review, not
+// masquerade as "bad request".
 export function statusForCode(code: string): number {
-  return HTTP_STATUS_BY_CODE[code] ?? 400;
+  return HTTP_STATUS_BY_CODE[code] ?? 500;
 }
 
 // Never includes secret/raw provider payload — only a stable code + a short

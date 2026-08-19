@@ -32,7 +32,24 @@ enabled = true
 site_url = "http://localhost:5173"
 additional_redirect_urls = ["http://localhost:5173"]
 jwt_expiry = 3600
-enable_signup = false
+# v6 review fix (P1-7): Google Sign-In (Supabase Auth's own Google provider,
+# distinct from the separate Google Calendar OAuth client — see
+# docs/design/v6/01_ARCHITECTURE.md #"Supabase Auth Google Sign-In。Family
+# Ops本人認証のみ".) is this product's only onboarding path: a brand-new
+# family creates their household by signing in with Google for the first
+# time. enable_signup=false would block that very first sign-in, so it must
+# be true here. This does not weaken the household boundary: max-2-active-
+# adult and one-household-per-user are enforced at the DB layer
+# (household_members UNIQUE(user_id), the join-household transaction lock;
+# see 15_DDL_CONTRACT.md #19) independently of how many Supabase Auth users
+# can exist.
+enable_signup = true
+
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_SIGNIN_CLIENT_ID)"
+secret = "env(GOOGLE_SIGNIN_CLIENT_SECRET)"
+redirect_uri = "env(GOOGLE_SIGNIN_REDIRECT_URI)"
 
 [edge_runtime]
 enabled = true

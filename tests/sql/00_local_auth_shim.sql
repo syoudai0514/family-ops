@@ -51,10 +51,12 @@ $$;
 
 grant usage on schema auth to anon, authenticated, service_role;
 grant select on auth.users to anon, authenticated, service_role;
--- Real Supabase user creation goes through GoTrue, not direct SQL; this
--- INSERT grant exists only so SQL test fixtures can create auth.users rows
--- while impersonating service_role (matches how tests exercise server_tx_*).
-grant insert on auth.users to service_role;
+-- Real Supabase user creation/deletion goes through GoTrue, not direct SQL;
+-- these grants exist only so SQL test fixtures can create/delete auth.users
+-- rows while impersonating service_role (matches how tests exercise
+-- server_tx_* and, for DELETE, prove the hard-delete RESTRICT contract in
+-- tests/sql/09_hard_delete_restrict.sql / docs/RUNBOOK.md).
+grant insert, delete on auth.users to service_role;
 grant execute on function auth.uid() to anon, authenticated, service_role;
 grant execute on function auth.role() to anon, authenticated, service_role;
 
