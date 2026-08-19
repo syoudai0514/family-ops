@@ -1,9 +1,25 @@
 // Edge auth matrix lint (docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md CI section):
-//   - every entry in supabase/config.toml matches the normative snapshot
-//     vendored at docs/design/v6/supabase/config.toml exactly (name + verify_jwt)
-//   - every function actually deployed under supabase/functions/ has a
-//     config.toml entry, and that entry's verify_jwt matches the normative
-//     classification (no unknown/undeclared function is deployed)
+//
+// v6 review fix (P1-D, this round): supabase/config.toml's [functions.*]
+// block is now a LIVE deployment snapshot (only functions actually present
+// under supabase/functions/), not a 1:1 mirror of the full 52-function v6
+// design matrix — declaring a config.toml entry for a function that has no
+// index.ts on disk is what a real `supabase start`/`supabase db reset`
+// cannot execute against. The two matrices are therefore linted
+// independently, both required to pass:
+//
+//   1. design-matrix completeness (standalone): the full normative
+//      snapshot vendored at docs/design/v6/supabase/config.toml still
+//      declares every function classified in
+//      docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md — this is a drift check
+//      on the vendored v6 design package alone, unrelated to what's
+//      deployed so far.
+//   2. live deployment correctness: every function actually deployed under
+//      supabase/functions/ (has an index.ts) has a supabase/config.toml
+//      entry, that entry's verify_jwt matches the normative classification
+//      for that name, and supabase/config.toml declares no entry for a
+//      function that isn't deployed (live config never gets ahead of
+//      what's actually implemented).
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -27,40 +43,30 @@ const normativeConfigPath = path.join(repoRoot, 'docs/design/v6/supabase/config.
 const actual = parseFunctionsBlock(readFileSync(actualConfigPath, 'utf8'));
 const normative = parseFunctionsBlock(readFileSync(normativeConfigPath, 'utf8'));
 
-if (actual.size === 0) {
-  console.error('FAIL: no [functions.*] entries parsed from supabase/config.toml');
-  process.exit(1);
-}
-if (normative.size === 0) {
-  console.error('FAIL: no [functions.*] entries parsed from docs/design/v6/supabase/config.toml');
-  process.exit(1);
-}
-
 let failed = false;
 
-for (const [name, verifyJwt] of actual) {
-  if (!normative.has(name)) {
-    console.error(`FAIL: supabase/config.toml declares unknown function "${name}" (not in EDGE_FUNCTION_AUTH_MATRIX.md)`);
-    failed = true;
-    continue;
-  }
-  if (normative.get(name) !== verifyJwt) {
-    console.error(
-      `FAIL: supabase/config.toml [functions.${name}] verify_jwt=${verifyJwt} does not match normative verify_jwt=${normative.get(name)}`,
-    );
-    failed = true;
-  }
+// ---------------------------------------------------------------------------
+// 1. design-matrix completeness (standalone, independent of live deploys)
+// ---------------------------------------------------------------------------
+const EXPECTED_DESIGN_MATRIX_SIZE = 52;
+if (normative.size === 0) {
+  console.error('FAIL: no [functions.*] entries parsed from docs/design/v6/supabase/config.toml');
+  failed = true;
+} else if (normative.size !== EXPECTED_DESIGN_MATRIX_SIZE) {
+  console.error(
+    `FAIL: docs/design/v6/supabase/config.toml design matrix has ${normative.size} functions, expected exactly ${EXPECTED_DESIGN_MATRIX_SIZE} (EDGE_FUNCTION_AUTH_MATRIX.md drift)`,
+  );
+  failed = true;
 }
 
-for (const [name, verifyJwt] of normative) {
-  if (!actual.has(name)) {
-    console.error(`FAIL: supabase/config.toml is missing normative function "${name}" (verify_jwt=${verifyJwt})`);
-    failed = true;
-  }
+// ---------------------------------------------------------------------------
+// 2. live deployment correctness
+// ---------------------------------------------------------------------------
+if (actual.size === 0) {
+  console.error('FAIL: no [functions.*] entries parsed from supabase/config.toml');
+  failed = true;
 }
 
-// Every deployed function (a directory with an index.ts) must have a
-// config.toml entry with the correct classification.
 const functionsDir = path.join(repoRoot, 'supabase/functions');
 const deployed = readdirSync(functionsDir).filter((entry) => {
   if (entry.startsWith('_') || entry.startsWith('.')) return false;
@@ -74,8 +80,30 @@ if (deployed.length === 0) {
 }
 
 for (const name of deployed) {
+  if (!normative.has(name)) {
+    console.error(`FAIL: deployed function "${name}" is not in the v6 design matrix (EDGE_FUNCTION_AUTH_MATRIX.md) at all`);
+    failed = true;
+    continue;
+  }
   if (!actual.has(name)) {
     console.error(`FAIL: deployed function "${name}" has no supabase/config.toml [functions.${name}] entry`);
+    failed = true;
+    continue;
+  }
+  if (actual.get(name) !== normative.get(name)) {
+    console.error(
+      `FAIL: supabase/config.toml [functions.${name}] verify_jwt=${actual.get(name)} does not match normative verify_jwt=${normative.get(name)}`,
+    );
+    failed = true;
+  }
+}
+
+const deployedSet = new Set(deployed);
+for (const name of actual.keys()) {
+  if (!deployedSet.has(name)) {
+    console.error(
+      `FAIL: supabase/config.toml declares [functions.${name}] but supabase/functions/${name}/index.ts does not exist — live config must only contain deployed functions`,
+    );
     failed = true;
   }
 }
@@ -93,12 +121,22 @@ if (!/\[auth\.external\.google\][^[]*\benabled\s*=\s*true\b/.test(actualConfigTe
   console.error('FAIL: supabase/config.toml [auth.external.google] must be enabled = true');
   failed = true;
 }
+// v6 review fix (P1-C, this round): the Google -> GoTrue callback and the
+// app's own post-login redirect must stay on two distinct env vars — a
+// regression back to a single shared var would silently break either the
+// OAuth handshake (wrong callback registered with Google) or the app
+// redirect allowlist.
+if (!/redirect_uri\s*=\s*"env\(GOOGLE_SIGNIN_CALLBACK_URL\)"/.test(actualConfigText)) {
+  console.error(
+    'FAIL: supabase/config.toml [auth.external.google] redirect_uri must read env(GOOGLE_SIGNIN_CALLBACK_URL), not an app-redirect-shaped var',
+  );
+  failed = true;
+}
 
 if (failed) {
   process.exit(1);
 }
 
 console.log(
-  `OK: ${actual.size} config.toml entries match the normative EDGE_FUNCTION_AUTH_MATRIX.md snapshot exactly; ` +
-    `all ${deployed.length} deployed functions (${deployed.join(', ')}) are classified.`,
+  `OK: design matrix has ${normative.size} functions; live supabase/config.toml declares exactly the ${deployed.length} deployed functions (${deployed.join(', ')}), each matching its normative verify_jwt classification.`,
 );

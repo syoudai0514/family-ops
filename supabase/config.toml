@@ -1,11 +1,22 @@
 # Family Ops — Supabase project config (v6)
 #
-# The [functions.*] block below is the normative Edge Function gateway auth
-# snapshot from docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md and MUST NOT
-# diverge from it. scripts/check-edge-auth-matrix.mjs enforces this in CI:
-#   - every entry here matches the matrix doc's verify_jwt classification
-#   - every function actually present under supabase/functions/ has an entry
-#     here (no unknown/undeclared function is deployed)
+# v6 review fix (P1-1, this round): the [functions.*] block below is the
+# LIVE deployment snapshot, not the full v6 design — it declares an entry
+# for exactly the functions currently implemented under supabase/functions/
+# (each verify_jwt value still matches the normative classification from
+# docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md / the full 52-function
+# snapshot vendored at docs/design/v6/supabase/config.toml). Declaring
+# config.toml entries for functions that don't exist on disk is what a real
+# `supabase start`/`supabase db reset` cannot execute against, so the two
+# matrices are deliberately kept separate and independently linted by
+# scripts/check-edge-auth-matrix.mjs:
+#   - every function actually present under supabase/functions/ has an
+#     entry here, and that entry's verify_jwt matches the normative
+#     classification (no unknown/undeclared function is deployed)
+#   - this file contains no entry for a function that isn't deployed yet
+#     (live config stays runnable, never aspirational)
+#   - the full 52-function design matrix is checked for internal
+#     completeness on its own, independently of what's deployed so far
 #   - verify_jwt=false does not by itself mean "trusted" — provider/worker
 #     in-handler authentication happens before any DB access; see
 #     docs/design/v6/04_SECURITY_RLS_PRIVACY.md #"v6 Edge gateway requirement"
@@ -49,15 +60,33 @@ enable_signup = true
 enabled = true
 client_id = "env(GOOGLE_SIGNIN_CLIENT_ID)"
 secret = "env(GOOGLE_SIGNIN_CLIENT_SECRET)"
-redirect_uri = "env(GOOGLE_SIGNIN_REDIRECT_URI)"
+# v6 review fix (P1-C, this round): this is the Google -> Supabase Auth
+# (GoTrue) OAuth callback that must be registered verbatim in the Google
+# Cloud Console's "Authorized redirect URIs" — for the local Supabase CLI
+# stack that is always http://127.0.0.1:54321/auth/v1/callback. It is NOT
+# the app's own post-login landing page: that's `redirectTo` passed by the
+# client SDK at sign-in time, validated against [auth] site_url /
+# additional_redirect_urls above, and was previously (incorrectly) wired to
+# this same env var — the two are now kept separate. See the project-root
+# .env.example and README.md "Google Sign-In (local dev)".
+redirect_uri = "env(GOOGLE_SIGNIN_CALLBACK_URL)"
 
 [edge_runtime]
 enabled = true
 policy = "oneshot"
 
 # ---------------------------------------------------------------------------
-# User-facing — verify_jwt = true (actor derived from JWT sub -> household_members)
+# Deployed functions only (supabase/functions/<name>/index.ts exists) — see
+# the file-header comment above. The full 52-function v6 design matrix
+# (including the 46 not yet implemented, e.g. create-task, send-request,
+# google-calendar-oauth-start, process-line-inbox, sync-jp-holidays, ...)
+# stays at docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md /
+# docs/design/v6/supabase/config.toml and is linted for internal
+# completeness independently by scripts/check-edge-auth-matrix.mjs, without
+# requiring every one of those 46 to have a live entry here yet.
 # ---------------------------------------------------------------------------
+
+# User-facing — verify_jwt = true (actor derived from JWT sub -> household_members)
 
 [functions.create-household]
 verify_jwt = true
@@ -68,159 +97,17 @@ verify_jwt = true
 [functions.join-household]
 verify_jwt = true
 
-[functions.create-task]
-verify_jwt = true
-
-[functions.edit-task]
-verify_jwt = true
-
-[functions.cancel-task]
-verify_jwt = true
-
-[functions.complete-task]
-verify_jwt = true
-
-[functions.set-subtask-completion]
-verify_jwt = true
-
-[functions.reassign-task-once]
-verify_jwt = true
-
-[functions.create-task-definition]
-verify_jwt = true
-
-[functions.edit-task-definition]
-verify_jwt = true
-
-[functions.deactivate-task-definition]
-verify_jwt = true
-
-[functions.change-recurrence]
-verify_jwt = true
-
 [functions.configure-evening-routines]
 verify_jwt = true
 
-[functions.send-request]
-verify_jwt = true
-
-[functions.accept-request]
-verify_jwt = true
-
-[functions.decline-request]
-verify_jwt = true
-
-[functions.cancel-request]
-verify_jwt = true
-
-[functions.add-shopping-item]
-verify_jwt = true
-
-[functions.assign-shopping-item]
-verify_jwt = true
-
-[functions.order-shopping-item]
-verify_jwt = true
-
-[functions.purchase-shopping-item]
-verify_jwt = true
-
-[functions.arrive-shopping-item]
-verify_jwt = true
-
-[functions.cancel-shopping-item]
-verify_jwt = true
-
-[functions.create-handover]
-verify_jwt = true
-
-[functions.mark-handover-read]
-verify_jwt = true
-
-[functions.mark-notification-read]
-verify_jwt = true
-
-[functions.update-notification-preferences]
-verify_jwt = true
-
-[functions.update-routine-schedule]
-verify_jwt = true
-
-[functions.get-routine-session]
-verify_jwt = true
-
-[functions.complete-routine-session]
-verify_jwt = true
-
-[functions.routine-session-item-action]
-verify_jwt = true
-
-[functions.google-calendar-oauth-start]
-verify_jwt = true
-
-[functions.create-calendar-event]
-verify_jwt = true
-
-[functions.update-calendar-event]
-verify_jwt = true
-
-[functions.classify-calendar-busy-members]
-verify_jwt = true
-
-[functions.ensure-calendar-fresh]
-verify_jwt = true
-
-[functions.create-line-link-token]
-verify_jwt = true
-
-[functions.unlink-line-account]
-verify_jwt = true
-
-# ---------------------------------------------------------------------------
-# External provider — verify_jwt = false (signature/watch/state validated
-# in-handler before any DB access)
-# ---------------------------------------------------------------------------
+# External provider — verify_jwt = false (signature validated in-handler
+# before any DB access)
 
 [functions.line-webhook-receiver]
 verify_jwt = false
 
-[functions.google-calendar-webhook]
-verify_jwt = false
-
-[functions.google-calendar-oauth-callback]
-verify_jwt = false
-
-# ---------------------------------------------------------------------------
 # Cron worker — verify_jwt = false (X-Family-Ops-Worker-Token constant-time
 # compared in-handler before any DB access)
-# ---------------------------------------------------------------------------
-
-[functions.process-line-inbox]
-verify_jwt = false
-
-[functions.process-pending-actions]
-verify_jwt = false
 
 [functions.send-notifications]
-verify_jwt = false
-
-[functions.dispatch-routine-automation]
-verify_jwt = false
-
-[functions.enqueue-periodic-google-sync]
-verify_jwt = false
-
-[functions.process-google-sync]
-verify_jwt = false
-
-[functions.renew-google-watch]
-verify_jwt = false
-
-[functions.materialize-recurring]
-verify_jwt = false
-
-[functions.cleanup-expired-private-data]
-verify_jwt = false
-
-[functions.sync-jp-holidays]
 verify_jwt = false

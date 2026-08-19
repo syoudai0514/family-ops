@@ -107,13 +107,14 @@ MONTH=$(psql_svc "select date_trunc('month', now())::date;")
 # left active/ambiguous reservations for this same real-world billing month;
 # clear them so this race starts from a known, isolated quota state.
 psql_svc "update private.notification_outbox set quota_reservation_id = null where quota_reservation_id in (select id from private.line_quota_reservations where billing_month = '$MONTH'); delete from private.line_quota_reservations where billing_month = '$MONTH';" >/dev/null
-psql_svc "insert into private.line_quota_state (billing_month, provider_limit, provider_consumed) values ('$MONTH', 200, 179) on conflict (billing_month) do update set provider_limit=200, provider_consumed=179, local_counted_success=0;" >/dev/null
+psql_svc "insert into private.line_quota_state (billing_month, provider_limit, provider_consumed, soft_budget, reserve) values ('$MONTH', 200, 179, 180, 20) on conflict (billing_month) do update set provider_limit=200, provider_consumed=179, local_counted_success=0, soft_budget=180, reserve=20;" >/dev/null
 
 make_outbox() {
-  psql_svc "insert into private.notification_outbox (household_id, recipient_user_id, channel, type, payload, dedup_key) values ('$QHH','$QUOTA_OWNER','line','test','{}'::jsonb, '$(uuidgen)') returning id;"
+  local priority="${1:-normal}"
+  psql_svc "insert into private.notification_outbox (household_id, recipient_user_id, channel, type, payload, dedup_key, priority) values ('$QHH','$QUOTA_OWNER','line','test','{}'::jsonb, '$(uuidgen)', '$priority') returning id;"
 }
-OUT1=$(make_outbox)
-OUT2=$(make_outbox)
+OUT1=$(make_outbox reminder)
+OUT2=$(make_outbox reminder)
 
 run_reserve() {
   local outbox="$1" priority="$2" outfile="$3"
@@ -136,9 +137,9 @@ grep -q '"permitted": true' "$R2" && PERMITS=$((PERMITS + 1))
 echo "OK: LQA01 — parallel reminders at 179 obey the soft budget race (exactly one permit)"
 
 psql_svc "update private.notification_outbox set quota_reservation_id = null where quota_reservation_id in (select id from private.line_quota_reservations where billing_month = '$MONTH'); delete from private.line_quota_reservations where billing_month = '$MONTH';" >/dev/null
-psql_svc "update private.line_quota_state set provider_consumed=199, local_counted_success=0 where billing_month='$MONTH';" >/dev/null
-OUT3=$(make_outbox)
-OUT4=$(make_outbox)
+psql_svc "update private.line_quota_state set provider_consumed=199, local_counted_success=0, soft_budget=180, reserve=20 where billing_month='$MONTH';" >/dev/null
+OUT3=$(make_outbox critical)
+OUT4=$(make_outbox critical)
 R3=$(mktemp); R4=$(mktemp)
 run_reserve "$OUT3" "critical" "$R3"
 run_reserve "$OUT4" "critical" "$R4"

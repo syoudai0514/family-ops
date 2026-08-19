@@ -70,6 +70,26 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/cr
 [ "$code" = "401" ] || fail "expected 401 for create-household with no JWT, got $code"
 
 # ---------------------------------------------------------------------------
+# 2b. Google Sign-In (P1-C): GoTrue's own Google provider is enabled and
+# wired to the correct callback — not a live end-to-end login (that needs a
+# real Google account/consent, which CI cannot do), but a real smoke test of
+# the actual wiring: GoTrue must redirect to Google with exactly the GoTrue
+# callback URL (http://127.0.0.1:54321/auth/v1/callback) as redirect_uri,
+# proving supabase/config.toml's [auth.external.google].redirect_uri =
+# env(GOOGLE_SIGNIN_CALLBACK_URL) is actually taking effect in the running
+# stack, not just present in the file.
+# ---------------------------------------------------------------------------
+info "2b. Google Sign-In onboarding: /auth/v1/authorize?provider=google redirects to Google with the correct callback"
+AUTHORIZE_HEADERS=$(curl -sS -o /dev/null -D - "$API_URL/auth/v1/authorize?provider=google&redirect_to=http://localhost:5173" -H "apikey: $ANON_KEY")
+AUTHORIZE_STATUS=$(printf '%s' "$AUTHORIZE_HEADERS" | head -1 | grep -oE '[0-9]{3}')
+LOCATION=$(printf '%s' "$AUTHORIZE_HEADERS" | grep -i '^location:' | sed 's/^[Ll]ocation: *//' | tr -d '\r')
+[[ "$AUTHORIZE_STATUS" =~ ^30[0-9]$ ]] || fail "expected a redirect (3xx) from /auth/v1/authorize?provider=google, got $AUTHORIZE_STATUS"
+[[ "$LOCATION" == *"accounts.google.com"* ]] || fail "Google authorize did not redirect to accounts.google.com: $LOCATION"
+[[ "$LOCATION" == *"redirect_uri=http%3A%2F%2F127.0.0.1%3A54321%2Fauth%2Fv1%2Fcallback"* ]] \
+  || fail "Google authorize redirect_uri did not match the expected GoTrue callback http://127.0.0.1:54321/auth/v1/callback: $LOCATION"
+info "   OK: redirects to Google with redirect_uri=http://127.0.0.1:54321/auth/v1/callback"
+
+# ---------------------------------------------------------------------------
 # 3. worker-token auth enforced in-handler, before any DB access
 # ---------------------------------------------------------------------------
 info "3a. send-notifications (worker) with no token -> 401"
@@ -164,5 +184,22 @@ if [[ ",$VISIBLE_TO_A," != *",$HH_A,"* ]]; then
 fi
 
 info "OK: household A only sees its own household, never B's, over the real PostgREST Data API"
+
+# ---------------------------------------------------------------------------
+# 6. an authenticated user's real JWT (not anon, not service_role) must
+# still be denied direct server_tx_* RPC access via the Data API — section
+# 1b above only proved this for the anon key; this proves the same REVOKE
+# holds for a genuine logged-in user's `authenticated`-role JWT, which is
+# the actual role server_tx_* grants are written against.
+# ---------------------------------------------------------------------------
+info "6. authenticated user's real JWT must not be able to call server_tx_* RPCs via the Data API"
+OP_AUTH_DENY=$(python3 -c "import uuid; print(uuid.uuid4())")
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/rest/v1/rpc/server_tx_create_household" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: application/json" \
+  -d "{\"p_actor_id\":\"00000000-0000-0000-0000-000000000000\",\"p_operation_id\":\"$OP_AUTH_DENY\",\"p_household_name\":\"x\",\"p_display_name\":\"y\"}")
+if [ "$code" = "200" ]; then
+  fail "server_tx_create_household RPC succeeded via Data API with an authenticated user's real JWT (got 200) — EXECUTE must be revoked from authenticated"
+fi
+info "   authenticated JWT RPC call -> HTTP $code (expected non-200)"
 
 echo "== all supabase-integration tests passed =="

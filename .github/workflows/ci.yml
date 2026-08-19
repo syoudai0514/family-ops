@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   web:
@@ -14,7 +15,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Pinned, not a floating major (`22`): jsdom 30.0.1 (the strictest
+          # engines requirement in package-lock.json's dependency tree)
+          # requires Node ^22.22.2 || ^24.15.0 || >=26.0.0 — see
+          # package.json's own "engines" field, which this must satisfy.
+          node-version: 22.22.2
           cache: npm
 
       - name: Install dependencies (workspace root)
@@ -123,14 +128,31 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # v6 review fix (P1-D): pinned to a version confirmed green on
+          # this job (see the CI run linked from the implementation
+          # report), not `latest` — an unpinned CLI can change `-o json`
+          # field names or container images out from under this job without
+          # any change in this repo.
+          version: 2.115.0
 
-      - name: Write local Edge Function secrets (CI-only, never committed)
+      - name: Write CI env files (placeholders, never committed)
         run: |
+          cat > .env <<'EOF'
+          GOOGLE_SIGNIN_CLIENT_ID=ci-test-google-client-id.apps.googleusercontent.com
+          GOOGLE_SIGNIN_CLIENT_SECRET=ci-test-google-client-secret
+          GOOGLE_SIGNIN_CALLBACK_URL=http://127.0.0.1:54321/auth/v1/callback
+          EOF
           cat > supabase/functions/.env <<'EOF'
           LINE_CHANNEL_SECRET=ci-test-line-channel-secret
           CRON_WORKER_TOKEN=ci-test-worker-token-0123456789abcdef
           EOF
+          # v6 review fix (P1-D): supabase/config.toml's env(...)
+          # substitution (GOOGLE_SIGNIN_*) reads the process environment at
+          # `supabase start` time, not any dotenv file it loads on its own
+          # (see .env.example) — the project-root .env above is the source
+          # of truth, exported here into every later step via $GITHUB_ENV
+          # so `supabase start` actually sees it.
+          cat .env >> "$GITHUB_ENV"
 
       - name: supabase start
         run: |
@@ -138,7 +160,10 @@ jobs:
             --exclude realtime,storage-api,imgproxy,studio,mailpit,logflare,vector,supavisor,postgres-meta
 
       - name: Capture local stack connection info
-        run: supabase status -o env >> "$GITHUB_ENV"
+        # v6 review fix (P1-D): `-o env` wraps every value in double quotes,
+        # which a raw `>> "$GITHUB_ENV"` append would bake into the value
+        # itself. Parse the machine-readable `-o json` output instead.
+        run: supabase status -o json | node scripts/write_supabase_status_env.mjs
 
       - name: Reset DB (apply every migration from empty)
         run: supabase db reset

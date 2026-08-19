@@ -70,9 +70,9 @@ begin
   v_hh := public.server_tx_create_household(v_user, gen_random_uuid(), 'History Guard HH', 'Owner');
   v_hh_id := (v_hh->>'household_id')::uuid;
 
-  insert into public.task_definitions (household_id, code, title, category, completion_mode, created_by)
-  values (v_hh_id, 'dishes', 'Dishes', 'chore', 'whole', v_user)
-  returning id into v_task_def;
+  -- 'dishes' is now bootstrapped automatically by server_tx_create_household
+  -- (P1 #3) — reuse it instead of inserting a conflicting duplicate code.
+  select id into v_task_def from public.task_definitions where household_id = v_hh_id and code = 'dishes';
 
   insert into public.task_instances
     (household_id, task_definition_id, origin, title, category, routine_phase, scheduled_date, completion_mode, status, source, created_by)

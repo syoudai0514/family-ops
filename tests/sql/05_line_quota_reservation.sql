@@ -14,6 +14,7 @@ declare
   v_hh_id uuid;
   v_out1 uuid;
   v_out2 uuid;
+  v_out3 uuid;
   v_r jsonb;
 begin
   v_hh := public.server_tx_create_household('c0000000-0000-0000-0000-000000000001', gen_random_uuid(), 'Quota HH', 'Owner');
@@ -24,8 +25,8 @@ begin
   values (date_trunc('month', now())::date, 5000, 0)
   on conflict (billing_month) do update set provider_limit = excluded.provider_limit, provider_consumed = excluded.provider_consumed;
 
-  insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key)
-  values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000001', 'line', 'test', '{}'::jsonb, 'dedup-1')
+  insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key, priority)
+  values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000001', 'line', 'test', '{}'::jsonb, 'dedup-1', 'normal')
   returning id into v_out1;
 
   v_r := public.server_tx_reserve_line_quota(v_out1, 'normal');
@@ -36,13 +37,26 @@ begin
     raise exception 'FAIL quota: first normal reservation at usage=0 should be permitted';
   end if;
 
+  -- v6 review fix (P2): reserve now validates p_priority against the
+  -- outbox row's own stored priority — a mismatch must be rejected rather
+  -- than trusted from the caller.
+  begin
+    perform public.server_tx_reserve_line_quota(v_out1, 'critical');
+    raise exception 'FAIL quota: reserve must reject a priority that does not match notification_outbox.priority';
+  exception
+    when others then
+      if sqlerrm <> 'INVALID_INPUT' then
+        raise exception 'FAIL quota: expected INVALID_INPUT for a priority mismatch, got %', sqlerrm;
+      end if;
+  end;
+
   -- LQA04: effective_usage formula = max(provider_consumed, local_counted_success) + active_reserved
   update private.line_quota_state
   set provider_consumed = 195, local_counted_success = 180
   where billing_month = date_trunc('month', now())::date;
 
-  insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key)
-  values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000001', 'line', 'test', '{}'::jsonb, 'dedup-2')
+  insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key, priority)
+  values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000001', 'line', 'test', '{}'::jsonb, 'dedup-2', 'normal')
   returning id into v_out2;
 
   -- one active reservation already exists (v_out1's, still 'reserved');
@@ -56,8 +70,14 @@ begin
     raise exception 'FAIL quota: normal reservation must be denied once usage would exceed the 180 soft budget';
   end if;
 
-  -- critical can still get a permit up to the hard cap (200)
-  v_r := public.server_tx_reserve_line_quota(v_out2, 'critical');
+  -- critical can still get a permit up to the hard cap (200) — a distinct
+  -- notification_outbox row, since priority is fixed per row (P2 fix), not
+  -- something a retry can escalate on the same row.
+  insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key, priority)
+  values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000001', 'line', 'test', '{}'::jsonb, 'dedup-3', 'critical')
+  returning id into v_out3;
+
+  v_r := public.server_tx_reserve_line_quota(v_out3, 'critical');
   if not (v_r->>'permitted')::boolean then
     raise exception 'FAIL quota: critical reservation must be permitted while usage(196)+1=197 <= 200';
   end if;
@@ -209,6 +229,65 @@ begin
       raise exception 'FAIL quota-idempotency: reservation must remain released after double-release';
     end if;
   end;
+end;
+$$;
+
+-- v6 re-review fix (P2): threshold formula with a non-default soft_budget,
+-- proving reminder=min(soft_budget,hard_limit-reserve) actually differs
+-- from normal=hard_limit-reserve when the two aren't numerically coincident.
+-- Runs last in this file and clears the shared real-world billing_month's
+-- reservations first, since every earlier block in this file shares that
+-- same month key.
+do $$
+declare
+  v_hh jsonb;
+  v_hh_id uuid;
+  v_month date := date_trunc('month', now())::date;
+  v_out_reminder uuid;
+  v_out_normal uuid;
+  v_r jsonb;
+begin
+  insert into auth.users (id) values ('c0000000-0000-0000-0000-000000000003');
+  v_hh := public.server_tx_create_household('c0000000-0000-0000-0000-000000000003', gen_random_uuid(), 'Nondefault Budget HH', 'Owner');
+  v_hh_id := (v_hh->>'household_id')::uuid;
+
+  update private.notification_outbox
+  set quota_reservation_id = null
+  where quota_reservation_id in (select id from private.line_quota_reservations where billing_month = v_month);
+  delete from private.line_quota_reservations where billing_month = v_month;
+
+  -- soft_budget=170, reserve=20, app_hard_cap=200 -> hard_limit-reserve=180
+  -- reminder threshold = min(170,180) = 170; normal threshold = 180
+  insert into private.line_quota_state (billing_month, provider_limit, provider_consumed, local_counted_success, soft_budget, reserve)
+  values (v_month, 200, 175, 0, 170, 20)
+  on conflict (billing_month) do update set
+    provider_limit = excluded.provider_limit, provider_consumed = excluded.provider_consumed,
+    local_counted_success = excluded.local_counted_success, soft_budget = excluded.soft_budget, reserve = excluded.reserve;
+
+  -- effective_usage=175; reminder: 175+1=176 > 170 -> denied
+  insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key, priority)
+  values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000003', 'line', 'test', '{}'::jsonb, 'nondefault-reminder', 'reminder')
+  returning id into v_out_reminder;
+  v_r := public.server_tx_reserve_line_quota(v_out_reminder, 'reminder');
+  if (v_r->>'threshold')::int <> 170 then
+    raise exception 'FAIL quota: non-default soft_budget=170 must yield reminder threshold=170, got %', v_r->>'threshold';
+  end if;
+  if (v_r->>'permitted')::boolean then
+    raise exception 'FAIL quota: reminder at usage=175 must be denied against threshold=170 (175+1=176>170)';
+  end if;
+
+  -- effective_usage still 175 (denied reminder created no reservation);
+  -- normal: 175+1=176 <= 180 -> permitted
+  insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key, priority)
+  values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000003', 'line', 'test', '{}'::jsonb, 'nondefault-normal', 'normal')
+  returning id into v_out_normal;
+  v_r := public.server_tx_reserve_line_quota(v_out_normal, 'normal');
+  if (v_r->>'threshold')::int <> 180 then
+    raise exception 'FAIL quota: non-default reserve=20/hard_cap=200 must yield normal threshold=180, got %', v_r->>'threshold';
+  end if;
+  if not (v_r->>'permitted')::boolean then
+    raise exception 'FAIL quota: normal at usage=175 must be permitted against threshold=180 (175+1=176<=180)';
+  end if;
 end;
 $$;
 

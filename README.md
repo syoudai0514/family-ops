@@ -33,8 +33,9 @@ scripts/                     Dev/CI helper scripts
 
 ## Prerequisites
 
-- Node.js `^22.13.0 || >=24.0.0` (matches `package.json` engines and the strictest
-  transitive dependency requirement; CI uses Node 22)
+- Node.js `^22.22.2 || ^24.15.0 || >=26.0.0` (matches `package.json` engines and
+  the strictest transitive dependency requirement — jsdom 30.0.1; CI pins
+  `node-version: 22.22.2`)
 - PostgreSQL 16 client + server binaries (`psql`, `initdb`, `pg_ctl`) for local
   migration/RLS/RPC testing without a hosted Supabase project
 - [Deno](https://deno.com/) 2.x for Edge Function lint/typecheck
@@ -63,9 +64,16 @@ npm run test:sql       # DB migrations + RLS/RPC/idempotency/quota SQL test suit
 
 ## Database / Edge Functions
 
-`supabase/config.toml` is the normative Edge Function `verify_jwt` gateway
-snapshot — see `docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md`. It classifies
-every deployed function into exactly one of:
+`supabase/config.toml`'s `[functions.*]` block is a **live deployment
+snapshot** — one entry per function actually implemented under
+`supabase/functions/` (currently 6). The full 52-function v6 design matrix
+lives at `docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md` /
+`docs/design/v6/supabase/config.toml` and is not required to be mirrored
+1:1 into the live config as work packages add functions —
+`scripts/check-edge-auth-matrix.mjs` lints the two independently: design-matrix
+completeness on its own, and (separately) that every deployed function has a
+correctly-classified live entry and the live config declares nothing beyond
+what's deployed. Each function is classified into exactly one of:
 
 1. **user mutation** (`verify_jwt = true`) — actor identity comes from the
    Supabase JWT `sub`.
@@ -92,6 +100,36 @@ but the RPC boundary is enforced by convention regardless of that config, per
 See `docs/RUNBOOK.md` for operational safety notes, including why an
 `auth.users` row must never be hard-deleted from the Supabase Dashboard once
 the household has any history.
+
+### Google Sign-In (local dev)
+
+Family Ops' only onboarding path is Supabase Auth's own Google provider
+(`docs/design/v6/01_ARCHITECTURE.md`) — separate from the Google Calendar
+OAuth client used by `google-calendar-oauth-start`/`-callback`. Two distinct
+URLs are involved and must not be conflated:
+
+1. **Google → Supabase Auth (GoTrue) callback** — `redirect_uri` in
+   `supabase/config.toml`'s `[auth.external.google]`, sourced from
+   `GOOGLE_SIGNIN_CALLBACK_URL`. For the local Supabase CLI stack this is
+   fixed: `http://127.0.0.1:54321/auth/v1/callback`. Register this exact
+   URL in the Google Cloud Console's OAuth client "Authorized redirect
+   URIs".
+2. **App's own post-login redirect** — the PWA's landing page after GoTrue
+   finishes the exchange, passed as `redirectTo` by the client SDK at
+   sign-in time and validated against `[auth] site_url` /
+   `additional_redirect_urls` in `supabase/config.toml` (already
+   `http://localhost:5173` for local dev). This is never read from `.env`.
+
+The project-root `.env` (copy from `.env.example`, never commit it — it's
+gitignored) is the single source of truth for values `supabase/config.toml`
+reads via `env(...)`. `supabase` does not load a dotenv file on its own, so
+export it explicitly before any CLI command:
+
+```bash
+cp .env.example .env   # fill in GOOGLE_SIGNIN_CLIENT_ID/SECRET
+set -a && source .env && set +a
+supabase start
+```
 
 ### Running the SQL test suite locally
 
