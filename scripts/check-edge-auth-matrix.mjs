@@ -37,6 +37,17 @@ function parseFunctionsBlock(tomlText) {
   return entries;
 }
 
+// v6 review fix (WP2): the vendored 52-function design matrix has no named
+// endpoint for "initial dropoff/pickup times and weekly assignee setup"
+// (10_WORK_PACKAGES.md's WP2 line item) — see
+// supabase/migrations/20260819000018_dropoff_pickup_setup.sql's header
+// comment for the full gap analysis, and docs/adr/0002-dropoff-pickup-setup-endpoint.md
+// for the ADR recording this decision. Rather than silently loosening the
+// "every deployed function must be in the normative matrix" check for
+// everything, this one name is explicitly allowlisted — any other deployed
+// function not in the normative matrix still fails the lint.
+const GAP_FILL_FUNCTIONS = new Set(['configure-dropoff-pickup']);
+
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');
 const normativeConfigPath = path.join(repoRoot, 'docs/design/v6/supabase/config.toml');
 
@@ -81,6 +92,13 @@ if (deployed.length === 0) {
 
 for (const name of deployed) {
   if (!normative.has(name)) {
+    if (GAP_FILL_FUNCTIONS.has(name)) {
+      if (!actual.has(name)) {
+        console.error(`FAIL: gap-fill function "${name}" has no supabase/config.toml [functions.${name}] entry`);
+        failed = true;
+      }
+      continue;
+    }
     console.error(`FAIL: deployed function "${name}" is not in the v6 design matrix (EDGE_FUNCTION_AUTH_MATRIX.md) at all`);
     failed = true;
     continue;

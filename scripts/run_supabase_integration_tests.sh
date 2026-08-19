@@ -202,4 +202,46 @@ if [ "$code" = "200" ]; then
 fi
 info "   authenticated JWT RPC call -> HTTP $code (expected non-200)"
 
+# ---------------------------------------------------------------------------
+# 7. WP2 end-to-end: create-task -> visible via real Data API read (RLS) ->
+# complete-task -> status reflected, over the real HTTP stack (not the
+# plain-Postgres auth shim). Also proves verify_jwt=true gates a WP2
+# function the same way section 2 proved it for create-household.
+# ---------------------------------------------------------------------------
+info "7. WP2 create-task / complete-task end to end over the real Data API + Edge Functions"
+
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/create-task" \
+  -H "Content-Type: application/json" -d '{}')
+[ "$code" = "401" ] || fail "expected 401 for create-task with no JWT, got $code"
+
+OP_CREATE_TASK=$(python3 -c "import uuid; print(uuid.uuid4())")
+TASK_ID=$(curl -sS -X POST "$API_URL/functions/v1/create-task" \
+  -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+  -d "{\"operation_id\":\"$OP_CREATE_TASK\",\"title\":\"CI integration task\",\"category\":\"chore\",\"scheduled_date\":\"$(date +%Y-%m-%d)\",\"completion_mode\":\"whole\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['task_id'])")
+[ -n "$TASK_ID" ] && [ "$TASK_ID" != "None" ] || fail "create-task did not return a task_id"
+
+VISIBLE_TASK=$(curl -sS "$API_URL/rest/v1/task_instances?select=id,status&id=eq.$TASK_ID" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" \
+  | python3 -c "import sys,json; rows=json.load(sys.stdin); print(rows[0]['status'] if rows else 'MISSING')")
+[ "$VISIBLE_TASK" = "todo" ] || fail "expected the newly created task to be readable via the real Data API with status=todo, got '$VISIBLE_TASK'"
+
+OP_COMPLETE_TASK=$(python3 -c "import uuid; print(uuid.uuid4())")
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/complete-task" \
+  -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+  -d "{\"operation_id\":\"$OP_COMPLETE_TASK\",\"task_id\":\"$TASK_ID\",\"completion_actor\":\"self\"}")
+[ "$code" = "200" ] || fail "expected 200 from complete-task, got $code"
+
+COMPLETED_STATUS=$(curl -sS "$API_URL/rest/v1/task_instances?select=status&id=eq.$TASK_ID" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['status'])")
+[ "$COMPLETED_STATUS" = "completed" ] || fail "expected task status=completed via the real Data API after complete-task, got '$COMPLETED_STATUS'"
+
+# user B (different household) must not be able to read user A's task
+CROSS_HOUSEHOLD_READ=$(curl -sS "$API_URL/rest/v1/task_instances?select=id&id=eq.$TASK_ID" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+[ "$CROSS_HOUSEHOLD_READ" = "0" ] || fail "user B must not be able to read user A's task_instances row via RLS, got $CROSS_HOUSEHOLD_READ row(s)"
+
+info "OK: create-task -> Data API read -> complete-task -> Data API read round-trips correctly, and stays RLS-isolated from household B"
+
 echo "== all supabase-integration tests passed =="

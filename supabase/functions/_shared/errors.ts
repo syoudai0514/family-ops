@@ -31,6 +31,14 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   INVITE_TOKEN_ALREADY_ISSUED: 409,
   EDGE_WORKER_UNAUTHORIZED: 401,
   INTERNAL_ERROR: 500,
+  // WP2 additions (task/request/shopping mutation boundary):
+  TASK_TERMINAL: 409,
+  REQUEST_NOT_PENDING: 409,
+  REQUEST_NOT_RECIPIENT: 403,
+  REQUEST_NOT_REQUESTER: 403,
+  REQUEST_CANCEL_NOT_ALLOWED: 409,
+  INVALID_SHOPPING_TRANSITION: 409,
+  RECURRENCE_OVERLAP: 409,
 };
 
 // v6 review fix (P2): any code we don't explicitly classify as a client
@@ -65,6 +73,13 @@ const KNOWN_CODES = new Set([
   "INVITE_EXPIRED",
   "INVITE_USED",
   "INVITE_TOKEN_ALREADY_ISSUED",
+  "TASK_TERMINAL",
+  "REQUEST_NOT_PENDING",
+  "REQUEST_NOT_RECIPIENT",
+  "REQUEST_NOT_REQUESTER",
+  "REQUEST_CANCEL_NOT_ALLOWED",
+  "INVALID_SHOPPING_TRANSITION",
+  "RECURRENCE_OVERLAP",
 ]);
 
 export function isKnownErrorCode(code: string): boolean {
@@ -89,6 +104,20 @@ export function describeCode(code: string): string {
       return "家庭のメンバーではありません";
     case "INVALID_INPUT":
       return "入力内容が不正です";
+    case "TASK_TERMINAL":
+      return "このタスクは既に完了・キャンセル・スキップされています";
+    case "REQUEST_NOT_PENDING":
+      return "このお願いは既に対応済みです";
+    case "REQUEST_NOT_RECIPIENT":
+      return "このお願いの宛先ではありません";
+    case "REQUEST_NOT_REQUESTER":
+      return "このお願いの送信者ではありません";
+    case "REQUEST_CANCEL_NOT_ALLOWED":
+      return "承諾済みのお願いはキャンセルできません";
+    case "INVALID_SHOPPING_TRANSITION":
+      return "この買い物アイテムの状態では実行できません";
+    case "RECURRENCE_OVERLAP":
+      return "同じ曜日・時間帯の設定が重複しています";
     default:
       return code;
   }

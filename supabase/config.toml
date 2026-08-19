@@ -107,6 +107,86 @@ verify_jwt = true
 [functions.configure-evening-routines]
 verify_jwt = true
 
+[functions.create-task]
+verify_jwt = true
+
+[functions.edit-task]
+verify_jwt = true
+
+[functions.cancel-task]
+verify_jwt = true
+
+[functions.complete-task]
+verify_jwt = true
+
+[functions.set-subtask-completion]
+verify_jwt = true
+
+[functions.create-task-definition]
+verify_jwt = true
+
+[functions.edit-task-definition]
+verify_jwt = true
+
+[functions.deactivate-task-definition]
+verify_jwt = true
+
+[functions.send-request]
+verify_jwt = true
+
+[functions.accept-request]
+verify_jwt = true
+
+[functions.decline-request]
+verify_jwt = true
+
+[functions.cancel-request]
+verify_jwt = true
+
+[functions.add-shopping-item]
+verify_jwt = true
+
+[functions.assign-shopping-item]
+verify_jwt = true
+
+[functions.order-shopping-item]
+verify_jwt = true
+
+[functions.purchase-shopping-item]
+verify_jwt = true
+
+[functions.arrive-shopping-item]
+verify_jwt = true
+
+[functions.cancel-shopping-item]
+verify_jwt = true
+
+[functions.create-handover]
+verify_jwt = true
+
+[functions.mark-handover-read]
+verify_jwt = true
+
+[functions.mark-notification-read]
+verify_jwt = true
+
+[functions.update-notification-preferences]
+verify_jwt = true
+
+[functions.update-routine-schedule]
+verify_jwt = true
+
+# v6 review fix (WP2, docs/adr/0002): no named endpoint exists in the
+# vendored v6 design's 52-function matrix for "initial dropoff/pickup times
+# and weekly assignee setup" (10_WORK_PACKAGES.md's WP2 line item) — see
+# supabase/migrations/20260819000018_dropoff_pickup_setup.sql's header
+# comment for the full gap analysis. This is the one function in this repo
+# that is not a member of the normative 52; scripts/check-edge-auth-matrix.mjs
+# explicitly allowlists it by name rather than silently loosening the check
+# for everything else.
+[functions.configure-dropoff-pickup]
+verify_jwt = true
+
 # External provider — verify_jwt = false (signature validated in-handler
 # before any DB access)
 

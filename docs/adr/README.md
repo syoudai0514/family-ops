@@ -9,6 +9,9 @@ decision this repository's implementation committed to, and why.
 
 - [0001](0001-v6-baseline-commitment.md) — Commit to the v6 design package as
   the sole normative source; no v7
+- [0002](0002-dropoff-pickup-setup-endpoint.md) — A new `configure-dropoff-pickup`
+  endpoint fills a real v6 gap (WP2 names the capability, no endpoint is
+  named for it)
 
 ## Format
 
