@@ -218,3 +218,27 @@ export const EVENING_ROUTINE_TASK_CODES = [
 export type EveningRoutineTaskCode = (typeof EVENING_ROUTINE_TASK_CODES)[number];
 
 export type AssigneeStrategy = 'pickup_assignee' | 'nonpickup_adult' | 'fixed';
+
+// WP4 — append-only audit trail behind the "planned vs actual" history view.
+// event_type values mirror the literals inserted by the mutation RPCs (see
+// supabase/migrations/2026081900{0016,0019,0025,0081,0083}_*.sql).
+export type TaskEventType =
+  | 'created'
+  | 'edited'
+  | 'cancelled'
+  | 'completed'
+  | 'subtask_completed'
+  | 'reassigned_once'
+  | 'skipped';
+
+export interface TaskEvent {
+  id: string;
+  household_id: string;
+  task_instance_id: string;
+  actor_id: string;
+  event_type: TaskEventType;
+  payload: Record<string, unknown>;
+  source: string;
+  idempotency_key: string | null;
+  created_at: string;
+}

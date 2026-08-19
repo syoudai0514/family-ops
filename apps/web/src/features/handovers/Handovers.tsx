@@ -6,7 +6,10 @@ import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { todayIsoDate } from '../../lib/date';
+import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type { Handover, HandoverPeriod } from '../../lib/types';
+
+const HANDOVER_REALTIME_TABLES = ['handovers', 'handover_reads'];
 
 const PERIOD_LABELS: Record<HandoverPeriod, string> = {
   morning: '朝',
@@ -61,7 +64,56 @@ function useHandovers(householdId: string | null, userId: string | null) {
     load();
   }, [load]);
 
+  useRealtimeRefresh({ householdId, userId, onRemoteChange: load, tables: HANDOVER_REALTIME_TABLES });
+
   return { handovers, readIds, loading, error, refresh: load };
+}
+
+// WP4 — handover unread indicator. Standalone hook (no rendering) so it can
+// be mounted from AppShell's nav without pulling in the rest of the
+// Handovers screen. Counts handovers this user hasn't marked read yet, and
+// stays live via the same realtime plumbing the Handovers screen itself
+// uses, so the badge updates as soon as the partner posts a new handover or
+// either of you marks one read on another device.
+export function useUnreadHandoverCount(): number {
+  const { user } = useAuth();
+  const { household } = useHousehold();
+  const householdId = household?.id ?? null;
+  const userId = user?.id ?? null;
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const load = useCallback(async () => {
+    if (!householdId || !userId) {
+      setUnreadCount(0);
+      return;
+    }
+    const { data: handoverRows, error: handoverError } = await supabase
+      .from('handovers')
+      .select('id')
+      .eq('household_id', householdId);
+    if (handoverError) return;
+    const ids = (handoverRows ?? []).map((h) => h.id as string);
+    if (ids.length === 0) {
+      setUnreadCount(0);
+      return;
+    }
+    const { data: readRows, error: readError } = await supabase
+      .from('handover_reads')
+      .select('handover_id')
+      .eq('user_id', userId)
+      .in('handover_id', ids);
+    if (readError) return;
+    const readIdSet = new Set((readRows ?? []).map((r) => r.handover_id as string));
+    setUnreadCount(ids.filter((id) => !readIdSet.has(id)).length);
+  }, [householdId, userId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useRealtimeRefresh({ householdId, userId, onRemoteChange: load, tables: HANDOVER_REALTIME_TABLES });
+
+  return unreadCount;
 }
 
 // Read receipts are marked via an explicit "既読にする" button rather than

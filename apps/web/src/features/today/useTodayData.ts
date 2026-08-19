@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { todayIsoDate } from '../../lib/date';
+import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type {
   Handover,
   RequestRow,
@@ -133,6 +134,13 @@ export function useTodayData(householdId: string | null, userId: string | null):
   useEffect(() => {
     load();
   }, [load]);
+
+  // WP4 — Today refresh after partner mutation: whenever the household's
+  // tasks/requests/handovers/shopping change (typically the other member
+  // acting from their own device), re-run the same load() this screen
+  // already uses for its own mutations and initial load. No full-page
+  // reload; React just re-renders with fresher data.
+  useRealtimeRefresh({ householdId, userId, onRemoteChange: load });
 
   return {
     loading,

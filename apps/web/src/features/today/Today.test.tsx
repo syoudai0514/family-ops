@@ -30,6 +30,14 @@ vi.mock('../../lib/supabaseClient', () => ({
       handover_reads: [],
       shopping_items: [],
     }),
+    channel: vi.fn(() => {
+      const channelObj = {
+        on: () => channelObj,
+        subscribe: () => channelObj,
+      };
+      return channelObj;
+    }),
+    removeChannel: vi.fn(),
   },
 }));
 
