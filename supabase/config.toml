@@ -1,0 +1,209 @@
+# Family Ops — Supabase project config (v6)
+#
+# The [functions.*] block below is the normative Edge Function gateway auth
+# snapshot from docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md and MUST NOT
+# diverge from it. scripts/check-edge-auth-matrix.mjs enforces this in CI:
+#   - every entry here matches the matrix doc's verify_jwt classification
+#   - every function actually present under supabase/functions/ has an entry
+#     here (no unknown/undeclared function is deployed)
+#   - verify_jwt=false does not by itself mean "trusted" — provider/worker
+#     in-handler authentication happens before any DB access; see
+#     docs/design/v6/04_SECURITY_RLS_PRIVACY.md #"v6 Edge gateway requirement"
+
+project_id = "family-ops"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 16
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+jwt_expiry = 3600
+enable_signup = false
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+
+# ---------------------------------------------------------------------------
+# User-facing — verify_jwt = true (actor derived from JWT sub -> household_members)
+# ---------------------------------------------------------------------------
+
+[functions.create-household]
+verify_jwt = true
+
+[functions.create-household-invite]
+verify_jwt = true
+
+[functions.join-household]
+verify_jwt = true
+
+[functions.create-task]
+verify_jwt = true
+
+[functions.edit-task]
+verify_jwt = true
+
+[functions.cancel-task]
+verify_jwt = true
+
+[functions.complete-task]
+verify_jwt = true
+
+[functions.set-subtask-completion]
+verify_jwt = true
+
+[functions.reassign-task-once]
+verify_jwt = true
+
+[functions.create-task-definition]
+verify_jwt = true
+
+[functions.edit-task-definition]
+verify_jwt = true
+
+[functions.deactivate-task-definition]
+verify_jwt = true
+
+[functions.change-recurrence]
+verify_jwt = true
+
+[functions.configure-evening-routines]
+verify_jwt = true
+
+[functions.send-request]
+verify_jwt = true
+
+[functions.accept-request]
+verify_jwt = true
+
+[functions.decline-request]
+verify_jwt = true
+
+[functions.cancel-request]
+verify_jwt = true
+
+[functions.add-shopping-item]
+verify_jwt = true
+
+[functions.assign-shopping-item]
+verify_jwt = true
+
+[functions.order-shopping-item]
+verify_jwt = true
+
+[functions.purchase-shopping-item]
+verify_jwt = true
+
+[functions.arrive-shopping-item]
+verify_jwt = true
+
+[functions.cancel-shopping-item]
+verify_jwt = true
+
+[functions.create-handover]
+verify_jwt = true
+
+[functions.mark-handover-read]
+verify_jwt = true
+
+[functions.mark-notification-read]
+verify_jwt = true
+
+[functions.update-notification-preferences]
+verify_jwt = true
+
+[functions.update-routine-schedule]
+verify_jwt = true
+
+[functions.get-routine-session]
+verify_jwt = true
+
+[functions.complete-routine-session]
+verify_jwt = true
+
+[functions.routine-session-item-action]
+verify_jwt = true
+
+[functions.google-calendar-oauth-start]
+verify_jwt = true
+
+[functions.create-calendar-event]
+verify_jwt = true
+
+[functions.update-calendar-event]
+verify_jwt = true
+
+[functions.classify-calendar-busy-members]
+verify_jwt = true
+
+[functions.ensure-calendar-fresh]
+verify_jwt = true
+
+[functions.create-line-link-token]
+verify_jwt = true
+
+[functions.unlink-line-account]
+verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# External provider — verify_jwt = false (signature/watch/state validated
+# in-handler before any DB access)
+# ---------------------------------------------------------------------------
+
+[functions.line-webhook-receiver]
+verify_jwt = false
+
+[functions.google-calendar-webhook]
+verify_jwt = false
+
+[functions.google-calendar-oauth-callback]
+verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# Cron worker — verify_jwt = false (X-Family-Ops-Worker-Token constant-time
+# compared in-handler before any DB access)
+# ---------------------------------------------------------------------------
+
+[functions.process-line-inbox]
+verify_jwt = false
+
+[functions.process-pending-actions]
+verify_jwt = false
+
+[functions.send-notifications]
+verify_jwt = false
+
+[functions.dispatch-routine-automation]
+verify_jwt = false
+
+[functions.enqueue-periodic-google-sync]
+verify_jwt = false
+
+[functions.process-google-sync]
+verify_jwt = false
+
+[functions.renew-google-watch]
+verify_jwt = false
+
+[functions.materialize-recurring]
+verify_jwt = false
+
+[functions.cleanup-expired-private-data]
+verify_jwt = false
+
+[functions.sync-jp-holidays]
+verify_jwt = false

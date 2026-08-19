@@ -1,0 +1,24 @@
+-- WP1: final PUBLIC EXECUTE lockdown sweep.
+-- docs/design/v6/04_SECURITY_RLS_PRIVACY.md #5:
+--   "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, anon, authenticated"
+--
+-- Migration 20260819000001 sets `ALTER DEFAULT PRIVILEGES ... REVOKE ALL ON
+-- FUNCTIONS FROM PUBLIC` before any function exists, on the assumption that
+-- it would suppress PostgreSQL's implicit "PUBLIC gets EXECUTE on every new
+-- function" default for every function created afterward by the same role.
+-- Verified against a real Postgres 16 instance, that assumption was WRONG:
+-- public.is_household_member and public.set_updated_at (both created later,
+-- by the same migration role) still ended up with an explicit PUBLIC EXECUTE
+-- grant despite the earlier ALTER DEFAULT PRIVILEGES statement. The
+-- server_tx_* functions were unaffected only because each one already had
+-- its own explicit `revoke all ... from public` immediately after creation
+-- (20260819000009).
+--
+-- Rather than track down every future helper/trigger function individually,
+-- this migration runs as the final step and sweeps every function that
+-- exists in public/private at this point, so nothing is missed regardless
+-- of why the default-privilege mechanism did not apply. Because this only
+-- revokes the PUBLIC pseudo-role's grant, it does not touch the specific
+-- grants already made to authenticated/service_role.
+revoke execute on all functions in schema public from public;
+revoke execute on all functions in schema private from public;

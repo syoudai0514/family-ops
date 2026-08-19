@@ -84,5 +84,9 @@ jobs:
             deno check "$f"
           done
 
+      - name: Deno unit tests (auth/crypto helpers)
+        working-directory: supabase/functions
+        run: deno test --allow-env
+
       - name: Edge auth matrix lint (config.toml vs EDGE_FUNCTION_AUTH_MATRIX.md)
         run: node scripts/check-edge-auth-matrix.mjs
