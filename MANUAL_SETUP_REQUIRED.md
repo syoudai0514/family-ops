@@ -137,3 +137,50 @@ environment.
    implemented in full but untested end-to-end. Do this against a scratch
    Google Calendar + a Testing-mode OAuth consent screen before pointing at
    a real family's calendar.
+
+## LINE push delivery (WP9 — notification UX / fatigue audit)
+
+`send-notifications` now implements the actual outbox drain that WP6's
+stub deliberately left unbuilt: lease/reclaim/dead-letter over
+`private.notification_outbox`, atomic quota-permit reservation (reusing
+WP1's `server_tx_reserve_line_quota`/commit/release/mark_ambiguous RPCs),
+the real `POST https://api.line.me/v2/bot/message/push` call with a fixed
+`X-Line-Retry-Key`, 409-reconcile/429-classification/5xx-ambiguous handling,
+and same-recipient bundling (`docs/adr/0006-notification-outbox-delivery-bridge-and-conflict-deferral.md`
+covers the bridge/bundling design). None of this can be live-tested in this
+dev environment — see below.
+
+1. **`LINE_CHANNEL_ACCESS_TOKEN`** (already listed above by WP6 as "needed
+   once a LINE-push send loop calls the Messaging API") is what
+   `send-notifications` now actually reads at runtime, on every invocation
+   that has outbox work to send or a stale (>15m) quota cache to refresh. No
+   other new secret is required — quota-usage refresh calls
+   `GET /v2/bot/message/quota` and `GET /v2/bot/message/quota/consumption`
+   with the same bearer token.
+2. **Schedule `send-notifications` every 1 minute**
+   (`docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md` #6 "Worker-only; every
+   minute"), the same mechanism already used for `process-line-inbox` /
+   `process-pending-actions` (`pg_cron` → `net.http_post` with the
+   `X-Family-Ops-Worker-Token` header, or an external scheduler). No new
+   worker secret is needed — it reuses the existing `CRON_WORKER_TOKEN`.
+3. **Live-API verification** (an actual push delivered to a real LINE
+   account, an actual 429/409 response from the real Messaging API, a real
+   monthly-quota exhaustion) requires a real `LINE_CHANNEL_ACCESS_TOKEN` and
+   a real LINE account — neither exists in this dev environment, matching
+   WP6/WP7's own documented limitation. `tests/sql/21_notification_delivery.sql`
+   exhaustively covers everything reachable without a live call (bridge/
+   bundling at insert time, claim/lease/reclaim/dead-letter, the
+   quota-reservation integration with WP1's existing RPCs, the
+   `definitive`/`quota_fallback`/`ambiguous`/`transient` outcome state
+   machine, retry-key idempotency across retries, and both the
+   `business_expires_at` and `provider_retry_expires_at` expiry sweeps); the
+   provider fetch() calls themselves
+   (`supabase/functions/send-notifications/index.ts`) are implemented in
+   full but untested end-to-end. Do this against a LINE Developers
+   **sandbox** channel before pointing at production.
+4. **Calendar change/conflict messages** (`docs/design/v6/10_WORK_PACKAGES.md`
+   WP9) were deliberately **not** built as a standalone notification type in
+   this work package — see `docs/adr/0006-notification-outbox-delivery-bridge-and-conflict-deferral.md`
+   "Decision" #3 for why (the design only specifies this content as part of
+   WP8's not-yet-built daily-assignment dispatcher message, with no
+   independent trigger condition or copy of its own).
