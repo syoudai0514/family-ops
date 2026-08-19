@@ -39,6 +39,10 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   REQUEST_CANCEL_NOT_ALLOWED: 409,
   INVALID_SHOPPING_TRANSITION: 409,
   RECURRENCE_OVERLAP: 409,
+  // WP5 additions (Gemini AI-draft boundary):
+  AI_INVARIANT_VIOLATION: 422,
+  AI_UNAVAILABLE: 503,
+  RAW_INPUT_EXPIRED: 410,
 };
 
 // v6 review fix (P2): any code we don't explicitly classify as a client
@@ -80,6 +84,9 @@ const KNOWN_CODES = new Set([
   "REQUEST_CANCEL_NOT_ALLOWED",
   "INVALID_SHOPPING_TRANSITION",
   "RECURRENCE_OVERLAP",
+  "AI_INVARIANT_VIOLATION",
+  "AI_UNAVAILABLE",
+  "RAW_INPUT_EXPIRED",
 ]);
 
 export function isKnownErrorCode(code: string): boolean {
@@ -118,6 +125,12 @@ export function describeCode(code: string): string {
       return "この買い物アイテムの状態では実行できません";
     case "RECURRENCE_OVERLAP":
       return "同じ曜日・時間帯の設定が重複しています";
+    case "AI_INVARIANT_VIOLATION":
+      return "AIの提案内容が元のメモと矛盾しています。内容を確認してください";
+    case "AI_UNAVAILABLE":
+      return "AI機能に一時的に接続できません。しばらくしてから再度お試しください";
+    case "RAW_INPUT_EXPIRED":
+      return "下書きの有効期限が切れています。もう一度入力し直してください";
     default:
       return code;
   }

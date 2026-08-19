@@ -46,7 +46,18 @@ function parseFunctionsBlock(tomlText) {
 // "every deployed function must be in the normative matrix" check for
 // everything, this one name is explicitly allowlisted — any other deployed
 // function not in the normative matrix still fails the lint.
-const GAP_FILL_FUNCTIONS = new Set(['configure-dropoff-pickup']);
+//
+// WP5 additions: propose-ai-draft, confirm-request-draft, and
+// confirm-handover-draft are likewise absent from the vendored 52-function
+// matrix — 18_MUTATION_CONTRACT_MATRIX.md #13 describes the AI-draft
+// propose/confirm flow in prose but never settles on Edge Function names.
+// See docs/adr/0003-ai-draft-propose-endpoint.md.
+const GAP_FILL_FUNCTIONS = new Set([
+  'configure-dropoff-pickup',
+  'propose-ai-draft',
+  'confirm-request-draft',
+  'confirm-handover-draft',
+]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');
 const normativeConfigPath = path.join(repoRoot, 'docs/design/v6/supabase/config.toml');
