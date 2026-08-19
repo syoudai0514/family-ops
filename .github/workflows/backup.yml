@@ -1,0 +1,126 @@
+name: Backup (daily encrypted logical dump to R2)
+
+# WP10 (docs/design/v6/10_WORK_PACKAGES.md): daily logical dump, age
+# encryption using ONLY the public key in CI, upload to a private
+# Cloudflare R2 bucket. See docs/BACKUP_RESTORE_RUNBOOK.md for the restore
+# side of this — restore/decryption never happens in CI, only locally with
+# the owner's age private key.
+#
+# Security property (do not weaken): this workflow must reference only
+# BACKUP_AGE_PUBLIC_KEY (a public key — safe even if CI secrets leak). The
+# matching private key is held by the household owner outside of GitHub
+# entirely (password manager / offline storage) and is NEVER added as a
+# secret here. If you ever find yourself tempted to add an
+# "AGE_PRIVATE_KEY" secret to make restores "more convenient" from CI —
+# don't. That defeats the whole point of this design.
+
+on:
+  schedule:
+    # 18:00 UTC = 03:00 JST (household is Asia/Tokyo per v6). Chosen well
+    # after any late-evening app usage (evening routine / LINE automation
+    # windows) and well before the household's morning, so a dump running
+    # long or a DB briefly busy with the backup doesn't compete with real
+    # traffic or block the day's morning routine notifications.
+    - cron: "0 18 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Dump, encrypt, upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install age and postgresql-client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age postgresql-client
+
+      - name: Compute backup filename
+        id: meta
+        run: |
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          echo "filename=family-ops-backup-$(date -u +%Y-%m-%d).sql.age" >> "$GITHUB_OUTPUT"
+
+      - name: pg_dump production database
+        env:
+          # Postgres connection string for the production Supabase
+          # instance, e.g. from Supabase project settings -> Database ->
+          # Connection string (URI, use the pooler-free/direct connection
+          # or the session-mode pooler; NOT the transaction-mode pgbouncer
+          # port, which does not support pg_dump well).
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "::error::SUPABASE_DB_URL secret is not set" >&2
+            exit 1
+          fi
+          pg_dump \
+            --format=plain \
+            --no-owner \
+            --no-privileges \
+            --dbname="$SUPABASE_DB_URL" \
+            --file=dump.sql
+
+      - name: Encrypt dump with age (public key only)
+        env:
+          # age public key (recipient), e.g. "age1..." — generated once by
+          # the owner via `age-keygen`, only the public half is stored here.
+          BACKUP_AGE_PUBLIC_KEY: ${{ secrets.BACKUP_AGE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BACKUP_AGE_PUBLIC_KEY:-}" ]; then
+            echo "::error::BACKUP_AGE_PUBLIC_KEY secret is not set" >&2
+            exit 1
+          fi
+          age -r "$BACKUP_AGE_PUBLIC_KEY" -o "${{ steps.meta.outputs.filename }}" dump.sql
+          rm -f dump.sql
+
+      - name: Upload encrypted dump to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          # Private R2 bucket name, per v6: `family-ops-backups`.
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET_NAME; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::$v secret is not set" >&2
+              exit 1
+            fi
+          done
+          pipx install awscli --quiet 2>/dev/null || pip install --quiet awscli
+          aws s3 cp \
+            "${{ steps.meta.outputs.filename }}" \
+            "s3://${R2_BUCKET_NAME}/${{ steps.meta.outputs.filename }}" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --storage-class STANDARD
+
+      - name: Update latest-backup marker
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          # A tiny marker object recording the filename + ISO timestamp of
+          # the most recent successful backup. This is what
+          # scripts/backup_freshness_check.sh reads, so a freshness check
+          # doesn't need to list/paginate the whole bucket.
+          printf '%s\n%s\n' \
+            "${{ steps.meta.outputs.filename }}" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > latest-backup.txt
+          aws s3 cp latest-backup.txt "s3://${R2_BUCKET_NAME}/latest-backup.txt" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+      - name: Cleanup local artifacts
+        if: always()
+        run: rm -f dump.sql "${{ steps.meta.outputs.filename }}" latest-backup.txt
