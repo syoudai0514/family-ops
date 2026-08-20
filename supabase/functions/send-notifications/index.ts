@@ -20,15 +20,20 @@
 // implementation; they cannot be live-tested here, matching the same
 // documented limitation as WP6/WP7's own provider wire calls.
 //
-// P1-3 (review fix, docs/adr/0009): buildBundledText/buildRoutineQuickReply
-// below make routine ('type'==='routine') LINE messages actionable —
-// quickReply.items on the text message, plus the PWA deep link now folded
-// into the text — matching process-line-inbox's existing
-// action=routine_complete&session_id=...&value=... postback parsing.
+// P1-3 (review fix, docs/adr/0009): buildBundledText below makes routine
+// ('type'==='routine') LINE messages actionable — quickReply.items on the
+// text message, plus the PWA deep link now folded into the text — matching
+// process-line-inbox's existing postback parsing.
+//
+// Re-review fix (P1-1/P1-2, docs/adr/0010): the quick-reply button set
+// itself now lives in ./routineQuickReply.ts (all four normative top-level
+// actions, and 今回は不要 now posts a confirmation-prompt action rather than
+// mutating directly) — see that file's header for the full rationale.
 import { createServiceRoleClient, requireWorkerToken } from "../_shared/auth.ts";
 import { withServiceHandler, jsonResponse } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { buildCheckinLink, type LinePostbackQuickReplyAction } from "../_shared/lineMessaging.ts";
+import { buildCheckinLink } from "../_shared/lineMessaging.ts";
+import { buildRoutineQuickReply } from "./routineQuickReply.ts";
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -128,47 +133,6 @@ function buildBundledText(
   const text = blocks.filter((b) => b.length > 0).join("\n\n");
   const truncated = text.length <= LINE_TEXT_MAX_CHARS ? text : text.slice(0, LINE_TEXT_MAX_CHARS - 1) + "…";
   return { text: truncated, sessionIds: Array.from(seenSessionIds) };
-}
-
-// P1-3 fix: session-level 全部完了/今回は不要 quick-reply postback buttons
-// (docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md #8 "top-level actions"),
-// matching process-line-inbox's existing
-// action=routine_complete&session_id=...&value=complete_all|skip_incomplete
-// postback parsing exactly.
-//
-// Design decision (see docs/adr/0009 for the full write-up): only attached
-// when the message bundles items for EXACTLY ONE distinct routine session.
-// A notification_outbox row's items[] are per-schedule_kind text blocks
-// (e.g. one "🎒 朝のチェック" item can itself list several checklist lines),
-// not one payload item per task_instance -- so true per-task item-level
-// quick-reply buttons ("完了"/"相手が対応" on ONE task) are not derivable
-// from this payload shape without a broader change to
-// 20260819000082_dispatch_routine_automation_rpc.sql, which is out of scope
-// for this fix (owned by a parallel P1-1/P1-2 fix). "項目ごとに入力"
-// (item-by-item bot flow) and any finer-grained action remain PWA-only via
-// the deep link, which is always included in the text regardless. When a
-// bundle spans zero or more-than-one distinct session (the latter only
-// possible if a household configures two different session-bearing
-// schedule_kinds to the identical local minute -- not a default/expected
-// configuration), no postback buttons are attached; the PWA link(s) already
-// embedded in the text remain the only, but always-present, actionable path.
-function buildRoutineQuickReply(sessionIds: string[]): LinePostbackQuickReplyAction[] | undefined {
-  if (sessionIds.length !== 1) return undefined;
-  const sessionId = sessionIds[0];
-  return [
-    {
-      type: "postback",
-      label: "全部完了",
-      data: `action=routine_complete&session_id=${sessionId}&value=complete_all`,
-      displayText: "全部完了",
-    },
-    {
-      type: "postback",
-      label: "今回は不要",
-      data: `action=routine_complete&session_id=${sessionId}&value=skip_incomplete`,
-      displayText: "今回は不要",
-    },
-  ];
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {

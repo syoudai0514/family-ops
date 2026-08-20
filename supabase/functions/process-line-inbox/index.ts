@@ -46,11 +46,30 @@
 // ../_shared/lineMessaging.ts -- LINE Reply API first (free, no quota),
 // falling back to a durable push-outbox row only when the reply is
 // unavailable/fails (#10A "Reply").
+//
+// Re-review fix (P1-1/P1-2, docs/adr/0010): two more postback flows close
+// the gap the second independent review found -- #8's LINE-native
+// "項目ごとに入力" state machine (routine_item_mode / routine_item_next,
+// backed by routineItemFlow.ts's pure selection logic; the existing
+// routine_item postback above now also chains into "show the next
+// unfinished item" after a successful mutation) and the mandatory
+// confirmation step before a top-level "今回は不要" mass-skip
+// (routine_skip_prompt / routine_cancel_prompt -- NEITHER mutates; only the
+// existing routine_complete&value=skip_incomplete branch, reached after an
+// explicit confirm tap, still calls server_tx_complete_routine_session).
 import { createServiceRoleClient, requireWorkerToken } from "../_shared/auth.ts";
 import { withServiceHandler, jsonResponse } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { parseLineText } from "./parser.ts";
-import { buildCheckinLink, replyOrEnqueuePush } from "../_shared/lineMessaging.ts";
+import { replyOrEnqueuePush } from "../_shared/lineMessaging.ts";
+import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
+import {
+  buildItemPromptText,
+  buildItemQuickReply,
+  buildStaleSessionText,
+  pickNextUnfinished,
+  type RoutineSessionItem,
+} from "./routineItemFlow.ts";
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get("LINE_INBOX_BATCH_LIMIT") ?? "25");
@@ -160,6 +179,7 @@ async function sendConfirmation(
   item: WebhookInboxItem,
   actor: LineActor,
   text: string,
+  quickReplyItems?: LineQuickReplyAction[],
 ): Promise<void> {
   const result = await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
@@ -167,11 +187,66 @@ async function sendConfirmation(
     householdId: actor.household_id,
     recipientUserId: actor.user_id,
     text,
+    quickReplyItems,
     dedupKey: `line-reply-fallback:${item.provider_event_id}`,
   });
   if (result === "no_channel") {
     console.warn("process-line-inbox: confirmation reply/push both unavailable", { id: item.id });
   }
+}
+
+// Re-review fix (P1-1): reads a session's current, live item state --
+// server_tx_get_routine_session already reports items ordered by
+// display_order and can_act (status='open' AND assignee_id=p_actor_id), the
+// exact two things routine_item_mode/routine_item_next/routine_skip_prompt
+// below need to decide "show the next item" vs. "resolve to the latest
+// safe link" (docs/adr/0007 decision 2's existing pattern).
+interface RoutineSessionRead {
+  status: string;
+  assignee_id: string;
+  can_act: boolean;
+  current_session_id: string | null;
+  items: RoutineSessionItem[];
+}
+
+async function getRoutineSession(
+  client: SupabaseClient,
+  actorId: string,
+  sessionId: string,
+): Promise<RoutineSessionRead | null> {
+  const { data, error } = await client.rpc("server_tx_get_routine_session", {
+    p_actor_id: actorId,
+    p_session_id: sessionId,
+  });
+  if (error) {
+    console.error("process-line-inbox: get_routine_session failed", error.message);
+    return null;
+  }
+  return data as RoutineSessionRead;
+}
+
+async function sendItemPrompt(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  sessionId: string,
+  nextItem: RoutineSessionItem,
+  prefixText?: string,
+): Promise<void> {
+  const text = prefixText
+    ? `${prefixText}\n\n${buildItemPromptText(sessionId, nextItem)}`
+    : buildItemPromptText(sessionId, nextItem);
+  await sendConfirmation(client, item, actor, text, buildItemQuickReply(sessionId, nextItem.task_instance_id));
+}
+
+async function sendStaleSessionReply(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  sessionId: string,
+  currentSessionId: string | null,
+): Promise<void> {
+  await sendConfirmation(client, item, actor, buildStaleSessionText(currentSessionId, sessionId));
 }
 
 async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, actor: LineActor | null): Promise<void> {
@@ -247,19 +322,60 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
       // latest-state link rather than staying silent, since the tapped
       // button is now stale.
       if (error.message === "TASK_TERMINAL") {
-        await sendConfirmation(
-          client,
-          item,
-          actor,
-          `⚠ このチェックは最新ではありません。最新の状態はこちら:\n${buildCheckinLink(fields.session_id)}`,
-        );
+        await sendStaleSessionReply(client, item, actor, fields.session_id, null);
       }
       return;
     }
     const itemLabel = fields.value === "complete" ? "✓ 完了にしました"
       : fields.value === "partner_handled" ? "✓ 相手対応にしました"
       : "✓ 今回は不要にしました";
-    await sendConfirmation(client, item, actor, itemLabel);
+    // Re-review fix (P1-1) #8 "After an action, show the next unfinished
+    // item until no items remain" -- re-reads the session's live state
+    // (never trusts a locally-tracked cursor) and continues the
+    // item-by-item flow, or announces completion once nothing is left.
+    const session = await getRoutineSession(client, actor.user_id, fields.session_id);
+    const next = session ? pickNextUnfinished(session.items) : null;
+    if (next) {
+      await sendItemPrompt(client, item, actor, fields.session_id, next, itemLabel);
+    } else {
+      await sendConfirmation(client, item, actor, `${itemLabel}\n\n✓ 全項目終わりました！`);
+    }
+    return;
+  }
+
+  // Re-review fix (P1-1): top-level "項目ごとに入力" -- loads the session
+  // live and presents its first unfinished item with the four per-item
+  // quick-reply actions. No mutation on this tap.
+  if (fields.action === "routine_item_mode" && fields.session_id) {
+    const session = await getRoutineSession(client, actor.user_id, fields.session_id);
+    if (!session || !session.can_act) {
+      await sendStaleSessionReply(client, item, actor, fields.session_id, session?.current_session_id ?? null);
+      return;
+    }
+    const next = pickNextUnfinished(session.items);
+    if (next) {
+      await sendItemPrompt(client, item, actor, fields.session_id, next);
+    } else {
+      await sendConfirmation(client, item, actor, "✓ 未完了の項目はありません");
+    }
+    return;
+  }
+
+  // Re-review fix (P1-1): "次へ" -- advances past the given item WITHOUT
+  // mutating it (docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md #8 "次へ advances
+  // without mutating the current item").
+  if (fields.action === "routine_item_next" && fields.session_id) {
+    const session = await getRoutineSession(client, actor.user_id, fields.session_id);
+    if (!session || !session.can_act) {
+      await sendStaleSessionReply(client, item, actor, fields.session_id, session?.current_session_id ?? null);
+      return;
+    }
+    const next = pickNextUnfinished(session.items, fields.task_instance_id ?? null);
+    if (next) {
+      await sendItemPrompt(client, item, actor, fields.session_id, next);
+    } else {
+      await sendConfirmation(client, item, actor, "✓ 未完了の項目はありません");
+    }
     return;
   }
 
@@ -279,17 +395,46 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
     if (error) {
       console.error("process-line-inbox: routine_complete postback failed", error.message);
       if (error.message === "TASK_TERMINAL") {
-        await sendConfirmation(
-          client,
-          item,
-          actor,
-          `⚠ このチェックは最新ではありません。最新の状態はこちら:\n${buildCheckinLink(fields.session_id)}`,
-        );
+        await sendStaleSessionReply(client, item, actor, fields.session_id, null);
       }
       return;
     }
     const sessionLabel = fields.value === "complete_all" ? "✓ 全部完了にしました" : "✓ 今回は不要にしました";
     await sendConfirmation(client, item, actor, sessionLabel);
+    return;
+  }
+
+  // Re-review fix (P1-2): the top-level "今回は不要" button no longer reaches
+  // this far directly -- routineQuickReply.ts now points it at
+  // routine_skip_prompt instead. This branch performs NO mutation; it only
+  // reads the session (to gate on can_act / resolve a safe stale-session
+  // link) and replies with a confirm/cancel prompt
+  // (docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md #8 "確認を1段挟む"). Only the
+  // "はい、今回は不要" branch below reaches the existing
+  // routine_complete&value=skip_incomplete handler above, unchanged.
+  if (fields.action === "routine_skip_prompt" && fields.session_id) {
+    const session = await getRoutineSession(client, actor.user_id, fields.session_id);
+    if (!session || !session.can_act) {
+      await sendStaleSessionReply(client, item, actor, fields.session_id, session?.current_session_id ?? null);
+      return;
+    }
+    const confirmQuickReply: LineQuickReplyAction[] = [
+      {
+        type: "postback",
+        label: "はい、今回は不要",
+        data: `action=routine_complete&session_id=${fields.session_id}&value=skip_incomplete`,
+        displayText: "はい、今回は不要",
+      },
+      { type: "postback", label: "戻る", data: "action=routine_cancel_prompt", displayText: "戻る" },
+    ];
+    await sendConfirmation(client, item, actor, "未完了の項目を「今回は不要」にしますか？", confirmQuickReply);
+    return;
+  }
+
+  // Re-review fix (P1-2): "戻る" -- explicitly no RPC call of any kind, so
+  // there is nothing that could mutate a task even by accident.
+  if (fields.action === "routine_cancel_prompt") {
+    await sendConfirmation(client, item, actor, "キャンセルしました。変更はありません。");
     return;
   }
 

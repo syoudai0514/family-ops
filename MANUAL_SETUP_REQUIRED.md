@@ -16,8 +16,10 @@ environment.
    never committed to the repo:
    - `LINE_CHANNEL_SECRET` — used by `line-webhook-receiver` /
      `_shared/auth.ts:verifyLineSignature` to verify `X-Line-Signature`.
-   - `LINE_CHANNEL_ACCESS_TOKEN` — needed once a LINE-push send loop calls
-     the Messaging API (not built in WP6; see "Known follow-ups" below).
+   - `LINE_CHANNEL_ACCESS_TOKEN` — required by `send-notifications`'s
+     push-send loop (WP9, see "LINE push delivery (WP9)" below) and by
+     `process-line-inbox`'s Reply-API-first confirmations
+     (`docs/adr/0009-line-quick-reply-and-reply-first-delivery.md`).
    - `LINE_OA_BASIC_ID` (optional) — the OA's `@`-prefixed Basic ID. When
      set, `create-line-link-token`'s response includes a
      `line_add_friend_url` deep link
@@ -37,9 +39,10 @@ environment.
    `net.http_post` with the `X-Family-Ops-Worker-Token` header, matching
    whatever mechanism already schedules `send-notifications`.
 5. Live-API verification of the signature check, the actual claim flow
-   against a real LINE user, and the eventual push-send loop all require a
-   real `LINE_CHANNEL_SECRET`/`LINE_CHANNEL_ACCESS_TOKEN` and a real LINE
-   account — none of that exists in this dev environment, so WP6's tests
+   against a real LINE user, and the push-send loop (built by WP9, see
+   below) all require a real `LINE_CHANNEL_SECRET`/`LINE_CHANNEL_ACCESS_TOKEN`
+   and a real LINE account — none of that exists in this dev environment,
+   so WP6's tests
    cover the DB/queue mechanics exhaustively (tests/sql/19_line_foundation.sql)
    but cannot exercise an actual LINE webhook delivery end to end. Do this
    against a LINE Developers **sandbox** channel before pointing at
@@ -47,14 +50,20 @@ environment.
 
 ### Known follow-ups (not P0/P1, intentionally deferred — see final report)
 
-- The LINE **push send loop** itself (outbox claim, quota-permit reservation,
-  actual `POST` to the LINE Messaging API, retry-key/409/429 handling) is
-  `send-notifications`'s job and was **not** built in WP6 — the WP1 stub
-  (auth boundary only) is still what's deployed. Until it exists,
-  `process-line-inbox` cannot deliver an outbound confirm/cancel quick-reply
-  for a natural-language pending action; those actions currently stay in
-  `draft` until a human opens the PWA (once a PWA "LINE inbox" view exists)
-  or the token/action expires.
+- The LINE **push send loop** (outbox claim, quota-permit reservation,
+  actual `POST` to the LINE Messaging API, retry-key/409/429 handling) —
+  this section originally said it was not built in WP6; it now is, in full,
+  by WP9 (see "LINE push delivery (WP9)" below). What genuinely remains
+  outstanding: nothing ever sends a `confirm_pending`/`cancel_pending`
+  quick-reply button over LINE for a natural-language `draft` pending
+  action — `process-line-inbox`'s `handlePostback` already handles those
+  two postback actions correctly if received (`tests/sql/19_line_foundation.sql`),
+  but no Edge Function ever sends the buttons that would produce one; only a
+  short reply-first receipt ("✓ 受け付けました。内容はアプリでご確認ください。",
+  `docs/adr/0009`) goes out over LINE. A `draft` pending action's actual
+  confirm/cancel step is PWA-only today, until a future work package
+  builds the LINE-side quick-reply send path or a PWA "LINE inbox" view is
+  the intended permanent surface for it instead.
 - Natural-language grammar in `process-line-inbox/parser.ts` covers only
   shopping-item-add and one-off task-add deterministically. Partner-request
   rewrite and recurrence/reassignment edits via LINE text are recognized as
@@ -182,8 +191,15 @@ dev environment — see below.
    WP9) were deliberately **not** built as a standalone notification type in
    this work package — see `docs/adr/0006-notification-outbox-delivery-bridge-and-conflict-deferral.md`
    "Decision" #3 for why (the design only specifies this content as part of
-   WP8's not-yet-built daily-assignment dispatcher message, with no
-   independent trigger condition or copy of its own).
+   the daily-assignment/digest dispatcher message, with no independent
+   trigger condition or copy of its own). At the time this WP9 section was
+   originally written, that dispatcher (WP8, below) had not been built yet
+   either; it has been since, and a follow-up Sol review fix
+   (`docs/adr/0008-routine-digest-calendar-merge-and-conflict-warning.md`)
+   folded exactly this content — Google Calendar occurrence merge and
+   assignment/calendar conflict-warning detection — into it. There is still
+   no independent standalone notification type for a calendar change/
+   conflict event outside that digest, matching this decision as-is.
 
 ## Scheduled LINE household routines (WP8 — routine automation)
 
@@ -203,17 +219,20 @@ dev environment — see below.
    be configured from an earlier WP for other PWA deep links; no WP8-specific
    value is needed beyond ensuring the `/checkin/:sessionId` route (see final
    report) is deployed at that same base URL.
-4. **Known follow-up, not P0/P1 but load-bearing for the LINE-side
-   interaction loop** — see `docs/adr/0007-wp8-routine-session-scope-decisions.md`
-   decisions 1 and 5: `process-line-inbox`'s `handlePostback` has no branch
-   yet for routine-session postback actions (the RPC layer,
-   `server_tx_routine_session_item_action` / `server_tx_complete_routine_session`,
-   is fully built and tested for `p_source='line'` calls — only the webhook
-   -> RPC wiring is outstanding), and `send-notifications` sends plain-text
-   LINE messages only, with no quick-reply/template button support to attach
-   the `[全部完了] [項目ごとに入力] [今回は不要] [PWAで開く]` actions to. Until
-   both land, the PWA deep link included as plain text in each routine
-   message is the only actionable affordance from LINE itself.
+4. **The LINE-side interaction loop is fully built** — this section
+   originally flagged, as a known follow-up
+   (`docs/adr/0007-wp8-routine-session-scope-decisions.md` decisions 1 and
+   5), that `process-line-inbox` had no postback branch for routine-session
+   actions and `send-notifications` sent plain text only, with no
+   quick-reply buttons. Both have since landed: `process-line-inbox`
+   handles `routine_item` / `routine_complete` (ADR 0007), the four
+   top-level `[全部完了] [項目ごとに入力] [今回は不要] [PWAで開く]` quick-reply
+   buttons are attached by `send-notifications` (ADR 0009), and the
+   LINE-native `項目ごとに入力` item-by-item flow plus the mandatory
+   confirmation step before `今回は不要`'s mass-skip are implemented
+   (`docs/adr/0010-line-item-by-item-flow-and-skip-confirmation.md`). The
+   PWA deep link remains included as plain text in every routine message
+   too, as a fallback, not a replacement.
 5. **Live-API verification** of an actual scheduled push arriving in a real
    LINE chat at the correct Asia/Tokyo minute requires the same real
    `LINE_CHANNEL_ACCESS_TOKEN`/LINE account already noted above — not

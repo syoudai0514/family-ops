@@ -39,6 +39,17 @@ export interface LinePostbackQuickReplyAction {
   displayText?: string;
 }
 
+// Re-review fix (P1-1, docs/adr/0010): the top-level "PWAで開く" quick-reply
+// button (17_ROUTINE_LINE_AUTOMATION.md #8 top-level action 4) opens the
+// checkin link directly rather than round-tripping through a postback.
+export interface LineUriQuickReplyAction {
+  type: "uri";
+  label: string;
+  uri: string;
+}
+
+export type LineQuickReplyAction = LinePostbackQuickReplyAction | LineUriQuickReplyAction;
+
 export interface ReplyOrEnqueuePushArgs {
   /** private.webhook_inbox item's payload.replyToken for THIS event, or null/undefined if none/already-used. Never logged in full. */
   replyToken: string | null | undefined;
@@ -47,7 +58,7 @@ export interface ReplyOrEnqueuePushArgs {
   householdId: string;
   recipientUserId: string;
   text: string;
-  quickReplyItems?: LinePostbackQuickReplyAction[];
+  quickReplyItems?: LineQuickReplyAction[];
   /** Stable key (e.g. derived from the webhook's provider_event_id) so a redelivered event's fallback push does not double-enqueue. */
   dedupKey?: string;
 }
@@ -58,7 +69,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   return await fetch(url, { ...init, signal: AbortSignal.timeout(REPLY_FETCH_TIMEOUT_MS) });
 }
 
-function buildLineMessages(text: string, quickReplyItems?: LinePostbackQuickReplyAction[]) {
+function buildLineMessages(text: string, quickReplyItems?: LineQuickReplyAction[]) {
   const message: Record<string, unknown> = { type: "text", text };
   if (quickReplyItems && quickReplyItems.length > 0) {
     message.quickReply = { items: quickReplyItems.map((action) => ({ type: "action", action })) };

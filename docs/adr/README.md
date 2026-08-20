@@ -32,6 +32,18 @@ decision this repository's implementation committed to, and why.
   scope decisions: RPC-layer LINE-postback readiness vs. actual webhook
   wiring, reused error codes, in-place amendments to two pre-existing
   functions, and the scope boundary of the reassignment session-supersede
+- [0008](0008-routine-digest-calendar-merge-and-conflict-warning.md) —
+  Sol review fix (P1-1/P1-2, first round): Sunday/non-workday digest Google
+  Calendar merge and assignment/calendar conflict-warning detection design
+  details
+- [0009](0009-line-quick-reply-and-reply-first-delivery.md) — Sol review fix
+  (P1-3/P1-4, first round): LINE routine quick-reply buttons
+  (全部完了/今回は不要) and Reply-API-first delivery for process-line-inbox's
+  own confirmations
+- [0010](0010-line-item-by-item-flow-and-skip-confirmation.md) — Sol
+  re-review fix (P1-1/P1-2, second round): the LINE-native
+  項目ごとに入力 item-by-item flow and the mandatory confirmation step before
+  a top-level 今回は不要 mass-skip
 
 ## Format
 
