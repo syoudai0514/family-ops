@@ -72,12 +72,21 @@ begin
     raise exception 'FAIL session-context: expected A''s bundled outbox row with 2 items';
   end if;
 
-  -- Identify the two bundled items by title (order is insertion order:
-  -- daily_assignment first, then dropoff_checklist — Scenario 1 of
-  -- tests/sql/22 already relies on this same ordering).
-  v_daily_item := v_outbox_a.payload -> 'items' -> 0;
-  v_checklist_item := v_outbox_a.payload -> 'items' -> 1;
+  -- Identify the two bundled items by title, NOT by array position — the
+  -- dispatch loop over schedule_kinds has no explicit ORDER BY, so which of
+  -- daily_assignment/dropoff_checklist gets appended to the shared bundled
+  -- outbox row first is not guaranteed and was observed to differ between
+  -- a long-lived local Postgres instance and a freshly-reset one (CI).
+  select item into v_daily_item
+  from jsonb_array_elements(v_outbox_a.payload -> 'items') as item
+  where item ->> 'title' = '☀️ 今日の担当';
+  select item into v_checklist_item
+  from jsonb_array_elements(v_outbox_a.payload -> 'items') as item
+  where item ->> 'title' = '🎒 朝のチェック';
 
+  if v_daily_item is null or v_checklist_item is null then
+    raise exception 'FAIL session-context: expected both a daily_assignment and a dropoff_checklist item, got %', v_outbox_a.payload -> 'items';
+  end if;
   if v_daily_item ? 'session_id' then
     raise exception 'FAIL session-context: daily_assignment item must NOT carry session_id (no session backs it)';
   end if;
@@ -91,7 +100,9 @@ begin
   -- B: daily_assignment-only bundle, no session anywhere.
   select * into v_outbox_b from private.notification_outbox
   where household_id = v_hh_id and recipient_user_id = v_b and channel = 'line' and status = 'queued';
-  if not found or (v_outbox_b.payload -> 'items' -> 0) ? 'session_id' then
+  if not found or exists (
+    select 1 from jsonb_array_elements(v_outbox_b.payload -> 'items') as item where item ? 'session_id'
+  ) then
     raise exception 'FAIL session-context: B''s daily_assignment-only item must not carry session_id';
   end if;
 
