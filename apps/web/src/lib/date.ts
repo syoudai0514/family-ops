@@ -15,3 +15,10 @@ export function formatDateTimeJa(iso: string | null): string {
   if (!iso) return '';
   return new Date(iso).toLocaleString('ja-JP');
 }
+
+// HH:MM only, matching docs/design/v6/02_UX_AND_SCREENS.md #3's own
+// Priority-1 examples ("17:30 お迎え", "18:00 ママ予定あり").
+export function formatTimeJa(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}

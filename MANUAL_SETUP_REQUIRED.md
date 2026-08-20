@@ -53,17 +53,26 @@ environment.
 - The LINE **push send loop** (outbox claim, quota-permit reservation,
   actual `POST` to the LINE Messaging API, retry-key/409/429 handling) —
   this section originally said it was not built in WP6; it now is, in full,
-  by WP9 (see "LINE push delivery (WP9)" below). What genuinely remains
-  outstanding: nothing ever sends a `confirm_pending`/`cancel_pending`
-  quick-reply button over LINE for a natural-language `draft` pending
-  action — `process-line-inbox`'s `handlePostback` already handles those
-  two postback actions correctly if received (`tests/sql/19_line_foundation.sql`),
+  by WP9 (see "LINE push delivery (WP9)" below). Separately: nothing ever
+  sends a `confirm_pending`/`cancel_pending` quick-reply button over LINE
+  itself for a natural-language `draft` pending action —
+  `process-line-inbox`'s `handlePostback` already handles those two
+  postback actions correctly if received (`tests/sql/19_line_foundation.sql`),
   but no Edge Function ever sends the buttons that would produce one; only a
   short reply-first receipt ("✓ 受け付けました。内容はアプリでご確認ください。",
-  `docs/adr/0009`) goes out over LINE. A `draft` pending action's actual
-  confirm/cancel step is PWA-only today, until a future work package
-  builds the LINE-side quick-reply send path or a PWA "LINE inbox" view is
-  the intended permanent surface for it instead.
+  `docs/adr/0009`) goes out over LINE.
+  A `draft` pending action's confirm/cancel step is an **intentional
+  PWA-only product decision, and the PWA surface for it actually exists**:
+  Today's Priority 2 "判断待ち" section lists the current user's own
+  non-terminal pending actions (never the partner's), with structured
+  preview, confirm/cancel, and — for input the deterministic parser could
+  not match (`needs_pwa_review`) — a correction path into the normal task
+  form instead of a confirm button that would only dead-letter
+  (`docs/adr/0011`, closing a Sol re-review P1 that correctly flagged this
+  section's earlier "PWA-only" wording as describing a screen that did not
+  yet exist). A LINE-side quick-reply confirm/cancel remains a possible
+  future enhancement, not a current gap — the PWA path is fully functional
+  on its own.
 - Natural-language grammar in `process-line-inbox/parser.ts` covers only
   shopping-item-add and one-off task-add deterministically. Partner-request
   rewrite and recurrence/reassignment edits via LINE text are recognized as

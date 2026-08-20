@@ -2,13 +2,17 @@ import { useMemo, useState } from 'react';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import { useTodayData } from './useTodayData';
+import { usePendingActions } from './usePendingActions';
+import { useTodaySchedule } from './useTodaySchedule';
 import { TodayTaskItem } from './TodayTaskItem';
+import { TodaySchedule } from './TodaySchedule';
+import { PendingActionCard } from './PendingActionCard';
 import { TaskFormModal } from '../tasks/TaskFormModal';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
-import type { RequestRow, TaskInstance } from '../../lib/types';
+import type { PendingAction, RequestRow, TaskInstance } from '../../lib/types';
 
 function RequestQuickActions({ request, onChanged }: { request: RequestRow; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -58,8 +62,11 @@ export function Today() {
   const { user } = useAuth();
   const { household, members, me, partner } = useHousehold();
   const data = useTodayData(household?.id ?? null, user?.id ?? null);
+  const schedule = useTodaySchedule(household?.id ?? null, user?.id ?? null);
+  const pending = usePendingActions(household?.id ?? null, user?.id ?? null);
   const [creating, setCreating] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskInstance | null>(null);
+  const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
   const [shoppingCollapsed, setShoppingCollapsed] = useState(true);
 
   const { myTasks, partnerTasks, unassignedTasks } = useMemo(() => {
@@ -93,6 +100,16 @@ export function Today() {
     );
   }
 
+  // A needs_pwa_review draft has no execution path (process-pending-actions
+  // has no case for it) — "編集してPWAフォームへ" cancels the ambiguous draft
+  // and hands the sender's own raw text to the normal task form as a
+  // starting point instead, matching "usable correction/form path rather
+  // than a dead end" (docs/adr/0011).
+  async function handleEditInForm(action: PendingAction) {
+    await pending.cancel(action.id);
+    setCorrectionTitle(String(action.normalized_payload.raw_text ?? ''));
+  }
+
   if (data.loading) {
     return (
       <div className="app-shell">
@@ -100,6 +117,8 @@ export function Today() {
       </div>
     );
   }
+
+  const hasPendingDecisions = data.incomingRequests.length > 0 || pending.pendingActions.length > 0;
 
   return (
     <div className="app-shell">
@@ -116,6 +135,38 @@ export function Today() {
         </p>
       )}
 
+      {/* Priority 1: 今/次の予定 */}
+      <TodaySchedule loading={schedule.loading} error={schedule.error} schedule={schedule.schedule} members={members} />
+
+      {/* Priority 2: 自分の判断待ち */}
+      <section className="card">
+        <h2>判断待ち</h2>
+        {pending.error && (
+          <p role="alert" className="error-text">
+            {pending.error}
+          </p>
+        )}
+        {!hasPendingDecisions ? (
+          <p className="empty-hint">なし</p>
+        ) : (
+          <ul className="request-list">
+            {data.incomingRequests.map((request) => (
+              <RequestQuickActions key={request.id} request={request} onChanged={data.refresh} />
+            ))}
+            {pending.pendingActions.map((action) => (
+              <PendingActionCard
+                key={action.id}
+                action={action}
+                onConfirm={pending.confirm}
+                onCancel={pending.cancel}
+                onEditInForm={handleEditInForm}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Priority 3: 今日の自分のタスク */}
       <section className="card">
         <h2>自分のタスク</h2>
         {renderTaskList(myTasks)}
@@ -133,19 +184,7 @@ export function Today() {
         </section>
       )}
 
-      <section className="card">
-        <h2>届いているお願い</h2>
-        {data.incomingRequests.length === 0 ? (
-          <p className="empty-hint">なし</p>
-        ) : (
-          <ul className="request-list">
-            {data.incomingRequests.map((request) => (
-              <RequestQuickActions key={request.id} request={request} onChanged={data.refresh} />
-            ))}
-          </ul>
-        )}
-      </section>
-
+      {/* Priority 4: 重要な引き継ぎ */}
       <section className="card">
         <h2>未読の引き継ぎ</h2>
         {data.unreadHandovers.length === 0 ? (
@@ -161,6 +200,7 @@ export function Today() {
         )}
       </section>
 
+      {/* Priority 5: 折りたたみ */}
       <section className="card collapsible">
         <button type="button" className="collapsible-toggle" onClick={() => setShoppingCollapsed((v) => !v)}>
           買い物（未購入 {data.openShoppingItems.length}件）{shoppingCollapsed ? '▼' : '▲'}
@@ -193,6 +233,17 @@ export function Today() {
           onClose={() => setEditingTask(null)}
           onSaved={() => {
             setEditingTask(null);
+            data.refresh();
+          }}
+        />
+      )}
+      {correctionTitle !== null && (
+        <TaskFormModal
+          mode="create"
+          initialTitle={correctionTitle}
+          onClose={() => setCorrectionTitle(null)}
+          onSaved={() => {
+            setCorrectionTitle(null);
             data.refresh();
           }}
         />

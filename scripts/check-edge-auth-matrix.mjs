@@ -52,11 +52,22 @@ function parseFunctionsBlock(tomlText) {
 // matrix — 18_MUTATION_CONTRACT_MATRIX.md #13 describes the AI-draft
 // propose/confirm flow in prose but never settles on Edge Function names.
 // See docs/adr/0003-ai-draft-propose-endpoint.md.
+//
+// Sol re-review #3 additions (docs/adr/0011): list-pending-actions/
+// confirm-pending-action/cancel-pending-action (Today Priority 2's "LINEから
+// 作ったpending action", 02_UX_AND_SCREENS.md #3) and get-today-schedule
+// (Today Priority 1's calendar/conflict schedule) fill read/mutation gaps
+// against already-built backend state — no named endpoint exists for any of
+// these in the vendored matrix.
 const GAP_FILL_FUNCTIONS = new Set([
   'configure-dropoff-pickup',
   'propose-ai-draft',
   'confirm-request-draft',
   'confirm-handover-draft',
+  'list-pending-actions',
+  'confirm-pending-action',
+  'cancel-pending-action',
+  'get-today-schedule',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

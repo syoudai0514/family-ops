@@ -36,6 +36,11 @@ export const EDGE_FUNCTIONS = {
   getRoutineSession: 'get-routine-session',
   completeRoutineSession: 'complete-routine-session',
   routineSessionItemAction: 'routine-session-item-action',
+  // Sol re-review #3 fix (P1-1/P1-2, docs/adr/0011) — Today Priority 1/2.
+  listPendingActions: 'list-pending-actions',
+  confirmPendingAction: 'confirm-pending-action',
+  cancelPendingAction: 'cancel-pending-action',
+  getTodaySchedule: 'get-today-schedule',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

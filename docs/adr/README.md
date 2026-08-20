@@ -44,6 +44,11 @@ decision this repository's implementation committed to, and why.
   re-review fix (P1-1/P1-2, second round): the LINE-native
   項目ごとに入力 item-by-item flow and the mandatory confirmation step before
   a top-level 今回は不要 mass-skip
+- [0011](0011-pending-action-review-and-today-schedule.md) — Sol re-review
+  fix (P1-1/P1-2, third round): the PWA pending-action review/confirm/cancel
+  surface (Today Priority 2) and the Today calendar/conflict schedule view
+  (Today Priority 1), both reusing existing backend RPCs/conflict logic with
+  zero re-derivation
 
 ## Format
 

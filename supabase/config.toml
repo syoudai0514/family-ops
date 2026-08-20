@@ -240,6 +240,25 @@ verify_jwt = true
 [functions.confirm-handover-draft]
 verify_jwt = true
 
+# Sol re-review #3 fix (P1-1/P1-2, docs/adr/0011): the vendored 52-function
+# matrix has no endpoint for reading/confirming/cancelling a LINE-created
+# pending_action from the PWA, nor for reading Today's calendar/conflict
+# schedule (02_UX_AND_SCREENS.md #3 Priority 1/2) — both are read/mutation
+# gaps against already-built backend state, same class of gap as WP5's
+# AI-draft endpoints above. All four are explicitly allowlisted in
+# scripts/check-edge-auth-matrix.mjs's GAP_FILL_FUNCTIONS.
+[functions.list-pending-actions]
+verify_jwt = true
+
+[functions.confirm-pending-action]
+verify_jwt = true
+
+[functions.cancel-pending-action]
+verify_jwt = true
+
+[functions.get-today-schedule]
+verify_jwt = true
+
 # External provider — verify_jwt = false (signature validated in-handler
 # before any DB access)
 

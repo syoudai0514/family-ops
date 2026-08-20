@@ -15,6 +15,14 @@ interface SubtaskDraft {
 interface TaskFormModalProps {
   mode: 'create' | 'edit';
   task?: TaskInstance;
+  /**
+   * Sol re-review #3 fix (P1-1): create-mode-only starting title, used by
+   * the pending-action "編集してPWAフォームへ" fallback (a needs_pwa_review
+   * draft's raw LINE text has no execution path of its own — this pre-fills
+   * the normal task form with it as a correction starting point instead of
+   * a dead end).
+   */
+  initialTitle?: string;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -24,9 +32,9 @@ interface TaskFormModalProps {
 // planned_assignee_user_id} — so in edit mode we simply don't render the
 // fields the backend won't accept, rather than sending them and hoping
 // they're ignored.
-export function TaskFormModal({ mode, task, onClose, onSaved }: TaskFormModalProps) {
+export function TaskFormModal({ mode, task, initialTitle, onClose, onSaved }: TaskFormModalProps) {
   const { members } = useHousehold();
-  const [title, setTitle] = useState(task?.title ?? '');
+  const [title, setTitle] = useState(task?.title ?? initialTitle ?? '');
   const [category, setCategory] = useState(task?.category ?? '');
   const [scheduledDate, setScheduledDate] = useState(task?.scheduled_date ?? todayIsoDate());
   const [dueLocalTime, setDueLocalTime] = useState('');

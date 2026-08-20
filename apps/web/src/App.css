@@ -205,10 +205,28 @@ button:disabled {
 .request-item,
 .handover-item,
 .notification-item,
-.shopping-item {
+.shopping-item,
+.pending-action-item {
   border: 1px solid var(--color-border);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
+}
+
+.pending-action-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.today-schedule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .handover-item.unread,
