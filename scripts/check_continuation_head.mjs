@@ -5,14 +5,22 @@
 // caught mechanically instead of relying on someone remembering to update it
 // by hand.
 //
-// Compares against the most recent commit that touches any file OTHER than
-// CONTINUATION.md itself, rather than literal `git rev-parse HEAD` — a
-// commit cannot know its own hash while being authored (the hash is a
-// function of the commit's own content), so CONTINUATION.md can only ever
-// declare a hash that already exists at write time. The commit that adds/
-// updates CONTINUATION.md itself is expected to sit on top of that declared
-// hash with no other file changes; if any other file changes afterward
-// without CONTINUATION.md being regenerated, this check correctly fails.
+// Walks history backwards from HEAD, skipping any leading commits whose
+// entire changed-file set is a subset of the "meta" set below (this file and
+// CONTINUATION.md itself), and treats the first commit that touches anything
+// else as the actual head. This is deliberately NOT a plain pathspec
+// exclusion (`git log -1 -- . ':!CONTINUATION.md'`) because that breaks the
+// moment this script itself is a new/changed file in the same commit as a
+// CONTINUATION.md regeneration: that commit would then "touch another file"
+// (itself) and the check would fail on its own introducing commit. Skipping
+// whole commits whose diff is entirely within the meta set avoids that,
+// while still correctly flagging any commit that changes real product code.
+//
+// A commit fundamentally cannot know its own hash while being authored (the
+// hash is a function of the commit's own content), so CONTINUATION.md can
+// only ever declare a hash that already existed at write time — the commit
+// that regenerates CONTINUATION.md (optionally alongside this script) is
+// expected to sit on top of that declared hash with no other file changes.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -22,11 +30,28 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const continuationPath = path.join(repoRoot, 'CONTINUATION.md');
 
-const actualHead = execFileSync(
-  'git',
-  ['log', '-1', '--format=%H', '--', '.', ':!CONTINUATION.md'],
-  { cwd: repoRoot, encoding: 'utf8' },
-).trim();
+const META_FILES = new Set(['CONTINUATION.md', 'scripts/check_continuation_head.mjs']);
+
+function git(args) {
+  return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim();
+}
+
+function findActualHead() {
+  const commits = git(['log', '--format=%H']).split('\n').filter(Boolean);
+  for (const commit of commits) {
+    const files = git(['show', '--name-only', '--format=', commit])
+      .split('\n')
+      .filter(Boolean);
+    const isMetaOnly = files.length > 0 && files.every((f) => META_FILES.has(f));
+    if (!isMetaOnly) {
+      return commit;
+    }
+  }
+  // Entire history is meta-only commits (e.g. a brand-new repo) — HEAD itself.
+  return commits[0];
+}
+
+const actualHead = findActualHead();
 
 const continuation = readFileSync(continuationPath, 'utf8');
 // Matches the fenced code block immediately after the
@@ -50,8 +75,8 @@ const declaredHead = match[1];
 
 if (declaredHead !== actualHead) {
   console.error(
-    `FAIL: CONTINUATION.md declares HEAD ${declaredHead}, but the most recent commit touching ` +
-      `any other file is ${actualHead}.\n` +
+    `FAIL: CONTINUATION.md declares HEAD ${declaredHead}, but the most recent non-meta ` +
+      `(code-touching) commit is ${actualHead}.\n` +
       'Regenerate CONTINUATION.md (or commit/push whatever code changes are pending) before packaging a review ZIP.',
   );
   process.exit(1);
