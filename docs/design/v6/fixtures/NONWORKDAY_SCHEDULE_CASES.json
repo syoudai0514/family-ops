@@ -1,0 +1,43 @@
+{
+  "version": 6,
+  "cases": [
+    {
+      "id": "NW01",
+      "date": "2026-08-22",
+      "expected": [
+        "09:00",
+        "20:00"
+      ]
+    },
+    {
+      "id": "NW02",
+      "date": "2026-08-23",
+      "expected": "09:00_today_plus_next_week_no_noon"
+    },
+    {
+      "id": "NW03",
+      "date": "2026-09-21",
+      "expected": "holiday_nonworkday"
+    },
+    {
+      "id": "NW04",
+      "date": "2026-09-22",
+      "expected": "holiday_law_nonworkday"
+    },
+    {
+      "id": "NW05",
+      "scenario": "source_fetch_fail_fixture_hit",
+      "expected": "same_behavior"
+    },
+    {
+      "id": "NW06",
+      "scenario": "both_linked_all_incomplete",
+      "expected_max_counted": 4
+    },
+    {
+      "id": "NW07",
+      "scenario": "one_has_no_incomplete",
+      "expected": "suppress_one_20"
+    }
+  ]
+}

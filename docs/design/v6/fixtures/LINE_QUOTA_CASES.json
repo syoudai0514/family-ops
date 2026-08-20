@@ -1,0 +1,82 @@
+{
+  "version": 6,
+  "defaults": {
+    "soft_budget": 180,
+    "reserve": 20,
+    "provider_limit": 200
+  },
+  "cases": [
+    {
+      "id": "LQ01",
+      "provider_consumed": 0,
+      "local_counted_success": 0,
+      "priority": "reminder",
+      "expected": "push_allowed"
+    },
+    {
+      "id": "LQ02",
+      "provider_consumed": 180,
+      "local_counted_success": 175,
+      "priority": "reminder",
+      "expected": "in_app_fallback"
+    },
+    {
+      "id": "LQ03",
+      "provider_consumed": 180,
+      "local_counted_success": 180,
+      "priority": "normal",
+      "expected": "in_app_fallback"
+    },
+    {
+      "id": "LQ04",
+      "provider_consumed": 180,
+      "local_counted_success": 180,
+      "priority": "critical",
+      "expected": "push_allowed"
+    },
+    {
+      "id": "LQ05",
+      "provider_consumed": 199,
+      "local_counted_success": 199,
+      "priority": "critical",
+      "expected": "push_allowed_one_if_provider_accepts"
+    },
+    {
+      "id": "LQ06",
+      "provider_consumed": 200,
+      "local_counted_success": 199,
+      "priority": "critical",
+      "expected": "no_push_in_app_fallback"
+    },
+    {
+      "id": "LQ07",
+      "provider_consumed": null,
+      "local_counted_success": 170,
+      "priority": "normal",
+      "provider_refresh": "failed_stale",
+      "expected": "in_app_fallback"
+    },
+    {
+      "id": "LQ08",
+      "provider_consumed": null,
+      "local_counted_success": 170,
+      "priority": "critical",
+      "provider_refresh": "failed_stale",
+      "expected": "single_push_attempt_then_429_fallback_if_rejected"
+    },
+    {
+      "id": "LQ09",
+      "interaction": "webhook_reply_token_valid",
+      "expected": "reply_message",
+      "counts_toward_push_budget": false
+    },
+    {
+      "id": "LQ10",
+      "month_days": 31,
+      "sundays": 5,
+      "all_reminders_incomplete": true,
+      "expected_invariant": "accepted_counted_push<=provider_limit"
+    }
+  ],
+  "app_hard_cap": 200
+}

@@ -1,0 +1,42 @@
+name: Backup freshness alert
+
+# WP10: "backup freshness alert" (also listed again under WP11's
+# production-readiness checklist). Runs independently of backup.yml so a
+# stuck/broken backup job doesn't just silently stop producing files — this
+# job actively checks the R2 marker and FAILS (a legitimate MVP alert
+# mechanism: a red GitHub Actions run notifies whoever watches this repo's
+# Actions tab / has notifications on) if the most recent backup is older
+# than the freshness threshold.
+
+on:
+  schedule:
+    # Runs a few hours after the daily backup (18:00 UTC) so a normal daily
+    # backup has had time to land before we check, while still catching a
+    # stale/missing backup well within the same day.
+    - cron: "0 21 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: Check latest backup age
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install awscli
+        run: pip install --quiet awscli
+
+      - name: Run freshness check
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          # Optional override; script defaults to 26 hours if unset.
+          MAX_BACKUP_AGE_HOURS: "26"
+        run: bash scripts/backup_freshness_check.sh

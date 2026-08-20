@@ -1,0 +1,37 @@
+{
+  "version": 6,
+  "cases": [
+    {
+      "id": "GR01",
+      "event_id": "abc",
+      "expected": "event:abc"
+    },
+    {
+      "id": "GR02",
+      "recurring_event_id": "s1",
+      "original_date": "2026-09-21",
+      "expected": "rec:s1:date:2026-09-21"
+    },
+    {
+      "id": "GR03",
+      "recurring_event_id": "s1",
+      "original_datetime": "2026-09-21T10:00:00+09:00",
+      "expected": "rec:s1:datetime:2026-09-21T01:00:00Z"
+    },
+    {
+      "id": "GR04",
+      "scenario": "moved_instance",
+      "expected": "same_key"
+    },
+    {
+      "id": "GR05",
+      "scenario": "instance_override",
+      "expected": "wins_series"
+    },
+    {
+      "id": "GR06",
+      "scenario": "projection_rebuild",
+      "expected": "classification_survives"
+    }
+  ]
+}

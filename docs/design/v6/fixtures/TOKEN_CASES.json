@@ -1,0 +1,78 @@
+{
+  "version": 5,
+  "cases": [
+    {
+      "id": "T-01",
+      "type": "household_invite",
+      "scenario": "valid first use",
+      "expected": "membership created; used_at/used_by set atomically"
+    },
+    {
+      "id": "T-02",
+      "type": "household_invite",
+      "scenario": "reuse",
+      "expected": "deny; no second membership effect"
+    },
+    {
+      "id": "T-03",
+      "type": "household_invite",
+      "scenario": "expired",
+      "expected": "deny"
+    },
+    {
+      "id": "T-04",
+      "type": "household_invite",
+      "scenario": "two concurrent claims",
+      "expected": "exactly one succeeds"
+    },
+    {
+      "id": "T-05",
+      "type": "line_link",
+      "scenario": "valid within 10 minutes",
+      "expected": "link created; token consumed"
+    },
+    {
+      "id": "T-06",
+      "type": "line_link",
+      "scenario": "reuse",
+      "expected": "deny"
+    },
+    {
+      "id": "T-07",
+      "type": "line_link",
+      "scenario": "expired",
+      "expected": "deny"
+    },
+    {
+      "id": "T-08",
+      "type": "line_link",
+      "scenario": "raw token database search",
+      "expected": "raw token never present; only hash"
+    },
+    {
+      "id": "TOK-LINE-01",
+      "type": "line_link",
+      "ttl_minutes": 10,
+      "reuse": "reject"
+    },
+    {
+      "id": "TOK-INV-01",
+      "type": "household_invite",
+      "ttl_hours": 24,
+      "reuse": "reject"
+    },
+    {
+      "id": "TOK-GOOG-01",
+      "type": "google_oauth_state",
+      "ttl_minutes": 10,
+      "reuse": "reject",
+      "storage": "sha256_hash_only"
+    },
+    {
+      "id": "TOK-GOOG-02",
+      "type": "google_oauth_state",
+      "return_to": "https://evil.example",
+      "expected": "reject_not_allowlisted"
+    }
+  ]
+}

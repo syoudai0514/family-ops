@@ -1,0 +1,55 @@
+{
+  "version": 6,
+  "cases": [
+    {
+      "id": "EA01",
+      "function": "create-task",
+      "jwt": null,
+      "expected": "gateway_401"
+    },
+    {
+      "id": "EA02",
+      "function": "create-task",
+      "jwt": "valid",
+      "expected": "actor_from_sub"
+    },
+    {
+      "id": "EA03",
+      "function": "line-webhook-receiver",
+      "jwt": null,
+      "signature": "valid",
+      "expected": "reached"
+    },
+    {
+      "id": "EA04",
+      "function": "google-calendar-webhook",
+      "jwt": null,
+      "watch": "valid",
+      "expected": "reached"
+    },
+    {
+      "id": "EA05",
+      "function": "google-calendar-oauth-callback",
+      "jwt": null,
+      "state": "valid",
+      "expected": "reached"
+    },
+    {
+      "id": "EA06",
+      "function": "send-notifications",
+      "worker_token": "valid",
+      "expected": "pass"
+    },
+    {
+      "id": "EA07",
+      "function": "send-notifications",
+      "worker_token": "wrong",
+      "expected": "401_before_db"
+    },
+    {
+      "id": "EA08",
+      "scenario": "config_matrix_diff",
+      "expected": "ci_fail"
+    }
+  ]
+}

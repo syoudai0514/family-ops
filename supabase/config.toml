@@ -1,0 +1,310 @@
+# Family Ops — Supabase project config (v6)
+#
+# v6 review fix (P1-1, this round): the [functions.*] block below is the
+# LIVE deployment snapshot, not the full v6 design — it declares an entry
+# for exactly the functions currently implemented under supabase/functions/
+# (each verify_jwt value still matches the normative classification from
+# docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md / the full 52-function
+# snapshot vendored at docs/design/v6/supabase/config.toml). Declaring
+# config.toml entries for functions that don't exist on disk is what a real
+# `supabase start`/`supabase db reset` cannot execute against, so the two
+# matrices are deliberately kept separate and independently linted by
+# scripts/check-edge-auth-matrix.mjs:
+#   - every function actually present under supabase/functions/ has an
+#     entry here, and that entry's verify_jwt matches the normative
+#     classification (no unknown/undeclared function is deployed)
+#   - this file contains no entry for a function that isn't deployed yet
+#     (live config stays runnable, never aspirational)
+#   - the full 52-function design matrix is checked for internal
+#     completeness on its own, independently of what's deployed so far
+#   - verify_jwt=false does not by itself mean "trusted" — provider/worker
+#     in-handler authentication happens before any DB access; see
+#     docs/design/v6/04_SECURITY_RLS_PRIVACY.md #"v6 Edge gateway requirement"
+
+project_id = "family-ops"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+# v6 review fix (P1-D, real CI run): Supabase CLI 2.115.0 (pinned above)
+# rejects major_version = 16 outright at config-parse time ("Invalid
+# db.major_version: 16") before even attempting to start a container — its
+# own `supabase init` template now defaults to 17. This is a local
+# Postgres-container version pin for the real Supabase stack only; it is
+# independent of the plain-Postgres `db` CI job (scripts/run_sql_tests.sh),
+# which runs its own postgres:16 service directly and is unaffected.
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+jwt_expiry = 3600
+# v6 review fix (P1-7): Google Sign-In (Supabase Auth's own Google provider,
+# distinct from the separate Google Calendar OAuth client — see
+# docs/design/v6/01_ARCHITECTURE.md #"Supabase Auth Google Sign-In。Family
+# Ops本人認証のみ".) is this product's only onboarding path: a brand-new
+# family creates their household by signing in with Google for the first
+# time. enable_signup=false would block that very first sign-in, so it must
+# be true here. This does not weaken the household boundary: max-2-active-
+# adult and one-household-per-user are enforced at the DB layer
+# (household_members UNIQUE(user_id), the join-household transaction lock;
+# see 15_DDL_CONTRACT.md #19) independently of how many Supabase Auth users
+# can exist.
+enable_signup = true
+
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_SIGNIN_CLIENT_ID)"
+secret = "env(GOOGLE_SIGNIN_CLIENT_SECRET)"
+# v6 review fix (P1-C, this round): this is the Google -> Supabase Auth
+# (GoTrue) OAuth callback that must be registered verbatim in the Google
+# Cloud Console's "Authorized redirect URIs" — for the local Supabase CLI
+# stack that is always http://127.0.0.1:54321/auth/v1/callback. It is NOT
+# the app's own post-login landing page: that's `redirectTo` passed by the
+# client SDK at sign-in time, validated against [auth] site_url /
+# additional_redirect_urls above, and was previously (incorrectly) wired to
+# this same env var — the two are now kept separate. See the project-root
+# .env.example and README.md "Google Sign-In (local dev)".
+redirect_uri = "env(GOOGLE_SIGNIN_CALLBACK_URL)"
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+
+# ---------------------------------------------------------------------------
+# Deployed functions only (supabase/functions/<name>/index.ts exists) — see
+# the file-header comment above. The full 52-function v6 design matrix
+# (including the 46 not yet implemented, e.g. create-task, send-request,
+# google-calendar-oauth-start, process-line-inbox, sync-jp-holidays, ...)
+# stays at docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md /
+# docs/design/v6/supabase/config.toml and is linted for internal
+# completeness independently by scripts/check-edge-auth-matrix.mjs, without
+# requiring every one of those 46 to have a live entry here yet.
+# ---------------------------------------------------------------------------
+
+# User-facing — verify_jwt = true (actor derived from JWT sub -> household_members)
+
+[functions.create-household]
+verify_jwt = true
+
+[functions.create-household-invite]
+verify_jwt = true
+
+[functions.join-household]
+verify_jwt = true
+
+[functions.configure-evening-routines]
+verify_jwt = true
+
+[functions.create-task]
+verify_jwt = true
+
+[functions.edit-task]
+verify_jwt = true
+
+[functions.cancel-task]
+verify_jwt = true
+
+[functions.complete-task]
+verify_jwt = true
+
+[functions.set-subtask-completion]
+verify_jwt = true
+
+[functions.create-task-definition]
+verify_jwt = true
+
+[functions.edit-task-definition]
+verify_jwt = true
+
+[functions.deactivate-task-definition]
+verify_jwt = true
+
+[functions.send-request]
+verify_jwt = true
+
+[functions.accept-request]
+verify_jwt = true
+
+[functions.decline-request]
+verify_jwt = true
+
+[functions.cancel-request]
+verify_jwt = true
+
+[functions.add-shopping-item]
+verify_jwt = true
+
+[functions.assign-shopping-item]
+verify_jwt = true
+
+[functions.order-shopping-item]
+verify_jwt = true
+
+[functions.purchase-shopping-item]
+verify_jwt = true
+
+[functions.arrive-shopping-item]
+verify_jwt = true
+
+[functions.cancel-shopping-item]
+verify_jwt = true
+
+[functions.create-handover]
+verify_jwt = true
+
+[functions.mark-handover-read]
+verify_jwt = true
+
+[functions.mark-notification-read]
+verify_jwt = true
+
+[functions.update-notification-preferences]
+verify_jwt = true
+
+[functions.update-routine-schedule]
+verify_jwt = true
+
+[functions.change-recurrence]
+verify_jwt = true
+
+[functions.reassign-task-once]
+verify_jwt = true
+
+[functions.create-line-link-token]
+verify_jwt = true
+
+[functions.unlink-line-account]
+verify_jwt = true
+
+[functions.get-routine-session]
+verify_jwt = true
+
+[functions.complete-routine-session]
+verify_jwt = true
+
+[functions.routine-session-item-action]
+verify_jwt = true
+
+[functions.google-calendar-oauth-start]
+verify_jwt = true
+
+[functions.ensure-calendar-fresh]
+verify_jwt = true
+
+[functions.classify-calendar-busy-members]
+verify_jwt = true
+
+[functions.create-calendar-event]
+verify_jwt = true
+
+[functions.update-calendar-event]
+verify_jwt = true
+
+# v6 review fix (WP2, docs/adr/0002): no named endpoint exists in the
+# vendored v6 design's 52-function matrix for "initial dropoff/pickup times
+# and weekly assignee setup" (10_WORK_PACKAGES.md's WP2 line item) — see
+# supabase/migrations/20260819000018_dropoff_pickup_setup.sql's header
+# comment for the full gap analysis. This is the one function in this repo
+# that is not a member of the normative 52; scripts/check-edge-auth-matrix.mjs
+# explicitly allowlists it by name rather than silently loosening the check
+# for everything else.
+[functions.configure-dropoff-pickup]
+verify_jwt = true
+
+# v6 review fix (WP5, docs/adr/0003): the vendored 52-function matrix in
+# docs/design/v6/supabase/config.toml has no propose-ai-draft,
+# confirm-request-draft, or confirm-handover-draft entries — the AI-draft
+# propose/confirm split is a genuine naming gap in the vendored design, not
+# an invented v7 feature (18_MUTATION_CONTRACT_MATRIX.md #13 describes the
+# flow in prose without settling on Edge Function names). All three are
+# explicitly allowlisted in scripts/check-edge-auth-matrix.mjs's
+# GAP_FILL_FUNCTIONS rather than silently loosening the check.
+[functions.propose-ai-draft]
+verify_jwt = true
+
+[functions.confirm-request-draft]
+verify_jwt = true
+
+[functions.confirm-handover-draft]
+verify_jwt = true
+
+# Sol re-review #3 fix (P1-1/P1-2, docs/adr/0011): the vendored 52-function
+# matrix has no endpoint for reading/confirming/cancelling a LINE-created
+# pending_action from the PWA, nor for reading Today's calendar/conflict
+# schedule (02_UX_AND_SCREENS.md #3 Priority 1/2) — both are read/mutation
+# gaps against already-built backend state, same class of gap as WP5's
+# AI-draft endpoints above. All four are explicitly allowlisted in
+# scripts/check-edge-auth-matrix.mjs's GAP_FILL_FUNCTIONS.
+[functions.list-pending-actions]
+verify_jwt = true
+
+[functions.confirm-pending-action]
+verify_jwt = true
+
+[functions.cancel-pending-action]
+verify_jwt = true
+
+[functions.get-today-schedule]
+verify_jwt = true
+
+# External provider — verify_jwt = false (signature validated in-handler
+# before any DB access)
+
+[functions.line-webhook-receiver]
+verify_jwt = false
+
+[functions.google-calendar-webhook]
+verify_jwt = false
+
+# Browser top-level redirect from Google's OAuth consent screen — verify_jwt
+# = false because there is no JWT on this request at all (docs/adr/0004):
+# authenticated entirely by the single-use, TTL'd private.google_oauth_states
+# state_hash row, not a bearer token.
+
+[functions.google-calendar-oauth-callback]
+verify_jwt = false
+
+# Cron worker — verify_jwt = false (X-Family-Ops-Worker-Token constant-time
+# compared in-handler before any DB access)
+
+[functions.send-notifications]
+verify_jwt = false
+
+[functions.process-line-inbox]
+verify_jwt = false
+
+[functions.process-pending-actions]
+verify_jwt = false
+
+[functions.renew-google-watch]
+verify_jwt = false
+
+[functions.enqueue-periodic-google-sync]
+verify_jwt = false
+
+[functions.process-google-sync]
+verify_jwt = false
+
+[functions.dispatch-routine-automation]
+verify_jwt = false
+
+[functions.materialize-recurring]
+verify_jwt = false
+
+[functions.sync-jp-holidays]
+verify_jwt = false
+
+[functions.cleanup-expired-private-data]
+verify_jwt = false

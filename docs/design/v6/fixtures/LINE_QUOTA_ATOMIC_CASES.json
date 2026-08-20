@@ -1,0 +1,42 @@
+{
+  "version": 6,
+  "hard_cap": 200,
+  "soft_budget": 180,
+  "reserve": 20,
+  "cases": [
+    {
+      "id": "LQA01",
+      "provider_consumed": 179,
+      "parallel": "2 reminders",
+      "expected": "no_soft_race"
+    },
+    {
+      "id": "LQA02",
+      "provider_consumed": 199,
+      "parallel": "2 critical",
+      "expected": "at_most_one_permit"
+    },
+    {
+      "id": "LQA03",
+      "provider_limit": 5000,
+      "expected_effective_hard_limit": 200
+    },
+    {
+      "id": "LQA04",
+      "provider_consumed": 195,
+      "local_success": 180,
+      "active_reserved": 2,
+      "expected_effective_usage": 197
+    },
+    {
+      "id": "LQA05",
+      "scenario": "manual_OA_send",
+      "expected": "provider_consumption_reduces_budget"
+    },
+    {
+      "id": "LQA06",
+      "scenario": "ambiguous_timeout",
+      "expected": "reservation_stays_counted"
+    }
+  ]
+}

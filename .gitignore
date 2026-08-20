@@ -1,0 +1,21 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# Supabase local
+supabase/.branches
+supabase/.temp
+
+# Test/coverage artifacts
+coverage
+/tmp-test-db
