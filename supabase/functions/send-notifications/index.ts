@@ -19,9 +19,16 @@
 // only. The push/quota fetch() calls below are the full intended
 // implementation; they cannot be live-tested here, matching the same
 // documented limitation as WP6/WP7's own provider wire calls.
+//
+// P1-3 (review fix, docs/adr/0009): buildBundledText/buildRoutineQuickReply
+// below make routine ('type'==='routine') LINE messages actionable —
+// quickReply.items on the text message, plus the PWA deep link now folded
+// into the text — matching process-line-inbox's existing
+// action=routine_complete&session_id=...&value=... postback parsing.
 import { createServiceRoleClient, requireWorkerToken } from "../_shared/auth.ts";
 import { withServiceHandler, jsonResponse } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { buildCheckinLink, type LinePostbackQuickReplyAction } from "../_shared/lineMessaging.ts";
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -48,6 +55,14 @@ type OutboxItem = {
   title?: string;
   body?: string;
   dedup_key?: string;
+  // P1-3 fix (docs/adr/0009): only ever present on notification_outbox.type
+  // === 'routine' items, attached by
+  // private.fn_claim_and_enqueue_routine_notification (20260819000100) when
+  // this item's schedule_kind maps to an open routine_checkin_sessions row
+  // (dropoff/pickup checklist+checkin, nonpickup_evening checklist+checkin).
+  // Opaque canonical id only -- no bearer credential.
+  session_id?: string;
+  session_type?: string;
 };
 
 type ClaimedNotification = {
@@ -85,18 +100,75 @@ type RunSummary = {
 // scheduled local minute ... one message"; the WP9 bridge trigger in
 // 20260819000070 appends bundled items into a single row's payload) into
 // one envelope, truncated to LINE's text-message length limit.
-function buildBundledText(payload: ClaimedNotification["payload"], type: string): string {
+//
+// P1-3 fix (docs/adr/0009): for type === 'routine' items, also appends the
+// PWA deep link ({APP_BASE_URL}/checkin/{session_id}) once per distinct
+// session_id referenced by the bundle (06_LINE_INTEGRATION.md #8 "Every
+// checklist/check-in message includes deep link") and returns those
+// distinct session ids so the caller can decide whether to attach
+// quick-reply postback buttons.
+function buildBundledText(
+  payload: ClaimedNotification["payload"],
+  type: string,
+): { text: string; sessionIds: string[] } {
   const items = payload?.items ?? [];
+  const seenSessionIds = new Set<string>();
   const blocks = items.length > 0
     ? items.map((item) => {
       const title = item.title ?? "";
       const body = item.body ?? "";
-      return body && body !== title ? `${title}\n${body}` : title;
+      let block = body && body !== title ? `${title}\n${body}` : title;
+      if (type === "routine" && item.session_id && !seenSessionIds.has(item.session_id)) {
+        seenSessionIds.add(item.session_id);
+        block += `\n${buildCheckinLink(item.session_id)}`;
+      }
+      return block;
     })
     : [`Family Ops: ${type}`];
   const text = blocks.filter((b) => b.length > 0).join("\n\n");
-  if (text.length <= LINE_TEXT_MAX_CHARS) return text;
-  return text.slice(0, LINE_TEXT_MAX_CHARS - 1) + "…";
+  const truncated = text.length <= LINE_TEXT_MAX_CHARS ? text : text.slice(0, LINE_TEXT_MAX_CHARS - 1) + "…";
+  return { text: truncated, sessionIds: Array.from(seenSessionIds) };
+}
+
+// P1-3 fix: session-level 全部完了/今回は不要 quick-reply postback buttons
+// (docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md #8 "top-level actions"),
+// matching process-line-inbox's existing
+// action=routine_complete&session_id=...&value=complete_all|skip_incomplete
+// postback parsing exactly.
+//
+// Design decision (see docs/adr/0009 for the full write-up): only attached
+// when the message bundles items for EXACTLY ONE distinct routine session.
+// A notification_outbox row's items[] are per-schedule_kind text blocks
+// (e.g. one "🎒 朝のチェック" item can itself list several checklist lines),
+// not one payload item per task_instance -- so true per-task item-level
+// quick-reply buttons ("完了"/"相手が対応" on ONE task) are not derivable
+// from this payload shape without a broader change to
+// 20260819000082_dispatch_routine_automation_rpc.sql, which is out of scope
+// for this fix (owned by a parallel P1-1/P1-2 fix). "項目ごとに入力"
+// (item-by-item bot flow) and any finer-grained action remain PWA-only via
+// the deep link, which is always included in the text regardless. When a
+// bundle spans zero or more-than-one distinct session (the latter only
+// possible if a household configures two different session-bearing
+// schedule_kinds to the identical local minute -- not a default/expected
+// configuration), no postback buttons are attached; the PWA link(s) already
+// embedded in the text remain the only, but always-present, actionable path.
+function buildRoutineQuickReply(sessionIds: string[]): LinePostbackQuickReplyAction[] | undefined {
+  if (sessionIds.length !== 1) return undefined;
+  const sessionId = sessionIds[0];
+  return [
+    {
+      type: "postback",
+      label: "全部完了",
+      data: `action=routine_complete&session_id=${sessionId}&value=complete_all`,
+      displayText: "全部完了",
+    },
+    {
+      type: "postback",
+      label: "今回は不要",
+      data: `action=routine_complete&session_id=${sessionId}&value=skip_incomplete`,
+      displayText: "今回は不要",
+    },
+  ];
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
@@ -219,7 +291,10 @@ async function sendOne(
     return await failItem(serviceClient, item, "quota_fallback", "LINE_CHANNEL_ACCESS_TOKEN not configured");
   }
 
-  const text = buildBundledText(item.payload, item.type);
+  const { text, sessionIds } = buildBundledText(item.payload, item.type);
+  const quickReply = item.type === "routine" ? buildRoutineQuickReply(sessionIds) : undefined;
+  const message: Record<string, unknown> = { type: "text", text };
+  if (quickReply) message.quickReply = { items: quickReply.map((action) => ({ type: "action", action })) };
   let response: Response;
   try {
     response = await fetchWithTimeout(LINE_PUSH_URL, {
@@ -231,7 +306,7 @@ async function sendOne(
       },
       body: JSON.stringify({
         to: item.line_user_id,
-        messages: [{ type: "text", text }],
+        messages: [message],
       }),
     });
   } catch (err) {

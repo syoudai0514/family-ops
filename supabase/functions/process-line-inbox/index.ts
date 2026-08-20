@@ -40,10 +40,17 @@
 //   action=routine_complete&session_id=...&value=complete_all|skip_incomplete
 // p_source is always 'line' for both, so task_events / mutation results
 // correctly attribute the channel per #9.
+//
+// P1-4 (review fix, docs/adr/0009): after any successful postback/text RPC
+// call above, sendConfirmation() sends a short reply-first confirmation via
+// ../_shared/lineMessaging.ts -- LINE Reply API first (free, no quota),
+// falling back to a durable push-outbox row only when the reply is
+// unavailable/fails (#10A "Reply").
 import { createServiceRoleClient, requireWorkerToken } from "../_shared/auth.ts";
 import { withServiceHandler, jsonResponse } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { parseLineText } from "./parser.ts";
+import { buildCheckinLink, replyOrEnqueuePush } from "../_shared/lineMessaging.ts";
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get("LINE_INBOX_BATCH_LIMIT") ?? "25");
@@ -70,6 +77,12 @@ interface WebhookInboxItem {
     type?: string;
     message?: { type?: string; text?: string };
     postback?: { data?: string };
+    // LINE's own event objects carry this for message/postback events
+    // (docs/design/v6/06_LINE_INTEGRATION.md #10A "Reply"; P1-4 fix). No
+    // schema change needed -- private.webhook_inbox.payload already stores
+    // the whole raw webhook event verbatim (line-webhook-receiver). Never
+    // logged in full; only passed through to replyOrEnqueuePush.
+    replyToken?: string;
   };
   attempts: number;
   lease_token: string;
@@ -135,6 +148,32 @@ async function tryClaimLinkToken(
   return true; // handled either way — never falls through to command parsing
 }
 
+// P1-4 fix: a short confirmation for a webhook-triggered interaction this
+// worker just handled, sent reply-first (free, no quota) with an immediate
+// push-outbox fallback (see ../_shared/lineMessaging.ts). Best-effort by
+// design -- the underlying mutation already happened and is idempotent via
+// deterministicOperationId; a lost/duplicated confirmation is a minor UX
+// gap, never a correctness issue (docs/design/v6/06_LINE_INTEGRATION.md
+// #10A "Reply", #12 "Reply vs push").
+async function sendConfirmation(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  text: string,
+): Promise<void> {
+  const result = await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text,
+    dedupKey: `line-reply-fallback:${item.provider_event_id}`,
+  });
+  if (result === "no_channel") {
+    console.warn("process-line-inbox: confirmation reply/push both unavailable", { id: item.id });
+  }
+}
+
 async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, actor: LineActor | null): Promise<void> {
   const data = item.payload.postback?.data;
   if (!data || !actor) return;
@@ -145,7 +184,11 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
       p_actor_id: actor.user_id,
       p_pending_action_id: fields.pending_action_id,
     });
-    if (error) console.error("process-line-inbox: confirm_pending failed", error.message);
+    if (error) {
+      console.error("process-line-inbox: confirm_pending failed", error.message);
+      return;
+    }
+    await sendConfirmation(client, item, actor, "✓ 確定しました");
     return;
   }
 
@@ -154,7 +197,11 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
       p_actor_id: actor.user_id,
       p_pending_action_id: fields.pending_action_id,
     });
-    if (error) console.error("process-line-inbox: cancel_pending failed", error.message);
+    if (error) {
+      console.error("process-line-inbox: cancel_pending failed", error.message);
+      return;
+    }
+    await sendConfirmation(client, item, actor, "✓ キャンセルしました");
     return;
   }
 
@@ -170,7 +217,11 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
       p_completion_actor: completionActor,
       p_complete_remaining_subtasks: fields.complete_remaining === "true",
     });
-    if (error) console.error("process-line-inbox: complete_task postback failed", error.message);
+    if (error) {
+      console.error("process-line-inbox: complete_task postback failed", error.message);
+      return;
+    }
+    await sendConfirmation(client, item, actor, "✓ 完了にしました");
     return;
   }
 
@@ -188,7 +239,27 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
       p_action: fields.value,
       p_source: "line",
     });
-    if (error) console.error("process-line-inbox: routine_item postback failed", error.message);
+    if (error) {
+      console.error("process-line-inbox: routine_item postback failed", error.message);
+      // #13 "old scheduled session superseded -> return SESSION_SUPERSEDED
+      // and latest PWA link" -- the RPC layer raises TASK_TERMINAL for a
+      // non-open session (docs/adr/0007 decision 2); reply with a safe
+      // latest-state link rather than staying silent, since the tapped
+      // button is now stale.
+      if (error.message === "TASK_TERMINAL") {
+        await sendConfirmation(
+          client,
+          item,
+          actor,
+          `⚠ このチェックは最新ではありません。最新の状態はこちら:\n${buildCheckinLink(fields.session_id)}`,
+        );
+      }
+      return;
+    }
+    const itemLabel = fields.value === "complete" ? "✓ 完了にしました"
+      : fields.value === "partner_handled" ? "✓ 相手対応にしました"
+      : "✓ 今回は不要にしました";
+    await sendConfirmation(client, item, actor, itemLabel);
     return;
   }
 
@@ -205,7 +276,20 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
       p_disposition: fields.value,
       p_source: "line",
     });
-    if (error) console.error("process-line-inbox: routine_complete postback failed", error.message);
+    if (error) {
+      console.error("process-line-inbox: routine_complete postback failed", error.message);
+      if (error.message === "TASK_TERMINAL") {
+        await sendConfirmation(
+          client,
+          item,
+          actor,
+          `⚠ このチェックは最新ではありません。最新の状態はこちら:\n${buildCheckinLink(fields.session_id)}`,
+        );
+      }
+      return;
+    }
+    const sessionLabel = fields.value === "complete_all" ? "✓ 全部完了にしました" : "✓ 今回は不要にしました";
+    await sendConfirmation(client, item, actor, sessionLabel);
     return;
   }
 
@@ -233,7 +317,14 @@ async function handleText(
     p_normalized_payload: parsed?.payload ?? { raw_text: text },
     p_ttl_minutes: PENDING_ACTION_TTL_MINUTES,
   });
-  if (error) console.error("process-line-inbox: create_pending_action failed", error.message);
+  if (error) {
+    console.error("process-line-inbox: create_pending_action failed", error.message);
+    return;
+  }
+  // P1-4: a pending action was durably created and needs the sender's
+  // explicit confirm/cancel from the PWA/pending-action postback (#9 "must
+  // preview first") -- this is a light receipt, not the confirmation itself.
+  await sendConfirmation(client, item, actor, "✓ 受け付けました。内容はアプリでご確認ください。");
 }
 
 async function processItem(client: SupabaseClient, item: WebhookInboxItem): Promise<void> {
