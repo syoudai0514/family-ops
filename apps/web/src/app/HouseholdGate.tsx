@@ -10,11 +10,21 @@ import { LoadingScreen } from '../components/LoadingScreen';
 // otherwise -> the full app. See HouseholdContext's phaseForHousehold for
 // exactly how "finished" is determined.
 export function HouseholdGate() {
-  const { phase } = useHousehold();
+  const { phase, loadError, refresh } = useHousehold();
 
   switch (phase) {
     case 'loading':
       return <LoadingScreen />;
+    case 'error':
+      return (
+        <main className="app-shell centered" role="alert">
+          <h1>家庭情報を読み込めませんでした</h1>
+          <p>{loadError ?? '通信状態を確認して、もう一度お試しください。'}</p>
+          <button type="button" onClick={() => void refresh()}>
+            もう一度読み込む
+          </button>
+        </main>
+      );
     case 'no-household':
       return <HouseholdSetup />;
     case 'dropoff-pickup-wizard':
