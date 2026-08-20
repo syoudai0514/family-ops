@@ -13,6 +13,7 @@ export type HouseholdMemberWithProfile = HouseholdMember & { profile: Profile | 
 // both non-null means the household is fully set up.
 export type HouseholdPhase =
   | 'loading'
+  | 'error'
   | 'no-household'
   | 'dropoff-pickup-wizard'
   | 'evening-routines-wizard'
@@ -26,6 +27,7 @@ interface HouseholdContextValue {
   /** The other adult in the household, if one has joined yet. */
   partner: HouseholdMemberWithProfile | null;
   refresh: () => Promise<void>;
+  loadError: string | null;
 }
 
 const HouseholdContext = createContext<HouseholdContextValue | undefined>(undefined);
@@ -41,9 +43,11 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<HouseholdPhase>('loading');
   const [household, setHousehold] = useState<Household | null>(null);
   const [members, setMembers] = useState<HouseholdMemberWithProfile[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) {
+      setLoadError(null);
       setPhase('no-household');
       setHousehold(null);
       setMembers([]);
@@ -51,49 +55,59 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     }
 
     setPhase('loading');
+    setLoadError(null);
 
-    const { data: myMembership, error: myMembershipError } = await supabase
-      .from('household_members')
-      .select('household_id, user_id, member_role, joined_at')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (myMembershipError || !myMembership) {
-      setHousehold(null);
-      setMembers([]);
-      setPhase('no-household');
-      return;
-    }
-
-    const householdId = myMembership.household_id;
-
-    const [{ data: householdRow }, { data: memberRows }] = await Promise.all([
-      supabase
-        .from('households')
-        .select('id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at')
-        .eq('id', householdId)
-        .maybeSingle(),
-      supabase
+    try {
+      const { data: myMembership, error: myMembershipError } = await supabase
         .from('household_members')
         .select('household_id, user_id, member_role, joined_at')
-        .eq('household_id', householdId),
-    ]);
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-    const memberList = memberRows ?? [];
-    const userIds = memberList.map((m) => m.user_id);
-    const { data: profileRows } = userIds.length
-      ? await supabase.from('profiles').select('user_id, display_name').in('user_id', userIds)
-      : { data: [] as Profile[] };
+      if (myMembershipError) throw myMembershipError;
+      if (!myMembership) {
+        setHousehold(null);
+        setMembers([]);
+        setPhase('no-household');
+        return;
+      }
 
-    const profilesByUserId = new Map((profileRows ?? []).map((p) => [p.user_id, p]));
-    const membersWithProfiles: HouseholdMemberWithProfile[] = memberList.map((m) => ({
-      ...m,
-      profile: profilesByUserId.get(m.user_id) ?? null,
-    }));
+      const householdId = myMembership.household_id;
+      const [householdResult, membersResult] = await Promise.all([
+        supabase
+          .from('households')
+          .select('id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at')
+          .eq('id', householdId)
+          .maybeSingle(),
+        supabase
+          .from('household_members')
+          .select('household_id, user_id, member_role, joined_at')
+          .eq('household_id', householdId),
+      ]);
+      if (householdResult.error) throw householdResult.error;
+      if (membersResult.error) throw membersResult.error;
+      if (!householdResult.data) throw new Error('家庭情報が見つかりません。');
 
-    setHousehold(householdRow ?? null);
-    setMembers(membersWithProfiles);
-    setPhase(householdRow ? phaseForHousehold(householdRow) : 'no-household');
+      const memberList = membersResult.data ?? [];
+      const userIds = memberList.map((m) => m.user_id);
+      const profileResult = userIds.length
+        ? await supabase.from('profiles').select('user_id, display_name').in('user_id', userIds)
+        : { data: [] as Profile[], error: null };
+      if (profileResult.error) throw profileResult.error;
+
+      const profilesByUserId = new Map((profileResult.data ?? []).map((p) => [p.user_id, p]));
+      const membersWithProfiles: HouseholdMemberWithProfile[] = memberList.map((m) => ({
+        ...m,
+        profile: profilesByUserId.get(m.user_id) ?? null,
+      }));
+
+      setHousehold(householdResult.data);
+      setMembers(membersWithProfiles);
+      setPhase(phaseForHousehold(householdResult.data));
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : '家庭情報を読み込めませんでした。');
+      setPhase('error');
+    }
   }, [user]);
 
   useEffect(() => {
@@ -116,6 +130,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     me,
     partner,
     refresh: load,
+    loadError,
   };
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>;
