@@ -277,3 +277,84 @@ recurring checklist. `scripts/backup_freshness_check.sh` +
 most recent encrypted backup in R2 is older than the configured threshold
 — nothing further needed here beyond following that doc's restore-drill
 cadence.
+
+## 13. Provider-wire live-test evidence log
+
+Sol's independent review (P2-2) correctly notes that SQL-level test
+coverage — everything this repo's `tests/sql/*.sql` suite exercises against
+a local Postgres instance — is not equivalent to having actually exercised
+the real LINE and Google Calendar APIs, or a real iPhone. None of this
+repo's development/CI environments hold live LINE/Google credentials (by
+design — see `MANUAL_SETUP_REQUIRED.md`), so these checks can only be
+performed by a human with access to a LINE Developers sandbox channel, a
+scratch Google Calendar + OAuth consent screen, and a physical iPhone.
+
+**Before considering this v6 implementation production-ready, a human must
+complete the checklist below and append a dated result row to the log
+table beneath it.** Do not mark an item done from code inspection alone —
+only from an actual observed provider round trip.
+
+### Checklist
+
+**LINE sandbox** (LINE Developers console, a sandbox Messaging API channel
+— see `MANUAL_SETUP_REQUIRED.md`'s LINE section for setup):
+- [ ] Webhook signature verification accepts a real signed request and
+      rejects a tampered one (`line-webhook-receiver`).
+- [ ] Account link flow: `create-line-link-token` → paste/tap the token in
+      a real LINE chat with the sandbox OA → `private.line_user_links`
+      shows an active row.
+- [ ] Reply API: trigger a postback (e.g. a routine quick-reply button) and
+      confirm the confirmation message arrives via reply, not push (check
+      `private.line_quota_reservations` gained no new row for that
+      interaction — see P1-4 / `docs/adr/0009`).
+- [ ] Push: force a reply-path failure (e.g. temporarily use an expired
+      token) and confirm the same confirmation arrives via push instead,
+      with a `private.notification_outbox` row and a quota reservation.
+- [ ] Retry key / 409: redeliver the same webhook event and confirm no
+      duplicate LINE message is sent.
+- [ ] 429: this is provider-rate-limit-dependent and may not be
+      practically triggerable in a sandbox — attempt only if feasible, note
+      "not triggerable in sandbox" otherwise rather than leaving it blank.
+
+**Google Calendar scratch calendar** (a throwaway Google Calendar + a
+Testing-mode OAuth consent screen — see `MANUAL_SETUP_REQUIRED.md`'s Google
+Calendar section):
+- [ ] OAuth callback: `google-calendar-oauth-start` → consent →
+      `google-calendar-oauth-callback` lands back in the app with
+      `private.google_connections` showing an `active` row and an
+      encrypted refresh token.
+- [ ] Sync: create an event directly in the scratch Google Calendar,
+      confirm it appears in `public.calendar_event_occurrences` within one
+      `process-google-sync` cycle (webhook-triggered or the 30-min
+      periodic fallback).
+- [ ] Recurring occurrence projection: create a recurring event, confirm
+      each expanded occurrence appears correctly (not just the first).
+- [ ] Create: `create-calendar-event` produces a real event in the scratch
+      calendar with the deterministic Google event ID.
+- [ ] PATCH/update: `update-calendar-event` modifies the same event
+      in-place (not a duplicate) and handles a 412 etag conflict
+      correctly if triggered.
+- [ ] Watch webhook: `renew-google-watch` creates a real watch channel,
+      and a live edit in the scratch calendar triggers
+      `google-calendar-webhook` → `process-google-sync` within seconds
+      (not just the 30-min periodic fallback).
+
+**iPhone PWA** (a physical iPhone, Safari):
+- [ ] Sign-in: Google Sign-In completes and lands in the app.
+- [ ] Deep link: a LINE message's `{APP_BASE_URL}/checkin/{session_id}`
+      link opens the correct routine session in the PWA.
+- [ ] LINE↔PWA state consistency: complete a routine item via a LINE
+      quick-reply button, confirm it shows completed when the PWA is
+      opened immediately after (no stale cache); complete it via the PWA
+      instead, confirm a pending LINE reminder for the same item is
+      suppressed (per `docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md`'s
+      reminder-suppression rule).
+
+### Evidence log
+
+Append one row per test pass — do not overwrite prior rows, this is a
+running log:
+
+| Date | Environment | Tester | Result | Notes |
+|---|---|---|---|---|
+| _(none yet)_ | | | | Live-provider testing has not yet been performed against a real LINE sandbox, Google scratch calendar, or physical iPhone. All items above remain outstanding as of this repository's current HEAD. |
