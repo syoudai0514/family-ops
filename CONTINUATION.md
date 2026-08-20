@@ -1,264 +1,196 @@
 # CONTINUATION — Family Ops v6 implementation
 
-Updated after WP9 landed (previous version was written near a session usage
-limit; that limit has since reset and work resumed). This file is the
-single source of truth for resuming work. Read it fully before doing
-anything else.
+Regenerated from scratch after an independent design review (reviewer
+"Sol") found 4 P1s and 2 P2s against the WP2–WP12 implementation, and all
+were fixed. This file describes the actual, current state of the
+repository as of the HEAD declared below — not a historical log. Read it
+fully before doing anything else.
+
+`scripts/check_continuation_head.mjs` mechanically verifies this file's
+declared HEAD hasn't gone stale relative to the most recent code-touching
+commit — run it before packaging any future review ZIP (Sol's P2-1
+mandatory-gate item #10 for exactly this reason: this file went stale once
+already mid-session).
 
 ## 1. Current HEAD commit hash
 
 ```
-7b070141ba10bd3457f2aad2c4acf5793942d415
+fd42e36b59134fd4619e37eb470e62fe506cfc85
 ```
-(branch `claude/family-ops-v6-implementation-6x4mft`, pushed to `origin`.)
-Previous milestone `fb8ec3b` (CI fix) was confirmed all-green on all 4 CI
-jobs; `7b07014`'s CI was still running at the time of this update — check
-PR #1's check runs before assuming green.
+(branch `claude/family-ops-v6-implementation-6x4mft`, pushed to `origin`,
+PR #1 on `syoudai0514/family-ops`.)
 
-A WP8 (scheduled LINE routines dispatcher) background agent is running
-against this HEAD as this file is written — see section 3.
+**CI status for this commit**: all 4 required jobs are confirmed green —
+`web`, `db`, `edge-functions`, `supabase-integration` (checked directly
+against PR #1's check runs). This satisfies Sol's mandatory-gate item #8
+("GitHub Actions is green on the exact fixed HEAD"). (This repo hit two
+real, now-fixed CI failures earlier in this same review-fix cycle — a test
+assuming a nondeterministic item-bundling order, and a Postgres deadlock
+path that wasn't mapped to the same friendly error an exclusion violation
+already was — both are fixed in commits on top of this same branch; see
+the table below.)
 
-Do NOT push anything to `main` — this branch only, per standing instructions.
+## 2. Completed work: all of WP2–WP12, plus Sol's full review-fix cycle
 
-## 2. Completed work packages (backend unless noted)
+Every work package the user requested (WP2 through WP12) is implemented,
+tested, and committed. All 52 functions in the vendored v6 design's
+normative matrix are deployed (56 total with 4 documented, ADR-recorded
+gap-fill functions). No v7 redesign exists anywhere in this repo;
+`docs/design/v6/` was never edited.
 
-All committed and pushed to the branch above, in this commit order:
+High-level inventory at this HEAD:
+- **50** migrations (`supabase/migrations/*.sql`)
+- **56** Edge Functions (`supabase/functions/*/`, excluding `_shared/`)
+- **26** SQL test files (`tests/sql/*.sql`), all passing together with 5
+  true-parallel concurrency races (`scripts/run_concurrency_tests.sh`)
+- **9** ADRs (`docs/adr/0001`–`0009`) documenting every genuine v6-design
+  gap filled, each with the minimal reasoned decision taken
 
-| Commit | WP | Summary |
-|---|---|---|
-| (earlier session, see `git log`) | WP0 | Vite+React+TS+PWA scaffold, CI, env template |
-| `a165860` | WP1 review fixes | canonical task bootstrap, Asia/Tokyo evening setup, LINE quota threshold, real-stack CI, Google Sign-In callback split |
-| `2b65d57` | — | pin `db.major_version=17` for Supabase CLI 2.115.0 |
-| `f9e135c` | WP2 prep (P2) | `recurrence_rules_no_overlap` concurrency test (MI-RR01), LINE redelivery runbook |
-| `e7a7a9a` | **WP2** | full manual PWA: Today/household setup/task/request/shopping/handover/notifications backend (16 `server_tx_*` RPCs, 24 Edge Functions) + entire `apps/web/` frontend |
-| `153c4af` | **WP10** | backup/recovery infra — daily encrypted dump, R2 upload, restore drill |
-| `a48fcc1` | **WP3** | recurrence engine — `change-recurrence`, `reassign-task-once`, role-based assignee resolver, MI-RR02 concurrency test |
-| `0858582` | **WP5** | Gemini AI-draft — `propose-ai-draft`, `confirm-request-draft`, `confirm-handover-draft`, invariant-check unit tests (44/44) |
-| `b236162` | **WP6** | LINE foundation — `create-line-link-token`, `unlink-line-account`, `process-line-inbox` (NL grammar + postback handling), `process-pending-actions`, lease/reclaim/dead-letter on both queues |
-| `f1f5bc9` | **WP7** | Google Calendar — full OAuth/watch/sync-queue/canonical-sync/projection/writes (10 Edge Functions), AES-256-GCM token encryption |
-| `fb8ec3b` | CI fix | `cryptoHelper.ts` failed `deno check` under CI's pinned Deno 2.9.5/TypeScript 6.0.3 (stricter typed-array generics than this dev environment's previously-installed 2.1.4). Fixed with an explicit `toArrayBuffer()` copy before every `crypto.subtle.*` call. **Verified by upgrading this environment's own `deno` to 2.9.5 and reproducing + confirming the fix against the exact CI toolchain** (this environment's `deno --version` is now permanently 2.9.5 — use it for all future `deno check`/`deno lint` verification, don't trust an older local Deno). All 4 CI jobs confirmed green on this commit. |
-| `72aeaa7` | — | first version of this CONTINUATION.md (written near a session usage limit) |
-| `7b07014` | **WP9** | notification delivery — `private.notification_outbox` was permanently empty before this (nothing ever inserted into it); added a trigger bridging WP2's in-app notifications into it with bundling, plus `send-notifications` rewritten to actually drain the outbox, reserve LINE quota, and push via the LINE Messaging API with 409/429/5xx handling. Deliberately did NOT build a standalone calendar-conflict notification (documented in `docs/adr/0006` as correctly belonging to WP8's not-yet-built dispatcher instead). |
+### Feature areas (all implemented)
+Household setup/invite, task/request/shopping/handover/notification
+mutations, the full manual PWA, the recurrence engine (role-based
+reassignment, mid-cycle changes), Gemini AI-draft propose/confirm, LINE
+foundation (account linking, inbox worker, action queue, real push
+delivery, Reply-API-first delivery, quick-reply routine buttons), Google
+Calendar (OAuth/watch/sync-queue/projection/writes, now also merged into
+the LINE digest with conflict-warning detection), scheduled LINE routine
+dispatch (dispatch-routine-automation, routine sessions, PWA check-in),
+backup/recovery, realtime partner sync + planned-vs-actual history,
+production-readiness runbooks, and the three previously-missing normative
+cron workers (`materialize-recurring`, `sync-jp-holidays`,
+`cleanup-expired-private-data`).
 
-Both WP3+WP5 and WP6+WP7 batches also included a **consolidation pass**
-(same commits) that centrally added their `[functions.*]` entries to
-`supabase/config.toml` and their error codes to
-`supabase/functions/_shared/errors.ts` — this consolidation step is a
-required part of finishing any future parallel-agent batch too (see
-"Concrete next steps" below).
+### Commit history (chronological, this branch)
 
-Also present (not itself a WP, but load-bearing): `docs/adr/0001` through
-`0005` documenting every genuine v6-design gap filled so far
-(`configure-dropoff-pickup`, `propose-ai-draft`/`confirm-request-draft`/
-`confirm-handover-draft`, the OAuth-state-not-mutation-receipt decision, the
-temporary WP7 error-code split later folded into `errors.ts`). Read
-`docs/adr/README.md` for the index.
+| Commit | Summary |
+|---|---|
+| `a165860` … `2b65d57` | WP1 review-fix round (pre-dates this file's regeneration; see `git log` for the full WP0/WP1 history) |
+| `f9e135c` | WP2 prep (P2): recurrence overlap concurrency test, LINE redelivery runbook |
+| `e7a7a9a` | **WP2**: full manual PWA backend (16 RPCs, 24 Edge Functions) + entire `apps/web/` frontend |
+| `153c4af` | **WP10**: backup/recovery — daily encrypted dump, R2, restore drill |
+| `a48fcc1` | **WP3**: recurrence engine — `change-recurrence`, `reassign-task-once` |
+| `0858582` | **WP5**: Gemini AI-draft propose/confirm flow |
+| `b236162` | **WP6**: LINE foundation — account linking, inbox worker, action queue |
+| `f1f5bc9` | **WP7**: Google Calendar — OAuth/watch/sync-queue/projection/writes |
+| `fb8ec3b` | CI fix: `cryptoHelper.ts` Deno/TypeScript version drift |
+| `7b07014` | **WP9**: real LINE push delivery — notification_outbox bridge + send-notifications |
+| `1a8f836` | **WP8**: scheduled LINE routines — dispatcher, sessions, PWA check-in |
+| `1b61e79` | **WP4**: realtime partner sync + planned-vs-actual history |
+| `1fdcaf9` | Gap-close: `materialize-recurring`/`sync-jp-holidays`/`cleanup-expired-private-data` (all 52/52 normative functions now deployed) |
+| `440dc1a` | **WP11**: production readiness runbook (12 items) |
+| `2e49be2` | Self-review: bring `docs/adr/README.md` index up to date |
+| — | *(WP12 self-review round completed here; then an independent review by "Sol" found 4 P1s + 2 P2s — the commits below are that review's fix cycle)* |
+| `184e92f` | **Sol P1-1/P1-2**: routine digest Google Calendar merge + conflict-warning detection |
+| `2c24cac` | **Sol P1-3/P1-4**: LINE quick-reply buttons + Reply-API-first delivery |
+| `419023a` | CI fix: `tests/sql/25` assumed a nondeterministic bundled-item array order |
+| `2644b32` | **Sol P2-2**: provider-wire live-test evidence log template |
+| `fd42e36` | CI fix: `change-recurrence` must map Postgres `deadlock_detected` to `RECURRENCE_OVERLAP` the same way `exclusion_violation` already is |
 
-## 3. In-progress work packages and their actual state
+## 3. Incomplete work
 
-**WP9 is DONE** (see table above, commit `7b07014`) — the earlier "0%
-progress, failed on session limit" note for WP9 no longer applies; it was
-fully relaunched as a single agent (not part of a 3-way parallel batch) and
-completed successfully, independently verified (deno lint/check, full SQL
-suite), committed, and pushed.
+**None at the WP level.** WP2 through WP12 are all complete, and Sol's
+full P1/P2 review-fix list is closed out.
 
-**WP8 (scheduled LINE routine dispatcher)**: a fresh single-agent attempt
-was launched against HEAD `7b07014` and is running now. Check
-`git status --short` for untracked WP8 files before assuming it's still
-mid-flight or has finished — if this file wasn't updated again after WP8's
-completion, treat WP8 as unknown-state and verify from disk/git first.
+What remains is exactly what `MANUAL_SETUP_REQUIRED.md` and
+`docs/PRODUCTION_READINESS_RUNBOOK.md` §13 already say cannot be done from
+this repo alone:
 
-**WP4 (realtime/history frontend)**: not yet relaunched. Was part of the
-earlier 3-way parallel batch that failed entirely on the session limit
-before writing anything — zero progress, nothing to reconcile. Launch it
-fresh, alone or paired with at most one other agent (not three at once —
-that combination has now failed the session limit twice in this project).
+- **Live provider verification** — LINE sandbox, Google Calendar scratch
+  calendar, and physical iPhone testing have not been performed (no
+  credentials exist in this dev environment by design). See
+  `docs/PRODUCTION_READINESS_RUNBOOK.md` §13's checklist and evidence log
+  — currently empty, all items outstanding. This is expected, not a defect;
+  a human must complete it before production launch.
+- **Manual external-service setup** — every item in `MANUAL_SETUP_REQUIRED.md`
+  (LINE Developers console, Google Cloud Console OAuth client, Supabase
+  secrets, cron scheduling for all worker functions) requires a human with
+  access to those consoles.
+- Two small, precisely-scoped, non-blocking design decisions are recorded
+  (not silently skipped) in ADRs: item-level (not just session-level) LINE
+  quick-reply buttons for routine checklists (`docs/adr/0009`, since the
+  notification payload bundles one item per schedule_kind, not per task —
+  fixing this touches the WP8 dispatch migration and was out of scope for
+  the P1-3 fix that landed), and the two optional dedicated error codes
+  `ROUTINE_SESSION_SUPERSEDED`/`ROUTINE_SESSION_NOT_OPEN` in place of the
+  adequate-but-generic `TASK_TERMINAL`/`CROSS_HOUSEHOLD_RESOURCE` reuse
+  (`docs/adr/0007`).
 
-## 4. Incomplete work
+## 4. Concrete next steps (if resuming further work)
 
-- **WP4** — realtime partner sync, planned-vs-actual history view, handover
-  unread indicator, Today refresh after partner mutation. Not started.
-- **WP8** — `dispatch-routine-automation`, `get-routine-session`,
-  `complete-routine-session`, `routine-session-item-action`, PWA
-  `/checkin/:sessionId`. In progress or just completed — check current state
-  first (see section 3). Implements
-  `docs/design/v6/17_ROUTINE_LINE_AUTOMATION.md` "exactly" per
-  `10_WORK_PACKAGES.md`. Also owns inserting the calendar-conflict
-  notification content that WP9 deliberately deferred (see `docs/adr/0006`)
-  — don't forget this sub-item when scoping/reviewing WP8.
-- **WP11** — production readiness runbooks (iPhone PWA E2E, Supabase Free
-  pause/recovery, Calendar OAuth production, LINE/Gemini quota & fallback,
-  cron worker token rotation, dead-letter runbook, Google webhook
-  convergence, watch renewal, cleanup, scheduled-notification
-  timezone/idempotency, backup freshness). Not started.
-- **WP12** — final self-review, full test suite run, CI green, review ZIP,
-  10-item final report. Not started (this file exists specifically so WP12
-  can eventually be completed correctly).
-- **Remaining normative-matrix gaps** (from `docs/design/v6/supabase/config.toml`'s
-  52-function list vs. what's deployed — 49/52 currently deployed): still
-  missing `dispatch-routine-automation`, `get-routine-session`,
-  `complete-routine-session`, `routine-session-item-action` (all WP8),
-  `sync-jp-holidays`, `cleanup-expired-private-data` (utility crons, WP1-era
-  scope never built — assign to WP8/WP9 batch or WP11, whichever agent picks
-  them up first — flag this explicitly so nobody assumes they're done),
-  `materialize-recurring` (the underlying `private.materialize_recurrence_rule`
-  SQL function already exists and is used internally; only a dedicated
-  Edge Function *wrapper* for it, if the design actually wants one exposed
-  standalone, is missing — verify against the design doc before building,
-  it may not need one).
-- **MANUAL_SETUP_REQUIRED.md** already has LINE (WP6) and Google Calendar
-  (WP7) sections. WP8/WP9 will need to append their own sections (worker
-  scheduling for `dispatch-routine-automation`, and confirming
-  `LINE_CHANNEL_ACCESS_TOKEN`'s actual runtime use once `send-notifications`
-  is completed).
+All 4 CI jobs are confirmed green for `fd42e36` (see §1) — nothing left to
+check there. If resuming further work:
 
-## 5. Concrete next steps (in order)
+1. If a human performs the live-provider testing in
+   `docs/PRODUCTION_READINESS_RUNBOOK.md` §13 and finds issues, fix them
+   as new, normally-scoped commits (same conventions as everything above:
+   never edit `docs/design/v6/`, amend existing `server_tx_*` functions via
+   a new migration rather than editing an already-committed one in place,
+   run the full `tests/sql/00-25` + concurrency suite before committing).
+2. Before packaging any future review ZIP: run
+   `node scripts/check_continuation_head.mjs` — it fails loudly if this
+   file has gone stale relative to a newer code-touching commit, so
+   regenerate it (like this pass did) before shipping if it fails.
+3. Rebuild the ZIP with `git archive --format=zip -o <name>.zip HEAD` (no
+   `node_modules`/`.git`/build output/secrets — `git archive` only
+   includes tracked files, which already excludes all of those).
 
-1. **Wait for the session limit to reset** (18:10 UTC 2026-08-19) or resume
-   in a fresh session/container reading this file first.
-2. **Relaunch WP8, WP9, WP4 — but not all three at once.** Three parallel
-   agents hit the limit together twice in this session already (once for a
-   5-agent batch, once for this 3-agent batch). Launch **one or two at a
-   time** instead, e.g. WP9 alone first (it's the highest-impact gap —
-   `send-notifications`'s push loop blocks WP8's own usefulness), verify and
-   commit it, then WP8, then WP4. Each agent prompt should reiterate:
-   read `docs/design/v6/` sections relevant to its own WP only, never edit
-   `docs/design/v6/`, never edit `supabase/config.toml` /
-   `scripts/check-edge-auth-matrix.mjs` / `supabase/functions/_shared/errors.ts`
-   directly (report needed entries instead), stay inside its own
-   file/directory/migration-number range, don't commit/push (the
-   orchestrating session does that), and — new for this round — **explicitly
-   tell each agent "be economical with tool calls and context; a previous
-   parallel batch failed on a session usage limit."**
-3. **After each agent completes**, independently verify before trusting its
-   report:
-   - `deno lint` and `deno check` on every new/modified Edge Function — this
-     environment's `deno` is now pinned to 2.9.5 (matching CI exactly), so
-     trust its result over any different version.
-   - `PGHOST=127.0.0.1 PGPORT=5544 PGUSER=postgres bash scripts/run_sql_tests.sh`
-     (the local Postgres 16 harness should still be running on port 5544 —
-     check with `pg_isready -h 127.0.0.1 -p 5544`; if it's gone, whatever
-     originally started it needs to be restarted before tests can run).
-   - For any frontend changes: `cd apps/web && npm run typecheck && npm run
-     lint && npm test -- --run`.
-4. **Consolidate shared-file edits centrally** (same pattern as every prior
-   round): add reported `[functions.*]` entries to `supabase/config.toml`,
-   new error codes to `supabase/functions/_shared/errors.ts`, any
-   `EDGE_FUNCTIONS` entries to `apps/web/src/lib/edgeFunctions.ts`, and wire
-   any reported new frontend routes into `apps/web/src/app/AppShell.tsx`
-   (agents were instructed NOT to edit this router file themselves, to avoid
-   a 3-way collision — their final reports should each state the exact route
-   path + component name needed). Re-run `node
-   scripts/check-edge-auth-matrix.mjs` after the config.toml edit.
-5. **Commit one commit per WP** (established pattern — see the table above
-   for commit-message style/detail level to match), **push after every
-   commit** (`git push -u origin claude/family-ops-v6-implementation-6x4mft`),
-   and **check PR #1's CI status after every push** (`get_check_runs` via
-   the GitHub MCP tools, or watch for the `check_run.completed` wake event —
-   this session was already subscribed to PR #1's activity). Fix red CI
-   immediately per the drive-to-green rules — the `cryptoHelper.ts` Deno
-   version issue in this session shows new Google/LINE code can trip
-   CI-vs-local toolchain drift even when local checks look clean; the fixed
-   local `deno` version (2.9.5) should prevent a repeat, but stay alert.
-6. Once WP8/WP9/WP4 are done, verified, and green: **WP11** (production
-   readiness runbooks — mostly documentation plus a few small verification
-   scripts, lower risk than the earlier backend WPs) then **WP12** (final
-   pass — see below).
-7. **WP12 checklist** (do this yourself, not via a sub-agent, since it's a
-   synthesis/verification task over the whole repo): re-run every test
-   suite one more time all together (SQL + concurrency + deno + frontend),
-   confirm CI green on the final commit, do a self-review pass reading back
-   through `docs/adr/*` and this file's "Incomplete work" section to confirm
-   nothing was silently dropped, rebuild the review ZIP (see the WP2-era
-   ZIP-building approach from earlier in this session for the
-   exclude-list: `node_modules`, `.git`, build output, no secrets), and
-   produce the user's requested 10-item final report (commit hash,
-   implemented-WP list, feature list, migrations, Edge Functions, test
-   results, CI results, manual-setup items, outstanding items, review ZIP).
+## 5. Uncommitted / unpushed changes
 
-## 6. Uncommitted / unpushed changes
+**None.** `git status --short` is empty as of this file's own commit.
+`HEAD` (`fd42e36`) matches
+`origin/claude/family-ops-v6-implementation-6x4mft`.
 
-**None.** `git status --short` is empty. `HEAD` (`fb8ec3b`) is identical to
-`origin/claude/family-ops-v6-implementation-6x4mft`. Nothing is at risk.
-
-## 7. Tests executed and results (as of `fb8ec3b`)
+## 6. Tests executed and results (as of `fd42e36`)
 
 - **Local SQL suite** (`tests/sql/00_local_auth_shim.sql` through
-  `20_google_calendar.sql`, 21 files) + **all 5 true-parallel concurrency
-  races** (MI-HH03 join race, M-01 double-tap, LQA01/LQA02 LINE quota,
-  MI-RR01 raw-insert recurrence overlap, MI-RR02 RPC-path recurrence
-  overlap): **all PASS**, run via
-  `PGHOST=127.0.0.1 PGPORT=5544 PGUSER=postgres bash scripts/run_sql_tests.sh`
-  against the local Postgres 16 harness at `/tmp/famops_pgdata`.
-- **`deno lint`** across the full `supabase/functions/` tree (60 files):
+  `25_line_reply_and_quick_actions.sql`, 26 files) + **all 5 true-parallel
+  concurrency races** (MI-HH03, M-01, LQA01/LQA02, MI-RR01, MI-RR02): **all
+  PASS**, verified across 5 consecutive fresh-database runs locally (the
+  deadlock-mapping fix in `fd42e36` addresses a genuinely timing-dependent
+  failure mode, so single-run confidence wasn't sufficient).
+- **`deno lint`** across the full `supabase/functions/` tree (69 files):
   clean.
-- **`deno check`** on all 49 currently-deployed Edge Functions, run against
-  CI's exact Deno 2.9.5 / TypeScript 6.0.3 (this environment's Deno was
-  upgraded specifically to reproduce and confirm-fix the CI failure): clean.
-- **`node scripts/check-edge-auth-matrix.mjs`**: passes — 52-function
-  normative design matrix confirmed intact and unedited; live
-  `supabase/config.toml` declares exactly 49 deployed functions, each with
-  the correct `verify_jwt` classification (3 remaining normative functions
-  not yet deployed are WP8/utility-cron scope, tracked in section 4 above).
-- **Frontend** (`apps/web`, as of WP2 — not touched since, so unchanged):
-  `npm run typecheck` clean, `npm run lint` (oxlint) clean aside from
-  pre-existing P2/P3-level warnings (`set-state-in-effect`,
-  `only-export-components` — not blocking, noted but not fixed per the
-  "don't stop for P2/P3" instruction), `npm test -- --run` 17/17 passing.
+- **`deno check`** on every deployed Edge Function, against this
+  environment's Deno pinned to 2.9.5 / TypeScript 6.0.3 (matching CI
+  exactly — this pin exists specifically because an earlier commit in this
+  session's history failed CI on a Deno-version-specific typed-array
+  typing issue that an older local Deno didn't catch): clean.
+- **`node scripts/check-edge-auth-matrix.mjs`**: passes — all 52 normative
+  functions deployed, 56 total with 4 documented gap-fill functions, each
+  with the correct `verify_jwt` classification.
+- **Frontend** (`apps/web`): typecheck clean, `oxlint` clean aside from
+  pre-existing P2/P3-level warning patterns (`set-state-in-effect`,
+  `only-export-components` — not blocking), `npm test -- --run` passing
+  (23/23 as of the last frontend-touching commit, `1b61e79`; no frontend
+  files changed since), production build succeeds.
 - **`deno test` on `_shared/gemini.test.ts`**: 44/44 invariant-check unit
   tests passing (no live Gemini calls).
-- **GitHub Actions CI on PR #1, commit `fb8ec3b`**: all 4 jobs green
-  (`db`, `web`, `edge-functions`, `supabase-integration`) — confirmed via
-  the GitHub API just before this file was written.
+- **GitHub Actions CI**: see section 1 above for this exact commit's
+  status; every earlier commit back through `440dc1a` was confirmed
+  all-4-jobs-green before the next commit landed (with two exceptions
+  — `419023a` and `fd42e36` — which exist specifically *because* the
+  commit immediately before each of them briefly broke CI; both were
+  root-caused and fixed the same review cycle, not left red).
 
-## 8. Manual setup required (human action, tracked in `MANUAL_SETUP_REQUIRED.md`)
+## 7. Manual setup required (human action)
 
-Full detail lives in `MANUAL_SETUP_REQUIRED.md` at the repo root (already
-committed). Summary:
-
-**LINE (WP6):**
-- LINE Developers console: Messaging API channel, webhook URL pointed at
-  the deployed `line-webhook-receiver` function, "Use webhook" enabled.
-- Supabase secrets: `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`,
-  `LINE_OA_BASIC_ID` (optional), `CRON_WORKER_TOKEN`.
-- Schedule `process-line-inbox` and `process-pending-actions` every 1
-  minute (e.g. `pg_cron` → `net.http_post` with the worker token header).
-- Live-API verification (signature check, real LINE account round trip)
-  cannot happen in this dev environment — do it against a LINE Developers
-  **sandbox** channel first.
-
-**Google Calendar (WP7):**
-- Google Cloud Console: enable Calendar API, create a **separate** OAuth
-  client from Supabase Auth's Google Sign-In client, with redirect URI
-  pointed at the deployed `google-calendar-oauth-callback` function and
-  exactly the `calendar.events` + `calendar.calendarlist.readonly` scopes.
-- Consent screen must eventually move out of Testing (7-day refresh-token
-  expiry otherwise) — a human needs to click "Publish app" or add test
-  users.
-- Supabase secrets: `GOOGLE_CALENDAR_CLIENT_ID`,
-  `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URI`,
-  `GOOGLE_TOKEN_ENCRYPTION_KEY` (base64 32-byte AES-256 key, e.g. `openssl
-  rand -base64 32` — losing/rotating this invalidates every stored
-  connection), `GOOGLE_CALENDAR_WEBHOOK_URL`, `APP_BASE_URL`.
-- Schedule `enqueue-periodic-google-sync` (30 min), `process-google-sync`
-  (1 min), `renew-google-watch` (30-60 min) as cron workers.
-- Live-API verification cannot happen here — do it against a scratch
-  calendar + Testing-mode consent screen first.
-
-**Gemini (WP5, referenced, not detailed in MANUAL_SETUP_REQUIRED.md yet):**
-`GEMINI_API_KEY`, `GEMINI_MODEL_PARSE`, `GEMINI_MODEL_REWRITE` — none of
-these exist in this dev environment either; same never-fabricate rule
-applies. Worth adding an explicit section to `MANUAL_SETUP_REQUIRED.md` for
-this during WP9 or WP12, since it hasn't been written yet.
-
-**Backup/recovery (WP10):** age public key must live in CI secrets only;
-the corresponding private key is owner-held and never scriptable from CI —
-see `docs/BACKUP_RESTORE_RUNBOOK.md` for the full procedure (already
-written).
+Unchanged from before this review-fix cycle — full detail in
+`MANUAL_SETUP_REQUIRED.md`. Summary: LINE Developers console (webhook URL,
+`LINE_CHANNEL_SECRET`/`LINE_CHANNEL_ACCESS_TOKEN`/`LINE_OA_BASIC_ID`,
+worker scheduling), Google Cloud Console (separate OAuth client from
+Google Sign-In, scopes, consent-screen publishing status,
+`GOOGLE_CALENDAR_CLIENT_ID`/`SECRET`/`REDIRECT_URI`,
+`GOOGLE_TOKEN_ENCRYPTION_KEY`, `GOOGLE_CALENDAR_WEBHOOK_URL`,
+`APP_BASE_URL`, worker scheduling), `CRON_WORKER_TOKEN` for all 10 worker
+functions (rotation procedure now documented in
+`docs/PRODUCTION_READINESS_RUNBOOK.md` §6), `GEMINI_API_KEY` and related
+env vars, and the age keypair for backups
+(`docs/BACKUP_RESTORE_RUNBOOK.md`). None of these secrets exist in this
+dev environment and none were fabricated anywhere in this repo.
 
 ---
 
-*This file should be updated (not deleted) at the end of each future
-work session until WP12 is complete, so it always reflects the true current
-state. Once WP12's final report is delivered, it can be superseded by that
-report or removed at the user's discretion.*
+*Keep this file updated (regenerate fully, don't hand-patch) whenever
+significant new work lands, and always before packaging a review ZIP —
+`scripts/check_continuation_head.mjs` enforces the second part
+mechanically.*
