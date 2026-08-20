@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { getAppEnv } from '../../lib/env';
 
 export function SignIn() {
   const [error, setError] = useState<string | null>(null);
@@ -8,18 +8,16 @@ export function SignIn() {
   async function handleSignIn() {
     setError(null);
     setSubmitting(true);
-    const { error: signInError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    if (signInError) {
-      setError(signInError.message);
+    try {
+      const { supabaseUrl } = getAppEnv();
+      const authorizeUrl = new URL(`${supabaseUrl}/auth/v1/authorize`);
+      authorizeUrl.searchParams.set('provider', 'google');
+      authorizeUrl.searchParams.set('redirect_to', `${window.location.origin}/auth/callback`);
+      window.location.assign(authorizeUrl.toString());
+    } catch (signInError) {
+      setError(signInError instanceof Error ? signInError.message : 'サインインを開始できませんでした。');
       setSubmitting(false);
     }
-    // On success the browser navigates away to Google, so there is nothing
-    // further to do here — no need to reset `submitting`.
   }
 
   return (

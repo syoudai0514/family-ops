@@ -1,10 +1,11 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { Route, Routes } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { HouseholdProvider } from './HouseholdContext';
-import { HouseholdGate } from './HouseholdGate';
 import { SignIn } from '../features/auth/SignIn';
 import { AuthCallback } from '../features/auth/AuthCallback';
 import { LoadingScreen } from '../components/LoadingScreen';
+
+const AuthenticatedApp = lazy(() => import('./AuthenticatedApp'));
 
 // Top-level auth gate: unauthenticated visitors only ever see /auth/callback
 // (needed mid-OAuth-flow) or the sign-in screen, regardless of what path
@@ -31,11 +32,8 @@ export function AuthGate() {
   }
 
   return (
-    <HouseholdProvider>
-      <Routes>
-        <Route path="/auth/callback" element={<Navigate to="/" replace />} />
-        <Route path="*" element={<HouseholdGate />} />
-      </Routes>
-    </HouseholdProvider>
+    <Suspense fallback={<LoadingScreen />}>
+      <AuthenticatedApp />
+    </Suspense>
   );
 }
