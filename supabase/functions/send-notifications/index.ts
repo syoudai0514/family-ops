@@ -29,12 +29,12 @@
 // itself now lives in ./routineQuickReply.ts (all four normative top-level
 // actions, and 今回は不要 now posts a confirmation-prompt action rather than
 // mutating directly) — see that file's header for the full rationale.
-import { createServiceRoleClient, requireWorkerToken } from "../_shared/auth.ts";
-import { withServiceHandler, jsonResponse } from "../_shared/handler.ts";
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { buildCheckinLink } from "../_shared/lineMessaging.ts";
-import { buildRoutineQuickReply } from "./routineQuickReply.ts";
-import { buildAssignmentRequestFlex } from "../_shared/lineMessageBuilders.ts";
+import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts';
+import { withServiceHandler, jsonResponse } from '../_shared/handler.ts';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { buildCheckinLink } from '../_shared/lineMessaging.ts';
+import { buildRoutineQuickReply } from './routineQuickReply.ts';
+import { buildAssignmentRequestFlex } from '../_shared/lineMessageBuilders.ts';
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -51,9 +51,9 @@ const RETRY_DELAY_SECONDS = 60;
 const FETCH_TIMEOUT_MS = 10_000;
 const LINE_TEXT_MAX_CHARS = 5000;
 
-const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
-const LINE_QUOTA_URL = "https://api.line.me/v2/bot/message/quota";
-const LINE_QUOTA_CONSUMPTION_URL = "https://api.line.me/v2/bot/message/quota/consumption";
+const LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
+const LINE_QUOTA_URL = 'https://api.line.me/v2/bot/message/quota';
+const LINE_QUOTA_CONSUMPTION_URL = 'https://api.line.me/v2/bot/message/quota/consumption';
 
 type OutboxItem = {
   user_notification_id?: string;
@@ -77,9 +77,9 @@ type ClaimedNotification = {
   household_id: string;
   recipient_user_id: string;
   type: string;
-  payload: { items?: OutboxItem[] } | null;
+  payload: { items?: OutboxItem[]; rich_message?: Record<string, unknown> | null } | null;
   dedup_key: string;
-  priority: "critical" | "normal" | "reminder";
+  priority: 'critical' | 'normal' | 'reminder';
   attempts: number;
   provider_retry_key: string;
   business_expires_at: string | null;
@@ -88,7 +88,7 @@ type ClaimedNotification = {
   line_user_id: string | null;
 };
 
-type Outcome = "definitive" | "quota_fallback" | "ambiguous" | "transient";
+type Outcome = 'definitive' | 'quota_fallback' | 'ambiguous' | 'transient';
 
 type RunSummary = {
   claimed: number;
@@ -115,34 +115,49 @@ type RunSummary = {
 // distinct session ids so the caller can decide whether to attach
 // quick-reply postback buttons.
 function buildBundledText(
-  payload: ClaimedNotification["payload"],
+  payload: ClaimedNotification['payload'],
   type: string,
 ): { text: string; sessionIds: string[] } {
   const items = payload?.items ?? [];
   const seenSessionIds = new Set<string>();
-  const blocks = items.length > 0
-    ? items.map((item) => {
-      const title = item.title ?? "";
-      const body = item.body ?? "";
-      let block = body && body !== title ? `${title}\n${body}` : title;
-      if (type === "routine" && item.session_id && !seenSessionIds.has(item.session_id)) {
-        seenSessionIds.add(item.session_id);
-        block += `\n${buildCheckinLink(item.session_id)}`;
-      }
-      return block;
-    })
-    : [`Family Ops: ${type}`];
-  const text = blocks.filter((b) => b.length > 0).join("\n\n");
-  const truncated = text.length <= LINE_TEXT_MAX_CHARS ? text : text.slice(0, LINE_TEXT_MAX_CHARS - 1) + "…";
+  const blocks =
+    items.length > 0
+      ? items.map((item) => {
+          const title = item.title ?? '';
+          const body = item.body ?? '';
+          let block = body && body !== title ? `${title}\n${body}` : title;
+          if (type === 'routine' && item.session_id && !seenSessionIds.has(item.session_id)) {
+            seenSessionIds.add(item.session_id);
+            block += `\n${buildCheckinLink(item.session_id)}`;
+          }
+          return block;
+        })
+      : [`Family Ops: ${type}`];
+  const text = blocks.filter((b) => b.length > 0).join('\n\n');
+  const truncated =
+    text.length <= LINE_TEXT_MAX_CHARS ? text : text.slice(0, LINE_TEXT_MAX_CHARS - 1) + '…';
   return { text: truncated, sessionIds: Array.from(seenSessionIds) };
 }
 
-function buildRichRequestMessage(payload: ClaimedNotification['payload']): Record<string, unknown> | null {
+function buildRichRequestMessage(
+  payload: ClaimedNotification['payload'],
+): Record<string, unknown> | null {
+  if (payload?.rich_message) return payload.rich_message;
   const items = payload?.items ?? [];
   if (items.length !== 1) return null;
   const item = items[0];
-  if (item.type !== 'request_received' || item.payload?.request_kind !== 'assignment_change' || !item.payload.request_id) return null;
-  return buildAssignmentRequestFlex({ requestId: item.payload.request_id, title: item.title ?? '担当変更', message: item.body ?? '', scope: item.payload.scope ?? 'once' });
+  if (
+    item.type !== 'request_received' ||
+    item.payload?.request_kind !== 'assignment_change' ||
+    !item.payload.request_id
+  )
+    return null;
+  return buildAssignmentRequestFlex({
+    requestId: item.payload.request_id,
+    title: item.title ?? '担当変更',
+    message: item.body ?? '',
+    scope: item.payload.scope ?? 'once',
+  });
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
@@ -154,11 +169,12 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 // the rejected header value, which could be the channel access token.
 function quotaRefreshFailureReason(err: unknown): string {
   if (err instanceof Error) {
-    if (/invalid header value/i.test(err.message)) return "fetch_failed:invalid_authorization_header";
-    if (err.name === "TimeoutError") return "fetch_failed:timeout";
+    if (/invalid header value/i.test(err.message))
+      return 'fetch_failed:invalid_authorization_header';
+    if (err.name === 'TimeoutError') return 'fetch_failed:timeout';
     return `fetch_failed:${err.name}`;
   }
-  return "fetch_failed:non_error";
+  return 'fetch_failed:non_error';
 }
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #18 "LINE quota refresh":
@@ -169,52 +185,65 @@ async function maybeRefreshLineQuota(
   serviceClient: SupabaseClient,
   channelAccessToken: string | undefined,
 ): Promise<{ refreshed: boolean; stale: boolean; skippedReason: string | null }> {
-  const { data: state, error } = await serviceClient.rpc("server_tx_get_line_quota_refresh_state");
+  const { data: state, error } = await serviceClient.rpc('server_tx_get_line_quota_refresh_state');
   if (error) {
-    console.error("send-notifications: failed to read quota refresh state", error.message);
-    return { refreshed: false, stale: true, skippedReason: "state_read_failed" };
+    console.error('send-notifications: failed to read quota refresh state', error.message);
+    return { refreshed: false, stale: true, skippedReason: 'state_read_failed' };
   }
   const stale = Boolean((state as { stale?: boolean })?.stale);
   if (!stale) {
     return { refreshed: false, stale: false, skippedReason: null };
   }
   if (!channelAccessToken) {
-    return { refreshed: false, stale: true, skippedReason: "LINE_CHANNEL_ACCESS_TOKEN not configured" };
+    return {
+      refreshed: false,
+      stale: true,
+      skippedReason: 'LINE_CHANNEL_ACCESS_TOKEN not configured',
+    };
   }
 
   try {
     const headers = { Authorization: `Bearer ${channelAccessToken}` };
     const [quotaRes, consumptionRes] = await Promise.all([
-      fetchWithTimeout(LINE_QUOTA_URL, { method: "GET", headers }),
-      fetchWithTimeout(LINE_QUOTA_CONSUMPTION_URL, { method: "GET", headers }),
+      fetchWithTimeout(LINE_QUOTA_URL, { method: 'GET', headers }),
+      fetchWithTimeout(LINE_QUOTA_CONSUMPTION_URL, { method: 'GET', headers }),
     ]);
     if (!quotaRes.ok || !consumptionRes.ok) {
-      return { refreshed: false, stale: true, skippedReason: `provider refresh HTTP ${quotaRes.status}/${consumptionRes.status}` };
+      return {
+        refreshed: false,
+        stale: true,
+        skippedReason: `provider refresh HTTP ${quotaRes.status}/${consumptionRes.status}`,
+      };
     }
-    const quotaBody = await quotaRes.json() as { type?: string; value?: number };
-    const consumptionBody = await consumptionRes.json() as { totalUsage?: number };
+    const quotaBody = (await quotaRes.json()) as { type?: string; value?: number };
+    const consumptionBody = (await consumptionRes.json()) as { totalUsage?: number };
     // type='none' means the OA is on an unlimited-by-provider plan; the
     // Family Ops app hard cap (200, enforced entirely inside
     // server_tx_reserve_line_quota) still governs actual admission either
     // way, so a very large placeholder here never itself becomes the
     // effective limit.
-    const providerLimit = quotaBody.type === "limited" && typeof quotaBody.value === "number"
-      ? quotaBody.value
-      : 1_000_000;
-    const providerConsumed = typeof consumptionBody.totalUsage === "number" ? consumptionBody.totalUsage : 0;
+    const providerLimit =
+      quotaBody.type === 'limited' && typeof quotaBody.value === 'number'
+        ? quotaBody.value
+        : 1_000_000;
+    const providerConsumed =
+      typeof consumptionBody.totalUsage === 'number' ? consumptionBody.totalUsage : 0;
 
-    const { error: refreshError } = await serviceClient.rpc("server_tx_refresh_line_quota_provider_usage", {
-      p_provider_limit: providerLimit,
-      p_provider_consumed: providerConsumed,
-    });
+    const { error: refreshError } = await serviceClient.rpc(
+      'server_tx_refresh_line_quota_provider_usage',
+      {
+        p_provider_limit: providerLimit,
+        p_provider_consumed: providerConsumed,
+      },
+    );
     if (refreshError) {
-      console.error("send-notifications: failed to persist quota refresh", refreshError.message);
-      return { refreshed: false, stale: true, skippedReason: "persist_failed" };
+      console.error('send-notifications: failed to persist quota refresh', refreshError.message);
+      return { refreshed: false, stale: true, skippedReason: 'persist_failed' };
     }
     return { refreshed: true, stale: false, skippedReason: null };
   } catch (err) {
     const reason = quotaRefreshFailureReason(err);
-    console.error("send-notifications: quota refresh fetch failed", reason);
+    console.error('send-notifications: quota refresh fetch failed', reason);
     return { refreshed: false, stale: true, skippedReason: reason };
   }
 }
@@ -225,19 +254,26 @@ async function failItem(
   outcome: Outcome,
   error: string,
 ): Promise<string> {
-  const { data, error: rpcError } = await serviceClient.rpc("server_tx_fail_notification_outbox_item", {
-    p_id: item.id,
-    p_lease_token: item.lease_token,
-    p_error: error.slice(0, 500),
-    p_outcome: outcome,
-    p_max_attempts: MAX_ATTEMPTS,
-    p_retry_delay_seconds: RETRY_DELAY_SECONDS,
-  });
+  const { data, error: rpcError } = await serviceClient.rpc(
+    'server_tx_fail_notification_outbox_item',
+    {
+      p_id: item.id,
+      p_lease_token: item.lease_token,
+      p_error: error.slice(0, 500),
+      p_outcome: outcome,
+      p_max_attempts: MAX_ATTEMPTS,
+      p_retry_delay_seconds: RETRY_DELAY_SECONDS,
+    },
+  );
   if (rpcError) {
-    console.error("send-notifications: fail RPC error", { id: item.id, outcome, message: rpcError.message });
-    return "rpc_error";
+    console.error('send-notifications: fail RPC error', {
+      id: item.id,
+      outcome,
+      message: rpcError.message,
+    });
+    return 'rpc_error';
   }
-  return (data as { status?: string })?.status ?? "unknown";
+  return (data as { status?: string })?.status ?? 'unknown';
 }
 
 async function sendOne(
@@ -247,26 +283,47 @@ async function sendOne(
   quotaStale: boolean,
 ): Promise<string> {
   if (!item.line_user_id) {
-    return await failItem(serviceClient, item, "definitive", "no active LINE link for recipient");
+    return await failItem(serviceClient, item, 'definitive', 'no active LINE link for recipient');
   }
 
   // #18 "unknown/stale provider data + failed refresh => normal/reminder
   // fallback to in-app". critical still attempts against best-known local
   // state (the reserve RPC's own threshold protects the hard cap either way).
-  if (quotaStale && item.priority !== "critical") {
-    return await failItem(serviceClient, item, "quota_fallback", "provider quota data stale and refresh unavailable");
+  if (quotaStale && item.priority !== 'critical') {
+    return await failItem(
+      serviceClient,
+      item,
+      'quota_fallback',
+      'provider quota data stale and refresh unavailable',
+    );
   }
 
-  const { data: reservation, error: reserveError } = await serviceClient.rpc("server_tx_reserve_line_quota", {
-    p_notification_outbox_id: item.id,
-    p_priority: item.priority,
-  });
+  const { data: reservation, error: reserveError } = await serviceClient.rpc(
+    'server_tx_reserve_line_quota',
+    {
+      p_notification_outbox_id: item.id,
+      p_priority: item.priority,
+    },
+  );
   if (reserveError) {
-    console.error("send-notifications: reserve RPC error", { id: item.id, message: reserveError.message });
-    return await failItem(serviceClient, item, "ambiguous", `quota reserve RPC failed: ${reserveError.message}`);
+    console.error('send-notifications: reserve RPC error', {
+      id: item.id,
+      message: reserveError.message,
+    });
+    return await failItem(
+      serviceClient,
+      item,
+      'ambiguous',
+      `quota reserve RPC failed: ${reserveError.message}`,
+    );
   }
   if (!(reservation as { permitted?: boolean })?.permitted) {
-    return await failItem(serviceClient, item, "quota_fallback", "monthly LINE quota threshold reached");
+    return await failItem(
+      serviceClient,
+      item,
+      'quota_fallback',
+      'monthly LINE quota threshold reached',
+    );
   }
 
   if (!channelAccessToken) {
@@ -275,22 +332,28 @@ async function sendOne(
     // attempted) — this is a config problem, not a delivery uncertainty, so
     // route it the same way quota_fallback does (release + fallback, not
     // dead) since it is entirely recoverable once the secret is configured.
-    return await failItem(serviceClient, item, "quota_fallback", "LINE_CHANNEL_ACCESS_TOKEN not configured");
+    return await failItem(
+      serviceClient,
+      item,
+      'quota_fallback',
+      'LINE_CHANNEL_ACCESS_TOKEN not configured',
+    );
   }
 
   const richMessage = buildRichRequestMessage(item.payload);
   const { text, sessionIds } = buildBundledText(item.payload, item.type);
-  const quickReply = item.type === "routine" ? buildRoutineQuickReply(sessionIds) : undefined;
-  const message: Record<string, unknown> = richMessage ?? { type: "text", text };
-  if (quickReply && message.type === 'text') message.quickReply = { items: quickReply.map((action) => ({ type: "action", action })) };
+  const quickReply = item.type === 'routine' ? buildRoutineQuickReply(sessionIds) : undefined;
+  const message: Record<string, unknown> = richMessage ?? { type: 'text', text };
+  if (quickReply && message.type === 'text')
+    message.quickReply = { items: quickReply.map((action) => ({ type: 'action', action })) };
   let response: Response;
   try {
     response = await fetchWithTimeout(LINE_PUSH_URL, {
-      method: "POST",
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${channelAccessToken}`,
-        "Content-Type": "application/json",
-        "X-Line-Retry-Key": item.provider_retry_key,
+        'Content-Type': 'application/json',
+        'X-Line-Retry-Key': item.provider_retry_key,
       },
       body: JSON.stringify({
         to: item.line_user_id,
@@ -300,18 +363,24 @@ async function sendOne(
   } catch (err) {
     // Network error/timeout: delivery is genuinely unknown.
     const message = err instanceof Error ? err.message : String(err);
-    return await failItem(serviceClient, item, "ambiguous", `push fetch failed: ${message}`);
+    return await failItem(serviceClient, item, 'ambiguous', `push fetch failed: ${message}`);
   }
 
   if (response.ok) {
-    const { data, error: completeError } = await serviceClient.rpc("server_tx_complete_notification_outbox_item", {
-      p_id: item.id,
-      p_lease_token: item.lease_token,
-    });
+    const { data, error: completeError } = await serviceClient.rpc(
+      'server_tx_complete_notification_outbox_item',
+      {
+        p_id: item.id,
+        p_lease_token: item.lease_token,
+      },
+    );
     if (completeError) {
-      console.error("send-notifications: complete RPC error", { id: item.id, message: completeError.message });
+      console.error('send-notifications: complete RPC error', {
+        id: item.id,
+        message: completeError.message,
+      });
     }
-    return (data as { status?: string })?.status ?? "sent";
+    return (data as { status?: string })?.status ?? 'sent';
   }
 
   // docs/design/v6/06_LINE_INTEGRATION.md #10A "Result": "409 same retry key
@@ -319,14 +388,20 @@ async function sendOne(
   // guard for the identical X-Line-Retry-Key means the message was (or is
   // being) sent by an earlier attempt; treat exactly like 2xx.
   if (response.status === 409) {
-    const { data, error: completeError } = await serviceClient.rpc("server_tx_complete_notification_outbox_item", {
-      p_id: item.id,
-      p_lease_token: item.lease_token,
-    });
+    const { data, error: completeError } = await serviceClient.rpc(
+      'server_tx_complete_notification_outbox_item',
+      {
+        p_id: item.id,
+        p_lease_token: item.lease_token,
+      },
+    );
     if (completeError) {
-      console.error("send-notifications: complete RPC error (409 reconcile)", { id: item.id, message: completeError.message });
+      console.error('send-notifications: complete RPC error (409 reconcile)', {
+        id: item.id,
+        message: completeError.message,
+      });
     }
-    return (data as { status?: string })?.status ?? "sent";
+    return (data as { status?: string })?.status ?? 'sent';
   }
 
   if (response.status === 429) {
@@ -334,7 +409,7 @@ async function sendOne(
     // provider monthly usage. at/over effective hard limit or explicit
     // monthly-limit error => quota fallback. otherwise transient
     // rate-limit => exponential backoff with same retry key within expiry."
-    let bodyText = "";
+    let bodyText = '';
     try {
       bodyText = await response.text();
     } catch {
@@ -346,82 +421,111 @@ async function sendOne(
       // Could not confirm we're still under the cap (or the message itself
       // says so) — treat conservatively as quota-exhausted rather than
       // retry a request that is unlikely to succeed before its own expiry.
-      return await failItem(serviceClient, item, "quota_fallback", `429 monthly-limit: ${bodyText.slice(0, 200)}`);
+      return await failItem(
+        serviceClient,
+        item,
+        'quota_fallback',
+        `429 monthly-limit: ${bodyText.slice(0, 200)}`,
+      );
     }
-    return await failItem(serviceClient, item, "transient", `429 rate-limited: ${bodyText.slice(0, 200)}`);
+    return await failItem(
+      serviceClient,
+      item,
+      'transient',
+      `429 rate-limited: ${bodyText.slice(0, 200)}`,
+    );
   }
 
   if (response.status >= 500) {
-    const bodyText = await response.text().catch(() => "");
-    return await failItem(serviceClient, item, "ambiguous", `provider ${response.status}: ${bodyText.slice(0, 200)}`);
+    const bodyText = await response.text().catch(() => '');
+    return await failItem(
+      serviceClient,
+      item,
+      'ambiguous',
+      `provider ${response.status}: ${bodyText.slice(0, 200)}`,
+    );
   }
 
   // Any other 4xx (400 malformed, 401/403 bad token, 404 unknown user) is a
   // permanent rejection for this recipient/payload — never retry.
-  const bodyText = await response.text().catch(() => "");
-  return await failItem(serviceClient, item, "definitive", `provider ${response.status}: ${bodyText.slice(0, 200)}`);
+  const bodyText = await response.text().catch(() => '');
+  return await failItem(
+    serviceClient,
+    item,
+    'definitive',
+    `provider ${response.status}: ${bodyText.slice(0, 200)}`,
+  );
 }
 
-Deno.serve(withServiceHandler(async (req: Request) => {
-  requireWorkerToken(req); // throws EDGE_WORKER_UNAUTHORIZED before any DB access
+Deno.serve(
+  withServiceHandler(async (req: Request) => {
+    requireWorkerToken(req); // throws EDGE_WORKER_UNAUTHORIZED before any DB access
 
-  const serviceClient = createServiceRoleClient();
-  // Dashboard/CLI pastes often include a trailing line break. HTTP header
-  // values cannot contain it; trim only surrounding whitespace, never alter
-  // a token's meaningful interior characters.
-  const channelAccessToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN")?.trim() || undefined;
+    const serviceClient = createServiceRoleClient();
+    // Dashboard/CLI pastes often include a trailing line break. HTTP header
+    // values cannot contain it; trim only surrounding whitespace, never alter
+    // a token's meaningful interior characters.
+    const channelAccessToken = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN')?.trim() || undefined;
 
-  const quotaRefresh = await maybeRefreshLineQuota(serviceClient, channelAccessToken);
+    const quotaRefresh = await maybeRefreshLineQuota(serviceClient, channelAccessToken);
 
-  const { data: claimedRaw, error: claimError } = await serviceClient.rpc(
-    "server_tx_claim_notification_outbox_batch",
-    { p_worker_id: crypto.randomUUID(), p_limit: CLAIM_BATCH_LIMIT, p_lease_seconds: LEASE_SECONDS },
-  );
-  if (claimError) {
-    console.error("send-notifications: claim RPC failed", claimError.message);
-    return new Response(JSON.stringify({ error: { code: "INTERNAL_ERROR", message: "internal error" } }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const claimed = (claimedRaw ?? []) as ClaimedNotification[];
-
-  const summary: RunSummary = {
-    claimed: claimed.length,
-    sent: 0,
-    quota_fallback: 0,
-    dead: 0,
-    requeued: 0,
-    delivery_unknown: 0,
-    no_line_link: 0,
-    quota_refreshed: quotaRefresh.refreshed,
-    quota_refresh_skipped_reason: quotaRefresh.skippedReason,
-  };
-
-  for (const item of claimed) {
-    if (!item.line_user_id) summary.no_line_link += 1;
-    const status = await sendOne(serviceClient, item, channelAccessToken, quotaRefresh.stale);
-    switch (status) {
-      case "sent":
-        summary.sent += 1;
-        break;
-      case "fallback":
-        summary.quota_fallback += 1;
-        break;
-      case "dead":
-        summary.dead += 1;
-        break;
-      case "queued":
-        summary.requeued += 1;
-        break;
-      case "delivery_unknown":
-        summary.delivery_unknown += 1;
-        break;
-      default:
-        console.error("send-notifications: unexpected item outcome", { id: item.id, status });
+    const { data: claimedRaw, error: claimError } = await serviceClient.rpc(
+      'server_tx_claim_notification_outbox_batch',
+      {
+        p_worker_id: crypto.randomUUID(),
+        p_limit: CLAIM_BATCH_LIMIT,
+        p_lease_seconds: LEASE_SECONDS,
+      },
+    );
+    if (claimError) {
+      console.error('send-notifications: claim RPC failed', claimError.message);
+      return new Response(
+        JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'internal error' } }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
     }
-  }
 
-  return jsonResponse(summary);
-}));
+    const claimed = (claimedRaw ?? []) as ClaimedNotification[];
+
+    const summary: RunSummary = {
+      claimed: claimed.length,
+      sent: 0,
+      quota_fallback: 0,
+      dead: 0,
+      requeued: 0,
+      delivery_unknown: 0,
+      no_line_link: 0,
+      quota_refreshed: quotaRefresh.refreshed,
+      quota_refresh_skipped_reason: quotaRefresh.skippedReason,
+    };
+
+    for (const item of claimed) {
+      if (!item.line_user_id) summary.no_line_link += 1;
+      const status = await sendOne(serviceClient, item, channelAccessToken, quotaRefresh.stale);
+      switch (status) {
+        case 'sent':
+          summary.sent += 1;
+          break;
+        case 'fallback':
+          summary.quota_fallback += 1;
+          break;
+        case 'dead':
+          summary.dead += 1;
+          break;
+        case 'queued':
+          summary.requeued += 1;
+          break;
+        case 'delivery_unknown':
+          summary.delivery_unknown += 1;
+          break;
+        default:
+          console.error('send-notifications: unexpected item outcome', { id: item.id, status });
+      }
+    }
+
+    return jsonResponse(summary);
+  }),
+);

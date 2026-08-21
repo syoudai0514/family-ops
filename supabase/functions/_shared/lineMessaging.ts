@@ -138,6 +138,7 @@ export async function replyOrEnqueuePush(
     p_recipient_user_id: args.recipientUserId,
     p_text: args.text,
     p_dedup_key: args.dedupKey ?? null,
+    p_rich_message: args.message ?? null,
   });
   if (error) {
     console.error('lineMessaging: push-fallback enqueue failed', error.message);

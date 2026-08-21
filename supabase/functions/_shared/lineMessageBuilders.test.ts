@@ -2,6 +2,7 @@ import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import {
   buildAssignmentRequestFlex,
   buildAssignmentSenderPreviewFlex,
+  rewritePickupRequest,
 } from './lineMessageBuilders.ts';
 
 Deno.test('assignment change Flex uses only canonical request ID in postbacks', () => {
@@ -39,3 +40,10 @@ Deno.test(
     assertEquals(raw.includes('data=迎えお願い'), false);
   },
 );
+
+Deno.test('natural pickup request is rewritten into a gentle shared message', () => {
+  assertEquals(
+    rewritePickupRequest('今日ちょっと遅くなるから迎えお願い'),
+    '今日は少し遅くなりそうです。お迎えをお願いしてもいい？',
+  );
+});

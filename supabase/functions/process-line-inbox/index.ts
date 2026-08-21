@@ -70,7 +70,10 @@ import {
   pickNextUnfinished,
   type RoutineSessionItem,
 } from './routineItemFlow.ts';
-import { buildAssignmentSenderPreviewFlex } from '../_shared/lineMessageBuilders.ts';
+import {
+  buildAssignmentSenderPreviewFlex,
+  rewritePickupRequest,
+} from '../_shared/lineMessageBuilders.ts';
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get('LINE_INBOX_BATCH_LIMIT') ?? '25');
@@ -554,7 +557,7 @@ async function handleText(
     const { data: task } = definition
       ? await client
           .from('task_instances')
-          .select('id,title')
+          .select('id,title,due_at,scheduled_date')
           .eq('household_id', actor.household_id)
           .eq('task_definition_id', definition.id)
           .eq('scheduled_date', today)
@@ -572,9 +575,11 @@ async function handleText(
       assignmentPayload = {
         task_id: task.id,
         recipient_user_id: partner.user_id,
-        shared_message: text,
+        shared_message: rewritePickupRequest(text),
         scope: 'once',
         title: task.title,
+        due_at: task.due_at,
+        scheduled_date: task.scheduled_date,
       };
   }
   const operationId = await deterministicOperationId('line-text', item.provider_event_id);
@@ -608,8 +613,17 @@ async function handleText(
       message: buildAssignmentSenderPreviewFlex({
         pendingActionId: pendingData.pending_action_id,
         title: String(assignmentPayload.title),
-        message: text,
+        message: String(assignmentPayload.shared_message),
         editUrl,
+        scheduleLabel: assignmentPayload.due_at
+          ? new Intl.DateTimeFormat('ja-JP', {
+              timeZone: 'Asia/Tokyo',
+              month: 'numeric',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(new Date(String(assignmentPayload.due_at)))
+          : String(assignmentPayload.scheduled_date),
       }),
       dedupKey: `line-sender-preview:${item.provider_event_id}`,
     });

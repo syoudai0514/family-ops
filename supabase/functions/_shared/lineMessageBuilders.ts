@@ -8,12 +8,20 @@ export type AssignmentChangeLineData = {
   scope: 'once' | 'this_week';
 };
 
+export function rewritePickupRequest(rawText: string): string {
+  const reason = /遅/.test(rawText) ? '今日は少し遅くなりそうです。' : '';
+  return `${reason}お迎えをお願いしてもいい？`;
+}
+
 export function buildAssignmentSenderPreviewFlex(data: {
   pendingActionId: string;
   title: string;
   message: string;
   editUrl: string;
+  scheduleLabel?: string;
+  scope?: 'once' | 'this_week';
 }): Record<string, unknown> {
+  const scopeLabel = data.scope === 'this_week' ? '今週だけ' : '今回だけ';
   return {
     type: 'flex',
     altText: `この内容で送りますか？ ${data.title}`,
@@ -27,7 +35,10 @@ export function buildAssignmentSenderPreviewFlex(data: {
           { type: 'text', text: 'この内容で送りますか？', weight: 'bold', size: 'lg' },
           { type: 'text', text: data.title, weight: 'bold', wrap: true },
           { type: 'text', text: data.message, wrap: true, color: '#555555' },
-          { type: 'text', text: '今回だけ / 自分 → パートナー', size: 'xs', color: '#777777' },
+          ...(data.scheduleLabel
+            ? [{ type: 'text', text: data.scheduleLabel, size: 'sm', color: '#555555' }]
+            : []),
+          { type: 'text', text: `${scopeLabel} / 自分 → パートナー`, size: 'xs', color: '#777777' },
         ],
       },
       footer: {

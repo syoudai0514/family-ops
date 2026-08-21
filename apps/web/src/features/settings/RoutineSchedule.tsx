@@ -12,6 +12,7 @@ import {
   type RoutineScheduleKind,
 } from '../../lib/types';
 import { WEEKDAYS } from '../../lib/weekdays';
+import { groupRecurrencePatterns } from './routineRuleHelpers';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 
 const SCHEDULE_LABELS: Record<RoutineScheduleKind, string> = {
@@ -274,12 +275,8 @@ function EveningRoutineEditor({
           planned_assignee_id: string | null;
           scheduled_local_time: string | null;
         }>;
-        const groups = new Map<string, typeof matched>();
-        for (const rule of matched) {
-          const key = `${rule.assignee_strategy}|${rule.planned_assignee_id ?? ''}|${rule.scheduled_local_time?.slice(0, 5) ?? '20:00'}`;
-          groups.set(key, [...(groups.get(key) ?? []), rule]);
-        }
-        if (groups.size === 0)
+        const groups = groupRecurrencePatterns(matched);
+        if (groups.length === 0)
           return [
             {
               id: definition?.id ?? '',
@@ -294,11 +291,11 @@ function EveningRoutineEditor({
               localTime: '20:00',
             },
           ];
-        return [...groups.values()].map((group, index) => ({
+        return groups.map((group, index) => ({
           id: definition?.id ?? '',
           code: `${code}:${index}`,
           taskCode: code,
-          title: `${definition?.title ?? EVENING_LABELS[code]}${groups.size > 1 ? `（設定${index + 1}）` : ''}`,
+          title: `${definition?.title ?? EVENING_LABELS[code]}${groups.length > 1 ? `（設定${index + 1}）` : ''}`,
           enabled: true,
           weekdays: group.map((item) => item.weekday),
           originalWeekdays: group.map((item) => item.weekday),

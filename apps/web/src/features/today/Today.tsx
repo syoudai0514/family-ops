@@ -15,6 +15,19 @@ import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
 import type { PendingAction, RequestRow, TaskInstance } from '../../lib/types';
 
+export function selectNextOwnedTask(tasks: TaskInstance[], userId: string | null | undefined) {
+  if (!userId) return null;
+  return (
+    tasks
+      .filter(
+        (task) =>
+          task.planned_assignee_id === userId &&
+          (task.status === 'todo' || task.status === 'in_progress'),
+      )
+      .sort((a, b) => (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999'))[0] ?? null
+  );
+}
+
 function RequestQuickActions({
   request,
   onChanged,
@@ -97,13 +110,7 @@ export function Today() {
     return { myTasks: mine, partnerTasks: partnerList, unassignedTasks: unassigned };
   }, [data.tasks, me]);
 
-  const nextTask = useMemo(
-    () =>
-      [...myTasks]
-        .filter((task) => task.status === 'todo' || task.status === 'in_progress')
-        .sort((a, b) => (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999'))[0] ?? null,
-    [myTasks],
-  );
+  const nextTask = useMemo(() => selectNextOwnedTask(data.tasks, me?.user_id), [data.tasks, me]);
 
   function renderTaskList(tasks: TaskInstance[]) {
     return (
