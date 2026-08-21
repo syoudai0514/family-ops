@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
@@ -42,7 +42,15 @@ export function Requests() {
   const { household, partner } = useHousehold();
   const { requests, loading, error, refresh } = useRequests(household?.id ?? null);
   const location = useLocation();
-  const [showForm, setShowForm] = useState(() => new URLSearchParams(location.search).has('date'));
+  const navigate = useNavigate();
+  const pendingActionRawText = typeof (location.state as { pendingActionRawText?: unknown } | null)?.pendingActionRawText === 'string'
+    ? (location.state as { pendingActionRawText: string }).pendingActionRawText
+    : '';
+  const [showForm, setShowForm] = useState(() => new URLSearchParams(location.search).has('date') || Boolean(pendingActionRawText));
+
+  function clearPrivatePrefill() {
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
 
@@ -54,7 +62,10 @@ export function Requests() {
       <div className="today-header">
         <h1>お願い</h1>
         {partner && (
-          <button type="button" onClick={() => setShowForm((v) => !v)}>
+          <button type="button" onClick={() => {
+            setShowForm((v) => !v);
+            if (showForm) clearPrivatePrefill();
+          }}>
             {showForm ? '閉じる' : '+ お願いを送る'}
           </button>
         )}
@@ -67,8 +78,10 @@ export function Requests() {
       {showForm && partner && (
         <SendRequestForm
           recipientId={partner.user_id}
+          initialRawMessage={pendingActionRawText}
           onSent={() => {
             setShowForm(false);
+            clearPrivatePrefill();
             refresh();
           }}
         />
@@ -216,9 +229,11 @@ function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onCha
   );
 }
 
-function SendRequestForm({ recipientId, onSent }: { recipientId: string; onSent: () => void }) {
+function SendRequestForm({ recipientId, initialRawMessage = '', onSent }: { recipientId: string; initialRawMessage?: string; onSent: () => void }) {
   const [title, setTitle] = useState('');
-  const [rawMessage, setRawMessage] = useState('');
+  // This is navigation state from the sender's own pending action. It is not
+  // persisted or sent to the recipient; only `message` is shared on submit.
+  const [rawMessage, setRawMessage] = useState(initialRawMessage);
   const [message, setMessage] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);

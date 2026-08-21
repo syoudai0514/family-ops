@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { createSupabaseFromMock } from '../../test/supabaseMock';
 import { Today } from './Today';
@@ -120,7 +121,7 @@ vi.mock('../../app/HouseholdContext', () => ({
 
 describe('Today', () => {
   it('renders without crashing and shows the fetched task', async () => {
-    render(<Today />);
+    render(<MemoryRouter><Today /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
     });
@@ -130,7 +131,7 @@ describe('Today', () => {
   });
 
   it('shows Priority 1 (今/次の予定) with the conflict warning from get-today-schedule', async () => {
-    render(<Today />);
+    render(<MemoryRouter><Today /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '今/次の予定' })).toBeInTheDocument();
     });
@@ -141,7 +142,7 @@ describe('Today', () => {
   });
 
   it('shows Priority 2 (判断待ち) with the LINE-created pending action from list-pending-actions', async () => {
-    render(<Today />);
+    render(<MemoryRouter><Today /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '判断待ち' })).toBeInTheDocument();
     });
