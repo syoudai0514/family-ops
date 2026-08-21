@@ -1,5 +1,4 @@
 import { NavLink, Route, Routes } from 'react-router-dom';
-import { supabase } from '../lib/supabaseClient';
 import { Today } from '../features/today/Today';
 import { Requests } from '../features/requests/Requests';
 import { Shopping } from '../features/shopping/Shopping';
@@ -13,30 +12,26 @@ import { MonthView } from '../features/planning/MonthView';
 import { SettingsHome } from '../features/settings/SettingsHome';
 
 const PRIMARY_NAV_ITEMS = [
-  { to: '/today', label: '今日' },
-  { to: '/week', label: '週' },
-  { to: '/month', label: '月' },
-  { to: '/shopping', label: '買い物' },
-  { to: '/history', label: '履歴' },
+  { to: '/today', label: '今日', icon: '⌂' },
+  { to: '/week', label: '週', icon: '▦' },
+  { to: '/month', label: '月', icon: '□' },
+  { to: '/shopping', label: '買い物', icon: '⌑' },
+  { to: '/history', label: '履歴', icon: '◷' },
 ];
 
 export function AppShell() {
   return (
     <div className="app-root">
       <header className="app-nav">
-        <NavLink className="app-nav-brand" to="/today">おうちノート</NavLink>
+        <NavLink className="app-nav-brand" to="/today"><span aria-hidden="true">⌂</span> おうちノート</NavLink>
         <nav className="desktop-nav" aria-label="主要メニュー">
           {PRIMARY_NAV_ITEMS.map((item) => (
             <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               {item.label}
             </NavLink>
           ))}
-          <NavLink to="/requests" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>お願い</NavLink>
-          <NavLink to="/settings" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>設定</NavLink>
         </nav>
-        <button type="button" className="sign-out-button" onClick={() => supabase.auth.signOut()}>
-          サインアウト
-        </button>
+        <NavLink to="/settings" className="header-icon" aria-label="設定">⚙</NavLink>
       </header>
       <Routes>
         <Route path="/today" element={<Today />} />
@@ -55,7 +50,7 @@ export function AppShell() {
       <nav className="bottom-nav" aria-label="主要メニュー">
         {PRIMARY_NAV_ITEMS.map((item) => (
           <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'bottom-nav-link active' : 'bottom-nav-link')}>
-            {item.label}
+            <span aria-hidden="true">{item.icon}</span>{item.label}
           </NavLink>
         ))}
         <NavLink to="/requests" aria-label="お願いを作成" className="bottom-nav-add">＋</NavLink>
