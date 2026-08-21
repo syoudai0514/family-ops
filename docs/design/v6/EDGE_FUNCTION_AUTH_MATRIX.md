@@ -24,6 +24,7 @@
 - change-recurrence
 - deactivate-recurrence
 - complete-onboarding-step
+- replace-recurrence-schedule
 - configure-evening-routines
 - send-request
 - accept-request

@@ -340,26 +340,23 @@ function EveningRoutineEditor({
     setError(null);
     setNotice(null);
     try {
-      for (const row of rows) {
-        const activeDays = row.enabled ? row.weekdays : [];
-        for (const weekday of row.originalWeekdays ?? [])
-          if (!activeDays.includes(weekday))
-            await callEdgeFunction(EDGE_FUNCTIONS.deactivateRecurrence, {
-              operation_id: newOperationId(),
-              task_definition_id: row.id,
+      const replacements = [...new Set(rows.map((row) => row.id))].map((taskDefinitionId) => ({
+        task_definition_id: taskDefinitionId,
+        rules: rows
+          .filter((row) => row.id === taskDefinitionId && row.enabled)
+          .flatMap((row) =>
+            row.weekdays.map((weekday) => ({
               weekday,
-            });
-        for (const weekday of activeDays)
-          await callEdgeFunction(EDGE_FUNCTIONS.changeRecurrence, {
-            operation_id: newOperationId(),
-            task_definition_id: row.id,
-            weekday,
-            assignee_strategy: row.strategy,
-            planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
-            scheduled_local_time: row.localTime,
-            effective_from: new Date().toLocaleDateString('sv-SE'),
-          });
-      }
+              assignee_strategy: row.strategy,
+              planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
+              scheduled_local_time: row.localTime,
+            })),
+          ),
+      }));
+      await callEdgeFunction(EDGE_FUNCTIONS.replaceRecurrenceSchedule, {
+        operation_id: newOperationId(),
+        replacements,
+      });
       setNotice('夜の家事ルールを保存しました。次回以降の毎日に反映されます。');
       await load();
     } catch (err) {
@@ -464,7 +461,6 @@ export function MorningPreparationEditor({
   members: HouseholdMemberWithProfile[];
 }) {
   const [rows, setRows] = useState<EditableRule[]>([]);
-  const [originalWeekdays, setOriginalWeekdays] = useState<Record<string, number[]>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -523,7 +519,6 @@ export function MorningPreparationEditor({
         };
       });
     setRows(nextRows);
-    setOriginalWeekdays(Object.fromEntries(nextRows.map((row) => [row.id, [...row.weekdays]])));
     setLoading(false);
   }, [householdId]);
   useEffect(() => {
@@ -539,25 +534,20 @@ export function MorningPreparationEditor({
         title: row.title,
         routine_phase: 'morning',
       });
-      for (const weekday of originalWeekdays[row.id] ?? []) {
-        if (!row.weekdays.includes(weekday)) {
-          await callEdgeFunction(EDGE_FUNCTIONS.deactivateRecurrence, {
-            operation_id: newOperationId(),
+      await callEdgeFunction(EDGE_FUNCTIONS.replaceRecurrenceSchedule, {
+        operation_id: newOperationId(),
+        replacements: [
+          {
             task_definition_id: row.id,
-            weekday,
-          });
-        }
-      }
-      for (const weekday of row.weekdays)
-        await callEdgeFunction(EDGE_FUNCTIONS.changeRecurrence, {
-          operation_id: newOperationId(),
-          task_definition_id: row.id,
-          weekday,
-          assignee_strategy: row.strategy,
-          planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
-          scheduled_local_time: row.localTime,
-          effective_from: new Date().toLocaleDateString('sv-SE'),
-        });
+            rules: row.weekdays.map((weekday) => ({
+              weekday,
+              assignee_strategy: row.strategy,
+              planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
+              scheduled_local_time: row.localTime,
+            })),
+          },
+        ],
+      });
       await load();
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '朝の準備を保存できませんでした。');
@@ -584,15 +574,19 @@ export function MorningPreparationEditor({
           completion_mode: 'whole',
         },
       );
-      for (const weekday of newDays)
-        await callEdgeFunction(EDGE_FUNCTIONS.changeRecurrence, {
-          operation_id: newOperationId(),
-          task_definition_id: created.task_definition_id,
-          weekday,
-          assignee_strategy: 'dropoff_assignee',
-          scheduled_local_time: '07:00',
-          effective_from: new Date().toLocaleDateString('sv-SE'),
-        });
+      await callEdgeFunction(EDGE_FUNCTIONS.replaceRecurrenceSchedule, {
+        operation_id: newOperationId(),
+        replacements: [
+          {
+            task_definition_id: created.task_definition_id,
+            rules: newDays.map((weekday) => ({
+              weekday,
+              assignee_strategy: 'dropoff_assignee',
+              scheduled_local_time: '07:00',
+            })),
+          },
+        ],
+      });
       setNewTitle('');
       setNewDays([]);
       await load();

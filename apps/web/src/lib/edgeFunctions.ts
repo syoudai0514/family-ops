@@ -52,6 +52,7 @@ export const EDGE_FUNCTIONS = {
   getWeekSchedule: 'get-week-schedule',
   googleCalendarOauthStart: 'google-calendar-oauth-start',
   completeOnboardingStep: 'complete-onboarding-step',
+  replaceRecurrenceSchedule: 'replace-recurrence-schedule',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

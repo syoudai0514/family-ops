@@ -191,6 +191,9 @@ verify_jwt = true
 [functions.complete-onboarding-step]
 verify_jwt = true
 
+[functions.replace-recurrence-schedule]
+verify_jwt = true
+
 [functions.reassign-task-once]
 verify_jwt = true
 
