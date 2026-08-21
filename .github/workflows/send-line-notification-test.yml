@@ -1,0 +1,30 @@
+name: Send LINE notification test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: family-ops-line-notification-test
+  cancel-in-progress: false
+
+jobs:
+  enqueue-test:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: dnlqxjpjpkxnfgculzip
+    steps:
+      - name: Queue one test notification per linked account
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
+          payload=$(jq -n --arg query "insert into public.user_notifications (household_id, recipient_user_id, type, title, body, payload, dedup_key) select household_id, user_id, 'request_received', 'LINE通知テスト', 'おうちノートからの試し送信です。', '{}'::jsonb, 'line-test-' || gen_random_uuid()::text from private.line_user_links where status = 'active';" '{query: $query}')
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$payload" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" | jq -e .
