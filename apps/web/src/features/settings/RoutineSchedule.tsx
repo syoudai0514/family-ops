@@ -189,6 +189,8 @@ type EditableRule = {
   strategy: 'dropoff_assignee' | 'pickup_assignee' | 'nonpickup_adult' | 'fixed';
   fixedAssigneeId: string;
   localTime: string;
+  taskCode?: string;
+  originalWeekdays?: number[];
 };
 
 const EVENING_LABELS: Record<string, string> = {
@@ -260,7 +262,7 @@ function EveningRoutineEditor({
       return;
     }
     setRows(
-      EVENING_ROUTINE_TASK_CODES.map((code) => {
+      EVENING_ROUTINE_TASK_CODES.flatMap<EditableRule>((code) => {
         const definition = (definitions ?? []).find(
           (item: { code: string }) => item.code === code,
         ) as { id: string; title: string } | undefined;
@@ -272,17 +274,38 @@ function EveningRoutineEditor({
           planned_assignee_id: string | null;
           scheduled_local_time: string | null;
         }>;
-        const first = matched[0];
-        return {
+        const groups = new Map<string, typeof matched>();
+        for (const rule of matched) {
+          const key = `${rule.assignee_strategy}|${rule.planned_assignee_id ?? ''}|${rule.scheduled_local_time?.slice(0, 5) ?? '20:00'}`;
+          groups.set(key, [...(groups.get(key) ?? []), rule]);
+        }
+        if (groups.size === 0)
+          return [
+            {
+              id: definition?.id ?? '',
+              code,
+              taskCode: code,
+              title: definition?.title ?? EVENING_LABELS[code],
+              enabled: false,
+              weekdays: [],
+              originalWeekdays: [],
+              strategy: 'pickup_assignee',
+              fixedAssigneeId: '',
+              localTime: '20:00',
+            },
+          ];
+        return [...groups.values()].map((group, index) => ({
           id: definition?.id ?? '',
-          code,
-          title: definition?.title ?? EVENING_LABELS[code],
-          enabled: matched.length > 0,
-          weekdays: matched.map((item) => item.weekday),
-          strategy: first?.assignee_strategy ?? 'pickup_assignee',
-          fixedAssigneeId: first?.planned_assignee_id ?? '',
-          localTime: first?.scheduled_local_time?.slice(0, 5) ?? '20:00',
-        };
+          code: `${code}:${index}`,
+          taskCode: code,
+          title: `${definition?.title ?? EVENING_LABELS[code]}${groups.size > 1 ? `（設定${index + 1}）` : ''}`,
+          enabled: true,
+          weekdays: group.map((item) => item.weekday),
+          originalWeekdays: group.map((item) => item.weekday),
+          strategy: group[0].assignee_strategy,
+          fixedAssigneeId: group[0].planned_assignee_id ?? '',
+          localTime: group[0].scheduled_local_time?.slice(0, 5) ?? '20:00',
+        }));
       }),
     );
     setLoading(false);
@@ -295,11 +318,21 @@ function EveningRoutineEditor({
   const toggleDay = (code: string, weekday: number) => {
     const row = rows.find((item) => item.code === code);
     if (!row) return;
-    update(code, {
-      weekdays: row.weekdays.includes(weekday)
-        ? row.weekdays.filter((item) => item !== weekday)
-        : [...row.weekdays, weekday],
-    });
+    const removing = row.weekdays.includes(weekday);
+    setRows((current) =>
+      current.map((item) => {
+        if (item.code === code)
+          return {
+            ...item,
+            weekdays: removing
+              ? item.weekdays.filter((day) => day !== weekday)
+              : [...item.weekdays, weekday],
+          };
+        if (!removing && item.taskCode === row.taskCode)
+          return { ...item, weekdays: item.weekdays.filter((day) => day !== weekday) };
+        return item;
+      }),
+    );
   };
   const save = async () => {
     if (rows.some((row) => !row.id)) {
@@ -310,17 +343,26 @@ function EveningRoutineEditor({
     setError(null);
     setNotice(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.configureEveningRoutines, {
-        operation_id: newOperationId(),
-        rows: rows.map((row) => ({
-          task_code: row.code,
-          enabled: row.enabled,
-          weekdays: row.enabled ? row.weekdays : [],
-          assignee_strategy: row.strategy,
-          fixed_assignee_id: row.strategy === 'fixed' ? row.fixedAssigneeId || null : null,
-          scheduled_local_time: row.localTime,
-        })),
-      });
+      for (const row of rows) {
+        const activeDays = row.enabled ? row.weekdays : [];
+        for (const weekday of row.originalWeekdays ?? [])
+          if (!activeDays.includes(weekday))
+            await callEdgeFunction(EDGE_FUNCTIONS.deactivateRecurrence, {
+              operation_id: newOperationId(),
+              task_definition_id: row.id,
+              weekday,
+            });
+        for (const weekday of activeDays)
+          await callEdgeFunction(EDGE_FUNCTIONS.changeRecurrence, {
+            operation_id: newOperationId(),
+            task_definition_id: row.id,
+            weekday,
+            assignee_strategy: row.strategy,
+            planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
+            scheduled_local_time: row.localTime,
+            effective_from: new Date().toLocaleDateString('sv-SE'),
+          });
+      }
       setNotice('夜の家事ルールを保存しました。次回以降の毎日に反映されます。');
       await load();
     } catch (err) {
