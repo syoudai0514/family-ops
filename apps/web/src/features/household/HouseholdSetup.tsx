@@ -9,6 +9,7 @@ type Tab = 'create' | 'join';
 export function HouseholdSetup() {
   const [tab, setTab] = useState<Tab>('create');
   const { refresh } = useHousehold();
+  const tokenFromLink = new URLSearchParams(window.location.search).get('token') ?? '';
 
   return (
     <main className="app-shell">
@@ -33,7 +34,11 @@ export function HouseholdSetup() {
           招待コードで参加する
         </button>
       </div>
-      {tab === 'create' ? <CreateHouseholdForm onDone={refresh} /> : <JoinHouseholdForm onDone={refresh} />}
+      {tab === 'create' && !tokenFromLink ? (
+        <CreateHouseholdForm onDone={refresh} />
+      ) : (
+        <JoinHouseholdForm onDone={refresh} initialToken={tokenFromLink} />
+      )}
     </main>
   );
 }
@@ -95,8 +100,14 @@ function CreateHouseholdForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function JoinHouseholdForm({ onDone }: { onDone: () => void }) {
-  const [inviteToken, setInviteToken] = useState('');
+function JoinHouseholdForm({
+  onDone,
+  initialToken = '',
+}: {
+  onDone: () => void;
+  initialToken?: string;
+}) {
+  const [inviteToken, setInviteToken] = useState(initialToken);
   const [displayName, setDisplayName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
