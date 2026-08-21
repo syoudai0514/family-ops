@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
@@ -41,18 +41,8 @@ export function Requests() {
   const { user } = useAuth();
   const { household, partner } = useHousehold();
   const { requests, loading, error, refresh } = useRequests(household?.id ?? null);
-  const [showForm, setShowForm] = useState(false);
-  const [initialMessage, setInitialMessage] = useState('');
   const location = useLocation();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const draft = (location.state as { initialMessage?: unknown } | null)?.initialMessage;
-    if (typeof draft !== 'string' || draft.trim().length === 0) return;
-    setInitialMessage(draft);
-    setShowForm(true);
-    navigate('/requests', { replace: true, state: null });
-  }, [location.state, navigate]);
+  const [showForm, setShowForm] = useState(() => new URLSearchParams(location.search).has('date'));
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
 
@@ -64,13 +54,7 @@ export function Requests() {
       <div className="today-header">
         <h1>お願い</h1>
         {partner && (
-          <button
-            type="button"
-            onClick={() => {
-              if (showForm) setInitialMessage('');
-              setShowForm(!showForm);
-            }}
-          >
+          <button type="button" onClick={() => setShowForm((v) => !v)}>
             {showForm ? '閉じる' : '+ お願いを送る'}
           </button>
         )}
@@ -83,16 +67,14 @@ export function Requests() {
       {showForm && partner && (
         <SendRequestForm
           recipientId={partner.user_id}
-          initialMessage={initialMessage}
           onSent={() => {
             setShowForm(false);
-            setInitialMessage('');
             refresh();
           }}
         />
       )}
 
-      <section className="card">
+      {incoming.length > 0 && <section className="card">
         <h2>受け取ったお願い</h2>
         {incoming.length === 0 ? (
           <p className="empty-hint">なし</p>
@@ -103,9 +85,9 @@ export function Requests() {
             ))}
           </ul>
         )}
-      </section>
+      </section>}
 
-      <section className="card">
+      {outgoing.length > 0 && <section className="card">
         <h2>送ったお願い</h2>
         {outgoing.length === 0 ? (
           <p className="empty-hint">なし</p>
@@ -116,7 +98,7 @@ export function Requests() {
             ))}
           </ul>
         )}
-      </section>
+      </section>}
     </div>
   );
 }
@@ -231,16 +213,18 @@ function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onCha
   );
 }
 
-function SendRequestForm({ recipientId, initialMessage, onSent }: { recipientId: string; initialMessage: string; onSent: () => void }) {
+function SendRequestForm({ recipientId, onSent }: { recipientId: string; onSent: () => void }) {
   const [title, setTitle] = useState('');
-  const [message, setMessage] = useState(initialMessage);
+  const [rawMessage, setRawMessage] = useState('');
+  const [message, setMessage] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [rewriting, setRewriting] = useState(false);
+  const [rawInputId, setRawInputId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function rewriteMessageWithAi() {
-    const rawText = message.trim();
+    const rawText = rawMessage.trim();
     if (!rawText) {
       setError('言い換えたいメッセージを入力してください。');
       return;
@@ -248,12 +232,13 @@ function SendRequestForm({ recipientId, initialMessage, onSent }: { recipientId:
     setError(null);
     setRewriting(true);
     try {
-      const proposal = await callEdgeFunction<{ proposed_text: string }>(EDGE_FUNCTIONS.proposeAiDraft, {
+      const proposal = await callEdgeFunction<{ raw_input_id: string; proposed_text: string }>(EDGE_FUNCTIONS.proposeAiDraft, {
         operation_id: newOperationId(),
         raw_text: rawText,
         target_type: 'request',
       });
       setMessage(proposal.proposed_text);
+      setRawInputId(proposal.raw_input_id);
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : 'AIによる言い換えに失敗しました。');
     } finally {
@@ -266,13 +251,18 @@ function SendRequestForm({ recipientId, initialMessage, onSent }: { recipientId:
     setError(null);
     setSubmitting(true);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.sendRequest, {
+      if (!message.trim()) { setError('相手へ共有する文面を入力してください。'); return; }
+      const payload = {
         operation_id: newOperationId(),
         recipient_user_id: recipientId,
-        shared_title: title.trim(),
-        shared_message: message.trim() || undefined,
+        shared_title: title.trim() || 'お願い',
         due_at: dueDate ? new Date(dueDate).toISOString() : undefined,
-      });
+      };
+      if (rawInputId) {
+        await callEdgeFunction(EDGE_FUNCTIONS.confirmRequestDraft, { ...payload, raw_input_id: rawInputId, confirmed_message: message.trim() });
+      } else {
+        await callEdgeFunction(EDGE_FUNCTIONS.sendRequest, { ...payload, shared_message: message.trim() });
+      }
       onSent();
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '送信に失敗しました。');
@@ -282,18 +272,23 @@ function SendRequestForm({ recipientId, initialMessage, onSent }: { recipientId:
   }
 
   return (
-    <form onSubmit={handleSubmit} className="stack-form card">
+    <form onSubmit={handleSubmit} className="stack-form card request-composer">
+      <p className="eyebrow">相手に見えるのは、確認した文面だけです</p>
       <label>
         タイトル
         <input value={title} onChange={(e) => setTitle(e.target.value)} required />
       </label>
       <label>
-        メッセージ（任意）
-        <textarea value={message} onChange={(e) => setMessage(e.target.value)} />
+        まずはそのまま入力
+        <textarea value={rawMessage} onChange={(e) => { setRawMessage(e.target.value); setRawInputId(null); }} placeholder="今日ちょっと遅くなるから、迎えをお願いしたい" />
       </label>
-      <button type="button" onClick={rewriteMessageWithAi} disabled={submitting || rewriting || message.trim().length === 0}>
+      <button type="button" className="secondary-button" onClick={rewriteMessageWithAi} disabled={submitting || rewriting || rawMessage.trim().length === 0}>
         {rewriting ? 'AIが言い換え中…' : 'AIでやわらかく言い換える'}
       </button>
+      <label>
+        相手へ送る文面（確認・編集できます）
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} required placeholder="AIで言い換えるか、直接入力してください" />
+      </label>
       <label>
         期限（任意）
         <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
@@ -304,7 +299,7 @@ function SendRequestForm({ recipientId, initialMessage, onSent }: { recipientId:
         </p>
       )}
       <button type="submit" disabled={submitting}>
-        {submitting ? '送信中…' : '送る'}
+        {submitting ? '送信中…' : 'この内容で送る'}
       </button>
     </form>
   );
