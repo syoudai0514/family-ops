@@ -20,7 +20,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       PROJECT_REF: dnlqxjpjpkxnfgculzip
     steps:
-      - name: Register only the two LINE delivery jobs
+      - name: Register LINE inbox, notification generation, and delivery jobs
         shell: bash
         run: |
           set -euo pipefail
@@ -36,7 +36,9 @@ jobs:
               raise exception 'CRON_WORKER_TOKEN is missing from Vault';
             end if;
             perform cron.unschedule(jobid) from cron.job
-              where jobname in ('family-ops-routine-dispatch-v1', 'family-ops-line-delivery-v1');
+              where jobname in ('family-ops-line-inbox-v1', 'family-ops-routine-dispatch-v1', 'family-ops-line-delivery-v1');
+            perform cron.schedule('family-ops-line-inbox-v1', '* * * * *',
+              format($job$select net.http_post(url := 'https://dnlqxjpjpkxnfgculzip.supabase.co/functions/v1/process-line-inbox', headers := jsonb_build_object('Content-Type','application/json','X-Family-Ops-Worker-Token',%L), body := '{}'::jsonb)$job$, worker_token));
             perform cron.schedule('family-ops-routine-dispatch-v1', '* * * * *',
               format($job$select net.http_post(url := 'https://dnlqxjpjpkxnfgculzip.supabase.co/functions/v1/dispatch-routine-automation', headers := jsonb_build_object('Content-Type','application/json','X-Family-Ops-Worker-Token',%L), body := '{}'::jsonb)$job$, worker_token));
             perform cron.schedule('family-ops-line-delivery-v1', '* * * * *',
