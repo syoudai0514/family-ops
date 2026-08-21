@@ -176,7 +176,7 @@ type EditableRule = {
   title: string;
   enabled: boolean;
   weekdays: number[];
-  strategy: 'pickup_assignee' | 'nonpickup_adult' | 'fixed';
+  strategy: 'dropoff_assignee' | 'pickup_assignee' | 'nonpickup_adult' | 'fixed';
   fixedAssigneeId: string;
   localTime: string;
 };
