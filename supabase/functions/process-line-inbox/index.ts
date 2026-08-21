@@ -300,6 +300,22 @@ async function handlePostback(client: SupabaseClient, item: WebhookInboxItem, ac
     return;
   }
 
+  if (fields.action === 'accept_assignment_change' && fields.request_id) {
+    const operationId = await deterministicOperationId('line-assignment-accept', item.provider_event_id);
+    const { error } = await client.rpc('server_tx_accept_assignment_change_request', { p_actor_id: actor.user_id, p_operation_id: operationId, p_request_id: fields.request_id });
+    if (error) { console.error('process-line-inbox: accept assignment change failed', error.message); return; }
+    await sendConfirmation(client, item, actor, '✓ 担当を引き受けました');
+    return;
+  }
+
+  if (fields.action === 'decline_assignment_change' && fields.request_id) {
+    const operationId = await deterministicOperationId('line-assignment-decline', item.provider_event_id);
+    const { error } = await client.rpc('server_tx_decline_request', { p_actor_id: actor.user_id, p_operation_id: operationId, p_request_id: fields.request_id });
+    if (error) { console.error('process-line-inbox: decline assignment change failed', error.message); return; }
+    await sendConfirmation(client, item, actor, '変更はありません。');
+    return;
+  }
+
   if (fields.action === "routine_item" && fields.session_id && fields.task_instance_id && fields.value) {
     if (!["complete", "partner_handled", "skip"].includes(fields.value)) {
       console.warn("process-line-inbox: invalid routine_item value", { value: fields.value });
