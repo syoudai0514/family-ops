@@ -128,7 +128,10 @@ function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onCha
     setBusy(true);
     setError(null);
     try {
-      await callEdgeFunction(kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest, {
+      const functionName = kind === 'accept' && request.assignment_task_instance_id
+        ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest
+        : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
+      await callEdgeFunction(functionName, {
         operation_id: newOperationId(),
         request_id: request.id,
       });
@@ -143,7 +146,7 @@ function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onCha
   return (
     <li className="request-item">
       <div>
-        <strong>{request.shared_title}</strong> — {statusLabel(request.status)}
+        <strong>{request.shared_title}</strong> — {request.assignment_task_instance_id ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}
         {request.shared_message && <p>{request.shared_message}</p>}
         {request.due_at && <span className="task-item-meta">期限: {formatDateTimeJa(request.due_at)}</span>}
       </div>
