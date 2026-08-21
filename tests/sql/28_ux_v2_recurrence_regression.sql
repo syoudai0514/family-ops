@@ -25,7 +25,7 @@ begin
   v_hh := public.server_tx_create_household(v_owner, gen_random_uuid(), 'UX v2 recurrence HH', 'Owner');
   v_hh_id := (v_hh->>'household_id')::uuid;
   insert into public.household_members(household_id, user_id, member_role)
-  values (v_hh_id, v_partner, 'partner');
+  values (v_hh_id, v_partner, 'adult');
 
   select id into v_dropoff_def from public.task_definitions where household_id = v_hh_id and code = 'dropoff';
   select id into v_pickup_def from public.task_definitions where household_id = v_hh_id and code = 'pickup';
