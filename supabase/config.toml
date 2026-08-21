@@ -185,6 +185,9 @@ verify_jwt = true
 [functions.change-recurrence]
 verify_jwt = true
 
+[functions.deactivate-recurrence]
+verify_jwt = true
+
 [functions.reassign-task-once]
 verify_jwt = true
 
