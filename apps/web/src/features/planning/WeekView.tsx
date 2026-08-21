@@ -28,7 +28,31 @@ export function WeekView() {
 }
 
 function AssignmentChangeForm({ task, partnerName, partnerId, onClose, onSaved }: { task: TaskInstance; partnerName: string; partnerId: string; onClose: () => void; onSaved: () => Promise<void> }) {
-  const [scope, setScope] = useState<'once' | 'this_week'>('once'); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
-  const submit = async (event: FormEvent) => { event.preventDefault(); setBusy(true); setError(null); try { await callEdgeFunction(EDGE_FUNCTIONS.createAssignmentChangeRequest, { operation_id: newOperationId(), task_id: task.id, recipient_user_id: partnerId, scope, shared_message: message }); await onSaved(); } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '担当変更のお願いを送れませんでした。'); } finally { setBusy(false); } };
-  return <div className="modal-backdrop" role="presentation"><form className="modal-panel stack-form" onSubmit={submit}><div className="modal-header"><h2>{task.title}の担当を相談</h2><button type="button" className="modal-close" onClick={onClose}>×</button></div><p>相手が「引き受ける」を押すまで、担当は変わりません。</p><label>変更の範囲<select value={scope} onChange={(event) => setScope(event.target.value as 'once' | 'this_week')}><option value="once">今回だけ</option><option value="this_week">今週だけ</option></select></label><label>{partnerName}へ送る文面<textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="今日ちょっと遅くなるので、お願いできる？" /></label>{error && <p role="alert" className="error-text">{error}</p>}<button disabled={busy}>{busy ? '送信中…' : 'この内容で送る'}</button></form></div>;
+  const [scope, setScope] = useState<'once' | 'this_week'>('once');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setError(null);
+    try {
+      await callEdgeFunction(EDGE_FUNCTIONS.createAssignmentChangeRequest, { operation_id: newOperationId(), task_id: task.id, recipient_user_id: partnerId, scope, shared_message: message });
+      await onSaved();
+    } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '担当変更のお願いを送れませんでした。'); } finally { setBusy(false); }
+  };
+  const scopeLabel = scope === 'this_week' ? '今週だけ' : '今回だけ';
+  return <div className="modal-backdrop" role="presentation"><form className="modal-panel stack-form" onSubmit={submit}>
+    <div className="modal-header"><h2>{task.title}の担当を相談</h2><button type="button" className="modal-close" onClick={onClose}>×</button></div>
+    <p>相手が「引き受ける」を押すまで、担当は変わりません。</p>
+    {!previewing ? <>
+      <label>変更の範囲<select value={scope} onChange={(event) => setScope(event.target.value as 'once' | 'this_week')}><option value="once">今回だけ</option><option value="this_week">今週だけ</option></select></label>
+      <label>{partnerName}へ送る文面<textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="今日ちょっと遅くなるので、お願いできる？" /></label>
+      <button type="button" disabled={busy} onClick={() => setPreviewing(true)}>LINE送信内容を確認</button>
+    </> : <section className="line-sender-preview" aria-label="LINE担当変更プレビュー">
+      <p className="line-preview-kicker">LINE · 送る側の確認</p><h3>この内容で送りますか？</h3><p className="line-preview-message">{message || '担当をお願いしてもいい？'}</p>
+      <p className="line-preview-meta">{task.title} / {scopeLabel} / 自分 → {partnerName}</p><p className="empty-hint">送るまでは相手に通知されません。</p>
+      <div className="modal-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setPreviewing(false)}>編集</button><button disabled={busy}>{busy ? '送信中…' : 'LINEで送る'}</button></div>
+    </section>}
+    {error && <p role="alert" className="error-text">{error}</p>}
+  </form></div>;
 }
