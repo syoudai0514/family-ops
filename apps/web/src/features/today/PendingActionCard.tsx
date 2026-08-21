@@ -16,13 +16,14 @@ import type { PendingAction } from '../../lib/types';
 //     process-pending-actions/index.ts's `default: throw`), so confirming
 //     it would only dead-letter — no confirm button is offered at all;
 //     only cancel and a correction path into the normal task form
-//     (onEditInForm), matching "Parser fallback leads to a usable
-//     correction/form path rather than a dead end."
+//     (request or task correction), matching "Parser fallback leads to a
+//     usable correction/form path rather than a dead end."
 interface PendingActionCardProps {
   action: PendingAction;
   onConfirm: (id: string) => Promise<void>;
   onCancel: (id: string) => Promise<void>;
-  onEditInForm: (action: PendingAction) => void;
+  onEditAsRequest: (action: PendingAction) => Promise<void>;
+  onEditAsTask: (action: PendingAction) => Promise<void>;
 }
 
 const ACTION_TITLES: Record<PendingAction['action_type'], string> = {
@@ -45,7 +46,7 @@ function previewText(action: PendingAction): string {
   }
 }
 
-export function PendingActionCard({ action, onConfirm, onCancel, onEditInForm }: PendingActionCardProps) {
+export function PendingActionCard({ action, onConfirm, onCancel, onEditAsRequest, onEditAsTask }: PendingActionCardProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,9 +74,14 @@ export function PendingActionCard({ action, onConfirm, onCancel, onEditInForm }:
       {!isProcessing && (
         <div className="task-item-actions">
           {action.action_type === 'needs_pwa_review' ? (
-            <button type="button" disabled={busy} onClick={() => onEditInForm(action)}>
-              編集してPWAフォームへ
-            </button>
+            <>
+              <button type="button" disabled={busy} onClick={() => run(() => onEditAsRequest(action))}>
+                お願いとして編集
+              </button>
+              <button type="button" disabled={busy} onClick={() => run(() => onEditAsTask(action))}>
+                タスクとして編集
+              </button>
+            </>
           ) : (
             <button type="button" disabled={busy} onClick={() => run(() => onConfirm(action.id))}>
               この内容で確定

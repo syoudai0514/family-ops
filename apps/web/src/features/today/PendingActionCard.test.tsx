@@ -16,27 +16,34 @@ function makeAction(overrides: Partial<PendingAction>): PendingAction {
   };
 }
 
+function editProps() {
+  return {
+    onEditAsRequest: vi.fn().mockResolvedValue(undefined),
+    onEditAsTask: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe('PendingActionCard', () => {
   it('shows a structured preview and confirm/cancel for shopping_item_add', () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     const onCancel = vi.fn().mockResolvedValue(undefined);
     render(
       <ul>
-        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={onCancel} onEditInForm={vi.fn()} />
+        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={onCancel} {...editProps()} />
       </ul>,
     );
     expect(screen.getByText('オムツ')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'この内容で確定' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'キャンセル' })).toBeInTheDocument();
     // No form-correction escape hatch for an already-structured draft.
-    expect(screen.queryByRole('button', { name: '編集してPWAフォームへ' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'お願いとして編集' })).not.toBeInTheDocument();
   });
 
   it('calls onConfirm with the action id when confirmed', async () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     render(
       <ul>
-        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={vi.fn()} onEditInForm={vi.fn()} />
+        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={vi.fn()} {...editProps()} />
       </ul>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'この内容で確定' }));
@@ -48,7 +55,7 @@ describe('PendingActionCard', () => {
     const onConfirm = vi.fn();
     render(
       <ul>
-        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={onCancel} onEditInForm={vi.fn()} />
+        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={onCancel} {...editProps()} />
       </ul>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
@@ -56,8 +63,9 @@ describe('PendingActionCard', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it('needs_pwa_review offers only cancel + edit-in-form, never a direct confirm button', () => {
-    const onEditInForm = vi.fn();
+  it('needs_pwa_review offers request/task editing and cancel, never a direct confirm button', async () => {
+    const onEditAsRequest = vi.fn().mockResolvedValue(undefined);
+    const onEditAsTask = vi.fn().mockResolvedValue(undefined);
     const action = makeAction({
       id: 'pending-2',
       action_type: 'needs_pwa_review',
@@ -65,14 +73,20 @@ describe('PendingActionCard', () => {
     });
     render(
       <ul>
-        <PendingActionCard action={action} onConfirm={vi.fn()} onCancel={vi.fn()} onEditInForm={onEditInForm} />
+        <PendingActionCard
+          action={action}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+          onEditAsRequest={onEditAsRequest}
+          onEditAsTask={onEditAsTask}
+        />
       </ul>,
     );
     expect(screen.getByText('来週の水曜日、保育園の準備を手伝って')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'この内容で確定' })).not.toBeInTheDocument();
-    const editButton = screen.getByRole('button', { name: '編集してPWAフォームへ' });
-    fireEvent.click(editButton);
-    expect(onEditInForm).toHaveBeenCalledWith(action);
+    fireEvent.click(screen.getByRole('button', { name: 'お願いとして編集' }));
+    await waitFor(() => expect(onEditAsRequest).toHaveBeenCalledWith(action));
+    expect(onEditAsTask).not.toHaveBeenCalled();
   });
 
   it('shows a processing state with no action buttons once no longer draft', () => {
@@ -82,7 +96,7 @@ describe('PendingActionCard', () => {
           action={makeAction({ status: 'confirmed' })}
           onConfirm={vi.fn()}
           onCancel={vi.fn()}
-          onEditInForm={vi.fn()}
+          {...editProps()}
         />
       </ul>,
     );

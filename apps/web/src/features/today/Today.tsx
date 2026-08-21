@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import { useTodayData } from './useTodayData';
@@ -68,6 +69,7 @@ export function Today() {
   const [editingTask, setEditingTask] = useState<TaskInstance | null>(null);
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
   const [shoppingCollapsed, setShoppingCollapsed] = useState(true);
+  const navigate = useNavigate();
 
   const { myTasks, partnerTasks, unassignedTasks } = useMemo(() => {
     const mine: TaskInstance[] = [];
@@ -105,9 +107,15 @@ export function Today() {
   // and hands the sender's own raw text to the normal task form as a
   // starting point instead, matching "usable correction/form path rather
   // than a dead end" (docs/adr/0011).
-  async function handleEditInForm(action: PendingAction) {
+  async function handleEditAsTask(action: PendingAction) {
     await pending.cancel(action.id);
     setCorrectionTitle(String(action.normalized_payload.raw_text ?? ''));
+  }
+
+  async function handleEditAsRequest(action: PendingAction) {
+    const rawText = String(action.normalized_payload.raw_text ?? '');
+    await pending.cancel(action.id);
+    navigate('/requests', { state: { initialMessage: rawText } });
   }
 
   if (data.loading) {
@@ -159,7 +167,8 @@ export function Today() {
                 action={action}
                 onConfirm={pending.confirm}
                 onCancel={pending.cancel}
-                onEditInForm={handleEditInForm}
+                onEditAsRequest={handleEditAsRequest}
+                onEditAsTask={handleEditAsTask}
               />
             ))}
           </ul>

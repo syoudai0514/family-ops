@@ -96,6 +96,44 @@ body {
   line-height: 1.4;
 }
 
+/* The desktop header has a brand, seven destinations, and sign-out.  On an
+ * iPhone, leaving those as one flex row gives the navigation an intrinsic
+ * width wider than the viewport, which is why Safari showed clipped controls.
+ * Keep the brand/action row compact and lay destinations out as tap targets
+ * that can shrink without creating horizontal overflow. */
+@media (max-width: 680px) {
+  .app-nav {
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  .app-nav-brand {
+    min-width: 0;
+  }
+
+  .app-nav > button {
+    margin-left: auto;
+    flex: 0 0 auto;
+    padding: 0.4rem 0.65rem;
+    white-space: nowrap;
+  }
+
+  .app-nav nav {
+    order: 3;
+    flex: 0 0 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+
+  .nav-link {
+    min-width: 0;
+    padding: 0.45rem 0.2rem;
+    text-align: center;
+    white-space: nowrap;
+  }
+}
+
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);

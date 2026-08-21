@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
@@ -41,6 +42,17 @@ export function Requests() {
   const { household, partner } = useHousehold();
   const { requests, loading, error, refresh } = useRequests(household?.id ?? null);
   const [showForm, setShowForm] = useState(false);
+  const [initialMessage, setInitialMessage] = useState('');
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const draft = (location.state as { initialMessage?: unknown } | null)?.initialMessage;
+    if (typeof draft !== 'string' || draft.trim().length === 0) return;
+    setInitialMessage(draft);
+    setShowForm(true);
+    navigate('/requests', { replace: true, state: null });
+  }, [location.state, navigate]);
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
 
@@ -52,7 +64,13 @@ export function Requests() {
       <div className="today-header">
         <h1>お願い</h1>
         {partner && (
-          <button type="button" onClick={() => setShowForm((v) => !v)}>
+          <button
+            type="button"
+            onClick={() => {
+              if (showForm) setInitialMessage('');
+              setShowForm(!showForm);
+            }}
+          >
             {showForm ? '閉じる' : '+ お願いを送る'}
           </button>
         )}
@@ -65,8 +83,10 @@ export function Requests() {
       {showForm && partner && (
         <SendRequestForm
           recipientId={partner.user_id}
+          initialMessage={initialMessage}
           onSent={() => {
             setShowForm(false);
+            setInitialMessage('');
             refresh();
           }}
         />
@@ -211,9 +231,9 @@ function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onCha
   );
 }
 
-function SendRequestForm({ recipientId, onSent }: { recipientId: string; onSent: () => void }) {
+function SendRequestForm({ recipientId, initialMessage, onSent }: { recipientId: string; initialMessage: string; onSent: () => void }) {
   const [title, setTitle] = useState('');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(initialMessage);
   const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [rewriting, setRewriting] = useState(false);
