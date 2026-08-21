@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import { useTodayData } from './useTodayData';
@@ -67,6 +68,7 @@ export function Today() {
   const data = useTodayData(household?.id ?? null, user?.id ?? null);
   const schedule = useTodaySchedule(household?.id ?? null, user?.id ?? null);
   const pending = usePendingActions(household?.id ?? null, user?.id ?? null);
+  const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskInstance | null>(null);
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
@@ -102,13 +104,17 @@ export function Today() {
     );
   }
 
-  // A needs_pwa_review draft has no execution path (process-pending-actions
-  // has no case for it) — "編集してPWAフォームへ" cancels the ambiguous draft
-  // and hands the sender's own raw text to the normal task form as a
-  // starting point instead, matching "usable correction/form path rather
-  // than a dead end" (docs/adr/0011).
-  async function handleEditInForm(action: PendingAction) {
-    await pending.cancel(action.id);
+  // needs_pwa_review is a sender-only draft. Moving it into either form must
+  // not create, confirm, cancel, or reassign anything: the user can still
+  // close the form without changing the household's business data. Only the
+  // explicitly confirmed form submission creates a request or task.
+  async function handleEditAsRequest(action: PendingAction) {
+    navigate('/requests', {
+      state: { pendingActionRawText: String(action.normalized_payload.raw_text ?? '') },
+    });
+  }
+
+  async function handleEditAsTask(action: PendingAction) {
     setCorrectionTitle(String(action.normalized_payload.raw_text ?? ''));
   }
 
@@ -155,7 +161,8 @@ export function Today() {
                 action={action}
                 onConfirm={pending.confirm}
                 onCancel={pending.cancel}
-                onEditInForm={handleEditInForm}
+                onEditAsRequest={handleEditAsRequest}
+                onEditAsTask={handleEditAsTask}
               />
             ))}
         </ul>
