@@ -144,12 +144,17 @@ function buildRichRequestMessage(
 ): Record<string, unknown> | null {
   if (payload?.rich_message) return payload.rich_message;
   const items = payload?.items ?? [];
-  if (items.length !== 1) return null;
-  const item = items[0];
+  // Actionable assignment requests must survive normal notification bundling.
+  // Select the request item instead of requiring it to be the only item; the
+  // caller sends the ordinary bundled summary as a first LINE message too.
+  const item = items.find((candidate) =>
+    candidate.type === 'request_received' &&
+    candidate.payload?.request_kind === 'assignment_change' &&
+    Boolean(candidate.payload.request_id),
+  );
+  if (!item) return null;
   if (
-    item.type !== 'request_received' ||
-    item.payload?.request_kind !== 'assignment_change' ||
-    !item.payload.request_id
+    !item.payload?.request_id
   )
     return null;
   return buildAssignmentRequestFlex({
@@ -343,9 +348,13 @@ async function sendOne(
   const richMessage = buildRichRequestMessage(item.payload);
   const { text, sessionIds } = buildBundledText(item.payload, item.type);
   const quickReply = item.type === 'routine' ? buildRoutineQuickReply(sessionIds) : undefined;
-  const message: Record<string, unknown> = richMessage ?? { type: 'text', text };
+  const message: Record<string, unknown> = { type: 'text', text };
   if (quickReply && message.type === 'text')
     message.quickReply = { items: quickReply.map((action) => ({ type: 'action', action })) };
+  // LINE allows up to five messages per push. Keep routine/handover content
+  // and append the Flex action card, rather than losing its buttons when an
+  // outbox row was bundled with another notification.
+  const messages = richMessage ? [message, richMessage] : [message];
   let response: Response;
   try {
     response = await fetchWithTimeout(LINE_PUSH_URL, {
@@ -357,7 +366,7 @@ async function sendOne(
       },
       body: JSON.stringify({
         to: item.line_user_id,
-        messages: [message],
+        messages,
       }),
     });
   } catch (err) {

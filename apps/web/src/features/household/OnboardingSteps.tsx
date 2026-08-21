@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { LineLinkSection } from '../notifications/Notifications';
 import { WeekView } from '../planning/WeekView';
-import { MorningPreparationEditor } from '../settings/RoutineSchedule';
+import { MorningPreparationEditor, type MorningPreparationEditorHandle } from '../settings/RoutineSchedule';
 
 type OnboardingStep = 'morning_preparation' | 'connections' | 'notifications' | 'week_preview';
 
@@ -34,19 +34,30 @@ function useCompleteStep(step: OnboardingStep) {
 export function MorningPreparationStep() {
   const { household, members } = useHousehold();
   const done = useCompleteStep('morning_preparation');
+  const editorRef = useRef<MorningPreparationEditorHandle>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveAndContinue = async () => {
+    setSaveError(null);
+    const saved = await editorRef.current?.saveAll();
+    if (!saved) {
+      setSaveError('変更を保存できなかったため、次へ進みませんでした。');
+      return;
+    }
+    await done.complete();
+  };
   return (
     <main className="app-shell onboarding-step">
       <p className="eyebrow">初期設定 5 / 8</p>
       <h1>朝の準備</h1>
       <p>曜日ごとの持ち物を送り担当へ割り当てます。あとから設定で変更できます。</p>
-      <MorningPreparationEditor householdId={household?.id ?? null} members={members} />
-      {done.error && (
+      <MorningPreparationEditor ref={editorRef} householdId={household?.id ?? null} members={members} />
+      {(done.error || saveError) && (
         <p role="alert" className="error-text">
-          {done.error}
+          {saveError ?? done.error}
         </p>
       )}
-      <button type="button" onClick={() => void done.complete()} disabled={done.busy}>
-        {done.busy ? '保存中…' : '次へ'}
+      <button type="button" onClick={() => void saveAndContinue()} disabled={done.busy}>
+        {done.busy ? '保存中…' : '保存して次へ'}
       </button>
     </main>
   );

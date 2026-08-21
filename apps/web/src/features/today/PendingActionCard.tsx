@@ -29,6 +29,7 @@ interface PendingActionCardProps {
 const ACTION_TITLES: Record<PendingAction['action_type'], string> = {
   shopping_item_add: '🛒 買い物リストに追加',
   task_create_once: '📝 タスクを追加',
+  assignment_change_request: '🚗 お迎え担当のお願い',
   needs_pwa_review: '✏️ LINEからの入力（内容の確認が必要）',
 };
 
@@ -39,6 +40,8 @@ function previewText(action: PendingAction): string {
       return String(p.title ?? '');
     case 'task_create_once':
       return `${String(p.title ?? '')}（${String(p.scheduled_date ?? '')}）`;
+    case 'assignment_change_request':
+      return `${String(p.shared_message ?? '')}（${String(p.scheduled_date ?? '')}）`;
     case 'needs_pwa_review':
       return String(p.raw_text ?? '');
     default:

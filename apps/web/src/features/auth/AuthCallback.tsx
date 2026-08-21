@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { LoadingScreen } from '../../components/LoadingScreen';
+import { consumeAuthReturnTo } from './authReturnTo';
 
 // Landing point for the Google OAuth redirect. The Supabase client SDK
 // detects the callback URL params on its own (detectSessionInUrl, on by
@@ -17,7 +18,7 @@ export function AuthCallback() {
 
   useEffect(() => {
     if (!loading && user) {
-      navigate('/', { replace: true });
+      navigate(consumeAuthReturnTo() ?? '/', { replace: true });
     }
   }, [loading, user, navigate]);
 

@@ -74,6 +74,7 @@ import {
   buildAssignmentSenderPreviewFlex,
   rewritePickupRequest,
 } from '../_shared/lineMessageBuilders.ts';
+import { resolveJapanesePickupDate } from '../_shared/pickupDate.ts';
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get('LINE_INBOX_BATCH_LIMIT') ?? '25');
@@ -547,20 +548,20 @@ async function handleText(
   const parsed = parseLineText(text);
   let assignmentPayload: Record<string, unknown> | null = null;
   if (!parsed && /(?:迎え.*お願い|お願い.*迎え)/.test(text)) {
-    const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const scheduledDate = resolveJapanesePickupDate(text);
     const { data: definition } = await client
       .from('task_definitions')
       .select('id')
       .eq('household_id', actor.household_id)
       .eq('code', 'pickup')
       .maybeSingle();
-    const { data: task } = definition
+    const { data: task } = definition && scheduledDate
       ? await client
           .from('task_instances')
           .select('id,title,due_at,scheduled_date')
           .eq('household_id', actor.household_id)
           .eq('task_definition_id', definition.id)
-          .eq('scheduled_date', today)
+          .eq('scheduled_date', scheduledDate)
           .eq('planned_assignee_id', actor.user_id)
           .in('status', ['todo', 'in_progress'])
           .maybeSingle()
@@ -575,6 +576,9 @@ async function handleText(
       assignmentPayload = {
         task_id: task.id,
         recipient_user_id: partner.user_id,
+        // This remains inside the actor-owned pending_action until confirm;
+        // it is intentionally never included in a recipient request/Flex.
+        raw_text: text,
         shared_message: rewritePickupRequest(text),
         scope: 'once',
         title: task.title,

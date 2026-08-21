@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
@@ -453,13 +453,17 @@ function EveningRoutineEditor({
   );
 }
 
-export function MorningPreparationEditor({
-  householdId,
-  members,
-}: {
+export interface MorningPreparationEditorHandle {
+  saveAll: () => Promise<boolean>;
+}
+
+export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandle, {
   householdId: string | null;
   members: HouseholdMemberWithProfile[];
-}) {
+}>(function MorningPreparationEditor({
+  householdId,
+  members,
+}, ref) {
   const [rows, setRows] = useState<EditableRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -596,6 +600,46 @@ export function MorningPreparationEditor({
       setSaving(null);
     }
   };
+  const saveAll = useCallback(async (): Promise<boolean> => {
+    if (rows.some((row) => row.strategy === 'fixed' && !row.fixedAssigneeId)) {
+      setError('固定の担当を選択してください。');
+      return false;
+    }
+    setSaving('all');
+    setError(null);
+    try {
+      // Definitions and all weekday rules are committed before onboarding
+      // progresses. One schedule replacement preserves a full weekly edit.
+      for (const row of rows) {
+        await callEdgeFunction(EDGE_FUNCTIONS.editTaskDefinition, {
+          operation_id: newOperationId(),
+          task_definition_id: row.id,
+          title: row.title,
+          routine_phase: 'morning',
+        });
+      }
+      await callEdgeFunction(EDGE_FUNCTIONS.replaceRecurrenceSchedule, {
+        operation_id: newOperationId(),
+        replacements: rows.map((row) => ({
+          task_definition_id: row.id,
+          rules: row.weekdays.map((weekday) => ({
+            weekday,
+            assignee_strategy: row.strategy,
+            planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
+            scheduled_local_time: row.localTime,
+          })),
+        })),
+      });
+      await load();
+      return true;
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '朝の準備を保存できませんでした。');
+      return false;
+    } finally {
+      setSaving(null);
+    }
+  }, [load, rows]);
+  useImperativeHandle(ref, () => ({ saveAll }), [saveAll]);
   return (
     <section className="card routine-editor">
       <div className="section-heading">
@@ -742,7 +786,7 @@ export function MorningPreparationEditor({
       )}
     </section>
   );
-}
+});
 
 type MatrixRow = {
   id: string;
