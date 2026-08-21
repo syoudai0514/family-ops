@@ -23,7 +23,7 @@ jobs:
           set -euo pipefail
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
           query() { jq -n --arg query "$1" '{query: $query}' | curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' -d @- "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query"; }
-          read -r -d '' SQL <<'SQL' || true
+          read -r -d '' INSERT_SQL <<'SQL' || true
           with recipients as (
             select l.household_id, l.user_id, np.request_line
             from private.line_user_links l join public.notification_preferences np on np.household_id=l.household_id and np.user_id=l.user_id
@@ -34,19 +34,23 @@ jobs:
             from recipients
             returning id, household_id, recipient_user_id, dedup_key
           )
-          select i.id as user_notification_id, i.dedup_key as user_notification_dedup_key, r.request_line,
-                 o.id as outbox_id, o.dedup_key as outbox_dedup_key, o.status as outbox_status
-          from inserted i join recipients r on r.household_id=i.household_id and r.user_id=i.recipient_user_id
-          left join lateral (
-            select id, dedup_key, status from private.notification_outbox o
-            where o.household_id=i.household_id and o.recipient_user_id=i.recipient_user_id and o.channel='line'
-              and exists (select 1 from jsonb_array_elements(o.payload->'items') item where item->>'dedup_key'=i.dedup_key)
-            order by o.created_at desc limit 1
-          ) o on true;
+          select i.id as user_notification_id, i.dedup_key as user_notification_dedup_key, r.request_line
+          from inserted i join recipients r on r.household_id=i.household_id and r.user_id=i.recipient_user_id;
           SQL
-          result=$(query "$SQL")
+          inserted=$(query "$INSERT_SQL")
+          echo "$inserted" | jq -e 'length == 1 and .[0].request_line == true' >/dev/null
+          dedup_key=$(echo "$inserted" | jq -r '.[0].user_notification_dedup_key')
+          read -r -d '' OUTBOX_SQL <<SQL || true
+          select o.id as outbox_id, o.dedup_key as outbox_dedup_key, o.status as outbox_status
+          from private.notification_outbox o
+          where exists (
+            select 1 from jsonb_array_elements(o.payload->'items') item where item->>'dedup_key'='$dedup_key'
+          )
+          order by o.created_at desc limit 1;
+          SQL
+          result=$(query "$OUTBOX_SQL")
           echo "$result" | jq .
-          echo "$result" | jq -e 'length == 1 and .[0].request_line == true and .[0].outbox_id != null' >/dev/null
+          echo "$result" | jq -e 'length == 1 and .[0].outbox_id != null' >/dev/null
           echo "OUTBOX_ID=$(echo "$result" | jq -r '.[0].outbox_id')" >> "$GITHUB_ENV"
 
       - name: Invoke sender and require LINE delivery success
