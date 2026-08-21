@@ -11,38 +11,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  enqueue-test:
+  e2e-line-delivery:
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       PROJECT_REF: dnlqxjpjpkxnfgculzip
     steps:
-      - name: Queue one test notification per linked account
+      - name: Create, bridge, and trace one logical notification
         shell: bash
         run: |
           set -euo pipefail
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
+          query() { jq -n --arg query "$1" '{query: $query}' | curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' -d @- "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query"; }
           read -r -d '' SQL <<'SQL' || true
           with recipients as (
-            select household_id, user_id from private.line_user_links where status = 'active'
+            select l.household_id, l.user_id, np.request_line
+            from private.line_user_links l join public.notification_preferences np on np.household_id=l.household_id and np.user_id=l.user_id
+            where l.status = 'active' limit 1
           ), inserted as (
             insert into public.user_notifications (household_id, recipient_user_id, type, title, body, payload, dedup_key)
             select household_id, user_id, 'request_received', 'LINE通知テスト', 'おうちノートからの試し送信です。', '{}'::jsonb, 'line-test-' || gen_random_uuid()::text
             from recipients
-            returning id
+            returning id, household_id, recipient_user_id, dedup_key
           )
-          select (select count(*) from recipients) as active_line_links,
-                 (select count(*) from inserted) as queued_test_notifications;
+          select i.id as user_notification_id, i.dedup_key as user_notification_dedup_key, r.request_line,
+                 o.id as outbox_id, o.dedup_key as outbox_dedup_key, o.status as outbox_status
+          from inserted i join recipients r on r.household_id=i.household_id and r.user_id=i.recipient_user_id
+          left join private.notification_outbox o on o.dedup_key = 'bundle:' || i.dedup_key;
           SQL
-          payload=$(jq -n --arg query "$SQL" '{query: $query}')
-          curl --fail-with-body --silent --show-error \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d "$payload" \
-            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" | jq -e .
-          diagnostic=$(jq -n --arg query "set statement_timeout = '5s'; select status, attempts, last_error, sent_at from private.notification_outbox where dedup_key like 'line-test-%' order by created_at desc limit 3;" '{query: $query}')
-          curl --fail-with-body --silent --show-error \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d "$diagnostic" \
-            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" | jq -e .
+          result=$(query "$SQL")
+          echo "$result" | jq .
+          echo "$result" | jq -e 'length == 1 and .[0].request_line == true and .[0].outbox_id != null' >/dev/null
+          echo "OUTBOX_ID=$(echo "$result" | jq -r '.[0].outbox_id')" >> "$GITHUB_ENV"
+
+      - name: Invoke sender and require LINE delivery success
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() { jq -n --arg query "$1" '{query: $query}' | curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' -d @- "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query"; }
+          query "select net.http_post(url := 'https://dnlqxjpjpkxnfgculzip.supabase.co/functions/v1/send-notifications', headers := jsonb_build_object('Content-Type','application/json','X-Family-Ops-Worker-Token',(select decrypted_secret from vault.decrypted_secrets where name='CRON_WORKER_TOKEN' limit 1)), body := '{}'::jsonb);" | jq .
+          sleep 15
+          result=$(query "select status, attempts, last_error, sent_at, quota_reservation_id from private.notification_outbox where id = '$OUTBOX_ID';")
+          echo "$result" | jq .
+          echo "$result" | jq -e 'length == 1 and .[0].status == "sent" and .[0].sent_at != null' >/dev/null
