@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
 // WP4 — partner realtime sync. Subscribes to Supabase Realtime
@@ -77,6 +77,12 @@ export function useRealtimeRefresh({
   tables = DEFAULT_REALTIME_TABLES,
   enabled = true,
 }: UseRealtimeRefreshOptions): void {
+  // Supabase Realtime freezes postgres_changes callbacks once subscribe() has
+  // been called. Several visible views subscribe concurrently (Today and the
+  // unread-handover badge, for example), so they must not share a channel
+  // topic even when they watch the same household.
+  const subscriptionId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+
   // Keep the latest callback/userId in refs so the subscription effect only
   // needs to depend on `householdId`/`enabled` — re-subscribing on every
   // render (e.g. because the caller passed an inline arrow function) would
@@ -94,7 +100,7 @@ export function useRealtimeRefresh({
   useEffect(() => {
     if (!householdId || !enabled) return;
 
-    const channel = supabase.channel(`household-${householdId}-realtime`);
+    const channel = supabase.channel(`household-${householdId}-realtime-${subscriptionId}`);
     for (const table of tables) {
       channel.on(
         'postgres_changes',
@@ -113,5 +119,5 @@ export function useRealtimeRefresh({
     };
     // `tables` is expected to be a stable reference (the module-level default,
     // or a caller-memoized array) — see the doc comment above.
-  }, [householdId, enabled, tables]);
+  }, [householdId, enabled, tables, subscriptionId]);
 }

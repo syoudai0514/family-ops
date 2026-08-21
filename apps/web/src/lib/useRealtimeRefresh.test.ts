@@ -10,20 +10,27 @@ interface RegisteredListener {
 let registered: RegisteredListener[] = [];
 const removeChannelMock = vi.fn();
 const subscribeMock = vi.fn();
+const channelTopics: string[] = [];
+const subscribedTopics = new Set<string>();
 
 vi.mock('./supabaseClient', () => ({
   supabase: {
-    channel: vi.fn(() => {
+    channel: vi.fn((topic: string) => {
+      channelTopics.push(topic);
       const channelObj = {
         on: (
           _type: string,
           filter: { table: string },
           callback: (payload: unknown) => void,
         ) => {
+          if (subscribedTopics.has(topic)) {
+            throw new Error(`cannot add callbacks for ${topic} after subscribe()`);
+          }
           registered.push({ table: filter.table, callback });
           return channelObj;
         },
         subscribe: (...args: unknown[]) => {
+          subscribedTopics.add(topic);
           subscribeMock(...args);
           return channelObj;
         },
@@ -37,6 +44,8 @@ vi.mock('./supabaseClient', () => ({
 describe('useRealtimeRefresh', () => {
   beforeEach(() => {
     registered = [];
+    channelTopics.length = 0;
+    subscribedTopics.clear();
     removeChannelMock.mockReset();
     subscribeMock.mockReset();
   });
@@ -113,5 +122,22 @@ describe('useRealtimeRefresh', () => {
     );
     unmount();
     expect(removeChannelMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses distinct topics when multiple visible views subscribe to one household', () => {
+    const onRemoteChange = vi.fn();
+
+    renderHook(() => {
+      useRealtimeRefresh({ householdId: 'household-1', userId: 'user-1', onRemoteChange });
+      useRealtimeRefresh({
+        householdId: 'household-1',
+        userId: 'user-1',
+        onRemoteChange,
+        tables: ['handovers', 'handover_reads'],
+      });
+    });
+
+    expect(new Set(channelTopics)).toHaveLength(2);
+    expect(subscribeMock).toHaveBeenCalledTimes(2);
   });
 });
