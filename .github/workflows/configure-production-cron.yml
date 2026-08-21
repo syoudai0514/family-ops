@@ -26,6 +26,8 @@ jobs:
           set -euo pipefail
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
           read -r -d '' SQL <<'SQL' || true
+          create extension if not exists pg_cron;
+          create extension if not exists pg_net;
           do $$
           declare
             worker_token text;
