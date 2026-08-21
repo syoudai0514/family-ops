@@ -34,6 +34,11 @@ export const EDGE_FUNCTIONS = {
   updateNotificationPreferences: 'update-notification-preferences',
   createLineLinkToken: 'create-line-link-token',
   updateRoutineSchedule: 'update-routine-schedule',
+  changeRecurrence: 'change-recurrence',
+  reassignTaskOnce: 'reassign-task-once',
+  confirmRequestDraft: 'confirm-request-draft',
+  createAssignmentChangeRequest: 'create-assignment-change-request',
+  acceptAssignmentChangeRequest: 'accept-assignment-change-request',
   // WP8 (routine LINE automation) — /checkin/:sessionId (features/checkin).
   getRoutineSession: 'get-routine-session',
   completeRoutineSession: 'complete-routine-session',

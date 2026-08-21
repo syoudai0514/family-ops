@@ -137,6 +137,12 @@ verify_jwt = true
 [functions.accept-request]
 verify_jwt = true
 
+[functions.create-assignment-change-request]
+verify_jwt = true
+
+[functions.accept-assignment-change-request]
+verify_jwt = true
+
 [functions.decline-request]
 verify_jwt = true
 

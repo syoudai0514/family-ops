@@ -98,6 +98,8 @@ export interface RequestRow {
   declined_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
+  assignment_task_instance_id?: string | null;
+  assignment_scope?: 'once' | 'this_week' | null;
 }
 
 export type HandoverPeriod = 'morning' | 'day' | 'evening' | 'other';

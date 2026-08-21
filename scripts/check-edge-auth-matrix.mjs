@@ -68,6 +68,8 @@ const GAP_FILL_FUNCTIONS = new Set([
   'confirm-pending-action',
   'cancel-pending-action',
   'get-today-schedule',
+  'create-assignment-change-request',
+  'accept-assignment-change-request',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

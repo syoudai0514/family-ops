@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import { useTodayData } from './useTodayData';
@@ -23,7 +22,10 @@ function RequestQuickActions({ request, onChanged }: { request: RequestRow; onCh
     setBusy(true);
     setError(null);
     try {
-      await callEdgeFunction(kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest, {
+      const functionName = kind === 'accept' && request.assignment_task_instance_id
+        ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest
+        : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
+      await callEdgeFunction(functionName, {
         operation_id: newOperationId(),
         request_id: request.id,
       });
@@ -69,7 +71,6 @@ export function Today() {
   const [editingTask, setEditingTask] = useState<TaskInstance | null>(null);
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
   const [shoppingCollapsed, setShoppingCollapsed] = useState(true);
-  const navigate = useNavigate();
 
   const { myTasks, partnerTasks, unassignedTasks } = useMemo(() => {
     const mine: TaskInstance[] = [];
@@ -84,7 +85,6 @@ export function Today() {
   }, [data.tasks, me]);
 
   function renderTaskList(tasks: TaskInstance[]) {
-    if (tasks.length === 0) return <p className="empty-hint">なし</p>;
     return (
       <ul className="task-list">
         {tasks.map((task) => (
@@ -107,15 +107,9 @@ export function Today() {
   // and hands the sender's own raw text to the normal task form as a
   // starting point instead, matching "usable correction/form path rather
   // than a dead end" (docs/adr/0011).
-  async function handleEditAsTask(action: PendingAction) {
+  async function handleEditInForm(action: PendingAction) {
     await pending.cancel(action.id);
     setCorrectionTitle(String(action.normalized_payload.raw_text ?? ''));
-  }
-
-  async function handleEditAsRequest(action: PendingAction) {
-    const rawText = String(action.normalized_payload.raw_text ?? '');
-    await pending.cancel(action.id);
-    navigate('/requests', { state: { initialMessage: rawText } });
   }
 
   if (data.loading) {
@@ -130,10 +124,10 @@ export function Today() {
 
   return (
     <div className="app-shell">
-      <div className="today-header">
-        <h1>今日</h1>
+      <div className="today-header today-page-heading">
+        <div><p className="eyebrow">{new Intl.DateTimeFormat('ja-JP', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date())} · 今日の段取り</p><h1>今日</h1></div>
         <button type="button" onClick={() => setCreating(true)}>
-          + タスクを追加
+          ＋ 追加
         </button>
       </div>
 
@@ -143,21 +137,15 @@ export function Today() {
         </p>
       )}
 
-      {/* Priority 1: 今/次の予定 */}
-      <TodaySchedule loading={schedule.loading} error={schedule.error} schedule={schedule.schedule} members={members} />
-
-      {/* Priority 2: 自分の判断待ち */}
-      <section className="card">
-        <h2>判断待ち</h2>
+      {/* Priority 1: 次に決めること。空の大きな領域は作らない。 */}
+      {hasPendingDecisions && <section className="card decision-card">
+        <p className="eyebrow">返事が必要です</p><h2>判断待ち</h2>
         {pending.error && (
           <p role="alert" className="error-text">
             {pending.error}
           </p>
         )}
-        {!hasPendingDecisions ? (
-          <p className="empty-hint">なし</p>
-        ) : (
-          <ul className="request-list">
+        <ul className="request-list">
             {data.incomingRequests.map((request) => (
               <RequestQuickActions key={request.id} request={request} onChanged={data.refresh} />
             ))}
@@ -167,24 +155,25 @@ export function Today() {
                 action={action}
                 onConfirm={pending.confirm}
                 onCancel={pending.cancel}
-                onEditAsRequest={handleEditAsRequest}
-                onEditAsTask={handleEditAsTask}
+                onEditInForm={handleEditInForm}
               />
             ))}
-          </ul>
-        )}
-      </section>
+        </ul>
+      </section>}
 
-      {/* Priority 3: 今日の自分のタスク */}
-      <section className="card">
-        <h2>自分のタスク</h2>
+      {/* Priority 2: 今/次の予定 */}
+      <TodaySchedule loading={schedule.loading} error={schedule.error} schedule={schedule.schedule} members={members} />
+
+      {/* Priority 3: 自分の残り */}
+      {myTasks.length > 0 && <section className="card task-section">
+        <div className="section-heading"><h2>自分の残り</h2><span>{myTasks.length}件</span></div>
         {renderTaskList(myTasks)}
-      </section>
+      </section>}
 
-      <section className="card">
-        <h2>パートナーのタスク</h2>
+      {partnerTasks.length > 0 && <section className="card partner-summary">
+        <div className="section-heading"><h2>パートナーの予定</h2><span>{partnerTasks.length}件</span></div>
         {renderTaskList(partnerTasks)}
-      </section>
+      </section>}
 
       {unassignedTasks.length > 0 && (
         <section className="card">
@@ -194,11 +183,8 @@ export function Today() {
       )}
 
       {/* Priority 4: 重要な引き継ぎ */}
-      <section className="card">
+      {data.unreadHandovers.length > 0 && <section className="card compact-section">
         <h2>未読の引き継ぎ</h2>
-        {data.unreadHandovers.length === 0 ? (
-          <p className="empty-hint">なし</p>
-        ) : (
           <ul className="handover-list">
             {data.unreadHandovers.map((h) => (
               <li key={h.id} className="handover-item unread">
@@ -206,24 +192,18 @@ export function Today() {
               </li>
             ))}
           </ul>
-        )}
-      </section>
+      </section>}
 
-      {/* Priority 5: 折りたたみ */}
-      <section className="card collapsible">
+      {data.openShoppingItems.length > 0 && <section className="card collapsible compact-section">
         <button type="button" className="collapsible-toggle" onClick={() => setShoppingCollapsed((v) => !v)}>
           買い物（未購入 {data.openShoppingItems.length}件）{shoppingCollapsed ? '▼' : '▲'}
         </button>
         {!shoppingCollapsed && (
           <ul className="shopping-list-compact">
-            {data.openShoppingItems.length === 0 ? (
-              <li className="empty-hint">なし</li>
-            ) : (
-              data.openShoppingItems.map((item) => <li key={item.id}>{item.title}</li>)
-            )}
+            {data.openShoppingItems.map((item) => <li key={item.id}>{item.title}</li>)}
           </ul>
         )}
-      </section>
+      </section>}
 
       {creating && (
         <TaskFormModal

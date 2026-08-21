@@ -1,0 +1,13 @@
+import { useMemo, useState } from 'react';
+import { useHousehold } from '../../app/HouseholdContext';
+import { localIsoDate } from './dateHelpers';
+import { usePlanningData } from './usePlanningData';
+
+function monthRange(anchor: Date) { const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1); const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0); return { start, end }; }
+export function MonthView() {
+  const { household } = useHousehold(); const [anchor, setAnchor] = useState(() => new Date()); const { start, end } = monthRange(anchor);
+  const { events, loading, error } = usePlanningData(household?.id ?? null, localIsoDate(start), localIsoDate(end));
+  const [selected, setSelected] = useState(localIsoDate(new Date()));
+  const days = useMemo(() => Array.from({ length: end.getDate() }, (_, i) => new Date(anchor.getFullYear(), anchor.getMonth(), i + 1)), [anchor, end]);
+  return <main className="app-shell planning-page"><div className="today-header"><div><p className="eyebrow">全体を把握</p><h1>{anchor.getFullYear()}年{anchor.getMonth() + 1}月</h1></div></div><div className="period-control"><button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))}>前月</button><button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))}>次月</button></div>{error && <p role="alert" className="error-text">{error}</p>}{loading ? <p role="status">読み込み中…</p> : <><div className="month-grid" aria-label="月間カレンダー">{days.map((day) => { const date = localIsoDate(day); const dayEvents = events.filter((event) => event.date === date); return <button key={date} onClick={() => setSelected(date)} className={selected === date ? 'month-day selected' : 'month-day'}><span>{day.getDate()}</span>{dayEvents.slice(0, 2).map((event) => <small key={`${event.kind}-${event.id}`} className={event.kind}>{event.title}</small>)}{dayEvents.length > 2 && <small>ほか {dayEvents.length - 2}件</small>}</button>; })}</div><section className="card day-detail"><h2>{selected} の予定</h2>{events.filter((event) => event.date === selected).length === 0 ? <p className="empty-hint">予定はありません</p> : <ul>{events.filter((event) => event.date === selected).map((event) => <li key={`${event.kind}-${event.id}`}>{event.title}</li>)}</ul>}</section></>}</main>;
+}
