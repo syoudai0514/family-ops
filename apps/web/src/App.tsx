@@ -1,14 +1,12 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import './App.css';
 import { SignIn } from './features/auth/SignIn';
 import { LoadingScreen } from './components/LoadingScreen';
-import { AppErrorBoundary } from './components/AppErrorBoundary';
 
-// The complete authenticated app includes the Supabase database/realtime
-// client and every household screen. Do not parse it before a session exists:
-// iPhone Safari only needs the lightweight sign-in page on a first visit.
-const AuthGate = lazy(() => import('./app/AuthGate').then((module) => ({ default: module.AuthGate })));
+// A first visit only needs this sign-in screen. Keep React Router, Supabase,
+// realtime, and every household feature in a separate chunk until a session
+// exists or an OAuth callback is being handled.
+const AuthenticatedRouter = lazy(() => import('./app/AuthenticatedRouter'));
 
 function hasStoredSession(): boolean {
   try {
@@ -20,34 +18,14 @@ function hasStoredSession(): boolean {
 
 function App() {
   const sessionMayExist = hasStoredSession();
+  const needsAuthenticatedRouter = sessionMayExist || window.location.pathname === '/auth/callback';
+
+  if (!needsAuthenticatedRouter) return <SignIn />;
 
   return (
-    <BrowserRouter>
-      <AppErrorBoundary>
-        <Routes>
-          <Route
-            path="/auth/callback"
-            element={
-              <Suspense fallback={<LoadingScreen label="サインイン処理中…" />}>
-                <AuthGate />
-              </Suspense>
-            }
-          />
-          <Route
-            path="*"
-            element={
-              sessionMayExist ? (
-                <Suspense fallback={<LoadingScreen />}>
-                  <AuthGate />
-                </Suspense>
-              ) : (
-                <SignIn />
-              )
-            }
-          />
-        </Routes>
-      </AppErrorBoundary>
-    </BrowserRouter>
+    <Suspense fallback={<LoadingScreen label="サインイン処理中…" />}>
+      <AuthenticatedRouter />
+    </Suspense>
   );
 }
 
