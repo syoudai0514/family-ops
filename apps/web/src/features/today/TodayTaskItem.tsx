@@ -76,8 +76,6 @@ export function TodayTaskItem({ task, subtasks, members, hasPartner, onEdit, onC
     );
   }
 
-  const requiredRemaining = subtasks.filter((s) => s.required && !s.is_completed).length;
-
   return (
     <li className="task-item">
       <div className="task-item-main">
@@ -90,31 +88,19 @@ export function TodayTaskItem({ task, subtasks, members, hasPartner, onEdit, onC
           </span>
         </div>
         <div className="task-item-actions">
-          {hasPartner && (
-            <select
-              aria-label="実施者"
-              value={actor}
-              onChange={(e) => setActor(e.target.value as 'self' | 'partner')}
-              disabled={busy}
-            >
-              <option value="self">自分</option>
-              <option value="partner">パートナー</option>
-            </select>
-          )}
           {task.completion_mode === 'subtasks' ? (
             <button type="button" onClick={() => setExpanded((v) => !v)}>
-              {expanded ? '閉じる' : `サブタスク (${subtasks.length - requiredRemaining}/${subtasks.length})`}
+              {expanded ? '詳細を閉じる' : '詳細'}
             </button>
           ) : null}
           <button type="button" onClick={handleComplete} disabled={busy}>
             完了
           </button>
-          <button type="button" onClick={() => onEdit(task)} disabled={busy}>
-            編集
-          </button>
-          <button type="button" onClick={handleCancel} disabled={busy}>
-            キャンセル
-          </button>
+          <details className="task-overflow"><summary aria-label="その他の操作">•••</summary><div>
+            {hasPartner && <label>実施者<select aria-label="実施者" value={actor} onChange={(e) => setActor(e.target.value as 'self' | 'partner')} disabled={busy}><option value="self">自分</option><option value="partner">パートナー</option></select></label>}
+            <button type="button" onClick={() => onEdit(task)} disabled={busy}>編集</button>
+            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy}>キャンセル</button>
+          </div></details>
         </div>
       </div>
       {expanded && task.completion_mode === 'subtasks' && (
