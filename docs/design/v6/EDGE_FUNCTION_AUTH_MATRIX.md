@@ -23,6 +23,7 @@
 - deactivate-task-definition
 - change-recurrence
 - deactivate-recurrence
+- complete-onboarding-step
 - configure-evening-routines
 - send-request
 - accept-request

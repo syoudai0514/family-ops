@@ -5,6 +5,12 @@ import { EveningRoutinesStep } from '../features/household/EveningRoutinesStep';
 import { AppShell } from './AppShell';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { InviteSection } from '../features/household/InviteSection';
+import {
+  ConnectionsStep,
+  MorningPreparationStep,
+  RecommendedNotificationsStep,
+  WeekPreviewStep,
+} from '../features/household/OnboardingSteps';
 
 // Household-level gating: no household -> setup/invite; household exists
 // but the two-step wizard isn't finished -> the relevant wizard step;
@@ -44,6 +50,14 @@ export function HouseholdGate() {
       return <DropoffPickupStep />;
     case 'evening-routines-wizard':
       return <EveningRoutinesStep />;
+    case 'morning-preparation-wizard':
+      return <MorningPreparationStep />;
+    case 'connections-wizard':
+      return <ConnectionsStep />;
+    case 'notifications-wizard':
+      return <RecommendedNotificationsStep />;
+    case 'week-preview-wizard':
+      return <WeekPreviewStep />;
     case 'ready':
       return <AppShell />;
     default:

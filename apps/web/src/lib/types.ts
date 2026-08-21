@@ -12,6 +12,10 @@ export interface Household {
   evening_routine_setup_completed_at: string | null;
   /** Set by the dropoff/pickup setup Edge Function on successful submission; null = wizard step not done. */
   dropoff_pickup_setup_completed_at: string | null;
+  morning_preparation_setup_completed_at: string | null;
+  connections_setup_completed_at: string | null;
+  notification_preferences_setup_completed_at: string | null;
+  onboarding_preview_completed_at: string | null;
 }
 
 export interface HouseholdMember {
@@ -124,12 +128,7 @@ export interface HandoverRead {
 
 export type PurchaseMethod = 'store' | 'online' | 'either' | 'undecided';
 export type ShoppingItemStatus =
-  | 'wanted'
-  | 'assigned'
-  | 'ordered'
-  | 'purchased'
-  | 'arrived'
-  | 'cancelled';
+  'wanted' | 'assigned' | 'ordered' | 'purchased' | 'arrived' | 'cancelled';
 
 export interface ShoppingItem {
   id: string;

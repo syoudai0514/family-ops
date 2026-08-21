@@ -13,12 +13,9 @@ import type { Household, HouseholdMember, Profile } from '../lib/types';
 
 export type HouseholdMemberWithProfile = HouseholdMember & { profile: Profile | null };
 
-// Setup is a strict two-step wizard, gated by two nullable timestamp columns
-// on `households` (set by their respective Edge Functions on success):
-//   dropoff_pickup_setup_completed_at   -> configure-dropoff-pickup
-//   evening_routine_setup_completed_at  -> configure-evening-routines
-// Both null/either null means the corresponding step still needs doing;
-// both non-null means the household is fully set up.
+// First-class onboarding state is persisted on the household. Partner invite
+// intentionally precedes every assignment step so a new household never
+// silently assigns the partner's work to the creator.
 export type HouseholdPhase =
   | 'loading'
   | 'error'
@@ -26,6 +23,10 @@ export type HouseholdPhase =
   | 'partner-invite'
   | 'dropoff-pickup-wizard'
   | 'evening-routines-wizard'
+  | 'morning-preparation-wizard'
+  | 'connections-wizard'
+  | 'notifications-wizard'
+  | 'week-preview-wizard'
   | 'ready';
 
 interface HouseholdContextValue {
@@ -41,10 +42,14 @@ interface HouseholdContextValue {
 
 const HouseholdContext = createContext<HouseholdContextValue | undefined>(undefined);
 
-function phaseForHousehold(household: Household, memberCount: number): HouseholdPhase {
+export function phaseForHousehold(household: Household, memberCount: number): HouseholdPhase {
   if (memberCount < 2) return 'partner-invite';
   if (!household.dropoff_pickup_setup_completed_at) return 'dropoff-pickup-wizard';
   if (!household.evening_routine_setup_completed_at) return 'evening-routines-wizard';
+  if (!household.morning_preparation_setup_completed_at) return 'morning-preparation-wizard';
+  if (!household.connections_setup_completed_at) return 'connections-wizard';
+  if (!household.notification_preferences_setup_completed_at) return 'notifications-wizard';
+  if (!household.onboarding_preview_completed_at) return 'week-preview-wizard';
   return 'ready';
 }
 
@@ -87,7 +92,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         supabase
           .from('households')
           .select(
-            'id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at',
+            'id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at, morning_preparation_setup_completed_at, connections_setup_completed_at, notification_preferences_setup_completed_at, onboarding_preview_completed_at',
           )
           .eq('id', householdId)
           .maybeSingle(),

@@ -459,7 +459,7 @@ function EveningRoutineEditor({
   );
 }
 
-function MorningPreparationEditor({
+export function MorningPreparationEditor({
   householdId,
   members,
 }: {

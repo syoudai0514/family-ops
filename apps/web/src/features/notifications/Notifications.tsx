@@ -8,7 +8,10 @@ import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
 import type { NotificationPreferences, UserNotification } from '../../lib/types';
 
-const PREFERENCE_FIELDS: { key: keyof Omit<NotificationPreferences, 'household_id' | 'user_id' | 'updated_at'>; label: string }[] = [
+const PREFERENCE_FIELDS: {
+  key: keyof Omit<NotificationPreferences, 'household_id' | 'user_id' | 'updated_at'>;
+  label: string;
+}[] = [
   { key: 'request_line', label: 'お願い通知' },
   { key: 'handover_line', label: '引き継ぎ通知' },
   { key: 'calendar_line', label: 'カレンダー通知' },
@@ -54,7 +57,10 @@ function useNotifications(householdId: string | null, userId: string | null) {
 export function Notifications() {
   const { user } = useAuth();
   const { household } = useHousehold();
-  const { notifications, loading, error, refresh } = useNotifications(household?.id ?? null, user?.id ?? null);
+  const { notifications, loading, error, refresh } = useNotifications(
+    household?.id ?? null,
+    user?.id ?? null,
+  );
 
   return (
     <div className="app-shell">
@@ -84,7 +90,7 @@ export function Notifications() {
   );
 }
 
-function LineLinkSection() {
+export function LineLinkSection() {
   const [token, setToken] = useState<string | null>(null);
   const [friendUrl, setFriendUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -92,13 +98,22 @@ function LineLinkSection() {
   const [copied, setCopied] = useState(false);
 
   async function createLinkToken() {
-    setBusy(true); setError(null);
+    setBusy(true);
+    setError(null);
     try {
-      const result = await callEdgeFunction<{ raw_token: string; line_add_friend_url?: string }>(EDGE_FUNCTIONS.createLineLinkToken, { operation_id: newOperationId() });
-      setToken(result.raw_token); setFriendUrl(result.line_add_friend_url ?? null);
+      const result = await callEdgeFunction<{ raw_token: string; line_add_friend_url?: string }>(
+        EDGE_FUNCTIONS.createLineLinkToken,
+        { operation_id: newOperationId() },
+      );
+      setToken(result.raw_token);
+      setFriendUrl(result.line_add_friend_url ?? null);
     } catch (err) {
-      setError(err instanceof FamilyOpsApiError ? err.message : 'LINE連携コードを発行できませんでした。');
-    } finally { setBusy(false); }
+      setError(
+        err instanceof FamilyOpsApiError ? err.message : 'LINE連携コードを発行できませんでした。',
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function copyToken() {
@@ -111,23 +126,51 @@ function LineLinkSection() {
     }
   }
 
-  return <section className="card">
-    <h2>LINE連携</h2>
-    <p>通知を受ける人ごとに、LINE公式アカウント「おうちノート」と連携します。</p>
-    {!token ? <button type="button" disabled={busy} onClick={createLinkToken}>{busy ? '発行中…' : 'LINE連携コードを発行'}</button> : <>
-      <p>10分以内に、次のコードを「おうちノート」のLINEトークへ送信してください。</p>
-      <div className="line-link-token">
-        <code>{token}</code>
-        <button type="button" className="line-link-copy" onClick={copyToken}>{copied ? 'コピー済み' : 'コードをコピー'}</button>
-      </div>
-      {friendUrl && <p><a href={friendUrl}>LINEを開いてコードを送る</a></p>}
-      {!friendUrl && <p className="empty-hint">公式アカウントを友だち追加してから、上のコードをそのまま送信してください。</p>}
-    </>}
-    {error && <p role="alert" className="error-text">{error}</p>}
-  </section>;
+  return (
+    <section className="card">
+      <h2>LINE連携</h2>
+      <p>通知を受ける人ごとに、LINE公式アカウント「おうちノート」と連携します。</p>
+      {!token ? (
+        <button type="button" disabled={busy} onClick={createLinkToken}>
+          {busy ? '発行中…' : 'LINE連携コードを発行'}
+        </button>
+      ) : (
+        <>
+          <p>10分以内に、次のコードを「おうちノート」のLINEトークへ送信してください。</p>
+          <div className="line-link-token">
+            <code>{token}</code>
+            <button type="button" className="line-link-copy" onClick={copyToken}>
+              {copied ? 'コピー済み' : 'コードをコピー'}
+            </button>
+          </div>
+          {friendUrl && (
+            <p>
+              <a href={friendUrl}>LINEを開いてコードを送る</a>
+            </p>
+          )}
+          {!friendUrl && (
+            <p className="empty-hint">
+              公式アカウントを友だち追加してから、上のコードをそのまま送信してください。
+            </p>
+          )}
+        </>
+      )}
+      {error && (
+        <p role="alert" className="error-text">
+          {error}
+        </p>
+      )}
+    </section>
+  );
 }
 
-function NotificationRow({ notification, onChanged }: { notification: UserNotification; onChanged: () => void }) {
+function NotificationRow({
+  notification,
+  onChanged,
+}: {
+  notification: UserNotification;
+  onChanged: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const isRead = Boolean(notification.read_at);
 
@@ -189,7 +232,13 @@ function usePreferences(householdId: string | null, userId: string | null) {
   return { preferences, loading, error, refresh: load };
 }
 
-function PreferencesSection({ householdId, userId }: { householdId: string | null; userId: string | null }) {
+function PreferencesSection({
+  householdId,
+  userId,
+}: {
+  householdId: string | null;
+  userId: string | null;
+}) {
   const { preferences, loading, error, refresh } = usePreferences(householdId, userId);
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);

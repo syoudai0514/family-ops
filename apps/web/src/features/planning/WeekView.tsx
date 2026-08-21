@@ -181,6 +181,9 @@ function AssignmentChangeForm({
           </button>
         </div>
         <p>相手が「引き受ける」を押すまで、担当は変わりません。</p>
+        <Link className="secondary-button" to="/settings/routines" onClick={onClose}>
+          定常ルールを変更
+        </Link>
         {!previewing ? (
           <>
             <label>

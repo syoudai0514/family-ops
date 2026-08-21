@@ -72,6 +72,7 @@ const GAP_FILL_FUNCTIONS = new Set([
   'accept-assignment-change-request',
   'deactivate-recurrence',
   'get-week-schedule',
+  'complete-onboarding-step',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

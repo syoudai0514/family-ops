@@ -50,6 +50,8 @@ export const EDGE_FUNCTIONS = {
   cancelPendingAction: 'cancel-pending-action',
   getTodaySchedule: 'get-today-schedule',
   getWeekSchedule: 'get-week-schedule',
+  googleCalendarOauthStart: 'google-calendar-oauth-start',
+  completeOnboardingStep: 'complete-onboarding-step',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];
