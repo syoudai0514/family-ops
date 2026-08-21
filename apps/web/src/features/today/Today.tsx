@@ -87,10 +87,10 @@ export function Today() {
   }, [data.tasks, me]);
 
   const nextTask = useMemo(
-    () => [...data.tasks]
+    () => [...myTasks]
       .filter((task) => task.status === 'todo' || task.status === 'in_progress')
       .sort((a, b) => (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999'))[0] ?? null,
-    [data.tasks],
+    [myTasks],
   );
 
   function renderTaskList(tasks: TaskInstance[]) {
