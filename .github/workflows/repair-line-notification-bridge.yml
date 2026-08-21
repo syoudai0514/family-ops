@@ -1,0 +1,34 @@
+name: Repair production LINE notification bridge
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: family-ops-line-notification-bridge
+  cancel-in-progress: false
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: dnlqxjpjpkxnfgculzip
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore the audited notification bridge only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          sql=$(printf 'drop trigger if exists enqueue_line_notification on public.user_notifications;\n'; cat supabase/migrations/20260819000070_notification_outbox_line_bridge.sql)
+          payload=$(jq -n --arg query "$sql" '{query: $query}')
+          curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' -d "$payload" "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" | jq -e .
+      - name: Verify trigger exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload=$(jq -n --arg query "select exists (select 1 from pg_trigger where tgname='enqueue_line_notification' and not tgisinternal) as notification_bridge_trigger_present;" '{query: $query}')
+          curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' -d "$payload" "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" | jq -e 'length == 1 and .[0].notification_bridge_trigger_present == true'
