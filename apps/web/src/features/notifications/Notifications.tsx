@@ -78,9 +78,39 @@ export function Notifications() {
           </ul>
         )}
       </section>
+      <LineLinkSection />
       <PreferencesSection householdId={household?.id ?? null} userId={user?.id ?? null} />
     </div>
   );
+}
+
+function LineLinkSection() {
+  const [token, setToken] = useState<string | null>(null);
+  const [friendUrl, setFriendUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function createLinkToken() {
+    setBusy(true); setError(null);
+    try {
+      const result = await callEdgeFunction<{ raw_token: string; line_add_friend_url?: string }>(EDGE_FUNCTIONS.createLineLinkToken, { operation_id: newOperationId() });
+      setToken(result.raw_token); setFriendUrl(result.line_add_friend_url ?? null);
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : 'LINE連携コードを発行できませんでした。');
+    } finally { setBusy(false); }
+  }
+
+  return <section className="card">
+    <h2>LINE連携</h2>
+    <p>通知を受ける人ごとに、LINE公式アカウント「おうちノート」と連携します。</p>
+    {!token ? <button type="button" disabled={busy} onClick={createLinkToken}>{busy ? '発行中…' : 'LINE連携コードを発行'}</button> : <>
+      <p>10分以内に、次のコードを「おうちノート」のLINEトークへ送信してください。</p>
+      <p><code>{token}</code></p>
+      {friendUrl && <p><a href={friendUrl}>LINEを開いてコードを送る</a></p>}
+      {!friendUrl && <p className="empty-hint">公式アカウントを友だち追加してから、上のコードをそのまま送信してください。</p>}
+    </>}
+    {error && <p role="alert" className="error-text">{error}</p>}
+  </section>;
 }
 
 function NotificationRow({ notification, onChanged }: { notification: UserNotification; onChanged: () => void }) {

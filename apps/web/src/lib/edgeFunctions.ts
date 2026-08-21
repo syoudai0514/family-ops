@@ -31,6 +31,7 @@ export const EDGE_FUNCTIONS = {
   markHandoverRead: 'mark-handover-read',
   markNotificationRead: 'mark-notification-read',
   updateNotificationPreferences: 'update-notification-preferences',
+  createLineLinkToken: 'create-line-link-token',
   updateRoutineSchedule: 'update-routine-schedule',
   // WP8 (routine LINE automation) — /checkin/:sessionId (features/checkin).
   getRoutineSession: 'get-routine-session',
