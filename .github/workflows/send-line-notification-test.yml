@@ -58,8 +58,14 @@ jobs:
         run: |
           set -euo pipefail
           query() { jq -n --arg query "$1" '{query: $query}' | curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' -d @- "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query"; }
-          query "select net.http_post(url := 'https://dnlqxjpjpkxnfgculzip.supabase.co/functions/v1/send-notifications', headers := jsonb_build_object('Content-Type','application/json','X-Family-Ops-Worker-Token',(select decrypted_secret from vault.decrypted_secrets where name='CRON_WORKER_TOKEN' limit 1)), body := '{}'::jsonb);" | jq .
-          sleep 15
-          result=$(query "select status, attempts, last_error, sent_at, quota_reservation_id from private.notification_outbox where id = '$OUTBOX_ID';")
+          request=$(query "select net.http_post(url := 'https://dnlqxjpjpkxnfgculzip.supabase.co/functions/v1/send-notifications', headers := jsonb_build_object('Content-Type','application/json','X-Family-Ops-Worker-Token',(select decrypted_secret from vault.decrypted_secrets where name='CRON_WORKER_TOKEN' limit 1)), body := '{}'::jsonb) as request_id;")
+          request_id=$(echo "$request" | jq -er '.[0].request_id')
+          echo "send-notifications request id: $request_id"
+          sleep 8
+          worker_response=$(query "select status_code, timed_out, error_msg, left(content, 2000) as body from net._http_response where id = $request_id;")
+          echo "$worker_response" | jq .
+          echo "$worker_response" | jq -e 'length == 1 and .[0].status_code >= 200 and .[0].status_code < 300 and .[0].timed_out == false and .[0].error_msg == null' >/dev/null
+          echo "$worker_response" | jq -r '.[0].body' | jq '{claimed, sent, quota_fallback, dead, requeued, delivery_unknown, no_line_link, quota_refreshed, quota_refresh_skipped_reason}'
+          result=$(query "select o.status, o.attempts, o.last_error, o.sent_at, o.quota_reservation_id, s.provider_limit, s.provider_consumed, s.local_counted_success, s.last_provider_refresh_at from private.notification_outbox o left join private.line_quota_state s on s.billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date where o.id = '$OUTBOX_ID';")
           echo "$result" | jq .
           echo "$result" | jq -e 'length == 1 and .[0].status == "sent" and .[0].sent_at != null' >/dev/null
