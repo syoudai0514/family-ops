@@ -139,14 +139,14 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   return await fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 }
 
-// This value is returned only through the worker's authenticated response and
-// contains no request headers or secret values.  It turns a generic quota
-// fallback into an actionable production diagnostic (for example timeout,
-// TLS/DNS failure, or a runtime API mismatch) without logging the token.
+// This value is returned only through the worker's authenticated response.
+// Never include an Error message here: Deno's invalid-header message embeds
+// the rejected header value, which could be the channel access token.
 function quotaRefreshFailureReason(err: unknown): string {
   if (err instanceof Error) {
-    const message = err.message.replace(/\s+/g, " ").slice(0, 180);
-    return `fetch_failed:${err.name}:${message}`;
+    if (/invalid header value/i.test(err.message)) return "fetch_failed:invalid_authorization_header";
+    if (err.name === "TimeoutError") return "fetch_failed:timeout";
+    return `fetch_failed:${err.name}`;
   }
   return "fetch_failed:non_error";
 }
@@ -355,7 +355,10 @@ Deno.serve(withServiceHandler(async (req: Request) => {
   requireWorkerToken(req); // throws EDGE_WORKER_UNAUTHORIZED before any DB access
 
   const serviceClient = createServiceRoleClient();
-  const channelAccessToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN") ?? undefined;
+  // Dashboard/CLI pastes often include a trailing line break. HTTP header
+  // values cannot contain it; trim only surrounding whitespace, never alter
+  // a token's meaningful interior characters.
+  const channelAccessToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN")?.trim() || undefined;
 
   const quotaRefresh = await maybeRefreshLineQuota(serviceClient, channelAccessToken);
 
