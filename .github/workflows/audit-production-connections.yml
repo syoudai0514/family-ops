@@ -1,0 +1,87 @@
+name: Audit production connections
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: family-ops-production-connection-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: dnlqxjpjpkxnfgculzip
+    steps:
+      - name: Verify configured secret names without reading values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
+          secrets=$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF/secrets")
+          names=$(echo "$secrets" | jq -r '.. | objects | .name? // empty' | sort -u)
+          required=(LINE_CHANNEL_SECRET LINE_CHANNEL_ACCESS_TOKEN CRON_WORKER_TOKEN APP_BASE_URL)
+          optional=(LINE_OA_BASIC_ID)
+          for name in "${required[@]}"; do
+            grep -Fxq "$name" <<<"$names" || { echo "::error::$name is not configured"; exit 1; }
+            echo "$name: configured"
+          done
+          for name in "${optional[@]}"; do
+            if grep -Fxq "$name" <<<"$names"; then echo "$name: configured"; else echo "$name: not configured (optional)"; fi
+          done
+
+      - name: Audit LINE link, notification bridge, cron, and quota state
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() { jq -n --arg query "$1" '{query: $query}' | curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' -d @- "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query"; }
+          read -r -d '' SQL <<'SQL' || true
+          select jsonb_build_object(
+            'notification_bridge_trigger_present', exists (select 1 from pg_trigger where tgname = 'enqueue_line_notification' and not tgisinternal),
+            'active_line_links', (select count(*) from private.line_user_links where status = 'active'),
+            'active_links_with_matching_household_preference', (
+              select count(*)
+              from private.line_user_links l
+              join public.notification_preferences p on p.household_id = l.household_id and p.user_id = l.user_id
+              where l.status = 'active'
+            ),
+            'cron_jobs', coalesce((
+              select jsonb_agg(jsonb_build_object('name', jobname, 'schedule', schedule, 'active', active) order by jobname)
+              from cron.job
+              where jobname in ('family-ops-line-inbox-v1', 'family-ops-routine-dispatch-v1', 'family-ops-line-delivery-v1')
+            ), '[]'::jsonb),
+            'recent_cron_runs', coalesce((
+              select jsonb_agg(jsonb_build_object('name', jobname, 'status', status, 'started_at', start_time, 'finished_at', end_time) order by start_time desc)
+              from (
+                select j.jobname, d.status, d.start_time, d.end_time
+                from cron.job_run_details d
+                join cron.job j on j.jobid = d.jobid
+                where j.jobname in ('family-ops-line-inbox-v1', 'family-ops-routine-dispatch-v1', 'family-ops-line-delivery-v1')
+                order by d.start_time desc
+                limit 12
+              ) runs
+            ), '[]'::jsonb),
+            'quota_state', (
+              select jsonb_build_object('provider_limit', provider_limit, 'provider_consumed', provider_consumed, 'local_counted_success', local_counted_success, 'last_provider_refresh_at', last_provider_refresh_at)
+              from private.line_quota_state
+              where billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date
+              limit 1
+            ),
+            'active_quota_reservations', (
+              select count(*) from private.line_quota_reservations where status = 'reserved'
+            )
+          ) as audit;
+          SQL
+          result=$(query "$SQL")
+          echo "$result" | jq .
+          echo "$result" | jq -e '
+            length == 1 and
+            .[0].audit.notification_bridge_trigger_present == true and
+            .[0].audit.active_line_links >= 1 and
+            .[0].audit.active_links_with_matching_household_preference >= 1 and
+            ([.[0].audit.cron_jobs[] | select(.schedule == "* * * * *" and .active == true)] | length) == 3
+          ' >/dev/null
