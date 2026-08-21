@@ -35,6 +35,7 @@ export const EDGE_FUNCTIONS = {
   createLineLinkToken: 'create-line-link-token',
   updateRoutineSchedule: 'update-routine-schedule',
   changeRecurrence: 'change-recurrence',
+  deactivateRecurrence: 'deactivate-recurrence',
   reassignTaskOnce: 'reassign-task-once',
   confirmRequestDraft: 'confirm-request-draft',
   createAssignmentChangeRequest: 'create-assignment-change-request',
