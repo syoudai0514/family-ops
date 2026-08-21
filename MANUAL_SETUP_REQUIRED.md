@@ -117,8 +117,8 @@ environment.
    - `GOOGLE_CALENDAR_WEBHOOK_URL` — the deployed `google-calendar-webhook`
      Edge Function's public URL, passed to Google's `events.watch` as the
      push notification target.
-   - `APP_BASE_URL` — the PWA's own origin (e.g.
-     `https://familyops.example.app`), used by `google-calendar-oauth-callback`
+   - `APP_BASE_URL` — the PWA's own origin (production:
+     `https://family-ops-web.vercel.app`), used by `google-calendar-oauth-callback`
      to build the final 302 redirect back into the app (`return_to` is only
      ever an app-relative path; this is what it's resolved against).
    - `CRON_WORKER_TOKEN` — already required by WP6; reused as-is by
