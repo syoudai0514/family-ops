@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from './AuthContext';
 import type { Household, HouseholdMember, Profile } from '../lib/types';
@@ -15,6 +23,7 @@ export type HouseholdPhase =
   | 'loading'
   | 'error'
   | 'no-household'
+  | 'partner-invite'
   | 'dropoff-pickup-wizard'
   | 'evening-routines-wizard'
   | 'ready';
@@ -32,7 +41,8 @@ interface HouseholdContextValue {
 
 const HouseholdContext = createContext<HouseholdContextValue | undefined>(undefined);
 
-function phaseForHousehold(household: Household): HouseholdPhase {
+function phaseForHousehold(household: Household, memberCount: number): HouseholdPhase {
+  if (memberCount < 2) return 'partner-invite';
   if (!household.dropoff_pickup_setup_completed_at) return 'dropoff-pickup-wizard';
   if (!household.evening_routine_setup_completed_at) return 'evening-routines-wizard';
   return 'ready';
@@ -76,7 +86,9 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       const [householdResult, membersResult] = await Promise.all([
         supabase
           .from('households')
-          .select('id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at')
+          .select(
+            'id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at',
+          )
           .eq('id', householdId)
           .maybeSingle(),
         supabase
@@ -103,7 +115,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
 
       setHousehold(householdResult.data);
       setMembers(membersWithProfiles);
-      setPhase(phaseForHousehold(householdResult.data));
+      setPhase(phaseForHousehold(householdResult.data, membersWithProfiles.length));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '家庭情報を読み込めませんでした。');
       setPhase('error');
@@ -114,10 +126,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     load();
   }, [load]);
 
-  const me = useMemo(
-    () => members.find((m) => m.user_id === user?.id) ?? null,
-    [members, user],
-  );
+  const me = useMemo(() => members.find((m) => m.user_id === user?.id) ?? null, [members, user]);
   const partner = useMemo(
     () => members.find((m) => m.user_id !== user?.id) ?? null,
     [members, user],
