@@ -126,8 +126,9 @@ describe('Today', () => {
       expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
     });
     await waitFor(() => {
-      expect(screen.getByText('牛乳を買う')).toBeInTheDocument();
+      expect(screen.getAllByText('牛乳を買う')).toHaveLength(2);
     });
+    expect(screen.getByText('次にやること')).toBeInTheDocument();
   });
 
   it('shows Priority 1 (今/次の予定) with the conflict warning from get-today-schedule', async () => {
