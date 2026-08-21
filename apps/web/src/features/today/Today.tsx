@@ -22,7 +22,10 @@ function RequestQuickActions({ request, onChanged }: { request: RequestRow; onCh
     setBusy(true);
     setError(null);
     try {
-      await callEdgeFunction(kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest, {
+      const functionName = kind === 'accept' && request.assignment_task_instance_id
+        ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest
+        : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
+      await callEdgeFunction(functionName, {
         operation_id: newOperationId(),
         request_id: request.id,
       });
