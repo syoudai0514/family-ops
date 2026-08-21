@@ -239,6 +239,7 @@ function SendRequestForm({ recipientId, initialRawMessage = '', onSent }: { reci
   const [submitting, setSubmitting] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [rawInputId, setRawInputId] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function rewriteMessageWithAi() {
@@ -291,6 +292,7 @@ function SendRequestForm({ recipientId, initialRawMessage = '', onSent }: { reci
 
   return (
     <form onSubmit={handleSubmit} className="stack-form card request-composer">
+      <div className="composer-steps" aria-label="お願い作成の手順"><span className={!previewing ? 'active' : ''}>1 作成</span><span className={previewing ? 'active' : ''}>2 確認</span><span>3 送信</span></div>
       <p className="eyebrow">相手に見えるのは、確認した文面だけです</p>
       <label>
         タイトル
@@ -311,14 +313,22 @@ function SendRequestForm({ recipientId, initialRawMessage = '', onSent }: { reci
         期限（任意）
         <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
       </label>
+      <p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>
       {error && (
         <p role="alert" className="error-text">
           {error}
         </p>
       )}
-      <button type="submit" disabled={submitting}>
-        {submitting ? '送信中…' : 'この内容で送る'}
-      </button>
+      {!previewing ? <button type="button" disabled={submitting || !message.trim()} onClick={() => setPreviewing(true)}>送信内容を確認</button> : (
+        <section className="line-sender-preview" aria-label="LINE送信プレビュー">
+          <p className="line-preview-kicker">LINE · 送る側の確認</p>
+          <h3>この内容で送りますか？</h3>
+          <p className="line-preview-message">{message}</p>
+          <p className="line-preview-meta">{dueDate ? new Date(dueDate).toLocaleString('ja-JP') : '期限なし'} / 今回だけ</p>
+          <p className="empty-hint">送るまでは、相手に通知されません。</p>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '送信中…' : 'LINEで送る'}</button></div>
+        </section>
+      )}
     </form>
   );
 }
