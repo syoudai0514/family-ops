@@ -317,6 +317,13 @@ declare
   v_old_session uuid;
   v_new_session uuid;
 begin
+  -- Pickup automation is intentionally disabled on Japanese non-workdays.
+  -- This scenario exercises a same-day reassignment and therefore cannot use
+  -- a simulated weekday; skip deterministically when CI runs on a weekend.
+  if extract(isodow from v_today) > 5 then
+    raise notice 'Skipping workday-only reassignment scenario on non-workday %', v_today;
+    return;
+  end if;
   v_hh := public.server_tx_create_household(v_a, gen_random_uuid(), 'WP8 Reassign HH', 'A');
   v_hh_id := (v_hh->>'household_id')::uuid;
   insert into public.household_members (household_id, user_id, member_role) values (v_hh_id, v_b, 'adult');
@@ -405,6 +412,10 @@ declare
   v_date date := (now() at time zone 'Asia/Tokyo')::date + 7;
   v_time timestamptz := ((v_date::text || ' 20:00:00')::timestamp at time zone 'Asia/Tokyo');
 begin
+  if extract(isodow from v_date) > 5 then
+    raise notice 'Skipping workday-only unassigned pickup scenario on non-workday %', v_date;
+    return;
+  end if;
   select household_id into v_hh_id from public.household_members where user_id = v_a;
   perform public.server_tx_dispatch_routine_automation(v_time, 2000);
   perform public.server_tx_dispatch_routine_automation(v_time, 2000); -- retry
