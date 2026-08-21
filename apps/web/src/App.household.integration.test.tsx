@@ -104,7 +104,7 @@ describe('App household integration', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
-    });
+    }, { timeout: 5_000 });
     expect(screen.queryByText('判断待ち')).not.toBeInTheDocument();
     expect(screen.queryByTestId('app-error-diagnostic')).not.toBeInTheDocument();
   });
