@@ -227,13 +227,10 @@ export function Today() {
       )}
 
       {partnerTasks.length > 0 && (
-        <section className="card partner-summary">
-          <div className="section-heading">
-            <h2>パートナーの予定</h2>
-            <span>{partnerTasks.length}件</span>
-          </div>
+        <details className="card partner-summary">
+          <summary>パートナーの残り {partnerTasks.length}件</summary>
           {renderTaskList(partnerTasks)}
-        </section>
+        </details>
       )}
 
       {unassignedTasks.length > 0 && (

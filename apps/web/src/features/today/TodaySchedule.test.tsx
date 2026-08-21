@@ -69,9 +69,11 @@ describe('TodaySchedule', () => {
     expect(screen.queryByText('⚠ 予定と重複')).not.toBeInTheDocument();
   });
 
-  it('shows an empty hint when there is nothing scheduled today', () => {
-    render(<TodaySchedule loading={false} error={null} schedule={makeSchedule({})} members={MEMBERS} />);
-    expect(screen.getByText('なし')).toBeInTheDocument();
+  it('does not render a large empty card when there is nothing scheduled today', () => {
+    const { container } = render(
+      <TodaySchedule loading={false} error={null} schedule={makeSchedule({})} members={MEMBERS} />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('degrades gracefully with a hint (not an error) when Calendar is disconnected', () => {
