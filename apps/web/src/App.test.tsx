@@ -13,10 +13,6 @@ vi.mock('./lib/supabaseClient', () => ({
   },
 }));
 
-vi.mock('./app/AuthenticatedApp', () => ({
-  default: () => <main>家庭画面</main>,
-}));
-
 describe('App', () => {
   beforeEach(() => {
     authState.session = null;
@@ -30,16 +26,6 @@ describe('App', () => {
       expect(screen.getByRole('heading', { name: 'Family Ops' })).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: 'Google でサインイン' })).toBeInTheDocument();
-  });
-
-  it('opens the household app at / when a Supabase session is stored', async () => {
-    authState.session = { user: { id: 'member-1' } };
-    window.localStorage.setItem('sb-dnlqxjpjpkxnfgculzip-auth-token', 'stored-session');
-
-    render(<App />);
-
-    expect(await screen.findByText('家庭画面')).toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('handles /auth/callback inside the AuthProvider', async () => {

@@ -3,8 +3,16 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Vercel exposes the source commit only during its build. Bake that identifier
+// into the client so a support screen can distinguish a stale PWA shell from
+// the build currently served by production, without exposing any secrets.
+const buildSha = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? 'local';
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __FAMILY_OPS_BUILD_SHA__: JSON.stringify(buildSha),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -31,6 +39,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // A newly activated worker reloads existing PWA windows (see this
+        // script). That moves an iPhone off an old precached app shell while
+        // leaving localStorage and the Supabase session untouched.
+        importScripts: ['sw-update.js'],
+        globIgnores: ['sw-update.js'],
         // Read-only offline caching for the app shell only. Mutations require
         // network + Edge Functions, so no mutation requests are cached.
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
