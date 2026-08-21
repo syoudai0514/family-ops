@@ -22,6 +22,7 @@
 - edit-task-definition
 - deactivate-task-definition
 - change-recurrence
+- deactivate-recurrence
 - configure-evening-routines
 - send-request
 - accept-request
@@ -46,6 +47,7 @@
 - update-calendar-event
 - classify-calendar-busy-members
 - ensure-calendar-fresh
+- get-week-schedule
 - create-line-link-token
 - unlink-line-account
 
