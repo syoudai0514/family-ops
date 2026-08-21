@@ -216,7 +216,30 @@ function SendRequestForm({ recipientId, onSent }: { recipientId: string; onSent:
   const [message, setMessage] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function rewriteMessageWithAi() {
+    const rawText = message.trim();
+    if (!rawText) {
+      setError('言い換えたいメッセージを入力してください。');
+      return;
+    }
+    setError(null);
+    setRewriting(true);
+    try {
+      const proposal = await callEdgeFunction<{ proposed_text: string }>(EDGE_FUNCTIONS.proposeAiDraft, {
+        operation_id: newOperationId(),
+        raw_text: rawText,
+        target_type: 'request',
+      });
+      setMessage(proposal.proposed_text);
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : 'AIによる言い換えに失敗しました。');
+    } finally {
+      setRewriting(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -248,6 +271,9 @@ function SendRequestForm({ recipientId, onSent }: { recipientId: string; onSent:
         メッセージ（任意）
         <textarea value={message} onChange={(e) => setMessage(e.target.value)} />
       </label>
+      <button type="button" onClick={rewriteMessageWithAi} disabled={submitting || rewriting || message.trim().length === 0}>
+        {rewriting ? 'AIが言い換え中…' : 'AIでやわらかく言い換える'}
+      </button>
       <label>
         期限（任意）
         <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />

@@ -21,6 +21,7 @@ export const EDGE_FUNCTIONS = {
   acceptRequest: 'accept-request',
   declineRequest: 'decline-request',
   cancelRequest: 'cancel-request',
+  proposeAiDraft: 'propose-ai-draft',
   addShoppingItem: 'add-shopping-item',
   assignShoppingItem: 'assign-shopping-item',
   orderShoppingItem: 'order-shopping-item',
