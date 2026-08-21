@@ -94,5 +94,46 @@ begin
 end;
 $$;
 
+do $$
+declare
+  v_owner uuid := '91000000-0000-0000-0000-000000000001';
+  v_hh_id uuid;
+  v_prep_def uuid;
+  v_op uuid := gen_random_uuid();
+  v_two_days jsonb;
+begin
+  select id into v_hh_id from public.households where name = 'UX v2 recurrence HH';
+  select id into v_prep_def from public.task_definitions
+    where household_id = v_hh_id and code = 'prep_tuesday_gym';
+  v_two_days := jsonb_build_array(jsonb_build_object(
+    'task_definition_id', v_prep_def,
+    'rules', jsonb_build_array(
+      jsonb_build_object('weekday', 2, 'assignee_strategy', 'dropoff_assignee', 'scheduled_local_time', '07:00'),
+      jsonb_build_object('weekday', 4, 'assignee_strategy', 'dropoff_assignee', 'scheduled_local_time', '07:00')
+    )
+  ));
+  perform public.server_tx_replace_recurrence_schedule(v_owner, v_op, v_two_days);
+  perform public.server_tx_replace_recurrence_schedule(v_owner, v_op, v_two_days);
+  if (select count(*) from public.recurrence_rules where household_id = v_hh_id and task_definition_id = v_prep_def and active) <> 2 then
+    raise exception 'FAIL ux-v2 recurrence: atomic replacement did not create exactly two weekdays';
+  end if;
+
+  perform public.server_tx_replace_recurrence_schedule(
+    v_owner,
+    gen_random_uuid(),
+    jsonb_build_array(jsonb_build_object(
+      'task_definition_id', v_prep_def,
+      'rules', jsonb_build_array(
+        jsonb_build_object('weekday', 2, 'assignee_strategy', 'dropoff_assignee', 'scheduled_local_time', '07:00')
+      )
+    ))
+  );
+  if exists (
+    select 1 from public.recurrence_rules
+    where household_id = v_hh_id and task_definition_id = v_prep_def and weekday = 4 and active
+  ) then raise exception 'FAIL ux-v2 recurrence: batch weekday removal left Thursday active'; end if;
+end;
+$$;
+
 reset role;
 select 'ux_v2_recurrence_regression: PASS' as result;
