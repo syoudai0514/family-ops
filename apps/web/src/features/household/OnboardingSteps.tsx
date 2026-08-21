@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
@@ -67,6 +67,16 @@ export function ConnectionsStep() {
   const done = useCompleteStep('connections');
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [calendarStatus, setCalendarStatus] = useState<'loading' | 'connected' | 'reauth' | 'disconnected'>('loading');
+  useEffect(() => {
+    let cancelled = false;
+    void callEdgeFunction<{ calendar_connected: boolean; calendar_stale: boolean }>(EDGE_FUNCTIONS.getTodaySchedule, {})
+      .then((result) => {
+        if (!cancelled) setCalendarStatus(result.calendar_connected ? (result.calendar_stale ? 'reauth' : 'connected') : 'disconnected');
+      })
+      .catch(() => { if (!cancelled) setCalendarStatus('disconnected'); });
+    return () => { cancelled = true; };
+  }, []);
   const connectCalendar = async () => {
     setCalendarBusy(true);
     setCalendarError(null);
@@ -92,6 +102,9 @@ export function ConnectionsStep() {
       <section className="card">
         <h2>Google Calendar</h2>
         <p>予定の重なりをTodayとWeekでお知らせします。</p>
+        <p role="status">
+          {calendarStatus === 'loading' ? '接続状態を確認中…' : calendarStatus === 'connected' ? 'Google Calendar ✓ 接続済み' : calendarStatus === 'reauth' ? 'Google Calendar: 再認証または同期が必要です' : 'Google Calendar: 未接続'}
+        </p>
         <button type="button" onClick={() => void connectCalendar()} disabled={calendarBusy}>
           {calendarBusy ? '接続中…' : 'Google Calendarを接続'}
         </button>
