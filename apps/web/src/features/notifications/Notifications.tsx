@@ -89,6 +89,7 @@ function LineLinkSection() {
   const [friendUrl, setFriendUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function createLinkToken() {
     setBusy(true); setError(null);
@@ -100,12 +101,25 @@ function LineLinkSection() {
     } finally { setBusy(false); }
   }
 
+  async function copyToken() {
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      setCopied(true);
+    } catch {
+      setError('コピーできませんでした。もう一度お試しください。');
+    }
+  }
+
   return <section className="card">
     <h2>LINE連携</h2>
     <p>通知を受ける人ごとに、LINE公式アカウント「おうちノート」と連携します。</p>
     {!token ? <button type="button" disabled={busy} onClick={createLinkToken}>{busy ? '発行中…' : 'LINE連携コードを発行'}</button> : <>
       <p>10分以内に、次のコードを「おうちノート」のLINEトークへ送信してください。</p>
-      <p><code>{token}</code></p>
+      <div className="line-link-token">
+        <code>{token}</code>
+        <button type="button" className="line-link-copy" onClick={copyToken}>{copied ? 'コピー済み' : 'コードをコピー'}</button>
+      </div>
       {friendUrl && <p><a href={friendUrl}>LINEを開いてコードを送る</a></p>}
       {!friendUrl && <p className="empty-hint">公式アカウントを友だち追加してから、上のコードをそのまま送信してください。</p>}
     </>}
