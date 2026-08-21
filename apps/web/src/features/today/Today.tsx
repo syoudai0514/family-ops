@@ -86,6 +86,13 @@ export function Today() {
     return { myTasks: mine, partnerTasks: partnerList, unassignedTasks: unassigned };
   }, [data.tasks, me]);
 
+  const nextTask = useMemo(
+    () => [...data.tasks]
+      .filter((task) => task.status === 'todo' || task.status === 'in_progress')
+      .sort((a, b) => (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999'))[0] ?? null,
+    [data.tasks],
+  );
+
   function renderTaskList(tasks: TaskInstance[]) {
     return (
       <ul className="task-list">
@@ -143,29 +150,15 @@ export function Today() {
         </p>
       )}
 
-      {/* Priority 1: 次に決めること。空の大きな領域は作らない。 */}
-      {hasPendingDecisions && <section className="card decision-card">
-        <p className="eyebrow">返事が必要です</p><h2>判断待ち</h2>
-        {pending.error && (
-          <p role="alert" className="error-text">
-            {pending.error}
-          </p>
-        )}
-        <ul className="request-list">
-            {data.incomingRequests.map((request) => (
-              <RequestQuickActions key={request.id} request={request} onChanged={data.refresh} />
-            ))}
-            {pending.pendingActions.map((action) => (
-              <PendingActionCard
-                key={action.id}
-                action={action}
-                onConfirm={pending.confirm}
-                onCancel={pending.cancel}
-                onEditAsRequest={handleEditAsRequest}
-                onEditAsTask={handleEditAsTask}
-              />
-            ))}
-        </ul>
+      {nextTask && <section className="next-action-hero" aria-labelledby="next-action-title">
+        <span className="next-action-pill">次にやること</span>
+        <p className="next-action-time">{nextTask.due_at ? new Date(nextTask.due_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '今日中'}</p>
+        <h2 id="next-action-title">{nextTask.title}</h2>
+        <p>{nextTask.planned_assignee_id === me?.user_id ? 'あなたの担当です。' : '担当と内容を確認しましょう。'}</p>
+        <div className="next-action-actions">
+          <button type="button" className="hero-primary" onClick={() => setEditingTask(nextTask)}>開く →</button>
+          <button type="button" className="hero-secondary" onClick={() => navigate('/week')}>今回だけ変更</button>
+        </div>
       </section>}
 
       {/* Priority 2: 今/次の予定 */}
@@ -188,6 +181,16 @@ export function Today() {
           {renderTaskList(unassignedTasks)}
         </section>
       )}
+
+      {/* 判断待ちは、今日の実行情報を見た後に、あるときだけ表示する。 */}
+      {hasPendingDecisions && <section className="card decision-card">
+        <div className="section-heading"><div><p className="eyebrow">返事が必要です</p><h2>判断待ち</h2></div><span>{data.incomingRequests.length + pending.pendingActions.length}件</span></div>
+        {pending.error && <p role="alert" className="error-text">{pending.error}</p>}
+        <ul className="request-list">
+          {data.incomingRequests.map((request) => <RequestQuickActions key={request.id} request={request} onChanged={data.refresh} />)}
+          {pending.pendingActions.map((action) => <PendingActionCard key={action.id} action={action} onConfirm={pending.confirm} onCancel={pending.cancel} onEditAsRequest={handleEditAsRequest} onEditAsTask={handleEditAsTask} />)}
+        </ul>
+      </section>}
 
       {/* Priority 4: 重要な引き継ぎ */}
       {data.unreadHandovers.length > 0 && <section className="card compact-section">
