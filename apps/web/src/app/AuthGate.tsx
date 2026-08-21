@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
-import { useAuth } from './AuthContext';
+import { AuthProvider, useAuth } from './AuthContext';
 import { SignIn } from '../features/auth/SignIn';
 import { AuthCallback } from '../features/auth/AuthCallback';
 import { LoadingScreen } from '../components/LoadingScreen';
@@ -11,6 +11,14 @@ const AuthenticatedApp = lazy(() => import('./AuthenticatedApp'));
 // (needed mid-OAuth-flow) or the sign-in screen, regardless of what path
 // they navigated to. Once authenticated, household-level gating takes over.
 export function AuthGate() {
+  return (
+    <AuthProvider>
+      <AuthGateRoutes />
+    </AuthProvider>
+  );
+}
+
+function AuthGateRoutes() {
   const { user, loading } = useAuth();
 
   if (loading) {
