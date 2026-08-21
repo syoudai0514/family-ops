@@ -14,6 +14,12 @@ const fixtureState = vi.hoisted(() => ({
         member_role: 'primary',
         joined_at: '2026-08-01T00:00:00Z',
       },
+      {
+        household_id: 'household-1',
+        user_id: 'user-2',
+        member_role: 'partner',
+        joined_at: '2026-08-02T00:00:00Z',
+      },
     ] as FixtureRow[],
     households: [
       {
@@ -24,7 +30,10 @@ const fixtureState = vi.hoisted(() => ({
         evening_routine_setup_completed_at: '2026-08-01T00:00:00Z',
       },
     ] as FixtureRow[],
-    profiles: [{ user_id: 'user-1', display_name: '本人' }] as FixtureRow[],
+    profiles: [
+      { user_id: 'user-1', display_name: '本人' },
+      { user_id: 'user-2', display_name: 'パートナー' },
+    ] as FixtureRow[],
     task_instances: [] as FixtureRow[],
     task_subtask_instances: [] as FixtureRow[],
     requests: [] as FixtureRow[],
@@ -102,9 +111,12 @@ describe('App household integration', () => {
   it('renders the real AuthenticatedApp, HouseholdProvider, HouseholdGate, AppShell, and Today path for a stored session', async () => {
     render(<App />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
-    }, { timeout: 5_000 });
+    await waitFor(
+      () => {
+        expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
+      },
+      { timeout: 5_000 },
+    );
     expect(screen.queryByText('判断待ち')).not.toBeInTheDocument();
     expect(screen.queryByTestId('app-error-diagnostic')).not.toBeInTheDocument();
   });
