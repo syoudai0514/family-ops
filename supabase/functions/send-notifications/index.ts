@@ -34,6 +34,7 @@ import { withServiceHandler, jsonResponse } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { buildCheckinLink } from "../_shared/lineMessaging.ts";
 import { buildRoutineQuickReply } from "./routineQuickReply.ts";
+import { buildAssignmentRequestFlex } from "../_shared/lineMessageBuilders.ts";
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -68,6 +69,7 @@ type OutboxItem = {
   // Opaque canonical id only -- no bearer credential.
   session_id?: string;
   session_type?: string;
+  payload?: { request_id?: string; request_kind?: string; scope?: 'once' | 'this_week' };
 };
 
 type ClaimedNotification = {
@@ -133,6 +135,14 @@ function buildBundledText(
   const text = blocks.filter((b) => b.length > 0).join("\n\n");
   const truncated = text.length <= LINE_TEXT_MAX_CHARS ? text : text.slice(0, LINE_TEXT_MAX_CHARS - 1) + "…";
   return { text: truncated, sessionIds: Array.from(seenSessionIds) };
+}
+
+function buildRichRequestMessage(payload: ClaimedNotification['payload']): Record<string, unknown> | null {
+  const items = payload?.items ?? [];
+  if (items.length !== 1) return null;
+  const item = items[0];
+  if (item.type !== 'request_received' || item.payload?.request_kind !== 'assignment_change' || !item.payload.request_id) return null;
+  return buildAssignmentRequestFlex({ requestId: item.payload.request_id, title: item.title ?? '担当変更', message: item.body ?? '', scope: item.payload.scope ?? 'once' });
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
@@ -268,10 +278,11 @@ async function sendOne(
     return await failItem(serviceClient, item, "quota_fallback", "LINE_CHANNEL_ACCESS_TOKEN not configured");
   }
 
+  const richMessage = buildRichRequestMessage(item.payload);
   const { text, sessionIds } = buildBundledText(item.payload, item.type);
   const quickReply = item.type === "routine" ? buildRoutineQuickReply(sessionIds) : undefined;
-  const message: Record<string, unknown> = { type: "text", text };
-  if (quickReply) message.quickReply = { items: quickReply.map((action) => ({ type: "action", action })) };
+  const message: Record<string, unknown> = richMessage ?? { type: "text", text };
+  if (quickReply && message.type === 'text') message.quickReply = { items: quickReply.map((action) => ({ type: "action", action })) };
   let response: Response;
   try {
     response = await fetchWithTimeout(LINE_PUSH_URL, {
