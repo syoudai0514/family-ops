@@ -14,7 +14,7 @@ treated as provider delivery.
 | Supabase pg_cron / pg_net | pg_cron | LINE worker Edge Functions | `CRON_WORKER_TOKEN`（Vault） | 3 jobとも有効・毎分 | 済（直近run成功） | 稼働中 | 定期監視を将来追加 |
 | GitHub Actions | manual dispatch | Supabase Management API | `SUPABASE_ACCESS_TOKEN` | 設定済（実行成功） | 済 | 稼働中 | E2E workflowが`outbox.status=sent`のみ成功にする |
 | Google Calendar OAuth/API/watch | Calendar Edge Functions | Google Calendar API | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URI`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `GOOGLE_CALENDAR_WEBHOOK_URL`, `APP_BASE_URL`, `CRON_WORKER_TOKEN` | 未設定として扱う | 未実施 | 後回し | Google Cloud OAuth client/API/consent screenと監視cronを設定後にE2E |
-| Gemini | parse/rewrite Edge Functions | Gemini API | `GEMINI_API_KEY`, `GEMINI_MODEL_PARSE`, `GEMINI_MODEL_REWRITE` | 設定済との既存確認 | 未実施 | 要監査 | secretを出さずに最小実行でprovider応答を確認 |
+| Gemini | `propose-ai-draft` Edge Function | Gemini API | `GEMINI_API_KEY`, `GEMINI_MODEL_REWRITE` | 設定済との既存確認 | 未実施 | 要監査 | PWAのAI言い換えでprovider応答を確認 |
 
 ## Verified LINE delivery evidence
 
@@ -42,6 +42,11 @@ source of truth.  The template was aligned to use:
 - `GOOGLE_TOKEN_ENCRYPTION_KEY`
 - `GOOGLE_CALENDAR_WEBHOOK_URL`
 - `LINE_OA_BASIC_ID`
+
+Geminiについては、現行の `Deno.env.get()` 呼び出しが読むのは
+`GEMINI_API_KEY` と `GEMINI_MODEL_REWRITE` だけです。
+`GEMINI_MODEL_PARSE` は現行実装では未使用のため、productionで設定済みでも
+接続要件には含めません。
 
 Never place server secrets (`SUPABASE_SERVICE_ROLE_KEY`, calendar client
 secret, LINE secret/access token, Gemini key, or `CRON_WORKER_TOKEN`) in a
