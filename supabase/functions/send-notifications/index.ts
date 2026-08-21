@@ -139,6 +139,18 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   return await fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 }
 
+// This value is returned only through the worker's authenticated response and
+// contains no request headers or secret values.  It turns a generic quota
+// fallback into an actionable production diagnostic (for example timeout,
+// TLS/DNS failure, or a runtime API mismatch) without logging the token.
+function quotaRefreshFailureReason(err: unknown): string {
+  if (err instanceof Error) {
+    const message = err.message.replace(/\s+/g, " ").slice(0, 180);
+    return `fetch_failed:${err.name}:${message}`;
+  }
+  return "fetch_failed:non_error";
+}
+
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #18 "LINE quota refresh":
 // refresh target monthly limit + total sent usage at least every 15m while
 // the LINE outbox exists; unknown/stale data + a failed refresh means
@@ -191,8 +203,9 @@ async function maybeRefreshLineQuota(
     }
     return { refreshed: true, stale: false, skippedReason: null };
   } catch (err) {
-    console.error("send-notifications: quota refresh fetch failed", err instanceof Error ? err.message : String(err));
-    return { refreshed: false, stale: true, skippedReason: "fetch_failed" };
+    const reason = quotaRefreshFailureReason(err);
+    console.error("send-notifications: quota refresh fetch failed", reason);
+    return { refreshed: false, stale: true, skippedReason: reason };
   }
 }
 
