@@ -37,7 +37,12 @@ jobs:
           select i.id as user_notification_id, i.dedup_key as user_notification_dedup_key, r.request_line,
                  o.id as outbox_id, o.dedup_key as outbox_dedup_key, o.status as outbox_status
           from inserted i join recipients r on r.household_id=i.household_id and r.user_id=i.recipient_user_id
-          left join private.notification_outbox o on o.dedup_key = 'bundle:' || i.dedup_key;
+          left join lateral (
+            select id, dedup_key, status from private.notification_outbox o
+            where o.household_id=i.household_id and o.recipient_user_id=i.recipient_user_id and o.channel='line'
+              and exists (select 1 from jsonb_array_elements(o.payload->'items') item where item->>'dedup_key'=i.dedup_key)
+            order by o.created_at desc limit 1
+          ) o on true;
           SQL
           result=$(query "$SQL")
           echo "$result" | jq .
