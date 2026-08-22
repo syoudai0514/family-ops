@@ -55,6 +55,7 @@ export const EDGE_FUNCTIONS = {
   completeOnboardingStep: 'complete-onboarding-step',
   replaceRecurrenceSchedule: 'replace-recurrence-schedule',
   setRoutineDefinitionOptions: 'set-routine-definition-options',
+  replaceRoutineSubtasks: 'replace-routine-subtasks',
   setFamilyCalendarTarget: 'set-family-calendar-target',
   setFamilyRole: 'set-family-role',
 } as const;

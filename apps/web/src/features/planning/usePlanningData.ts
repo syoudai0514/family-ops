@@ -30,14 +30,14 @@ export function usePlanningData(householdId: string | null, start: string, end: 
             .order('scheduled_date'),
           supabase
             .from('calendar_event_occurrences')
-            .select('*')
+            .select('*, calendar_connections(display_name,external_calendar_id)')
             .eq('household_id', householdId)
             .gte('starts_at', `${start}T00:00:00+09:00`)
             .lt('starts_at', `${nextDay}T00:00:00+09:00`)
             .order('starts_at'),
           supabase
             .from('calendar_event_occurrences')
-            .select('*')
+            .select('*, calendar_connections(display_name,external_calendar_id)')
             .eq('household_id', householdId)
             .gte('all_day_start', start)
             .lt('all_day_start', nextDay)
@@ -60,11 +60,14 @@ export function usePlanningData(householdId: string | null, start: string, end: 
       setOccurrences(
         [...(timedCalendarRows ?? []), ...(allDayCalendarRows ?? [])].map((row: Record<string, unknown>) => {
           const startsAt = typeof row.starts_at === 'string' ? row.starts_at : null;
+          const endsAt = typeof row.ends_at === 'string' ? row.ends_at : null;
           const allDayStart = typeof row.all_day_start === 'string' ? row.all_day_start : null;
+          const connection = row.calendar_connections as { display_name?: string; external_calendar_id?: string } | null;
           return {
             id: String(row.occurrence_key),
             date: allDayStart ?? (startsAt ? tokyoIsoDate(startsAt) : start),
             time: startsAt,
+            endsAt,
             title: typeof row.title === 'string' && row.title ? row.title : '予定',
             allDay: Boolean(allDayStart),
             transparent: row.transparency === 'transparent',
@@ -72,6 +75,9 @@ export function usePlanningData(householdId: string | null, start: string, end: 
             providerEventId: typeof row.google_event_id === 'string' ? row.google_event_id : null,
             generatedByFamilyOps: row.family_ops_mirror === true,
             hasConflict: false,
+            location: typeof row.location === 'string' && row.location ? row.location : null,
+            description: typeof row.description === 'string' && row.description ? row.description : null,
+            sourceCalendar: connection?.display_name ?? connection?.external_calendar_id ?? null,
           };
         }),
       );

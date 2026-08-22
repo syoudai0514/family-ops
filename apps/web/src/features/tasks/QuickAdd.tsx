@@ -17,7 +17,7 @@ export function QuickAdd({ className, label = '＋', ariaLabel = '追加する',
   const choose = (target: QuickAddTarget) => {
     setOpen(false);
     if (target === 'task') setTaskFormOpen(true);
-    else navigate(target === 'request' ? '/requests' : target === 'shopping' ? '/shopping' : target === 'handover' ? '/handovers' : '/settings/routines');
+    else navigate(target === 'request' ? '/requests' : target === 'shopping' ? '/shopping' : target === 'handover' ? '/handovers' : target === 'preparation' ? '/settings/routines#morning-preparation' : '/settings/routines#custom-routines');
   };
   return <>
     <button type="button" aria-label={ariaLabel} className={className} onClick={() => setOpen(true)}>{label}</button>

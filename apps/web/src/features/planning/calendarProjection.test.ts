@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCalendarProjection, transportLabel, type PlanningTask } from './calendarProjection';
+import { buildCalendarProjection, transportLabel, transportTokens, type PlanningTask } from './calendarProjection';
 
 const task = (overrides: Partial<PlanningTask>): PlanningTask => ({
   id: 'task', household_id: 'hh', task_definition_id: 'definition', recurrence_rule_id: null,
@@ -74,5 +74,8 @@ describe('CalendarProjection', () => {
       task({ id: 'dropoff', category: 'dropoff', definition_code: 'dropoff', planned_assignee_id: 'p' }),
     ] });
     expect(transportLabel(projection.transportByDate.get('2026-08-24'), 'p', 'm')).toBe('送 P ｜ 迎 —');
+    expect(transportTokens(projection.transportByDate.get('2026-08-24'), 'p', 'm')).toEqual({
+      dropoff: { token: 'P', tone: 'primary' }, pickup: { token: '—', tone: 'none' },
+    });
   });
 });

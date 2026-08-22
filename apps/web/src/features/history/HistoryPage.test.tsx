@@ -126,7 +126,7 @@ describe('HistoryPage', () => {
     expect(screen.getByText('スキップ')).toBeInTheDocument();
 
     // Reassignment shows up as a plain fact, not a comparison.
-    expect(screen.getByText('この予定は再割り当てされました。')).toBeInTheDocument();
+    expect(screen.getByText(/担当変更:.*この予定は再割り当てされました。/)).toBeInTheDocument();
 
     // No score/ranking vocabulary anywhere on the page.
     expect(screen.queryByText(/スコア|ランキング|ポイント/)).not.toBeInTheDocument();

@@ -27,6 +27,7 @@
 - complete-onboarding-step
 - replace-recurrence-schedule
 - set-routine-definition-options
+- replace-routine-subtasks
 - set-family-calendar-target
 - set-family-role
 - configure-evening-routines

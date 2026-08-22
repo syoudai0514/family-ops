@@ -1,201 +1,46 @@
-import { useEffect, useRef, useState } from 'react';
-import { useHousehold } from '../../app/HouseholdContext';
-import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
-import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
-import { LineLinkSection } from '../notifications/Notifications';
-import { WeekView } from '../planning/WeekView';
-import { MorningPreparationEditor, type MorningPreparationEditorHandle } from '../settings/RoutineSchedule';
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛ­;N‹Z–‹­¦ëeŠw¬Õ¥µÁ½ÉĞìÕÍ•™™•Ğ°ÕÍ•I•˜°ÕÍ•MÑ…Ñ”ô™É½´€É•…Ğœì)¥µÁ½ÉĞìÕÍ•!½ÕÍ•¡½±ô™É½´€œ¸¸¼¸¸½…ÁÀ½!½ÕÍ•¡½±‘½¹Ñ•áĞœì)¥µÁ½ÉĞì…±±‘•Õ¹Ñ¥½¸°…µ¥±å=ÁÍÁ¥ÉÉ½Èô™É½´€œ¸¸¼¸¸½±¥ˆ½…Á¥±¥•¹Ğœì)¥µÁ½ÉĞì}U9Q%=9Lô™É½´€œ¸¸¼¸¸½±¥ˆ½•‘•Õ¹Ñ¥½¹Ìœì)¥µÁ½ÉĞì¹•İ=Á•É…Ñ¥½¹%ô™É½´€œ¸¸¼¸¸½±¥ˆ½¥œì)¥µÁ½ÉĞì1¥¹•1¥¹­M•Ñ¥½¸ô™É½´€œ¸¸½¹½Ñ¥™¥…Ñ¥½¹Ì½9½Ñ¥™¥…Ñ¥½¹Ìœì)¥µÁ½ÉĞì]••­Y¥•Üô™É½´€œ¸¸½Á±…¹¹¥¹œ½]••­Y¥•Üœì)¥µÁ½ÉĞì5½É¹¥¹AÉ•Á…É…Ñ¥½¹‘¥Ñ½È°ÑåÁ”5½É¹¥¹AÉ•Á…É…Ñ¥½¹‘¥Ñ½É!…¹‘±”ô™É½´€œ¸¸½Í•ÑÑ¥¹Ì½I½ÕÑ¥¹•M¡•‘Õ±”œì()ÑåÁ”=¹‰½…É‘¥¹MÑ•À€ô€µ½É¹¥¹}ÁÉ•Á…É…Ñ¥½¸œğ€½¹¹•Ñ¥½¹Ìœğ€¹½Ñ¥™¥…Ñ¥½¹Ìœğ€İ••­}ÁÉ•Ù¥•Üœì()™Õ¹Ñ¥½¸ÕÍ•½µÁ±•Ñ•MÑ•À¡ÍÑ•Àè=¹‰½…É‘¥¹MÑ•À¤ì(€½¹ÍĞìÉ•™É•Í ô€ôÕÍ•!½ÕÍ•¡½± ¤ì(€½¹ÍĞm‰ÕÍä°Í•Ñ	ÕÍåt€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì(€½¹ÍĞm•ÉÉ½È°Í•ÑÉÉ½Ét€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ½µÁ±•Ñ”€ô…Íå¹Œ€ ¤€ôøì(€€€Í•Ñ	ÕÍä¡ÑÉÕ”¤ì(€€€Í•ÑÉÉ½È¡¹Õ±°¤ì(€€€ÑÉäì(€€€€€…İ…¥Ğ…±±‘•Õ¹Ñ¥½¸¡}U9Q%=9L¹½µÁ±•Ñ•=¹‰½…É‘¥¹MÑ•À°ì(€€€€€€€½Á•É…Ñ¥½¹}¥è¹•İ=Á•É…Ñ¥½¹% ¤°(€€€€€€€ÍÑ•À°(€€€€€ô¤ì(€€€€€…İ…¥ĞÉ•™É•Í  ¤ì(€€€ô…Ñ €¡•ÉÈ¤ì(€€€€€Í•ÑÉÉ½È¡•ÉÈ¥¹ÍÑ…¹•½˜…µ¥±å=ÁÍÁ¥ÉÉ½È€ü•ÉÈ¹µ•ÍÍ…”€è€Ÿ–"wšr¢¢·–ºk
+K’şw–¶cŸ7ûo
+OŸ_œ¤ì(€€€ô™¥¹…±±äì(€€€€€Í•Ñ	ÕÍä¡™…±Í”¤ì(€€€ô(€ôì(€É•ÑÕÉ¸ì½µÁ±•Ñ”°‰ÕÍä°•ÉÉ½Èôì)ô()•áÁ½ÉĞ™Õ¹Ñ¥½¸5½É¹¥¹AÉ•Á…É…Ñ¥½¹MÑ•À ¤ì(€½¹ÍĞì¡½ÕÍ•¡½±°µ•µ‰•ÉÌô€ôÕÍ•!½ÕÍ•¡½± ¤ì(€½¹ÍĞ‘½¹”€ôÕÍ•½µÁ±•Ñ•MÑ•À µ½É¹¥¹}ÁÉ•Á…É…Ñ¥½¸œ¤ì(€½¹ÍĞ•‘¥Ñ½ÉI•˜€ôÕÍ•I•˜ñ5½É¹¥¹AÉ•Á…É…Ñ¥½¹‘¥Ñ½É!…¹‘±”ø¡¹Õ±°¤ì(€½¹ÍĞmÍ…Ù•ÉÉ½È°Í•ÑM…Ù•ÉÉ½Ét€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÍ…Ù•¹‘½¹Ñ¥¹Õ”€ô…Íå¹Œ€ ¤€ôøì(€€€Í•ÑM…Ù•ÉÉ½È¡¹Õ±°¤ì(€€€½¹ÍĞÍ…Ù•€ô…İ…¥Ğ•‘¥Ñ½ÉI•˜¹ÕÉÉ•¹Ğü¹Í…Ù•±° ¤ì(€€€¥˜€ …Í…Ù•¤ì(€€€€€Í•ÑM…Ù•ÉÉ½È Ÿ–’'šnÓ
+K’şw–¶cŸ7«/
+š²‡ã¦Ëÿûo
+OŸ_œ¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€…İ…¥Ğ‘½¹”¹½µÁ±•Ñ” ¤ì(€ôì(€É•ÑÕÉ¸€ (€€€€ñµ…¥¸±…ÍÍ9…µ”ô‰…ÁÀµÍ¡•±°½¹‰½…É‘¥¹œµÍÑ•Àˆø(€€€€€€ñÀ±…ÍÍ9…µ”ô‰•å•‰É½Üˆû–"wšr¢¢·–ºh€Ô€¼€àğ½Àø(€€€€€€ñ Äûšrw»šê[–
+dğ½ Äø(€€€€€€ñÀûšnsš^—S£»š2‡&§
+K¦
++š.–öOã–&Ë
++–öO›ûg£/
+'¢¢·–ºkŸ–’'šnÓŸ7ûgğ½Àø(€€€€€€ñ5½É¹¥¹AÉ•Á…É…Ñ¥½¹‘¥Ñ½ÈÉ•˜õí•‘¥Ñ½ÉI•™ô¡½ÕÍ•¡½±‘%õí¡½ÕÍ•¡½±ü¹¥€üü¹Õ±±ôµ•µ‰•ÉÌõíµ•µ‰•ÉÍô€¼ø(€€€€€ì¡‘½¹”¹•ÉÉ½ÈñğÍ…Ù•ÉÉ½È¤€˜˜€ (€€€€€€€€ñÀÉ½±”ô‰…±•ÉĞˆ±…ÍÍ9…µ”ô‰•ÉÉ½ÈµÑ•áĞˆø(€€€€€€€€€íÍ…Ù•ÉÉ½È€üü‘½¹”¹•ÉÉ½Éô(€€€€€€€€ğ½Àø(€€€€€€¥ô(€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÙ½¥Í…Ù•¹‘½¹Ñ¥¹Õ” ¥ô‘¥Í…‰±•õí‘½¹”¹‰ÕÍåôø(€€€€€€€í‘½¹”¹‰ÕÍä€ü€Ÿ’şw–¶c’â·Š˜œ€è€Ÿ’şw–¶c_›š²‡àô(€€€€€€ğ½‰ÕÑÑ½¸ø(€€€€ğ½µ…¥¸ø(€€¤ì)ô()•áÁ½ÉĞ™Õ¹Ñ¥½¸½¹¹•Ñ¥½¹ÍMÑ•À ¤ì(€½¹ÍĞ‘½¹”€ôÕÍ•½µÁ±•Ñ•MÑ•À ½¹¹•Ñ¥½¹Ìœ¤ì(€½¹ÍĞm…±•¹‘…É	ÕÍä°Í•Ñ…±•¹‘…É	ÕÍåt€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì(€½¹ÍĞm…±•¹‘…ÉÉÉ½È°Í•Ñ…±•¹‘…ÉÉÉ½Ét€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞm…±•¹‘…ÉMÑ…ÑÕÌ°Í•Ñ…±•¹‘…ÉMÑ…ÑÕÍt€ôÕÍ•MÑ…Ñ”ğ±½…‘¥¹œœğ€½¹¹•Ñ•œğ€É•…ÕÑ œğ€‘¥Í½¹¹•Ñ•œø ±½…‘¥¹œœ¤ì(€ÕÍ•™™•Ğ  ¤€ôøì(€€€±•Ğ…¹•±±•€ô™…±Í”ì(€€€Ù½¥…±±‘•Õ¹Ñ¥½¸ñì…±•¹‘…É}½¹¹•Ñ•è‰½½±•…¸ì…±•¹‘…É}ÍÑ…±”è‰½½±•…¸ôø¡­;¶‰Ëkºwµç\\ŞHÈ	ù£©yí¦¹.+x )‰Èˆ	ÑÛÛÙÛHØ[[™\¸à¤¹£©yí¦‰ßBˆØ]Û‚ˆØØ[[™\‘\œ›Üˆ	‰ˆ
+ˆ›ÛOH˜[\ˆÛ\ÜÓ˜[YOH™\œ›Ü‹]^‚ˆØØ[[™\‘\œ›ÜŸBˆÜ‚ˆ
+_BˆÜÙXİ[Û‚ˆÙÛ™K™\œ›Üˆ	‰ˆ
+ˆ›ÛOH˜[\ˆÛ\ÜÓ˜[YOH™\œ›Ü‹]^‚ˆÙÛ™K™\œ›ÜŸBˆÜ‚ˆ
+_Bˆ]Û‚ˆ\OH˜]Ûˆ‚ˆÛ\ÜÓ˜[YOHœÙXÛÛ™\KX]Ûˆ‚ˆÛÛXÚÏ^Ê
+HOˆ›ÚYÛ™K˜ÛÛ\]J
+_Bˆ\ØX›Y^ÙÛ™K˜\Ş_Bˆ‚ˆÙÛ™K˜\ŞHÈ	ù/çykf9.+x )‰Èˆ	ù£©yí¦¹â­¹¬àxà¤¹è®º*£xàeøài¹«(xàn	ßBˆØ]Û‚ˆÛXZ[‚ˆ
+NÂŸB‚™^Ü[˜İ[Ûˆ™XÛÛ[Y[™Y›İYšXØ][ÛœÔİ\
 
-type OnboardingStep = 'morning_preparation' | 'connections' | 'notifications' | 'week_preview';
+HÂˆÛÛœİÛ™HH\ÙPÛÛ\]Tİ\
+	Û›İYšXØ][ÛœÉÊNÂˆÛÛœİØ\ŞKÙ]\ŞWHH\ÙTİ]J˜[ÙJNÂˆÛÛœİÙ\œ›Ü‹Ù]\œ›Ü—HH\ÙTİ]Oİš[™È[Š[
+NÂˆÛÛœİ\T™XÛÛ[Y[™YH\Ş[˜È
 
-function useCompleteStep(step: OnboardingStep) {
-  const { refresh } = useHousehold();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const complete = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await callEdgeFunction(EDGE_FUNCTIONS.completeOnboardingStep, {
-        operation_id: newOperationId(),
-        step,
-      });
-      await refresh();
-    } catch (err) {
-      setError(err instanceof FamilyOpsApiError ? err.message : 'åˆæœŸè¨­å®šã‚’ä¿å­˜ã§ãã¾ã›ã‚“ã§ã—ãŸã€‚');
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { complete, busy, error };
-}
+HOˆÂˆÙ]\ŞJYJNÂˆÙ]\œ›ÜŠ[
+NÂˆHÂˆ]ØZ]Ø[YÙQ[˜İ[ÛŠQÑWÑ•SÕSÓ”Ë\]S›İYšXØ][Û”™Y™\™[˜Ù\ËÂˆÜ\˜][Û—ÚYˆ™]ÓÜ\˜][Û’Y
 
-export function MorningPreparationStep() {
-  const { household, members } = useHousehold();
-  const done = useCompleteStep('morning_preparation');
-  const editorRef = useRef<MorningPreparationEditorHandle>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const saveAndContinue = async () => {
-    setSaveError(null);
-    const saved = await editorRef.current?.saveAll();
-    if (!saved) {
-      setSaveError('å¤‰æ›´ã‚’ä¿å­˜ã§ããªã‹ã£ãŸãŸã‚ã€æ¬¡ã¸é€²ã¿ã¾ã›ã‚“ã§ã—ãŸã€‚');
-      return;
-    }
-    await done.complete();
-  };
-  return (
-    <main className="app-shell onboarding-step">
-      <p className="eyebrow">åˆæœŸè¨­å®š 5 / 8</p>
-      <h1>æœã®æº–å‚™</h1>
-      <p>æ›œæ—¥ã”ã¨ã®æŒã¡ç‰©ã‚’é€ã‚Šæ‹…å½“ã¸å‰²ã‚Šå½“ã¦ã¾ã™ã€‚ã‚ã¨ã‹ã‚‰è¨­å®šã§å¤‰æ›´ã§ãã¾ã™ã€‚</p>
-      <MorningPreparationEditor ref={editorRef} householdId={household?.id ?? null} members={members} />
-      {(done.error || saveError) && (
-        <p role="alert" className="error-text">
-          {saveError ?? done.error}
-        </p>
-      )}
-      <button type="button" onClick={() => void saveAndContinue()} disabled={done.busy}>
-        {done.busy ? 'ä¿å­˜ä¸­â€¦' : 'ä¿å­˜ã—ã¦æ¬¡ã¸'}
-      </button>
-    </main>
-  );
-}
+Kˆ™\]Y\İÛ[™NˆYKˆ[™İ™\—Û[™NˆYKˆÛÛ™›XİÛ[™NˆYKˆÙYZÛWÙYÙ\İÛ[™NˆYKˆZ[WØ\ÜÚYÛ›Y[Û[™NˆYKˆ›İ][™WØÚXÚÛ\İÛ[™NˆYKˆ[—Ø\ˆYKˆJNÂˆ]ØZ]Û™K˜ÛÛ\]J
+NÂˆHØ]Ú
+\œŠHÂˆÙ]\œ›ÜŠˆ\œˆ[œİ[˜Ù[Ùˆ˜[Z[SÜĞ\Q\œ›ÜˆÈ\œ‹›Y\ÜØYÙHˆ	øàb¸àfxàfxà z`&¹çéxà¤¹/çykf8àiøàcxào¸àføà¤øàiøàeøàgøà ‰Ëˆ
+NÂˆHš[˜[HÂˆÙ]\ŞJ˜[ÙJNÂˆBˆNÂˆ™]\›ˆ
+ˆXZ[ˆÛ\ÜÓ˜[YOH˜\\Ú[Û˜›Ø\™[™Ë\İ\‚ˆÛ\ÜÓ˜[YOH™^YXœ›İÈ¹b'y§'ú*+yk¦ˆÈÈÜ‚ˆO¸àb¸àfxàfxà z`&¹çéOÚO‚ˆÙXİ[ÛˆÛ\ÜÓ˜[YOH˜Ø\™‚ˆ¹oáz) xàj¸àj8àcxàh8àdyçéxà¢xàføà¢ÏÚ‚ˆ¸àbºhf8àa8à y.¢9k¦¸àkºaãz)!øà y.â¹¥éxàk¹¢áyodøà y§'yi%xààxà©øààøà«øà z`,y«(xào¸àj8à xà¤¹§"yb®xàjøàeøào¸àfxà Ü‚ˆ]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^Ê
+HOˆ›ÚY\T™XÛÛ[Y[™Y
 
-export function ConnectionsStep() {
-  const done = useCompleteStep('connections');
-  const [calendarBusy, setCalendarBusy] = useState(false);
-  const [calendarError, setCalendarError] = useState<string | null>(null);
-  const [calendarStatus, setCalendarStatus] = useState<'loading' | 'connected' | 'reauth' | 'disconnected'>('loading');
-  useEffect(() => {
-    let cancelled = false;
-    void callEdgeFunction<{ calendar_connected: boolean; calendar_stale: boolean }>(EDGE_FUNCTIONS.getTodaySchedule, {})
-      .then((result) => {
-        if (!cancelled) setCalendarStatus(result.calendar_connected ? (result.calendar_stale ? 'reauth' : 'connected') : 'disconnected');
-      })
-      .catch(() => { if (!cancelled) setCalendarStatus('disconnected'); });
-    return () => { cancelled = true; };
-  }, []);
-  const connectCalendar = async () => {
-    setCalendarBusy(true);
-    setCalendarError(null);
-    try {
-      const result = await callEdgeFunction<{ authorization_url: string }>(
-        EDGE_FUNCTIONS.googleCalendarOauthStart,
-        { return_to: `${window.location.origin}/today` },
-      );
-      window.location.assign(result.authorization_url);
-    } catch (err) {
-      setCalendarError(
-        err instanceof FamilyOpsApiError ? err.message : 'Google Calendarã‚’é–‹ã‘ã¾ã›ã‚“ã§ã—ãŸã€‚',
-      );
-      setCalendarBusy(false);
-    }
-  };
-  return (
-    <main className="app-shell onboarding-step">
-      <p className="eyebrow">åˆæœŸè¨­å®š 6 / 8</p>
-      <h1>LINEãƒ»ã‚«ãƒ¬ãƒ³ãƒ€ãƒ¼é€£æº</h1>
-      <p>é€£æºã¯ä»»æ„ã§ã™ã€‚æœªæ¥ç¶šã§ã‚‚å®¶åº­ã®äºˆå®šã¨ã‚¿ã‚¹ã‚¯ã¯åˆ©ç”¨ã§ãã¾ã™ã€‚</p>
-      <LineLinkSection />
-      <section className="card">
-        <h2>Google Calendar</h2>
-        <p>äºˆå®šã®é‡ãªã‚Šã‚’Todayã¨Weekã§ãŠçŸ¥ã‚‰ã›ã—ã¾ã™ã€‚æ¥ç¶šå¾Œã€é€è¿ã¨ç‰¹åˆ¥å¯¾å¿œã¯é¸æŠã—ãŸå®¶æ—ã‚«ãƒ¬ãƒ³ãƒ€ãƒ¼ã¸åŒæœŸã•ã‚Œã¾ã™ã€‚</p>
-        <p role="status">
-          {calendarStatus === 'loading' ? 'æ¥ç¶šçŠ¶æ…‹ã‚’ç¢ºèªä¸­â€¦' : calendarStatus === 'connected' ? 'Google Calendar âœ“ æ¥ç¶šæ¸ˆã¿' : calendarStatus === 'reauth' ? 'Google Calendar: å†èªè¨¼ã¾ãŸã¯åŒæœŸãŒå¿…è¦ã§ã™' : 'Google Calendar: æœªæ¥ç¶š'}
-        </p>
-        <button type="button" onClick={() => void connectCalendar()} disabled={calendarBusy}>
-          {calendarBusy ? 'æ¥ç¶šä¸­â€¦' : 'Google Calendarã‚’æ¥ç¶š'}
-        </button>
-        {calendarError && (
-          <p role="alert" className="error-text">
-            {calendarError}
-          </p>
-        )}
-      </section>
-      {done.error && (
-        <p role="alert" className="error-text">
-          {done.error}
-        </p>
-      )}
-      <button
-        type="button"
-        className="secondary-button"
-        onClick={() => void done.complete()}
-        disabled={done.busy}
-      >
-        {done.busy ? 'ä¿å­˜ä¸­â€¦' : 'æ¥ç¶šçŠ¶æ³ã‚’ç¢ºèªã—ã¦æ¬¡ã¸'}
-      </button>
-    </main>
-  );
-}
+_H\ØX›Y^Ø\ŞHÛ™K˜\Ş_O‚ˆØ\ŞHÛ™K˜\ŞHÈ	ù/çykf9.+x )‰Èˆ	øàb¸àfxàfxà z*+yk¦¸à¤¹/oøàa‰ßBˆØ]Û‚ˆÜÙXİ[Û‚ˆÊ\œ›ÜˆÛ™K™\œ›ÜŠH	‰ˆ
+ˆ›ÛOH˜[\ˆÛ\ÜÓ˜[YOH™\œ›Ü‹]^‚ˆÙ\œ›ÜˆÏÈÛ™K™\œ›ÜŸBˆÜ‚ˆ
+_BˆÛXZ[‚ˆ
+NÂŸB‚™^Ü[˜İ[ÛˆÙYZÔ™]šY]Ôİ\
 
-export function RecommendedNotificationsStep() {
-  const done = useCompleteStep('notifications');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const applyRecommended = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await callEdgeFunction(EDGE_FUNCTIONS.updateNotificationPreferences, {
-        operation_id: newOperationId(),
-        request_line: true,
-        handover_line: true,
-        conflict_line: true,
-        weekly_digest_line: true,
-        daily_assignment_line: true,
-        routine_checklist_line: true,
-        in_app: true,
-      });
-      await done.complete();
-    } catch (err) {
-      setError(
-        err instanceof FamilyOpsApiError ? err.message : 'ãŠã™ã™ã‚é€šçŸ¥ã‚’ä¿å­˜ã§ãã¾ã›ã‚“ã§ã—ãŸã€‚',
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <main className="app-shell onboarding-step">
-      <p className="eyebrow">åˆæœŸè¨­å®š 7 / 8</p>
-      <h1>ãŠã™ã™ã‚é€šçŸ¥</h1>
-      <section className="card">
-        <h2>å¿…è¦ãªã¨ãã ã‘çŸ¥ã‚‰ã›ã‚‹</h2>
-        <p>ãŠé¡˜ã„ã€äºˆå®šã®é‡è¤‡ã€ä»Šæ—¥ã®æ‹…å½“ã€æœå¤•ãƒã‚§ãƒƒã‚¯ã€é€±æ¬¡ã¾ã¨ã‚ã‚’æœ‰åŠ¹ã«ã—ã¾ã™ã€‚</p>
-        <button type="button" onClick={() => void applyRecommended()} disabled={busy || done.busy}>
-          {busy || done.busy ? 'ä¿å­˜ä¸­â€¦' : 'ãŠã™ã™ã‚è¨­å®šã‚’ä½¿ã†'}
-        </button>
-      </section>
-      {(error || done.error) && (
-        <p role="alert" className="error-text">
-          {error ?? done.error}
-        </p>
-      )}
-    </main>
-  );
-}
-
-export function WeekPreviewStep() {
-  const done = useCompleteStep('week_preview');
-  return (
-    <div className="onboarding-preview">
-      <div className="app-shell onboarding-preview-heading">
-        <p className="eyebrow">åˆæœŸè¨­å®š 8 / 8</p>
-        <h1>1é€±é–“ã‚’ç¢ºèª</h1>
-        <p>é€ã‚Šãƒ»ãŠè¿ãˆã€å®¶äº‹ã€æœæº–å‚™ãŒåŒã˜é€±ã«ä¸¦ã³ã¾ã™ã€‚</p>
-        {done.error && (
-          <p role="alert" className="error-text">
-            {done.error}
-          </p>
-        )}
-        <button type="button" onClick={() => void done.complete()} disabled={done.busy}>
-          {done.busy ? 'é–‹å§‹ä¸­â€¦' : 'ã“ã®å†…å®¹ã§å§‹ã‚ã‚‹'}
-        </button>
-      </div>
-      <WeekView />
-    </div>
-  );
-}
+HÂˆÛÛœİÛ™HH\ÙPÛÛ\]Tİ\
+	İÙYZ×Ü™]šY]ÉÊNÂˆ™]\›ˆ
+ˆ]ˆÛ\ÜÓ˜[YOH›Û˜›Ø\™[™Ë\™]šY]È‚ˆ]ˆÛ\ÜÓ˜[YOH˜\\Ú[Û˜›Ø\™[™Ë\™]šY]ËZXY[™È‚ˆÛ\ÜÓ˜[YOH™^YXœ›İÈ¹b'y§'ú*+yk¦ˆÈÜ‚ˆOŒz`,ze¤øà¤¹è®º*£OÚO‚ˆ“[Û8àkú` z/ã¸àj9ânyb)ykï¹oç8à UÙYZøàkú`,xàkº*¯ù¥m8à UÙ^xàkùk§ú(c8à¤¹è®º*£xàeøào¸àfxà ¹§'yi'9k­¹.¢øàkÕÙ^xàîÓS‘xàîÒ\İÜxàjú(j9é.¸àexà£8ào¸àfxà Ü‚ˆÙÛ™K™\œ›Üˆ	‰ˆ
+ˆ›ÛOH˜[\ˆÛ\ÜÓ˜[YOH™\œ›Ü‹]^‚ˆÙÛ™K™\œ›ÜŸBˆÜ‚ˆ
+_Bˆ]Ûˆ\OH˜]ÛˆˆÛÛXÚÏ^Ê
+HOˆ›ÚYÛ™K˜ÛÛ\]J
+_H\ØX›Y^ÙÛ™K˜\Ş_O‚ˆÙÛ™K˜\ŞHÈ	úe¢ùiâù.+x )‰Èˆ	øàdøàk¹a¡yk®xàiùiâøà xà¢ÉßBˆØ]Û‚ˆÙ]‚ˆÙYZÕšY]ÈÏ‚ˆÙ]‚ˆ
+NÂŸB

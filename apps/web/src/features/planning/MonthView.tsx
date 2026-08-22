@@ -1,122 +1,3 @@
-import { useMemo, useState } from 'react';
-import { useHousehold } from '../../app/HouseholdContext';
-import { localIsoDate } from './dateHelpers';
-import { usePlanningData } from './usePlanningData';
-import { assigneeToken, buildCalendarProjection, transportLabel } from './calendarProjection';
-import { mamaUserId, papaUserId } from '../../lib/familyRoles';
-
-function monthRange(anchor: Date) {
-  const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-  return { start, end };
-}
-export function MonthView() {
-  const { household, members } = useHousehold();
-  const [anchor, setAnchor] = useState(() => new Date());
-  const { start, end } = monthRange(anchor);
-  const { tasks, occurrences, loading, error } = usePlanningData(
-    household?.id ?? null,
-    localIsoDate(start),
-    localIsoDate(end),
-  );
-  const [selected, setSelected] = useState(localIsoDate(new Date()));
-  const primaryUserId = papaUserId(members);
-  const partnerUserId = mamaUserId(members);
-  const projection = useMemo(
-    () => buildCalendarProjection({ tasks, occurrences, primaryUserId, partnerUserId }),
-    [occurrences, partnerUserId, primaryUserId, tasks],
-  );
-  const days = useMemo(
-    () =>
-      Array.from(
-        { length: end.getDate() },
-        (_, i) => new Date(anchor.getFullYear(), anchor.getMonth(), i + 1),
-      ),
-    [anchor, end],
-  );
-  const firstOffset = (start.getDay() + 6) % 7;
-  const totalCells = firstOffset + days.length > 35 ? 42 : 35;
-  const changeMonth = (delta: number) => {
-    const next = new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1);
-    setAnchor(next);
-    setSelected(localIsoDate(next));
-  };
-  return (
-    <main className="app-shell planning-page">
-      <div className="today-header">
-        <div>
-          <p className="eyebrow">å…¨ä½“ã‚’æŠŠæ¡</p>
-          <h1>
-            {anchor.getFullYear()}å¹´{anchor.getMonth() + 1}æœˆ
-          </h1>
-        </div>
-      </div>
-      <div className="period-control">
-        <button onClick={() => changeMonth(-1)}>å‰æœˆ</button>
-        <button onClick={() => changeMonth(1)}>æ¬¡æœˆ</button>
-      </div>
-      {error && (
-        <p role="alert" className="error-text">
-          {error}
-        </p>
-      )}
-      {loading ? (
-        <p role="status">èª­ã¿è¾¼ã¿ä¸­â€¦</p>
-      ) : (
-        <>
-          <div className="month-grid month-weekdays" aria-hidden="true">
-            {['æœˆ', 'ç«', 'æ°´', 'æœ¨', 'é‡‘', 'åœŸ', 'æ—¥'].map((day) => (
-              <span key={day}>{day}</span>
-            ))}
-          </div>
-          <div className="month-grid" aria-label="æœˆé–“ã‚«ãƒ¬ãƒ³ãƒ€ãƒ¼">
-            {Array.from({ length: totalCells }, (_, index) => {
-              const day = days[index - firstOffset];
-              if (!day) return <span className="month-day empty" key={`empty-${index}`} />;
-              const date = localIsoDate(day);
-              const transport = projection.transportByDate.get(date);
-              const dayItems = projection.itemsByDate.get(date) ?? [];
-              return (
-                <button
-                  key={date}
-                  onClick={() => setSelected(date)}
-                  className={selected === date ? 'month-day selected' : 'month-day'}
-                >
-                  <span>{day.getDate()}</span>
-                  {transport && (
-                    <small className="transport-row">
-                      {transportLabel(transport, primaryUserId, partnerUserId)}
-                    </small>
-                  )}
-                  {dayItems.slice(0, 2).map((item) => (
-                    <small key={item.id} className={`projection-row ${item.source}`}>
-                      {item.shortTitle} <b>{assigneeToken(item.ownerKind)}</b>
-                    </small>
-                  ))}
-                  {dayItems.length > 2 && <small className="month-more">+{dayItems.length - 2}</small>}
-                </button>
-              );
-            })}
-          </div>
-          <section className="card day-detail">
-            <h2>{selected} ã®äºˆå®š</h2>
-            {!projection.transportByDate.get(selected) && (projection.itemsByDate.get(selected) ?? []).length === 0 ? (
-              <p className="empty-hint">äºˆå®šã¯ã‚ã‚Šã¾ã›ã‚“</p>
-            ) : (
-              <ul>
-                {projection.transportByDate.get(selected) && (
-                  <li>{transportLabel(projection.transportByDate.get(selected), primaryUserId, partnerUserId)}</li>
-                )}
-                {(projection.itemsByDate.get(selected) ?? []).map((item) => (
-                  <li key={item.id}>
-                    {item.fullTitle} <small>[{assigneeToken(item.ownerKind)}]</small>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </>
-      )}
-    </main>
-  );
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛM¸N‹Z–‹­¦ëeŠw¬Õ¥µÁ½ÉĞìÕÍ•5•µ¼°ÕÍ•MÑ…Ñ”ô™É½´€É•…Ğœì)¥µÁ½ÉĞìÕÍ•!½ÕÍ•¡½±ô™É½´€œ¸¸¼¸¸½…ÁÀ½!½ÕÍ•¡½±‘½¹Ñ•áĞœì)¥µÁ½ÉĞì±½…±%Í½…Ñ”ô™É½´€œ¸½‘…Ñ•!•±Á•ÉÌœì)¥µÁ½ÉĞìÕÍ•A±…¹¹¥¹…Ñ„ô™É½´€œ¸½ÕÍ•A±…¹¹¥¹…Ñ„œì)¥µÁ½ÉĞì…ÍÍ¥¹••Q½­•¸°‰Õ¥±‘…±•¹‘…ÉAÉ½©•Ñ¥½¸°ÑÉ…¹ÍÁ½ÉÑ1…‰•°°ÑÉ…¹ÍÁ½ÉÑQ½­•¹Ì°ÑåÁ”…±•¹‘…ÉAÉ½©•Ñ¥½¹%Ñ•´ô™É½´€œ¸½…±•¹‘…ÉAÉ½©•Ñ¥½¸œì)¥µÁ½ÉĞìµ…µ…UÍ•É%°Á…Á…UÍ•É%ô™É½´€œ¸¸¼¸¸½±¥ˆ½™…µ¥±åI½±•Ìœì()™Õ¹Ñ¥½¸µ½¹Ñ¡I…¹”¡…¹¡½Èè…Ñ”¤ì(€½¹ÍĞÍÑ…ÉĞ€ô¹•Ü…Ñ”¡…¹¡½È¹•ÑÕ±±e•…È ¤°…¹¡½È¹•Ñ5½¹Ñ  ¤°€Ä¤ì(€½¹ÍĞ•¹€ô¹•Ü…Ñ”¡…¹¡½È¹•ÑÕ±±e•…È ¤°…¹¡½È¹•Ñ5½¹Ñ  ¤€¬€Ä°€À¤ì(€É•ÑÕÉ¸ìÍÑ…ÉĞ°•¹ôì)ô)•áÁ½ÉĞ™Õ¹Ñ¥½¸5½¹Ñ¡Y¥•Ü ¤ì(€½¹ÍĞì¡½ÕÍ•¡½±°µ•µ‰•ÉÌô€ôÕÍ•!½ÕÍ•¡½± ¤ì(€½¹ÍĞm…¹¡½È°Í•Ñ¹¡½Ét€ôÕÍ•MÑ…Ñ”  ¤€ôø¹•Ü…Ñ” ¤¤ì(€½¹ÍĞìÍÑ…ÉĞ°•¹ô€ôµ½¹Ñ¡I…¹”¡…¹¡½È¤ì(€½¹ÍĞìÑ…Í­Ì°½ÕÉÉ•¹•Ì°±½…‘¥¹œ°•ÉÉ½Èô€ôÕÍ•A±…¹¹¥¹…Ñ„ (€€€¡½ÕÍ•¡½±ü¹¥€üü¹Õ±°°(€€€±½…±%Í½…Ñ”¡ÍÑ…ÉĞ¤°(€€€±½…±%Í½…Ñ”¡•¹¤°(€€¤ì(€½¹ÍĞmÍ•±•Ñ•°Í•ÑM•±•Ñ•‘t€ôÕÍ•MÑ…Ñ”¡±½…±%Í½…Ñ”¡¹•Ü…Ñ” ¤¤¤ì(€½¹ÍĞm‘•Ñ…¥°°Í•Ñ•Ñ…¥±t€ôÕÍ•MÑ…Ñ”ñ…±•¹‘…ÉAÉ½©•Ñ¥½¹%Ñ•´ğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÁÉ¥µ…ÉåUÍ•É%€ôÁ…Á…UÍ•É%¡µ•µ‰•ÉÌ¤ì(€½¹ÍĞÁ…ÉÑ¹•ÉUÍ•É%€ôµ…µ…UÍ•É%¡µ•µ‰•ÉÌ¤ì(€½¹ÍĞÁÉ½©•Ñ¥½¸€ôÕÍ•5•µ¼ (€€€€ ¤€ôø‰Õ¥±‘…±•¹‘…ÉAÉ½©•Ñ¥½¸¡ìÑ…Í­Ì°½ÕÉÉ•¹•Ì°ÁÉ¥µ…ÉåUÍ•É%°Á…ÉÑ¹•ÉUÍ•É%ô¤°(€€€m½ÕÉÉ•¹•Ì°Á…ÉÑ¹•ÉUÍ•É%°ÁÉ¥µ…ÉåUÍ•É%°Ñ…Í­Ít°(€€¤ì(€½¹ÍĞ‘…åÌ€ôÕÍ•5•µ¼ (€€€€ ¤€ôø(€€€€€ÉÉ…ä¹™É½´ (€€€€€€€ì±•¹Ñ è•¹¹•Ñ…Ñ” ¤ô°(€€€€€€€€¡|°¤¤€ôø¹•Ü…Ñ”¡…¹¡½È¹•ÑÕ±±e•…È ¤°…¹¡½È¹•Ñ5½¹Ñ  ¤°¤€¬€Ä¤°(€€€€€€¤°(€€€m…¹¡½È°•¹‘t°(€€¤ì(€½¹ÍĞ™¥ÉÍÑ=™™Í•Ğ€ô€¡ÍÑ…ÉĞ¹•Ñ…ä ¤€¬€Ø¤€”€Üì(€½¹ÍĞÑ½Ñ…±•±±Ì€ô™¥ÉÍÑ=™™Í•Ğ€¬‘…åÌ¹±•¹Ñ €ø€ÌÔ€ü€ĞÈ€è€ÌÔì(€½¹ÍĞ¡…¹•5½¹Ñ €ô€¡‘•±Ñ„è¹Õµ‰•È¤€ôøì(€€€½¹ÍĞ¹•áĞ€ô¹•Ü…Ñ”¡…¹¡½È¹•ÑÕ±±e•…È ¤°…¹¡½È¹•Ñ5½¹Ñ  ¤€¬‘•±Ñ„°€Ä¤ì(€€€Í•Ñ¹¡½È¡¹•áĞ¤ì(€€€Í•ÑM•±•Ñ•¡±½…±%Í½…Ñ”¡¹•áĞ¤¤ì(€ôì(€É•ÑÕÉ¸€ (€€€€ñµ…¥¸±…ÍÍ9…µ”ô‰…ÁÀµÍ¡•±°Á±…¹¹¥¹œµÁ…”ˆø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Ñ½‘…äµ¡•…‘•Èˆø(€€€€€€€€ñ‘¥Øø(€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰•å•‰É½Üˆû–£’öO
+Kš*+š>„ğ½Àø(€€€€€€€€€€ñ Äø(€€€€€€€€€€€í…¹¡½È¹•ÑÕ±±e•…È ¥÷–æÑí…¹¡½È¹•Ñ5½¹Ñ  ¤€¬€Å÷šr (€€€€€€€€€€ğ½ Äø(€€€€€€€€ğ½‘¥Øø(€€€€€€ğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Á•É¥½µ½¹ÑÉ½°ˆø(€€€€€€€€ñ‰ÕÑÑ½¸½¹±¥¬õì ¤€ôø¡…¹•5½¹Ñ  ´Ä¥ôû–&7šr ğ½‰ÕÑÑ½¸ø(€€€€€€€€ñ‰ÕÑÑ½¸½¹±¥¬õì ¤€ôø¡…¹•5½¹Ñ  Ä¥ôûš²‡šr ğ½‰ÕÑÑ½¸ø(€€€€€€ğ½‘¥Øø(€€€€€í•ÉÉ½È€˜˜€ (€€€€€€€€ñÀÉ½±”ô‰…±•ÉĞˆ±…ÍÍ9…µ”ô‰•ÉÉ½ÈµÑ•áĞˆø(€€€€€€€€€í•ÉÉ½Éô(€€€€€€€€ğ½Àø(€€€€€€¥ô(€€€€€í±½…‘¥¹œ€ü€ (€€€€€€€€ñÀÉ½±”ô‰ÍÑ…ÑÕÌˆû¢ª·ÿ¢úóÿ’â·Š˜ğ½Àø(€€€€€€¤€è€ (€€€€€€€€ğø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰µ½¹Ñ µÉ¥µ½¹Ñ µİ••­‘…åÌˆ…É¥„µ¡¥‘‘•¸ô‰ÑÉÕ”ˆø(€€€€€€€€€€€ílŸšr œ°€Ÿ¬œ°€ŸšÂĞœ°€Ÿšr œ°€Ÿ¦Dœ°€Ÿ–r|œ°€Ÿš^”t¹µ…À ¡‘…ä¤€ôø€ (€€€€€€€€€€€€€€ñÍÁ…¸­•äõí‘…åôùí‘…åôğ½ÍÁ…¸ø(€€€€€€€€€€€€¤¥ô(€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰µ½¹Ñ µÉ¥ˆ…É¥„µ±…‰•°ô‹šr#¦ZO
+¯³Ïğˆø(€€€€€€€€€€€íÉÉ…ä¹™É½´¡ì±•¹Ñ èÑ½Ñ…±•±±Ìô°€¡|°¥¹‘•à¤€ôøì(€€€€€€€€€€€€€½¹ÍĞ‘…ä€ô‘…åÍm¥¹‘•à€´™¥ÉÍÑ=™™Í•Ñtì(€€€€€€€€€€€€€¥˜€ …‘…ä¤É•ÑÕÉ¸€ñÍÁ…¸±…ÍÍ9…µ”ô‰µ½¹Ñ µ‘…ä•µÁÑäˆ­•äõí•·n-¢G§²ÚîÆ­yÒ6öç7BG&ç7÷'BÒ&ö¦V7F–öâçG&ç7÷'D'”FFRævWB†FFR“°¢6öç7BF”—FV×2Ò&ö¦V7F–öâæ—FV×4'”FFRævWB†FFR’óòµÓ°¢&WGW&â€¢Æ'WGFöà¢¶W“×¶FFWĞ¢öä6Æ–6³×²‚’Óâ6WE6VÆV7FVB†FFR—Ğ¢6Æ74æÖS×·6VÆV7FVBÓÓÒFFRòvÖöçF‚ÖF’6VÆV7FVBr¢vÖöçF‚ÖF’wĞ¢à¢Ç7ãç¶F’ævWDFFR‚—ÓÂ÷7ãà¢·G&ç7÷'Bbb€¢Ç6ÖÆÂ6Æ74æÖSÒ'G&ç7÷'B×&÷r#ç²‚‚’Óâ²6öç7BFö¶Vç2ÒG&ç7÷'EFö¶Vç2‡G&ç7÷'BÂ&–Ö'•W6W$–BÂ'FæW%W6W$–B“²&WGW&âÃãÇ7ãî˜Â÷7ããÆ"6Æ74æÖS×¶G&ç7÷'B×Fö¶VâG·Fö¶Vç2æG&÷öfbçFöæWÖÓç·Fö¶Vç2æG&÷öfbçFö¶VçÓÂö#ãÇ7ãâûÙÂ‹øâÂ÷7ããÆ"6Æ74æÖS×¶G&ç7÷'B×Fö¶VâG·Fö¶Vç2ç–6·WçFöæWÖÓç·Fö¶Vç2ç–6·WçFö¶VçÓÂö#ãÂóã²Ò’‚—ÓÂ÷6ÖÆÃà¢—Ğ¢¶F”—FV×2ç6Æ–6RƒÂ"’æÖ‚†—FVÒ’Óâ€¢Ç6ÖÆÂ¶W“×¶—FVÒæ–GÒ6Æ74æÖS×¶&ö¦V7F–öâ×&÷rG¶—FVÒç6÷W&6WÖÓà¢¶—FVÒç6†÷'EF—FÆWÒÆ#ç¶76–væVUFö¶Vâ†—FVÒæ÷væW$¶–æB—ÓÂö#à¢Â÷6ÖÆÃà¢’—Ğ¢¶F”—FV×2æÆVæwF‚â"bbÇ6ÖÆÂ6Æ74æÖSÒ&ÖöçF‚ÖÖ÷&R#â·¶F”—FV×2æÆVæwF‚Ò'ÓÂ÷6ÖÆÃçĞ¢Âö'WGFöãà¢“°¢Ò—Ğ¢ÂöF—cà¢Ç6V7F–öâ6Æ74æÖSÒ&6&BF’ÖFWF–Â#à¢Æƒ#ç·6VÆV7FVGÒ8îK¨Zé£Âöƒ#à¢²&ö¦V7F–öâçG&ç7÷'D'”FFRævWB‡6VÆV7FVB’bb‡&ö¦V7F–öâæ—FV×4'”FFRævWB‡6VÆV7FVB’óòµÒ’æÆVæwF‚ÓÓÒò€¢Ç6Æ74æÖSÒ&V×G’Ö†–çB#îK¨Zé®8ş8.8(®8î8¾8)3Â÷à¢’¢€¢ÇVÃà¢·&ö¦V7F–öâçG&ç7÷'D'”FFRævWB‡6VÆV7FVB’bb€¢ÆÆ“ç·G&ç7÷'DÆ&VÂ‡&ö¦V7F–öâçG&ç7÷'D'”FFRævWB‡6VÆV7FVB’Â&–Ö'•W6W$–BÂ'FæW%W6W$–B—ÓÂöÆ“à¢—Ğ¢²‡&ö¦V7F–öâæ—FV×4'”FFRævWB‡6VÆV7FVB’óòµÒ’æÖ‚†—FVÒ’Óâ€¢ÆÆ’¶W“×¶—FVÒæ–GÓà¢Æ'WGFöâG—SÒ&'WGFöâ"6Æ74æÖSÒ'FW‡BÖ'WGFöâ6ÆVæF"ÖFWF–Â×G&–vvW""öä6Æ–6³×²‚’Óâ6WDFWF–Â†—FVÒ—Óç¶—FVÒægVÆÅF—FÆWÒÇ6ÖÆÃå·¶76–væVUFö¶Vâ†—FVÒæ÷væW$¶–æB—ÕÓÂ÷6ÖÆÃãÂö'WGFöãà¢ÂöÆ“à¢’—Ğ¢Â÷VÃà¢—Ğ¢Â÷6V7F–öãà¢¶FWF–ÂbbÇ6V7F–öâ6Æ74æÖSÒ&6&B6ÆVæF"ÖFWF–Â"&–ÖÆ&VÃÒ$vöövÆR6ÆVæF.K¨Zé®8îŠ›>{K#ãÆF—b6Æ74æÖSÒ'6V7F–öâÖ†VF–ær#ãÆƒ#îK¨Zé®8îŠ›>{KÂöƒ#ãÆ'WGFöâG—SÒ&'WGFöâ"6Æ74æÖSÒ'FW‡BÖ'WGFöâ"öä6Æ–6³×²‚’Óâ6WDFWF–Â†çVÆÂ—Óî™h88(³Âö'WGFöããÂöF—cãÇ7G&öæsç¶FWF–ÂægVÆÅF—FÆWÓÂ÷7G&öæsãÇî™h¾Zx³¢¶FWF–ÂæÆÄF’òG¶FWF–ÂæÆö6ÄFFWŞûÈ{X.iz^ûÈ–¢FWF–Âç7F'G4Bóò~(	BwÓÂ÷ãÇî{X.K¨c¢¶FWF–ÂæÆÄF’òG¶FWF–ÂæÆö6ÄFFWŞûÈ{X.iz^ûÈ–¢FWF–ÂæVæG4Bóò~(	BwÓÂ÷ç¶FWF–ÂæÆö6F–öâbbÇîZNh˜¢¶FWF–ÂæÆö6F–öçÓÂ÷ç×¶FWF–ÂæFW67&—F–öâbbÇîŠªÎiˆã¢¶FWF–ÂæFW67&—F–öçÓÂ÷çÓÇîX{®h˜¢¶FWF–Âç6÷W&6RÓÓÒvvöövÆRròtvöövÆR6ÆVæF"r¢tfÖ–Ç’÷2w×¶FWF–Âç6÷W&6T6ÆVæF"ò+rG¶FWF–Âç6÷W&6T6ÆVæF'Ö¢rwÓÂ÷ãÂ÷6V7F–öãçĞ¢Âóà¢—Ğ¢ÂöÖ–ãà¢“°§Ğ 

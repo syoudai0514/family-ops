@@ -41,6 +41,8 @@ const EVENT_TYPE_LABELS: Record<TaskEventType, string> = {
 function memberLabel(userId: string | null, members: HouseholdMemberWithProfile[]): string {
   if (!userId) return '未定';
   const member = members.find((m) => m.user_id === userId);
+  if (member?.family_role === 'papa') return 'パパ';
+  if (member?.family_role === 'mama') return 'ママ';
   return member?.profile?.display_name ?? userId;
 }
 
@@ -68,17 +70,11 @@ function HistoryRow({ entry, members }: { entry: HistoryEntry; members: Househol
         <strong>{task.title}</strong>
         <span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span>
       </div>
-      <p className="task-item-meta">
-        予定: {task.scheduled_date}
-        {task.due_at ? ` · 期限 ${formatDateTimeJa(task.due_at)}` : ''} · 担当予定: {memberLabel(task.planned_assignee_id, members)}
-      </p>
+      <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
       {task.status === 'completed' && (
-        <p className="task-item-meta">
-          実際: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} · 実施者:{' '}
-          {memberLabel(task.actual_completed_by_id, members)}
-        </p>
+        <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {memberLabel(task.actual_completed_by_id, members)}{task.completed_at && task.completed_at.slice(0, 10) > task.scheduled_date ? ' · 翌朝に完了' : ''}</p>
       )}
-      {wasReassigned && <p className="task-item-meta">この予定は再割り当てされました。</p>}
+      {wasReassigned && <p className="task-item-meta">担当変更: {memberLabel(task.planned_assignee_id, members)} へ変更。この予定は再割り当てされました。</p>}
       <EventTrail events={events} members={members} />
     </li>
   );
