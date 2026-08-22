@@ -38,7 +38,7 @@ export function buildPendingActionPreviewFlex(data: {
           { type: 'text', text: `担当: ${data.targetLabel}`, size: 'sm', color: '#555555', wrap: true },
           {
             type: 'text',
-            text: '確定するまで登録・送信されません。修正もLINEだけでできます。',
+            text: '確定するまで登録・送信されません。修正したい場合はキャンセルして、修正版をLINEでもう一度送ってください。',
             size: 'xs',
             wrap: true,
             color: '#777777',
@@ -65,16 +65,6 @@ export function buildPendingActionPreviewFlex(data: {
             style: 'secondary',
             action: {
               type: 'postback',
-              label: 'LINEで修正',
-              data: `action=edit_pending&pending_action_id=${data.pendingActionId}`,
-              displayText: 'LINEで修正',
-            },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: {
-              type: 'postback',
               label: 'キャンセル',
               data: `action=cancel_pending&pending_action_id=${data.pendingActionId}`,
               displayText: 'キャンセル',
@@ -90,7 +80,7 @@ export function buildAssignmentSenderPreviewFlex(data: {
   pendingActionId: string;
   title: string;
   message: string;
-  editUrl?: string;
+  editUrl: string;
   scheduleLabel?: string;
   scope?: 'once' | 'this_week';
 }): Record<string, unknown> {
@@ -132,20 +122,8 @@ export function buildAssignmentSenderPreviewFlex(data: {
           {
             type: 'button',
             style: 'secondary',
-            action: {
-              type: 'postback',
-              label: 'LINEで修正',
-              data: `action=edit_pending&pending_action_id=${data.pendingActionId}`,
-              displayText: 'LINEで修正',
-            },
+            action: { type: 'uri', label: '編集', uri: data.editUrl },
           },
-          ...(data.editUrl
-            ? [{
-                type: 'button',
-                style: 'secondary',
-                action: { type: 'uri', label: 'アプリで詳細編集', uri: data.editUrl },
-              }]
-            : []),
           {
             type: 'button',
             style: 'secondary',
@@ -163,9 +141,10 @@ export function buildAssignmentSenderPreviewFlex(data: {
 }
 
 export function buildGeneralRequestFlex(data: {
-  requestId: string;
   title: string;
   message: string;
+  acceptPendingActionId: string;
+  declinePendingActionId: string;
   scheduleLabel?: string;
 }): Record<string, unknown> {
   return {
@@ -204,7 +183,7 @@ export function buildGeneralRequestFlex(data: {
             action: {
               type: 'postback',
               label: '引き受ける',
-              data: `action=accept_request&request_id=${data.requestId}`,
+              data: `action=confirm_pending&pending_action_id=${data.acceptPendingActionId}`,
               displayText: '引き受ける',
             },
           },
@@ -214,7 +193,7 @@ export function buildGeneralRequestFlex(data: {
             action: {
               type: 'postback',
               label: '今回は難しい',
-              data: `action=decline_request&request_id=${data.requestId}`,
+              data: `action=confirm_pending&pending_action_id=${data.declinePendingActionId}`,
               displayText: '今回は難しい',
             },
           },
