@@ -64,6 +64,32 @@ where ti.task_definition_id = td.id
   and ti.household_id = td.household_id
   and ti.calendar_visibility = 'hidden';
 
+-- The bootstrap function creates task definitions for a household after all
+-- migrations have run. Classify those future definitions at insert time as
+-- well as the rows that existed when this migration was installed.
+create or replace function private.fn_default_task_definition_calendar_visibility()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.code in ('dropoff', 'pickup') then
+    new.calendar_visibility := 'transport';
+  elsif new.routine_phase in ('morning', 'evening') then
+    new.calendar_visibility := 'hidden';
+  elsif new.calendar_visibility = 'hidden' then
+    new.calendar_visibility := 'special';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists task_definitions_default_calendar_visibility on public.task_definitions;
+create trigger task_definitions_default_calendar_visibility
+  before insert or update of code, routine_phase on public.task_definitions
+  for each row execute function private.fn_default_task_definition_calendar_visibility();
+
 create or replace function private.fn_copy_task_calendar_visibility()
 returns trigger
 language plpgsql
@@ -528,6 +554,7 @@ create trigger calendar_occurrences_mark_family_ops_mirror
 -- grants EXECUTE to PUBLIC by default, so revoke it explicitly rather than
 -- relying on schema visibility.
 revoke all on function private.fn_default_family_write_target() from public, anon, authenticated;
+revoke all on function private.fn_default_task_definition_calendar_visibility() from public, anon, authenticated;
 revoke all on function private.fn_copy_task_calendar_visibility() from public, anon, authenticated;
 revoke all on function private.family_ops_member_token(uuid, uuid) from public, anon, authenticated;
 revoke all on function private.enqueue_family_ops_calendar_projection(uuid, uuid, date, uuid) from public, anon, authenticated;
