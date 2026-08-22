@@ -195,7 +195,7 @@ export async function refreshAccessToken(opts: { refreshToken: string; clientId:
   return await res.json();
 }
 
-interface CalendarListEntry {
+export interface CalendarListEntry {
   id: string;
   summary?: string;
   accessRole: string;
@@ -219,12 +219,20 @@ export async function listCalendarList(accessToken: string): Promise<CalendarLis
   return items;
 }
 
-// #5A: writer(WithoutPrivateAccess)/owner + Asia/Tokyo only.
-export function pickEligibleCalendar(items: CalendarListEntry[]): CalendarListEntry | null {
-  const eligible = items.find((it) =>
-    ["writerWithoutPrivateAccess", "writer", "owner"].includes(it.accessRole) && it.timeZone === "Asia/Tokyo"
-  );
-  return eligible ?? null;
+// #5A: writer(WithoutPrivateAccess)/owner + Asia/Tokyo only.  This returns
+// every eligible entry intentionally: OAuth must register choices for the
+// household, never silently turn the first Calendar API result into a write
+// target.  Keep the Google id as the stable identity; summary is display-only.
+export function listEligibleCalendarCandidates(items: CalendarListEntry[]): CalendarListEntry[] {
+  const allowedRoles = new Set(["writerWithoutPrivateAccess", "writer", "owner"]);
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (!item.id || seen.has(item.id) || !allowedRoles.has(item.accessRole) || item.timeZone !== "Asia/Tokyo") {
+      return false;
+    }
+    seen.add(item.id);
+    return true;
+  });
 }
 
 interface EventsListPage {
