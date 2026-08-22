@@ -65,6 +65,15 @@ returns text language sql immutable security definer set search_path = '' as $$
     else 'generic_once' end
 $$;
 
+-- A prior trigger promoted every non-routine definition to `special`.  It
+-- has no signal for user intent, so undo that broad legacy classification
+-- before deriving the durable domain kind.
+update public.task_definitions
+set calendar_visibility = 'hidden'
+where calendar_visibility = 'special'
+  and code not in ('dropoff', 'pickup')
+  and coalesce(routine_phase, 'anytime') = 'anytime';
+
 update public.task_definitions
 set task_kind = private.family_ops_task_kind(code, category, routine_phase, calendar_visibility);
 update public.task_instances ti
@@ -81,6 +90,22 @@ update public.task_definitions
 set calendar_visibility = 'hidden'
 where calendar_visibility = 'special' and task_kind = 'generic_once';
 
+-- Replace the legacy broad auto-special trigger.  From this migration on,
+-- only an explicit instance/definition choice may be special; the default
+-- for unknown definitions is always hidden.
+create or replace function private.fn_default_task_definition_calendar_visibility()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.code in ('dropoff', 'pickup') then
+    new.calendar_visibility := 'transport';
+  elsif new.routine_phase in ('morning', 'evening') then
+    new.calendar_visibility := 'hidden';
+  elsif new.calendar_visibility is null then
+    new.calendar_visibility := 'hidden';
+  end if;
+  return new;
+end $$;
+
 create or replace function private.fn_review_fix_task_definition_domain()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
@@ -88,11 +113,9 @@ begin
   if new.task_kind in ('transport','morning_preparation','morning_chore','evening_chore') then
     new.calendar_visibility := case when new.task_kind = 'transport' then 'transport' else 'hidden' end;
   elsif new.task_kind = 'special' then
-    -- Definitions have no generic auto-special domain.  Explicit manual
-    -- special handling lives on task_instances; this prevents the legacy
-    -- default trigger from promoting an unknown definition during insert.
-    new.task_kind := 'generic_once';
-    new.calendar_visibility := 'hidden';
+    -- The replaced legacy trigger no longer manufactures this state: a
+    -- definition that reaches here was explicitly marked special.
+    new.calendar_visibility := 'special';
   elsif new.task_kind = 'generic_once' then
     new.calendar_visibility := 'hidden';
   elsif new.calendar_visibility is null then
