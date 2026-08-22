@@ -61,6 +61,7 @@ import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts'
 import { withServiceHandler, jsonResponse } from '../_shared/handler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { parseLineText } from './parser.ts';
+import { extractLineIntent, daypartLabel, daypartToLocalTime } from './lineIntent.ts';
 import { replyOrEnqueuePush } from '../_shared/lineMessaging.ts';
 import type { LineQuickReplyAction } from '../_shared/lineMessaging.ts';
 import {
@@ -72,6 +73,7 @@ import {
 } from './routineItemFlow.ts';
 import {
   buildAssignmentSenderPreviewFlex,
+  buildPendingActionPreviewFlex,
   rewritePickupRequest,
 } from '../_shared/lineMessageBuilders.ts';
 import { resolveJapanesePickupDate } from '../_shared/pickupDate.ts';
@@ -264,6 +266,177 @@ async function sendStaleSessionReply(
   await sendConfirmation(client, item, actor, buildStaleSessionText(currentSessionId, sessionId));
 }
 
+type EditablePendingAction = {
+  id: string;
+  action_type: string;
+  normalized_payload: Record<string, unknown>;
+  status: string;
+};
+
+function jstIsoDateOffset(offsetDays: number): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === 'year')?.value ?? '1970');
+  const month = Number(parts.find((p) => p.type === 'month')?.value ?? '1');
+  const day = Number(parts.find((p) => p.type === 'day')?.value ?? '1');
+  const d = new Date(Date.UTC(year, month - 1, day + offsetDays));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+async function householdUserForRole(
+  client: SupabaseClient,
+  householdId: string,
+  role: 'papa' | 'mama',
+): Promise<string | null> {
+  const { data } = await client
+    .from('household_members')
+    .select('user_id')
+    .eq('household_id', householdId)
+    .eq('family_role', role)
+    .maybeSingle();
+  return data?.user_id ?? null;
+}
+
+async function partnerUserId(client: SupabaseClient, actor: LineActor): Promise<string | null> {
+  const { data } = await client
+    .from('household_members')
+    .select('user_id')
+    .eq('household_id', actor.household_id)
+    .neq('user_id', actor.user_id)
+    .limit(1)
+    .maybeSingle();
+  return data?.user_id ?? null;
+}
+
+async function getEditablePending(
+  client: SupabaseClient,
+  actor: LineActor,
+  id: string,
+): Promise<EditablePendingAction | null> {
+  const { data, error } = await client.rpc('server_tx_get_pending_action', {
+    p_actor_id: actor.user_id,
+    p_pending_action_id: id,
+  });
+  if (error) return null;
+  return data as EditablePendingAction;
+}
+
+function targetLabel(payload: Record<string, unknown>, actor: LineActor): string {
+  if (payload.target_label === 'パパ' || payload.target_label === 'ママ')
+    return String(payload.target_label);
+  if (payload.recipient_user_id) return 'パートナー';
+  if (payload.planned_assignee_user_id === actor.user_id) return '自分';
+  if (payload.assignee_user_id === actor.user_id) return '自分';
+  return '自分';
+}
+
+function scheduleLabel(payload: Record<string, unknown>): string {
+  const date = typeof payload.scheduled_date === 'string' ? payload.scheduled_date : '';
+  const daypart = typeof payload.daypart === 'string' ? payload.daypart : null;
+  const localTime = typeof payload.due_local_time === 'string' ? payload.due_local_time : null;
+  const dateLabel = date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : '今日';
+  const part = daypart
+    ? daypartLabel(daypart as 'morning' | 'noon' | 'evening' | 'night')
+    : (localTime ?? '時刻なし');
+  return `${dateLabel} ${part}`;
+}
+
+async function sendPendingActionPreview(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  pendingActionId: string,
+  actionType: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  if (actionType === 'assignment_change_request') {
+    const editUrl = `${Deno.env.get('APP_BASE_URL') ?? ''}/requests?pending=${pendingActionId}`;
+    await replyOrEnqueuePush(client, {
+      replyToken: item.payload.replyToken,
+      lineUserId: item.source_external_user_id,
+      householdId: actor.household_id,
+      recipientUserId: actor.user_id,
+      text: 'この内容で送りますか？',
+      message: buildAssignmentSenderPreviewFlex({
+        pendingActionId,
+        title: String(payload.title ?? '担当変更'),
+        message: String(payload.shared_message ?? '担当をお願いできますか？'),
+        editUrl,
+        scheduleLabel: payload.due_at
+          ? new Intl.DateTimeFormat('ja-JP', {
+              timeZone: 'Asia/Tokyo',
+              month: 'numeric',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(new Date(String(payload.due_at)))
+          : String(payload.scheduled_date ?? ''),
+        scope: payload.scope === 'this_week' ? 'this_week' : 'once',
+      }),
+      dedupKey: `line-pending-preview:${item.provider_event_id}`,
+    });
+    return;
+  }
+
+  const kindLabel =
+    actionType === 'request_create'
+      ? 'お願い'
+      : actionType === 'shopping_item_add'
+        ? '買い物'
+        : 'タスク';
+  const confirmLabel = actionType === 'request_create' ? 'この内容で送る' : 'この内容で登録';
+  await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text: `確認: ${String(payload.title ?? '')}`,
+    message: buildPendingActionPreviewFlex({
+      pendingActionId,
+      kindLabel,
+      title: String(payload.title ?? '予定'),
+      scheduleLabel: scheduleLabel(payload),
+      targetLabel:
+        actionType === 'shopping_item_add' ? '買い物リスト' : targetLabel(payload, actor),
+      confirmLabel,
+    }),
+    dedupKey: `line-pending-preview:${item.provider_event_id}`,
+  });
+}
+
+function editQuickReplies(pendingActionId: string): LineQuickReplyAction[] {
+  const pb = (label: string, field: string, value: string): LineQuickReplyAction => ({
+    type: 'postback',
+    label,
+    data: `action=update_pending&pending_action_id=${pendingActionId}&field=${field}&value=${value}`,
+    displayText: label,
+  });
+  return [
+    pb('今日', 'date', 'today'),
+    pb('明日', 'date', 'tomorrow'),
+    pb('明後日', 'date', 'day_after'),
+    pb('朝', 'time', 'morning'),
+    pb('夕方', 'time', 'evening'),
+    pb('夜', 'time', 'night'),
+    pb('時刻なし', 'time', 'none'),
+    pb('パパ', 'assignee', 'papa'),
+    pb('ママ', 'assignee', 'mama'),
+    pb('自分', 'assignee', 'self'),
+    pb('タスク', 'kind', 'task'),
+    pb('お願い', 'kind', 'request'),
+    {
+      type: 'postback',
+      label: 'キャンセル',
+      data: `action=cancel_pending&pending_action_id=${pendingActionId}`,
+      displayText: 'キャンセル',
+    },
+  ];
+}
+
 async function handlePostback(
   client: SupabaseClient,
   item: WebhookInboxItem,
@@ -272,6 +445,147 @@ async function handlePostback(
   const data = item.payload.postback?.data;
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
+
+  if (fields.action === 'edit_pending' && fields.pending_action_id) {
+    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+    if (!pending) {
+      await sendConfirmation(client, item, actor, 'この入力はすでに確定・期限切れです。');
+      return;
+    }
+    if (pending.action_type === 'assignment_change_request') {
+      const quick: LineQuickReplyAction[] = [
+        {
+          type: 'postback',
+          label: '今回だけ',
+          data: `action=update_pending&pending_action_id=${fields.pending_action_id}&field=scope&value=once`,
+          displayText: '今回だけ',
+        },
+        {
+          type: 'postback',
+          label: '今週だけ',
+          data: `action=update_pending&pending_action_id=${fields.pending_action_id}&field=scope&value=this_week`,
+          displayText: '今週だけ',
+        },
+        {
+          type: 'postback',
+          label: 'キャンセル',
+          data: `action=cancel_pending&pending_action_id=${fields.pending_action_id}`,
+          displayText: 'キャンセル',
+        },
+      ];
+      await sendConfirmation(client, item, actor, '変更する範囲を選んでください。', quick);
+      return;
+    }
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      '修正したい内容をタップしてください。タイトル自体を直す場合はキャンセルして、直した文面をLINEでもう一度送ってください。',
+      editQuickReplies(fields.pending_action_id),
+    );
+    return;
+  }
+
+  if (
+    fields.action === 'update_pending' &&
+    fields.pending_action_id &&
+    fields.field &&
+    fields.value
+  ) {
+    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+    if (!pending) {
+      await sendConfirmation(client, item, actor, 'この入力はすでに確定・期限切れです。');
+      return;
+    }
+    let actionType = pending.action_type;
+    const payload = { ...pending.normalized_payload };
+
+    if (fields.field === 'scope' && actionType === 'assignment_change_request') {
+      payload.scope = fields.value === 'this_week' ? 'this_week' : 'once';
+    } else if (fields.field === 'date') {
+      payload.scheduled_date =
+        fields.value === 'tomorrow'
+          ? jstIsoDateOffset(1)
+          : fields.value === 'day_after'
+            ? jstIsoDateOffset(2)
+            : jstIsoDateOffset(0);
+    } else if (fields.field === 'time') {
+      const part =
+        fields.value === 'morning' || fields.value === 'evening' || fields.value === 'night'
+          ? fields.value
+          : null;
+      payload.daypart = part;
+      payload.due_local_time = part ? daypartToLocalTime(part) : null;
+    } else if (fields.field === 'assignee') {
+      const selected =
+        fields.value === 'self'
+          ? actor.user_id
+          : fields.value === 'papa' || fields.value === 'mama'
+            ? await householdUserForRole(client, actor.household_id, fields.value)
+            : null;
+      if (!selected) {
+        await sendConfirmation(client, item, actor, 'その担当者を見つけられませんでした。');
+        return;
+      }
+      payload.target_label =
+        fields.value === 'papa' ? 'パパ' : fields.value === 'mama' ? 'ママ' : '自分';
+      if (actionType === 'shopping_item_add') {
+        payload.assignee_user_id = selected;
+      } else if (actionType === 'request_create') {
+        actionType = 'request_create';
+        payload.recipient_user_id = selected;
+        delete payload.planned_assignee_user_id;
+        if (!payload.shared_message)
+          payload.shared_message = `${String(payload.title ?? 'この件')}をお願いできますか？`;
+      } else {
+        // A sender can create a task planned for either household member.
+        // Only an explicit request is routed through recipient acceptance.
+        actionType = 'task_create_once';
+        payload.planned_assignee_user_id = selected;
+        delete payload.recipient_user_id;
+      }
+    } else if (fields.field === 'kind') {
+      if (fields.value === 'task') {
+        actionType = 'task_create_once';
+        payload.planned_assignee_user_id = actor.user_id;
+        payload.target_label = '自分';
+        delete payload.recipient_user_id;
+      } else if (fields.value === 'request') {
+        const partner = await partnerUserId(client, actor);
+        if (!partner) {
+          await sendConfirmation(client, item, actor, 'お願いを送る相手がまだ参加していません。');
+          return;
+        }
+        actionType = 'request_create';
+        payload.recipient_user_id = partner;
+        payload.target_label = 'パートナー';
+        delete payload.planned_assignee_user_id;
+        if (!payload.shared_message)
+          payload.shared_message = `${String(payload.title ?? 'この件')}をお願いできますか？`;
+      }
+    }
+
+    const { data: updated, error } = await client.rpc('server_tx_update_pending_action', {
+      p_actor_id: actor.user_id,
+      p_pending_action_id: fields.pending_action_id,
+      p_action_type: actionType,
+      p_normalized_payload: payload,
+    });
+    if (error) {
+      console.error('process-line-inbox: update_pending failed', error.message);
+      return;
+    }
+    const result = updated as EditablePendingAction;
+    await sendPendingActionPreview(
+      client,
+      item,
+      actor,
+      result.id,
+      result.action_type,
+      result.normalized_payload,
+    );
+    return;
+  }
 
   if (fields.action === 'confirm_pending' && fields.pending_action_id) {
     const { error } = await client.rpc('server_tx_confirm_pending_action', {
@@ -352,6 +666,46 @@ async function handlePostback(
       return;
     }
     await sendConfirmation(client, item, actor, '変更はありません。');
+    return;
+  }
+
+  if (fields.action === 'accept_request' && fields.request_id) {
+    const operationId = await deterministicOperationId(
+      'line-request-accept',
+      item.provider_event_id,
+    );
+    const { error } = await client.rpc('server_tx_accept_request', {
+      p_actor_id: actor.user_id,
+      p_operation_id: operationId,
+      p_request_id: fields.request_id,
+    });
+    if (error) {
+      if (/REQUEST_NOT_PENDING|REQUEST_ACCEPT_NOT_ALLOWED/.test(error.message)) {
+        await sendConfirmation(client, item, actor, 'このお願いはすでに処理済みです。');
+      } else console.error('process-line-inbox: accept request failed', error.message);
+      return;
+    }
+    await sendConfirmation(client, item, actor, '✓ 引き受けました。タスクに追加しました。');
+    return;
+  }
+
+  if (fields.action === 'decline_request' && fields.request_id) {
+    const operationId = await deterministicOperationId(
+      'line-request-decline',
+      item.provider_event_id,
+    );
+    const { error } = await client.rpc('server_tx_decline_request', {
+      p_actor_id: actor.user_id,
+      p_operation_id: operationId,
+      p_request_id: fields.request_id,
+    });
+    if (error) {
+      if (/REQUEST_NOT_PENDING|REQUEST_DECLINE_NOT_ALLOWED/.test(error.message)) {
+        await sendConfirmation(client, item, actor, 'このお願いはすでに処理済みです。');
+      } else console.error('process-line-inbox: decline request failed', error.message);
+      return;
+    }
+    await sendConfirmation(client, item, actor, '今回は難しいとして返しました。');
     return;
   }
 
@@ -543,10 +897,13 @@ async function handleText(
   text: string,
 ): Promise<void> {
   if (await tryClaimLinkToken(client, item.source_external_user_id, text)) return;
-  if (!actor) return; // unlinked sender; nothing else can be safely attributed
+  if (!actor) return;
 
   const parsed = parseLineText(text);
   let assignmentPayload: Record<string, unknown> | null = null;
+
+  // Existing pickup reassignment keeps its exact-task semantics; a generic
+  // natural-language request must never create a second pickup task.
   if (!parsed && /(?:迎え.*お願い|お願い.*迎え)/.test(text)) {
     const scheduledDate = resolveJapanesePickupDate(text);
     const { data: definition } = await client
@@ -555,29 +912,23 @@ async function handleText(
       .eq('household_id', actor.household_id)
       .eq('code', 'pickup')
       .maybeSingle();
-    const { data: task } = definition && scheduledDate
-      ? await client
-          .from('task_instances')
-          .select('id,title,due_at,scheduled_date')
-          .eq('household_id', actor.household_id)
-          .eq('task_definition_id', definition.id)
-          .eq('scheduled_date', scheduledDate)
-          .eq('planned_assignee_id', actor.user_id)
-          .in('status', ['todo', 'in_progress'])
-          .maybeSingle()
-      : { data: null };
-    const { data: partner } = await client
-      .from('household_members')
-      .select('user_id')
-      .eq('household_id', actor.household_id)
-      .neq('user_id', actor.user_id)
-      .maybeSingle();
+    const { data: task } =
+      definition && scheduledDate
+        ? await client
+            .from('task_instances')
+            .select('id,title,due_at,scheduled_date')
+            .eq('household_id', actor.household_id)
+            .eq('task_definition_id', definition.id)
+            .eq('scheduled_date', scheduledDate)
+            .eq('planned_assignee_id', actor.user_id)
+            .in('status', ['todo', 'in_progress'])
+            .maybeSingle()
+        : { data: null };
+    const partner = await partnerUserId(client, actor);
     if (task && partner)
       assignmentPayload = {
         task_id: task.id,
-        recipient_user_id: partner.user_id,
-        // This remains inside the actor-owned pending_action until confirm;
-        // it is intentionally never included in a recipient request/Flex.
+        recipient_user_id: partner,
         raw_text: text,
         shared_message: rewritePickupRequest(text),
         scope: 'once',
@@ -586,53 +937,107 @@ async function handleText(
         scheduled_date: task.scheduled_date,
       };
   }
-  const operationId = await deterministicOperationId('line-text', item.provider_event_id);
 
+  let actionType: string;
+  let payload: Record<string, unknown>;
+  if (assignmentPayload) {
+    actionType = 'assignment_change_request';
+    payload = assignmentPayload;
+  } else if (parsed) {
+    actionType = parsed.actionType;
+    payload = { ...parsed.payload, raw_text: text };
+    if (actionType === 'task_create_once' && !payload.planned_assignee_user_id) {
+      payload.planned_assignee_user_id = actor.user_id;
+      payload.target_label = '自分';
+    }
+  } else {
+    const intent = await extractLineIntent(text);
+    if (!intent) {
+      actionType = 'needs_pwa_review';
+      payload = { raw_text: text };
+    } else {
+      const targetUser = intent.targetRole
+        ? await householdUserForRole(client, actor.household_id, intent.targetRole)
+        : null;
+      const dueLocalTime = daypartToLocalTime(intent.daypart);
+      const roleLabel =
+        intent.targetRole === 'papa' ? 'パパ' : intent.targetRole === 'mama' ? 'ママ' : null;
+
+      if (intent.kind === 'shopping') {
+        actionType = 'shopping_item_add';
+        payload = {
+          raw_text: text,
+          title: intent.title,
+          purchase_method: /amazon|アマゾン/i.test(text) ? 'amazon' : 'store',
+          assignee_user_id: targetUser,
+          scheduled_date: intent.scheduledDate,
+          due_local_time: dueLocalTime,
+          daypart: intent.daypart,
+          target_label: roleLabel ?? '買い物リスト',
+          parse_source: intent.source,
+        };
+      } else {
+        const recipient =
+          intent.kind === 'request' ? (targetUser ?? (await partnerUserId(client, actor))) : null;
+        if (recipient && recipient !== actor.user_id) {
+          actionType = 'request_create';
+          payload = {
+            raw_text: text,
+            title: intent.title,
+            shared_message: intent.sharedMessage ?? `${intent.title}をお願いできますか？`,
+            recipient_user_id: recipient,
+            scheduled_date: intent.scheduledDate,
+            due_local_time: dueLocalTime,
+            daypart: intent.daypart,
+            target_label: roleLabel ?? 'パートナー',
+            parse_source: intent.source,
+          };
+        } else {
+          actionType = 'task_create_once';
+          payload = {
+            raw_text: text,
+            title: intent.title,
+            category: 'todo',
+            scheduled_date: intent.scheduledDate,
+            due_local_time: dueLocalTime,
+            planned_assignee_user_id: targetUser ?? actor.user_id,
+            routine_phase: 'anytime',
+            daypart: intent.daypart,
+            target_label: roleLabel ?? '自分',
+            parse_source: intent.source,
+          };
+        }
+      }
+    }
+  }
+
+  const operationId = await deterministicOperationId('line-text', item.provider_event_id);
   const { data: pendingData, error } = await client.rpc('server_tx_create_pending_action', {
     p_actor_id: actor.user_id,
     p_household_id: actor.household_id,
     p_operation_id: operationId,
     p_source: 'line',
-    p_action_type: assignmentPayload
-      ? 'assignment_change_request'
-      : (parsed?.actionType ?? 'needs_pwa_review'),
-    p_normalized_payload: assignmentPayload ?? parsed?.payload ?? { raw_text: text },
+    p_action_type: actionType,
+    p_normalized_payload: payload,
     p_ttl_minutes: PENDING_ACTION_TTL_MINUTES,
   });
   if (error) {
     console.error('process-line-inbox: create_pending_action failed', error.message);
     return;
   }
-  // P1-4: a pending action was durably created and needs the sender's
-  // explicit confirm/cancel from the PWA/pending-action postback (#9 "must
-  // preview first") -- this is a light receipt, not the confirmation itself.
-  if (assignmentPayload && pendingData?.pending_action_id) {
-    const editUrl = `${Deno.env.get('APP_BASE_URL') ?? ''}/requests?pending=${pendingData.pending_action_id}`;
-    await replyOrEnqueuePush(client, {
-      replyToken: item.payload.replyToken,
-      lineUserId: item.source_external_user_id,
-      householdId: actor.household_id,
-      recipientUserId: actor.user_id,
-      text: 'この内容で送りますか？',
-      message: buildAssignmentSenderPreviewFlex({
-        pendingActionId: pendingData.pending_action_id,
-        title: String(assignmentPayload.title),
-        message: String(assignmentPayload.shared_message),
-        editUrl,
-        scheduleLabel: assignmentPayload.due_at
-          ? new Intl.DateTimeFormat('ja-JP', {
-              timeZone: 'Asia/Tokyo',
-              month: 'numeric',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            }).format(new Date(String(assignmentPayload.due_at)))
-          : String(assignmentPayload.scheduled_date),
-      }),
-      dedupKey: `line-sender-preview:${item.provider_event_id}`,
-    });
-  } else
-    await sendConfirmation(client, item, actor, '✓ 受け付けました。内容はアプリでご確認ください。');
+
+  const pendingActionId = pendingData?.pending_action_id as string | undefined;
+  if (pendingActionId && actionType !== 'needs_pwa_review') {
+    await sendPendingActionPreview(client, item, actor, pendingActionId, actionType, payload);
+    return;
+  }
+
+  await sendConfirmation(
+    client,
+    item,
+    actor,
+    'うまく予定に変換できませんでした。「明日の朝、歯医者の予約をママにお願い」のように、いつ・何を・誰がを入れてもう一度送ってください。入力はアプリの判断待ちにも残しています。',
+  );
 }
 
 async function processItem(client: SupabaseClient, item: WebhookInboxItem): Promise<void> {

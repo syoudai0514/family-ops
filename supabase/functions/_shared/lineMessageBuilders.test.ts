@@ -2,6 +2,7 @@ import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import {
   buildAssignmentRequestFlex,
   buildAssignmentSenderPreviewFlex,
+  buildPendingActionPreviewFlex,
   rewritePickupRequest,
 } from './lineMessageBuilders.ts';
 
@@ -46,4 +47,19 @@ Deno.test('natural pickup request is rewritten into a gentle shared message', ()
     rewritePickupRequest('今日ちょっと遅くなるから迎えお願い'),
     '今日は少し遅くなりそうです。お迎えをお願いしてもいい？',
   );
+});
+
+Deno.test('natural-language sender preview supports in-LINE edit before confirmation', () => {
+  const raw = JSON.stringify(
+    buildPendingActionPreviewFlex({
+      pendingActionId: 'pending-2',
+      kindLabel: 'タスク',
+      title: '病院の保険証を準備',
+      scheduleLabel: '8/22 夜',
+      targetLabel: 'パパ',
+    }),
+  );
+  assertStringIncludes(raw, 'action=edit_pending&pending_action_id=pending-2');
+  assertStringIncludes(raw, 'action=confirm_pending&pending_action_id=pending-2');
+  assertEquals(raw.includes('病院の保険証を準備'), true);
 });
