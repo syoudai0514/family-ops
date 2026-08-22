@@ -12,10 +12,10 @@ begin
   household := public.server_tx_create_household(owner_id, '33000000-0000-0000-0000-000000000011', 'Custom boundary', 'Owner');
   v_household_id := (household->>'household_id')::uuid;
   select id into dinner_id from public.task_definitions where household_id=v_household_id and code='dinner';
-  insert into public.recurrence_rules(household_id,task_definition_id,weekday,slot_key,assignee_strategy,scheduled_local_time,effective_from,active,created_by)
+  insert into public.recurrence_rules(household_id,task_definition_id,weekday,slot_key,assignee_strategy,planned_assignee_id,scheduled_local_time,effective_from,active,created_by)
   values
-    (v_household_id,dinner_id,1,'builtin-monday','fixed','18:00','2026-09-01',true,owner_id),
-    (v_household_id,dinner_id,5,'builtin-friday','pickup_assignee','20:30','2026-09-01',true,owner_id);
+    (v_household_id,dinner_id,1,'builtin-monday','fixed',owner_id,'18:00','2026-09-01',true,owner_id),
+    (v_household_id,dinner_id,5,'builtin-friday','pickup_assignee',null,'20:30','2026-09-01',true,owner_id);
   select jsonb_agg(jsonb_build_object('weekday',weekday,'strategy',assignee_strategy,'time',scheduled_local_time) order by weekday)
   into before_rules from public.recurrence_rules where household_id=v_household_id and task_definition_id=dinner_id and active;
   begin
