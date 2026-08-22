@@ -276,10 +276,13 @@ export function normalizeGeminiLineIntent(raw: string): Omit<LineIntent, 'source
   const scheduledDate = typeof p.scheduled_date === 'string' ? p.scheduled_date : '';
   if (!title || !isTokyoIsoDate(scheduledDate)) return null;
 
-  const dueLocalTime =
-    typeof p.due_local_time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(p.due_local_time)
-      ? p.due_local_time
-      : null;
+  let dueLocalTime: string | null = null;
+  if (typeof p.due_local_time === 'string') {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(p.due_local_time)) return null;
+    dueLocalTime = p.due_local_time;
+  } else if (p.due_local_time !== null && p.due_local_time !== undefined) {
+    return null;
+  }
   const daypart = ['morning', 'noon', 'evening', 'night'].includes(String(p.daypart))
     ? (p.daypart as Exclude<LineDaypart, null>)
     : null;
