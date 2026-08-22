@@ -32,7 +32,10 @@ Deno.test('tonight preparation keeps action date today, not tomorrow hospital co
 });
 
 Deno.test('a LINE correction selects the replacement family role, not the role being replaced', () => {
-  const intent = deterministicLineIntent('ママじゃなくてパパのタスクとして追加して', now);
+  const intent = deterministicLineIntent(
+    'ママじゃなくてパパに明日の保険証の準備をしてもらう',
+    now,
+  );
   assertEquals(intent?.targetRole, 'papa');
 });
 
