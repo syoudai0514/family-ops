@@ -76,6 +76,12 @@ const GAP_FILL_FUNCTIONS = new Set([
   'replace-recurrence-schedule',
   'update-task-categories',
   'process-family-ops-calendar-outbox',
+  // v3.3 review-fix P1: explicit household role, routine inclusion, and
+  // calendar write-target mutations are implemented endpoints but were not
+  // named in the frozen v6 design bundle.
+  'set-routine-definition-options',
+  'set-family-calendar-target',
+  'set-family-role',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

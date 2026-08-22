@@ -26,6 +26,9 @@
 - deactivate-recurrence
 - complete-onboarding-step
 - replace-recurrence-schedule
+- set-routine-definition-options
+- set-family-calendar-target
+- set-family-role
 - configure-evening-routines
 - send-request
 - accept-request

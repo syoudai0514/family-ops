@@ -29,6 +29,15 @@ interface ClaimedMirror {
   event?: Record<string, unknown>;
 }
 
+interface ClaimedTargetDeletion {
+  id: string;
+  household_id: string;
+  calendar_connection_id: string;
+  projection_key: string;
+  provider_event_id: string;
+  lease_token: string;
+}
+
 function mirrorProperties(event: Record<string, unknown>) {
   const props = event.extendedProperties as { private?: Record<string, string> } | undefined;
   return props?.private ?? {};
@@ -47,6 +56,19 @@ function eventPayloadWithStableIdentity(event: Record<string, unknown>) {
       }),
     },
   };
+}
+
+async function addCanonicalSpecialAssignee(
+  client: ReturnType<typeof createServiceRoleClient>, item: ClaimedMirror, event: Record<string, unknown>,
+) {
+  const props = mirrorProperties(event); const taskId = props.familyOpsTaskInstanceId;
+  if (!taskId || props.familyOpsKind !== 'special') return event;
+  const { data: task } = await client.from('task_instances').select('planned_assignee_id').eq('household_id', item.household_id).eq('id', taskId).maybeSingle();
+  const { data: member } = task?.planned_assignee_id
+    ? await client.from('household_members').select('family_role').eq('household_id', item.household_id).eq('user_id', task.planned_assignee_id).maybeSingle()
+    : { data: null };
+  const token = member?.family_role === 'papa' ? 'P' : member?.family_role === 'mama' ? 'M' : '未';
+  return { ...event, summary: `${String(event.summary ?? '')} [${token}]` };
 }
 
 async function complete(
@@ -69,6 +91,39 @@ async function complete(
 Deno.serve(withServiceHandler(async (req: Request) => {
   requireWorkerToken(req);
   const serviceClient = createServiceRoleClient();
+  // Calendar target changes are also outbox work.  Delete the old mirror via
+  // its stable provider id before handling ordinary upserts on the new target.
+  const targetDeletion = await callGoogleServerTx<ClaimedTargetDeletion | null>(serviceClient, "server_tx_claim_family_ops_calendar_target_deletion", {
+    p_worker_id: WORKER_ID,
+    p_lease_seconds: 120,
+  });
+  if (targetDeletion) {
+    try {
+      const { accessToken, externalCalendarId } = await getAccessTokenForConnection(
+        serviceClient, targetDeletion.calendar_connection_id, decryptRefreshToken,
+      );
+      const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
+      if (existing.status === 200) {
+        let status = await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id, ifMatchEtag: existing.etag });
+        if (status === 412) {
+          const latest = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
+          status = latest.status === 200 ? await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id, ifMatchEtag: latest.etag }) : latest.status;
+        }
+        if (![200, 204, 404, 410].includes(status)) throw new Error(`target deletion returned ${status}`);
+      }
+      await callGoogleServerTx(serviceClient, "server_tx_complete_family_ops_calendar_target_deletion", {
+        p_id: targetDeletion.id, p_lease_token: targetDeletion.lease_token,
+      });
+      return new Response(JSON.stringify({ processed: 1, target_cleanup: targetDeletion.projection_key }), { status: 200, headers: { "Content-Type": "application/json" } });
+    } catch (error) {
+      await callGoogleServerTx(serviceClient, "server_tx_fail_family_ops_calendar_target_deletion", {
+        p_id: targetDeletion.id, p_lease_token: targetDeletion.lease_token,
+        p_error: String(error instanceof Error ? error.message : error),
+      }).catch(() => undefined);
+      console.error("family calendar target cleanup failed", { projectionKey: targetDeletion.projection_key, error });
+      return new Response(JSON.stringify({ processed: 0, target_cleanup: targetDeletion.projection_key, error: "mirror_failed" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+  }
   const item = await callGoogleServerTx<ClaimedMirror | null>(serviceClient, "server_tx_claim_family_ops_calendar_mirror", {
     p_worker_id: WORKER_ID,
     p_lease_seconds: 120,
@@ -105,7 +160,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
     } else {
       if (!item.event) throw new Error("claimed mirror omitted event payload");
       const targetId = item.provider_event_id ?? item.deterministic_event_id;
-      const desired = eventPayloadWithStableIdentity({ ...item.event, id: targetId });
+      const desired = eventPayloadWithStableIdentity({ ...(await addCanonicalSpecialAssignee(serviceClient, item, item.event)), id: targetId });
       const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
       let etag: string | null = null;
 

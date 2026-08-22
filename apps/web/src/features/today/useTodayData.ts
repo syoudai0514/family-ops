@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { todayIsoDate } from '../../lib/date';
+import { previousTokyoIsoDate, todayIsoDate } from '../../lib/date';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type {
   Handover,
@@ -23,6 +23,7 @@ export interface TodayData {
 }
 
 const ACTIVE_TASK_STATUSES = ['todo', 'in_progress'];
+const TODAY_TASK_STATUSES = ['todo', 'in_progress', 'completed'];
 const OPEN_SHOPPING_STATUSES = ['wanted', 'assigned', 'ordered'];
 // Handovers older than this are excluded from the unread-scan, matching the
 // "Today" screen's day-to-day scope — old unread handovers are still
@@ -58,13 +59,14 @@ export function useTodayData(householdId: string | null, userId: string | null):
           .select('*')
           .eq('household_id', householdId)
           .eq('scheduled_date', today)
-          .in('status', ACTIVE_TASK_STATUSES)
+          .in('status', TODAY_TASK_STATUSES)
           .order('due_at', { ascending: true, nullsFirst: false }),
         supabase
           .from('task_instances')
           .select('*')
           .eq('household_id', householdId)
-          .eq('routine_phase', 'evening')
+          .eq('task_kind', 'evening_chore')
+          .eq('scheduled_date', previousTokyoIsoDate(today))
           .in('status', ACTIVE_TASK_STATUSES)
           .order('scheduled_date', { ascending: false })
           .order('due_at', { ascending: true, nullsFirst: false }),
@@ -99,7 +101,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
       setTasks(taskRows);
       setCarryoverTasks(
         (carryoverRes.data ?? []).filter(
-          (task) => task.routine_phase === 'evening' && task.scheduled_date < today,
+          (task) => task.task_kind === 'evening_chore' && task.scheduled_date === previousTokyoIsoDate(today),
         ),
       );
       setIncomingRequests(requestRes.data ?? []);

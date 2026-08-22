@@ -27,7 +27,7 @@ describe('CalendarProjection', () => {
       primaryUserId: 'p', partnerUserId: 'm', occurrences: [],
       tasks: [
         task({ id: 'bath', title: '完全に別名の定例', category: 'routine', routine_phase: 'evening' }),
-        task({ id: 'special', title: 'エプロン持参', category: 'daycare_special', routine_phase: 'anytime', planned_assignee_id: 'p' }),
+        task({ id: 'special', title: 'エプロン持参', category: 'daycare_special', routine_phase: 'anytime', calendar_visibility: 'special', planned_assignee_id: 'p' }),
       ],
     });
     expect(projection.allItems.map((item) => item.id)).toEqual(['task:special']);
@@ -67,5 +67,12 @@ describe('CalendarProjection', () => {
     });
     expect(projection.itemsByDate.get('2026-08-24')).toHaveLength(3);
     expect(projection.itemsByDate.get('2026-08-24')?.[0].id).toBe('google:a');
+  });
+
+  it('renders a missing transport side as an em dash', () => {
+    const projection = buildCalendarProjection({ primaryUserId: 'p', partnerUserId: 'm', occurrences: [], tasks: [
+      task({ id: 'dropoff', category: 'dropoff', definition_code: 'dropoff', planned_assignee_id: 'p' }),
+    ] });
+    expect(transportLabel(projection.transportByDate.get('2026-08-24'), 'p', 'm')).toBe('送 P ｜ 迎 —');
   });
 });

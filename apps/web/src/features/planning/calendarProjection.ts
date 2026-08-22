@@ -66,7 +66,9 @@ function taskKind(task: PlanningTask): CalendarProjectionKind | null {
   // on persisted category/routine fields, never on a translated title.
   if (task.calendar_visibility === 'special') return 'special';
   if (task.calendar_visibility === 'hidden' || isRoutine(task)) return null;
-  return 'special';
+  // An unknown/legacy row is not a special event merely because it is
+  // non-routine. Calendar visibility must be an explicit persisted choice.
+  return null;
 }
 
 function ownerKind(ownerUserId: string | null, primaryUserId: string | null, partnerUserId: string | null): CalendarOwnerKind {
@@ -86,7 +88,7 @@ export function assigneeToken(ownerKind: CalendarOwnerKind) {
   if (ownerKind === 'primary') return 'P';
   if (ownerKind === 'partner') return 'M';
   if (ownerKind === 'family') return '家族';
-  return '予定';
+  return '未';
 }
 
 export function buildCalendarProjection({
@@ -173,6 +175,6 @@ export function buildCalendarProjection({
 
 export function transportLabel(transport: TransportProjection | undefined, primaryUserId: string | null, partnerUserId: string | null) {
   if (!transport) return null;
-  const token = (id: string | null) => assigneeToken(ownerKind(id, primaryUserId, partnerUserId));
+  const token = (id: string | null) => id ? assigneeToken(ownerKind(id, primaryUserId, partnerUserId)) : '—';
   return `送 ${token(transport.dropoffAssigneeId)} ｜ 迎 ${token(transport.pickupAssigneeId)}`;
 }

@@ -10,6 +10,7 @@ import { newOperationId } from '../../lib/id';
 import type { TaskInstance } from '../../lib/types';
 import { useWeekSchedule } from './useWeekSchedule';
 import { assigneeToken, buildCalendarProjection, transportLabel } from './calendarProjection';
+import { mamaUserId, papaUserId } from '../../lib/familyRoles';
 
 export function WeekView() {
   const { household, members, me, partner } = useHousehold();
@@ -29,8 +30,8 @@ export function WeekView() {
     localIsoDate(days[6]),
   );
   const [changingTask, setChangingTask] = useState<TaskInstance | null>(null);
-  const primaryUserId = members.find((member) => member.member_role === 'primary')?.user_id ?? null;
-  const partnerUserId = members.find((member) => member.member_role === 'partner')?.user_id ?? null;
+  const primaryUserId = papaUserId(members);
+  const partnerUserId = mamaUserId(members);
   const projection = useMemo(
     () => buildCalendarProjection({ tasks, occurrences, primaryUserId, partnerUserId }),
     [occurrences, partnerUserId, primaryUserId, tasks],

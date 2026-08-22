@@ -54,6 +54,9 @@ export const EDGE_FUNCTIONS = {
   googleCalendarOauthStart: 'google-calendar-oauth-start',
   completeOnboardingStep: 'complete-onboarding-step',
   replaceRecurrenceSchedule: 'replace-recurrence-schedule',
+  setRoutineDefinitionOptions: 'set-routine-definition-options',
+  setFamilyCalendarTarget: 'set-family-calendar-target',
+  setFamilyRole: 'set-family-role',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

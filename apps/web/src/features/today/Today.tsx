@@ -100,12 +100,10 @@ export function Today() {
 
   const nextTask = useMemo(() => selectNextOwnedTask(data.tasks, me?.user_id), [data.tasks, me]);
   const todaySections = useMemo(() => {
-    const transport = data.tasks.filter((task) => task.category === 'dropoff' || task.category === 'pickup');
-    const morningPreparation = data.tasks.filter((task) => task.category === 'morning_preparation');
-    const morningChores = data.tasks.filter(
-      (task) => task.routine_phase === 'morning' && task.category !== 'dropoff' && task.category !== 'morning_preparation',
-    );
-    const eveningChores = data.tasks.filter((task) => task.routine_phase === 'evening' && task.category !== 'pickup');
+    const transport = data.tasks.filter((task) => task.task_kind === 'transport');
+    const morningPreparation = data.tasks.filter((task) => task.task_kind === 'morning_preparation');
+    const morningChores = data.tasks.filter((task) => task.task_kind === 'morning_chore');
+    const eveningChores = data.tasks.filter((task) => task.task_kind === 'evening_chore');
     const special = data.tasks.filter(
       (task) => !transport.includes(task) && !morningPreparation.includes(task) && !morningChores.includes(task) && !eveningChores.includes(task),
     );
@@ -132,7 +130,7 @@ export function Today() {
 
   function renderOperationalSection(title: string, tasks: TaskInstance[], description?: string) {
     if (tasks.length === 0) return null;
-    const completedCount = 0;
+    const completedCount = tasks.filter((task) => task.status === 'completed').length;
     return (
       <section className="card task-section">
         <div className="section-heading">

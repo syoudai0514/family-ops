@@ -280,6 +280,15 @@ verify_jwt = true
 [functions.get-week-schedule]
 verify_jwt = true
 
+[functions.set-routine-definition-options]
+verify_jwt = true
+
+[functions.set-family-calendar-target]
+verify_jwt = true
+
+[functions.set-family-role]
+verify_jwt = true
+
 # External provider — verify_jwt = false (signature validated in-handler
 # before any DB access)
 

@@ -101,7 +101,7 @@ export function ConnectionsStep() {
       <LineLinkSection />
       <section className="card">
         <h2>Google Calendar</h2>
-        <p>予定の重なりをTodayとWeekでお知らせします。</p>
+        <p>予定の重なりをTodayとWeekでお知らせします。接続後、送迎と特別対応は選択した家族カレンダーへ同期されます。</p>
         <p role="status">
           {calendarStatus === 'loading' ? '接続状態を確認中…' : calendarStatus === 'connected' ? 'Google Calendar ✓ 接続済み' : calendarStatus === 'reauth' ? 'Google Calendar: 再認証または同期が必要です' : 'Google Calendar: 未接続'}
         </p>

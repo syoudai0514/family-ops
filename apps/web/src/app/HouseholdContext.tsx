@@ -75,7 +75,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     try {
       const { data: myMembership, error: myMembershipError } = await supabase
         .from('household_members')
-        .select('household_id, user_id, member_role, joined_at')
+        .select('household_id, user_id, member_role, family_role, joined_at')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -98,7 +98,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
           .maybeSingle(),
         supabase
           .from('household_members')
-          .select('household_id, user_id, member_role, joined_at')
+          .select('household_id, user_id, member_role, family_role, joined_at')
           .eq('household_id', householdId),
       ]);
       if (householdResult.error) throw householdResult.error;

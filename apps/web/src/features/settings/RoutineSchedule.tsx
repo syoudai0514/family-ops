@@ -14,6 +14,7 @@ import {
 import { WEEKDAYS } from '../../lib/weekdays';
 import { groupRecurrencePatterns } from './routineRuleHelpers';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
+import { CustomRoutineEditor } from './CustomRoutineEditor';
 
 const SCHEDULE_LABELS: Record<RoutineScheduleKind, string> = {
   daily_assignment: '今日の担当のお知らせ',
@@ -126,7 +127,9 @@ export function RoutineSchedule() {
         毎週くり返す担当を変えます。今日だけの交代は、週の予定から相談してください。
       </p>
       <DropoffPickupMatrix householdId={household?.id ?? null} members={members} />
+      <CustomRoutineEditor householdId={household?.id ?? null} members={members} kind="morning_chore" />
       <EveningRoutineEditor householdId={household?.id ?? null} members={members} />
+      <CustomRoutineEditor householdId={household?.id ?? null} members={members} kind="evening_chore" />
       <MorningPreparationEditor householdId={household?.id ?? null} members={members} />
       <section className="card">
         <h2>通知</h2>

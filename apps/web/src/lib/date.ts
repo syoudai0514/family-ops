@@ -8,6 +8,12 @@ export function todayIsoDate(): string {
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
+export function previousTokyoIsoDate(today = todayIsoDate()): string {
+  const date = new Date(`${today}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
 export function formatDateTimeJa(iso: string | null): string {
   if (!iso) return '';
   return new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });

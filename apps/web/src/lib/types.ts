@@ -2,7 +2,8 @@
 // These are intentionally hand-written (not generated) — keep in sync with
 // supabase/migrations if columns change; do not add columns speculatively.
 
-export type MemberRole = 'primary' | 'partner' | string;
+export type MemberRole = 'adult' | string;
+export type FamilyRole = 'papa' | 'mama' | null;
 
 export interface Household {
   id: string;
@@ -22,6 +23,7 @@ export interface HouseholdMember {
   household_id: string;
   user_id: string;
   member_role: MemberRole;
+  family_role?: FamilyRole;
   joined_at: string;
 }
 
@@ -43,7 +45,11 @@ export interface TaskDefinition {
   completion_mode: CompletionMode;
   is_active: boolean;
   sort_order: number;
+  task_kind?: TaskKind;
+  include_in_routine_line?: boolean;
 }
+
+export type TaskKind = 'transport' | 'morning_preparation' | 'morning_chore' | 'evening_chore' | 'special' | 'generic_once';
 
 export interface TaskSubtaskDefinition {
   id: string;
@@ -69,6 +75,7 @@ export interface TaskInstance {
   due_at: string | null;
   calendar_ends_at?: string | null;
   calendar_visibility?: 'transport' | 'special' | 'hidden' | null;
+  task_kind?: TaskKind;
   planned_assignee_id: string | null;
   completion_mode: CompletionMode;
   status: TaskInstanceStatus;
