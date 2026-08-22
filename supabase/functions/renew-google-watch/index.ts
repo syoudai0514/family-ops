@@ -8,7 +8,9 @@ import {
   callGoogleServerTx,
   createWatchChannel,
   getAccessTokenForConnection,
+  isGoogleCalendarForbiddenError,
   GoogleInvalidGrantError,
+  revalidateCalendarEligibilityAfterForbidden,
   stopWatchChannel,
 } from "../_shared/googleCalendar.ts";
 import { decryptRefreshToken, randomHex, sha256Hex } from "../_shared/cryptoHelper.ts";
@@ -35,12 +37,16 @@ Deno.serve(withServiceHandler(async (req: Request) => {
   );
 
   for (const conn of needingWatch) {
+    let accessToken: string | null = null;
+    let externalCalendarId: string | null = null;
     try {
-      const { accessToken, externalCalendarId } = await getAccessTokenForConnection(
+      const connection = await getAccessTokenForConnection(
         serviceClient,
         conn.calendar_connection_id,
         decryptRefreshToken,
       );
+      accessToken = connection.accessToken;
+      externalCalendarId = connection.externalCalendarId;
 
       const channelId = crypto.randomUUID();
       const rawToken = randomHex(32);
@@ -69,6 +75,14 @@ Deno.serve(withServiceHandler(async (req: Request) => {
         reauthMarked++;
         continue;
       }
+      if (isGoogleCalendarForbiddenError(err) && accessToken && externalCalendarId) {
+        await revalidateCalendarEligibilityAfterForbidden(serviceClient, {
+          calendarConnectionId: conn.calendar_connection_id,
+          externalCalendarId,
+          accessToken,
+          reason: "403 during Google watch create or renewal",
+        });
+      }
       console.error("renew-google-watch: failed to create/renew watch", { calendarConnectionId: conn.calendar_connection_id, err });
     }
   }
@@ -81,8 +95,12 @@ Deno.serve(withServiceHandler(async (req: Request) => {
   );
 
   for (const ch of retiring) {
+    let accessToken: string | null = null;
+    let externalCalendarId: string | null = null;
     try {
-      const { accessToken } = await getAccessTokenForConnection(serviceClient, ch.calendar_connection_id, decryptRefreshToken);
+      const connection = await getAccessTokenForConnection(serviceClient, ch.calendar_connection_id, decryptRefreshToken);
+      accessToken = connection.accessToken;
+      externalCalendarId = connection.externalCalendarId;
       await stopWatchChannel({ accessToken, channelId: ch.channel_id, resourceId: ch.resource_id });
       await callGoogleServerTx(serviceClient, "server_tx_mark_google_watch_stopped", { p_channel_id: ch.channel_id });
       stopped++;
@@ -93,6 +111,14 @@ Deno.serve(withServiceHandler(async (req: Request) => {
           p_reason: "invalid_grant while stopping a retiring watch channel",
         });
         continue;
+      }
+      if (isGoogleCalendarForbiddenError(err) && accessToken && externalCalendarId) {
+        await revalidateCalendarEligibilityAfterForbidden(serviceClient, {
+          calendarConnectionId: ch.calendar_connection_id,
+          externalCalendarId,
+          accessToken,
+          reason: "403 while stopping a retiring Google watch channel",
+        });
       }
       console.error("renew-google-watch: failed to stop retiring channel", { channelId: ch.channel_id, err });
     }

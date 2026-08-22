@@ -170,6 +170,23 @@ export async function exchangeCodeForTokens(opts: { code: string; clientId: stri
 
 export class GoogleInvalidGrantError extends Error {}
 
+// Calendar API 403 is deliberately distinct from invalid_grant at the token
+// endpoint.  A 403 can be transient, so workers must re-read calendarList
+// before deciding whether a connection has lost its eligibility.
+export class GoogleCalendarApiError extends Error {
+  constructor(
+    readonly operation: string,
+    readonly status: number,
+    detail?: string,
+  ) {
+    super(`${operation} failed: ${status}${detail ? ` ${detail}` : ""}`);
+  }
+}
+
+export function isGoogleCalendarForbiddenError(err: unknown): err is GoogleCalendarApiError {
+  return err instanceof GoogleCalendarApiError && err.status === 403;
+}
+
 export async function refreshAccessToken(opts: { refreshToken: string; clientId: string; clientSecret: string }): Promise<TokenResponse> {
   const res = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
     method: "POST",
@@ -195,7 +212,7 @@ export async function refreshAccessToken(opts: { refreshToken: string; clientId:
   return await res.json();
 }
 
-interface CalendarListEntry {
+export interface CalendarListEntry {
   id: string;
   summary?: string;
   accessRole: string;
@@ -211,7 +228,7 @@ export async function listCalendarList(accessToken: string): Promise<CalendarLis
     const res = await fetch(`${GOOGLE_CALENDAR_API_BASE}/users/me/calendarList?${params.toString()}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!res.ok) throw new Error(`calendarList.list failed: ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new GoogleCalendarApiError("calendarList.list", res.status, await res.text());
     const body = await res.json();
     items.push(...(body.items ?? []));
     pageToken = body.nextPageToken;
@@ -219,12 +236,62 @@ export async function listCalendarList(accessToken: string): Promise<CalendarLis
   return items;
 }
 
-// #5A: writer(WithoutPrivateAccess)/owner + Asia/Tokyo only.
-export function pickEligibleCalendar(items: CalendarListEntry[]): CalendarListEntry | null {
-  const eligible = items.find((it) =>
-    ["writerWithoutPrivateAccess", "writer", "owner"].includes(it.accessRole) && it.timeZone === "Asia/Tokyo"
-  );
-  return eligible ?? null;
+// #5A: writer(WithoutPrivateAccess)/owner + Asia/Tokyo only.  This returns
+// every eligible entry intentionally: OAuth must register choices for the
+// household, never silently turn the first Calendar API result into a write
+// target.  Keep the Google id as the stable identity; summary is display-only.
+export function listEligibleCalendarCandidates(items: CalendarListEntry[]): CalendarListEntry[] {
+  const allowedRoles = new Set(["writerWithoutPrivateAccess", "writer", "owner"]);
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (!item.id || seen.has(item.id) || !allowedRoles.has(item.accessRole) || item.timeZone !== "Asia/Tokyo") {
+      return false;
+    }
+    seen.add(item.id);
+    return true;
+  });
+}
+
+// One live predicate for OAuth completion, explicit target selection, watch
+// renewal, and 403 recovery.  Calendar titles are presentation-only; the
+// stable Google calendar id is the only identity used here.
+export async function isLiveCalendarEligible(accessToken: string, externalCalendarId: string): Promise<boolean> {
+  const candidates = listEligibleCalendarCandidates(await listCalendarList(accessToken));
+  return candidates.some((candidate) => candidate.id === externalCalendarId);
+}
+
+export async function recordGoogleCalendarEligibility(
+  client: SupabaseClient,
+  opts: { calendarConnectionId: string; eligible: boolean; reason: string },
+): Promise<{ eligible: boolean }> {
+  return await callGoogleServerTx<{ eligible: boolean }>(client, "server_tx_revalidate_google_calendar_eligibility", {
+    p_calendar_connection_id: opts.calendarConnectionId,
+    p_is_eligible: opts.eligible,
+    p_reason: opts.reason,
+  });
+}
+
+// Re-check exactly the same eligibility predicate used at OAuth completion.
+// It never marks reauth_required: only invalid_grant means the household
+// credential itself needs a new OAuth grant.
+export async function revalidateCalendarEligibilityAfterForbidden(
+  client: SupabaseClient,
+  opts: { calendarConnectionId: string; externalCalendarId: string; accessToken: string; reason: string },
+): Promise<{ eligible: boolean } | null> {
+  try {
+    const eligible = await isLiveCalendarEligible(opts.accessToken, opts.externalCalendarId);
+    return await recordGoogleCalendarEligibility(client, {
+      calendarConnectionId: opts.calendarConnectionId,
+      eligible,
+      reason: opts.reason,
+    });
+  } catch (err) {
+    // A failed recheck is intentionally non-destructive.  The original 403
+    // remains a normal retryable provider error until eligibility is proven
+    // lost by calendarList.
+    console.error("google calendar eligibility recheck failed", err);
+    return null;
+  }
 }
 
 interface EventsListPage {
@@ -256,7 +323,7 @@ export async function listCanonicalEventsPage(opts: {
     (err as Error & { status?: number }).status = 410;
     throw err;
   }
-  if (!res.ok) throw new Error(`events.list (canonical) failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new GoogleCalendarApiError("events.list (canonical)", res.status, await res.text());
   const body = await res.json();
   return { items: body.items ?? [], nextPageToken: body.nextPageToken, nextSyncToken: body.nextSyncToken };
 }
@@ -282,7 +349,7 @@ export async function listProjectionEventsPage(opts: {
   const res = await fetch(`${GOOGLE_CALENDAR_API_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events?${params.toString()}`, {
     headers: { Authorization: `Bearer ${opts.accessToken}` },
   });
-  if (!res.ok) throw new Error(`events.list (projection) failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new GoogleCalendarApiError("events.list (projection)", res.status, await res.text());
   const body = await res.json();
   return { items: body.items ?? [], nextPageToken: body.nextPageToken };
 }
@@ -301,7 +368,7 @@ export async function getEvent(opts: { accessToken: string; calendarId: string; 
     headers: { Authorization: `Bearer ${opts.accessToken}` },
   });
   if (res.status === 404) return { status: 404, body: null, etag: null };
-  if (!res.ok) throw new Error(`events.get failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new GoogleCalendarApiError("events.get", res.status, await res.text());
   const body = await res.json();
   return { status: 200, body, etag: body.etag ?? null };
 }
@@ -352,7 +419,7 @@ export async function createWatchChannel(opts: { accessToken: string; calendarId
     headers: { Authorization: `Bearer ${opts.accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ id: opts.channelId, type: "web_hook", address: opts.webhookUrl, token: opts.token }),
   });
-  if (!res.ok) throw new Error(`events.watch failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new GoogleCalendarApiError("events.watch", res.status, await res.text());
   const body = await res.json();
   return { resourceId: body.resourceId, expiration: Number(body.expiration) };
 }
@@ -364,7 +431,7 @@ export async function stopWatchChannel(opts: { accessToken: string; channelId: s
     body: JSON.stringify({ id: opts.channelId, resourceId: opts.resourceId }),
   });
   if (!res.ok && res.status !== 404) {
-    throw new Error(`channels.stop failed: ${res.status} ${await res.text()}`);
+    throw new GoogleCalendarApiError("channels.stop", res.status, await res.text());
   }
 }
 
