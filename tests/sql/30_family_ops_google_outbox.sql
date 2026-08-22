@@ -80,6 +80,12 @@ begin
   -- the generic worker claim below deterministically tests the intended day.
   delete from private.family_ops_calendar_mirrors
   where household_id = v_hh_id and projection_key <> 'transport:2026-09-01';
+  -- Some bootstrap rows are re-enqueued by legacy recurrence triggers after
+  -- the delete above.  They are not the projection under test; delay any
+  -- such row so the generic worker claim remains deterministic.
+  update private.family_ops_calendar_mirrors
+  set next_attempt_at = now() + interval '1 day'
+  where household_id = v_hh_id and projection_key <> 'transport:2026-09-01';
   v_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-30', 120);
   if v_claim->>'action' <> 'upsert'
      or v_claim #>> '{event,summary}' <> '送 P ｜ 迎 M'
