@@ -325,6 +325,160 @@ async function getEditablePending(
   return data as EditablePendingAction;
 }
 
+// A text correction is opt-in: it is only considered when the sender first
+// tapped 編集 on that exact draft.  This prevents an unrelated later message
+// such as "パパ帰る？" from changing a pending task.
+async function getLineTextEditPending(
+  client: SupabaseClient,
+  actor: LineActor,
+): Promise<EditablePendingAction | null> {
+  const { data, error } = await client.rpc('server_tx_get_line_pending_text_edit', {
+    p_actor_id: actor.user_id,
+  });
+  if (error || !data) return null;
+  return data as EditablePendingAction;
+}
+
+function correctionRole(text: string): 'papa' | 'mama' | 'self' | null {
+  // Prefer the replacement at the end of a contrast, otherwise accept an
+  // explicit short correction such as "パパに変更".  "ママじゃなくてパパ"
+  // therefore always means パパ.
+  const contrast = text.match(
+    /(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
+  );
+  if (contrast) return /^(?:パパ|父|お父さん)$/.test(contrast[1]) ? 'papa' : 'mama';
+  if (/(?:自分|自分に|自分へ)/.test(text)) return 'self';
+  if (/(?:パパ|父|お父さん)/.test(text)) return 'papa';
+  if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return 'mama';
+  return null;
+}
+
+function correctionDate(text: string): string | null {
+  if (/明後日/.test(text)) return jstIsoDateOffset(2);
+  if (/明日/.test(text)) return jstIsoDateOffset(1);
+  if (/今日|今夜|今朝/.test(text)) return jstIsoDateOffset(0);
+  return null;
+}
+
+function correctionTime(text: string): string | null | undefined {
+  if (/時刻なし|時間なし/.test(text)) return null;
+  const explicit = text.match(/(?:午前|午後)?\s*(\d{1,2})時(?:\s*(\d{1,2})分?)?/);
+  if (explicit) {
+    let hour = Number(explicit[1]);
+    const minute = Number(explicit[2] ?? '0');
+    if (/午後/.test(text) && hour < 12) hour += 12;
+    if (hour <= 23 && minute <= 59)
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+  if (/朝/.test(text)) return '08:00';
+  if (/夕方/.test(text)) return '18:00';
+  if (/夜/.test(text)) return '20:00';
+  return undefined;
+}
+
+async function updateEditablePending(
+  client: SupabaseClient,
+  actor: LineActor,
+  pendingActionId: string,
+  actionType: string,
+  payload: Record<string, unknown>,
+): Promise<EditablePendingAction | null> {
+  const { data, error } = await client.rpc('server_tx_update_pending_action', {
+    p_actor_id: actor.user_id,
+    p_pending_action_id: pendingActionId,
+    p_action_type: actionType,
+    p_normalized_payload: payload,
+  });
+  if (error) {
+    console.error('process-line-inbox: update_pending failed', error.message);
+    return null;
+  }
+  return data as EditablePendingAction;
+}
+
+async function tryApplyLineTextEdit(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  text: string,
+): Promise<boolean> {
+  const pending = await getLineTextEditPending(client, actor);
+  if (!pending) return false;
+
+  const role = correctionRole(text);
+  const date = correctionDate(text);
+  const time = correctionTime(text);
+  if (!role && !date && time === undefined) {
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      '修正したい内容をそのまま送ってください。例:「ママじゃなくてパパ」「明日10時に変更」「時刻なし」。元の下書きはまだ変更していません。',
+      editQuickReplies(pending.id),
+    );
+    return true;
+  }
+
+  let actionType = pending.action_type;
+  const payload = { ...pending.normalized_payload };
+  delete payload.line_edit_mode;
+  if (date) payload.scheduled_date = date;
+  if (time !== undefined) {
+    payload.due_local_time = time;
+    payload.daypart = time === null ? null : (payload.daypart ?? null);
+  }
+
+  if (role) {
+    const selected =
+      role === 'self'
+        ? actor.user_id
+        : await householdUserForRole(client, actor.household_id, role);
+    if (!selected) {
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        'その担当者を見つけられませんでした。家族設定を確認してください。',
+      );
+      return true;
+    }
+    const label = role === 'papa' ? 'パパ' : role === 'mama' ? 'ママ' : '自分';
+    payload.target_label = label;
+    if (actionType === 'shopping_item_add') {
+      payload.assignee_user_id = selected;
+    } else if (actionType === 'request_create' && selected !== actor.user_id) {
+      payload.recipient_user_id = selected;
+      delete payload.planned_assignee_user_id;
+    } else {
+      // Keep an explicitly chosen task as a task.  An existing request edited
+      // back to oneself becomes a personal task instead of a request to self.
+      actionType = 'task_create_once';
+      payload.planned_assignee_user_id = selected;
+      delete payload.recipient_user_id;
+    }
+  }
+
+  const updated = await updateEditablePending(client, actor, pending.id, actionType, payload);
+  if (!updated) {
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      '修正を保存できませんでした。元の確認カードからもう一度お試しください。',
+    );
+    return true;
+  }
+  await sendPendingActionPreview(
+    client,
+    item,
+    actor,
+    updated.id,
+    updated.action_type,
+    updated.normalized_payload,
+  );
+  return true;
+}
+
 function targetLabel(payload: Record<string, unknown>, actor: LineActor): string {
   if (payload.target_label === 'パパ' || payload.target_label === 'ママ')
     return String(payload.target_label);
@@ -341,9 +495,9 @@ function scheduleLabel(payload: Record<string, unknown>): string {
   const dateLabel = date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : '今日';
   // A concrete AI-extracted deadline (for example "10:00 出発") is more
   // useful than the broad daypart that was also present in the original text.
-  const part = localTime ?? (daypart
-    ? daypartLabel(daypart as 'morning' | 'noon' | 'evening' | 'night')
-    : '時刻なし');
+  const part =
+    localTime ??
+    (daypart ? daypartLabel(daypart as 'morning' | 'noon' | 'evening' | 'night') : '時刻なし');
   return `${dateLabel} ${part}`;
 }
 
@@ -494,11 +648,28 @@ async function handlePostback(
       await sendConfirmation(client, item, actor, '変更する範囲を選んでください。', quick);
       return;
     }
+    const editPayload = { ...pending.normalized_payload, line_edit_mode: true };
+    const marked = await updateEditablePending(
+      client,
+      actor,
+      pending.id,
+      pending.action_type,
+      editPayload,
+    );
+    if (!marked) {
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        '編集を開始できませんでした。元の確認カードからもう一度お試しください。',
+      );
+      return;
+    }
     await sendConfirmation(
       client,
       item,
       actor,
-      '修正したい内容をタップしてください。タイトル自体を直す場合はキャンセルして、直した文面をLINEでもう一度送ってください。',
+      '修正したい内容をそのまま送れます。例:「ママじゃなくてパパ」「明日10時に変更」。下のボタンで選んでも大丈夫です。',
       editQuickReplies(fields.pending_action_id),
     );
     return;
@@ -583,17 +754,15 @@ async function handlePostback(
       }
     }
 
-    const { data: updated, error } = await client.rpc('server_tx_update_pending_action', {
-      p_actor_id: actor.user_id,
-      p_pending_action_id: fields.pending_action_id,
-      p_action_type: actionType,
-      p_normalized_payload: payload,
-    });
-    if (error) {
-      console.error('process-line-inbox: update_pending failed', error.message);
-      return;
-    }
-    const result = updated as EditablePendingAction;
+    delete payload.line_edit_mode;
+    const result = await updateEditablePending(
+      client,
+      actor,
+      fields.pending_action_id,
+      actionType,
+      payload,
+    );
+    if (!result) return;
     await sendPendingActionPreview(
       client,
       item,
@@ -916,6 +1085,7 @@ async function handleText(
 ): Promise<void> {
   if (await tryClaimLinkToken(client, item.source_external_user_id, text)) return;
   if (!actor) return;
+  if (await tryApplyLineTextEdit(client, item, actor, text)) return;
 
   const parsed = parseLineText(text);
   let assignmentPayload: Record<string, unknown> | null = null;
@@ -989,10 +1159,11 @@ async function handleText(
           purchase_method: /amazon|アマゾン/i.test(text) ? 'amazon' : 'store',
           assignee_user_id: targetUser,
           scheduled_date: intent.scheduledDate,
-            due_local_time: dueLocalTime,
-            daypart: intent.daypart,
-            context: intent.context,
-            target_label: roleLabel ?? '買い物リスト',
+          due_local_time: dueLocalTime,
+          daypart: intent.daypart,
+          context: intent.context,
+          calendar_visibility: intent.calendarVisibility,
+          target_label: roleLabel ?? '買い物リスト',
           parse_source: intent.source,
         };
       } else {
@@ -1009,6 +1180,7 @@ async function handleText(
             due_local_time: dueLocalTime,
             daypart: intent.daypart,
             context: intent.context,
+            calendar_visibility: intent.calendarVisibility,
             target_label: roleLabel ?? 'パートナー',
             parse_source: intent.source,
           };
@@ -1025,6 +1197,7 @@ async function handleText(
             daypart: intent.daypart,
             subtasks: intent.subtasks,
             context: intent.context,
+            calendar_visibility: intent.calendarVisibility,
             target_label: roleLabel ?? '自分',
             parse_source: intent.source,
           };

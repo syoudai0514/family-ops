@@ -18,6 +18,7 @@ function makeAction(overrides: Partial<PendingAction>): PendingAction {
 
 function editProps() {
   return {
+    onEdit: vi.fn(),
     onEditAsRequest: vi.fn().mockResolvedValue(undefined),
     onEditAsTask: vi.fn().mockResolvedValue(undefined),
   };
@@ -29,21 +30,53 @@ describe('PendingActionCard', () => {
     const onCancel = vi.fn().mockResolvedValue(undefined);
     render(
       <ul>
-        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={onCancel} {...editProps()} />
+        <PendingActionCard
+          action={makeAction({})}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+          {...editProps()}
+        />
       </ul>,
     );
     expect(screen.getByText('オムツ')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'この内容で確定' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '編集' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'キャンセル' })).toBeInTheDocument();
     // No form-correction escape hatch for an already-structured draft.
     expect(screen.queryByRole('button', { name: 'お願いとして編集' })).not.toBeInTheDocument();
+  });
+
+  it('opens the structured edit path without confirming or cancelling', () => {
+    const onEdit = vi.fn();
+    const action = makeAction({
+      action_type: 'task_create_once',
+      normalized_payload: { title: '皮膚科の準備', scheduled_date: '2026-08-23' },
+    });
+    render(
+      <ul>
+        <PendingActionCard
+          action={action}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+          {...editProps()}
+          onEdit={onEdit}
+        />
+      </ul>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '編集' }));
+    expect(onEdit).toHaveBeenCalledWith(action);
   });
 
   it('calls onConfirm with the action id when confirmed', async () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     render(
       <ul>
-        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={vi.fn()} {...editProps()} />
+        <PendingActionCard
+          action={makeAction({})}
+          onConfirm={onConfirm}
+          onCancel={vi.fn()}
+          {...editProps()}
+        />
       </ul>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'この内容で確定' }));
@@ -55,7 +88,12 @@ describe('PendingActionCard', () => {
     const onConfirm = vi.fn();
     render(
       <ul>
-        <PendingActionCard action={makeAction({})} onConfirm={onConfirm} onCancel={onCancel} {...editProps()} />
+        <PendingActionCard
+          action={makeAction({})}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+          {...editProps()}
+        />
       </ul>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
@@ -77,6 +115,7 @@ describe('PendingActionCard', () => {
           action={action}
           onConfirm={vi.fn()}
           onCancel={vi.fn()}
+          onEdit={vi.fn()}
           onEditAsRequest={onEditAsRequest}
           onEditAsTask={onEditAsTask}
         />

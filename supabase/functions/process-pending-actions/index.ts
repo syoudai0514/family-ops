@@ -86,11 +86,11 @@ function scheduleLabel(payload: Record<string, unknown>): string {
   const dateLabel = /^\d{4}-\d{2}-\d{2}$/.test(date)
     ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`
     : date || '今日';
-  const part = time ?? (
-    daypart && ['morning', 'noon', 'evening', 'night'].includes(daypart)
+  const part =
+    time ??
+    (daypart && ['morning', 'noon', 'evening', 'night'].includes(daypart)
       ? daypartLabel(daypart as 'morning' | 'noon' | 'evening' | 'night')
-      : '時刻なし'
-  );
+      : '時刻なし');
   return `${dateLabel} ${part}`;
 }
 
@@ -122,6 +122,7 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
         planned_assignee_user_id: original.planned_assignee_user_id ?? row.actor_id,
         category: original.category ?? 'todo',
         routine_phase: original.routine_phase ?? 'anytime',
+        calendar_visibility: original.calendar_visibility === 'special' ? 'special' : 'hidden',
         target_label: '自分',
       },
       kindLabel: 'タスク',
@@ -161,6 +162,7 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
         due_local_time: dueLocalTime,
         daypart: intent.daypart,
         context: intent.context,
+        calendar_visibility: intent.calendarVisibility,
         target_label: roleLabel ?? '買い物リスト',
         parse_source: intent.source,
       },
@@ -187,6 +189,7 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
         due_local_time: dueLocalTime,
         daypart: intent.daypart,
         context: intent.context,
+        calendar_visibility: intent.calendarVisibility,
         target_label: roleLabel ?? 'パートナー',
         parse_source: intent.source,
       },
@@ -208,6 +211,7 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
       daypart: intent.daypart,
       subtasks: intent.subtasks,
       context: intent.context,
+      calendar_visibility: intent.calendarVisibility,
       target_label: roleLabel ?? '自分',
       parse_source: intent.source,
     },
@@ -330,13 +334,15 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
     }
     case 'task_create_once': {
       const subtasks = toTaskSubtasks(p.subtasks);
-      const { data, error } = await client.rpc('server_tx_create_task', {
+      const { data, error } = await client.rpc('server_tx_create_task_with_calendar', {
         p_actor_id: item.actor_id,
         p_operation_id: item.operation_id,
         p_title: String(p.title ?? ''),
         p_category: p.category ?? 'todo',
         p_scheduled_date: p.scheduled_date,
         p_due_local_time: p.due_local_time ?? null,
+        p_calendar_end_local_time: null,
+        p_calendar_visibility: p.calendar_visibility === 'special' ? 'special' : 'hidden',
         p_planned_assignee_user_id: p.planned_assignee_user_id ?? null,
         p_completion_mode: subtasks ? 'subtasks' : 'whole',
         p_routine_phase: p.routine_phase ?? 'anytime',

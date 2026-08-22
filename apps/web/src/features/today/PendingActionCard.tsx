@@ -22,6 +22,7 @@ interface PendingActionCardProps {
   action: PendingAction;
   onConfirm: (id: string) => Promise<void>;
   onCancel: (id: string) => Promise<void>;
+  onEdit: (action: PendingAction) => void;
   onEditAsRequest: (action: PendingAction) => Promise<void>;
   onEditAsTask: (action: PendingAction) => Promise<void>;
 }
@@ -29,6 +30,7 @@ interface PendingActionCardProps {
 const ACTION_TITLES: Record<PendingAction['action_type'], string> = {
   shopping_item_add: '🛒 買い物リストに追加',
   task_create_once: '📝 タスクを追加',
+  request_create: '💬 お願いを送る',
   assignment_change_request: '🚗 お迎え担当のお願い',
   needs_pwa_review: '✏️ LINEからの入力（内容の確認が必要）',
 };
@@ -42,6 +44,8 @@ function previewText(action: PendingAction): string {
       return `${String(p.title ?? '')}（${String(p.scheduled_date ?? '')}）`;
     case 'assignment_change_request':
       return `${String(p.shared_message ?? '')}（${String(p.scheduled_date ?? '')}）`;
+    case 'request_create':
+      return `${String(p.title ?? '')}（${String(p.scheduled_date ?? '')}）`;
     case 'needs_pwa_review':
       return String(p.raw_text ?? '');
     default:
@@ -49,7 +53,14 @@ function previewText(action: PendingAction): string {
   }
 }
 
-export function PendingActionCard({ action, onConfirm, onCancel, onEditAsRequest, onEditAsTask }: PendingActionCardProps) {
+export function PendingActionCard({
+  action,
+  onConfirm,
+  onCancel,
+  onEdit,
+  onEditAsRequest,
+  onEditAsTask,
+}: PendingActionCardProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,7 +89,11 @@ export function PendingActionCard({ action, onConfirm, onCancel, onEditAsRequest
         <div className="task-item-actions">
           {action.action_type === 'needs_pwa_review' ? (
             <>
-              <button type="button" disabled={busy} onClick={() => run(() => onEditAsRequest(action))}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => run(() => onEditAsRequest(action))}
+              >
                 お願いとして編集
               </button>
               <button type="button" disabled={busy} onClick={() => run(() => onEditAsTask(action))}>
@@ -86,9 +101,14 @@ export function PendingActionCard({ action, onConfirm, onCancel, onEditAsRequest
               </button>
             </>
           ) : (
-            <button type="button" disabled={busy} onClick={() => run(() => onConfirm(action.id))}>
-              この内容で確定
-            </button>
+            <>
+              <button type="button" disabled={busy} onClick={() => onEdit(action)}>
+                編集
+              </button>
+              <button type="button" disabled={busy} onClick={() => run(() => onConfirm(action.id))}>
+                この内容で確定
+              </button>
+            </>
           )}
           <button type="button" disabled={busy} onClick={() => run(() => onCancel(action.id))}>
             キャンセル

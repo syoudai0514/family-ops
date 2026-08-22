@@ -262,6 +262,7 @@ export type PendingActionStatus = 'draft' | 'confirmed' | 'queued' | 'executing'
 export type PendingActionType =
   | 'shopping_item_add'
   | 'task_create_once'
+  | 'request_create'
   | 'assignment_change_request'
   | 'needs_pwa_review';
 

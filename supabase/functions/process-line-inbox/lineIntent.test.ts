@@ -31,6 +31,11 @@ Deno.test('tonight preparation keeps action date today, not tomorrow hospital co
   assertEquals(intent?.targetRole, 'papa');
 });
 
+Deno.test('a LINE correction selects the replacement family role, not the role being replaced', () => {
+  const intent = deterministicLineIntent('ママじゃなくてパパのタスクとして追加して', now);
+  assertEquals(intent?.targetRole, 'papa');
+});
+
 Deno.test('simple shopping remains structurally parseable', () => {
   const intent = deterministicLineIntent('明日オムツをAmazonで買って', now);
   assertEquals(intent?.kind, 'shopping');
@@ -48,6 +53,7 @@ Deno.test('Gemini response separates a hospital preparation task from its appoin
     shared_message: null,
     subtasks: ['子供の身支度', '診察カード', '保険証'],
     context: '藤沢の皮膚科 11:00',
+    calendar_visibility: 'special',
   }));
 
   assertEquals(intent?.title, '皮膚科の準備');
@@ -55,6 +61,7 @@ Deno.test('Gemini response separates a hospital preparation task from its appoin
   assertEquals(intent?.dueLocalTime, '10:00');
   assertEquals(intent?.subtasks, ['子供の身支度', '診察カード', '保険証']);
   assertEquals(intent?.context, '藤沢の皮膚科 11:00');
+  assertEquals(intent?.calendarVisibility, 'special');
 });
 
 Deno.test('Gemini response rejects invalid dates, times, and non-request partner messages', () => {

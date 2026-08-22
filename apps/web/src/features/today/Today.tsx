@@ -8,12 +8,21 @@ import { useTodaySchedule } from './useTodaySchedule';
 import { TodayTaskItem } from './TodayTaskItem';
 import { TodaySchedule } from './TodaySchedule';
 import { PendingActionCard } from './PendingActionCard';
+import { PendingActionEditModal } from './PendingActionEditModal';
 import { TaskFormModal } from '../tasks/TaskFormModal';
 import { QuickAdd } from '../tasks/QuickAdd';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
+import { addDays, tokyoIsoDate } from '../planning/dateHelpers';
+import { usePlanningData } from '../planning/usePlanningData';
+import {
+  assigneeToken,
+  buildCalendarProjection,
+  transportLabel,
+} from '../planning/calendarProjection';
+import { mamaUserId, papaUserId } from '../../lib/familyRoles';
 import type { PendingAction, RequestRow, TaskInstance } from '../../lib/types';
 
 export function selectNextOwnedTask(tasks: TaskInstance[], userId: string | null | undefined) {
@@ -93,22 +102,43 @@ export function Today() {
   const data = useTodayData(household?.id ?? null, user?.id ?? null);
   const schedule = useTodaySchedule(household?.id ?? null, user?.id ?? null);
   const pending = usePendingActions(household?.id ?? null, user?.id ?? null);
+  const tomorrowDate = useMemo(() => tokyoIsoDate(addDays(new Date(), 1)), []);
+  const tomorrowPlanning = usePlanningData(household?.id ?? null, tomorrowDate, tomorrowDate);
   const navigate = useNavigate();
   const [editingTask, setEditingTask] = useState<TaskInstance | null>(null);
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
+  const [editingPendingAction, setEditingPendingAction] = useState<PendingAction | null>(null);
   const [shoppingCollapsed, setShoppingCollapsed] = useState(true);
 
   const nextTask = useMemo(() => selectNextOwnedTask(data.tasks, me?.user_id), [data.tasks, me]);
   const todaySections = useMemo(() => {
     const transport = data.tasks.filter((task) => task.task_kind === 'transport');
-    const morningPreparation = data.tasks.filter((task) => task.task_kind === 'morning_preparation');
+    const morningPreparation = data.tasks.filter(
+      (task) => task.task_kind === 'morning_preparation',
+    );
     const morningChores = data.tasks.filter((task) => task.task_kind === 'morning_chore');
     const eveningChores = data.tasks.filter((task) => task.task_kind === 'evening_chore');
     const special = data.tasks.filter(
-      (task) => !transport.includes(task) && !morningPreparation.includes(task) && !morningChores.includes(task) && !eveningChores.includes(task),
+      (task) =>
+        !transport.includes(task) &&
+        !morningPreparation.includes(task) &&
+        !morningChores.includes(task) &&
+        !eveningChores.includes(task),
     );
     return { transport, morningPreparation, morningChores, eveningChores, special };
   }, [data.tasks]);
+  const tomorrowProjection = useMemo(
+    () =>
+      buildCalendarProjection({
+        tasks: tomorrowPlanning.tasks,
+        occurrences: tomorrowPlanning.occurrences,
+        primaryUserId: papaUserId(members),
+        partnerUserId: mamaUserId(members),
+      }),
+    [members, tomorrowPlanning.occurrences, tomorrowPlanning.tasks],
+  );
+  const tomorrowTransport = tomorrowProjection.transportByDate.get(tomorrowDate);
+  const tomorrowItems = tomorrowProjection.itemsByDate.get(tomorrowDate) ?? [];
 
   function renderTaskList(tasks: TaskInstance[]) {
     return (
@@ -138,7 +168,9 @@ export function Today() {
             <h2>{title}</h2>
             {description && <p className="empty-hint">{description}</p>}
           </div>
-          <span>{completedCount}/{tasks.length}</span>
+          <span>
+            {completedCount}/{tasks.length}
+          </span>
         </div>
         {renderTaskList(tasks)}
       </section>
@@ -228,12 +260,47 @@ export function Today() {
         members={members}
       />
 
-      {renderOperationalSection('昨夜からの持ち越し', data.carryoverTasks, '前夜の予定のまま、ここで完了できます。')}
+      {/* Tomorrow deserves an explicit glance on Today.  A family does not
+          plan Sunday morning by opening every date one by one, and this uses
+          the same canonical projection as Week/Month. */}
+      {!tomorrowPlanning.loading && (tomorrowTransport || tomorrowItems.length > 0) && (
+        <section className="card compact-section" aria-label="明日の予定">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">先の見通し</p>
+              <h2>明日の予定</h2>
+            </div>
+          </div>
+          <ul className="today-schedule-list">
+            {tomorrowTransport && (
+              <li>{transportLabel(tomorrowTransport, papaUserId(members), mamaUserId(members))}</li>
+            )}
+            {tomorrowItems.map((item) => (
+              <li key={item.id}>
+                {item.shortTitle} <small>[{assigneeToken(item.ownerKind)}]</small>
+              </li>
+            ))}
+          </ul>
+          <button type="button" className="text-button" onClick={() => navigate('/week')}>
+            週の予定を開く
+          </button>
+        </section>
+      )}
+
+      {renderOperationalSection(
+        '昨夜からの持ち越し',
+        data.carryoverTasks,
+        '前夜の予定のまま、ここで完了できます。',
+      )}
       {renderOperationalSection('今日の送迎', todaySections.transport)}
       {renderOperationalSection('今日の特別対応', todaySections.special)}
       {renderOperationalSection('朝準備', todaySections.morningPreparation)}
       {renderOperationalSection('朝の定例家事', todaySections.morningChores)}
-      {renderOperationalSection('夜の定例作業', todaySections.eveningChores, '月・週には表示しません。')}
+      {renderOperationalSection(
+        '夜の定例作業',
+        todaySections.eveningChores,
+        '月・週には表示しません。',
+      )}
 
       {/* 判断待ちは、今日の実行情報を見た後に、あるときだけ表示する。 */}
       {hasPendingDecisions && (
@@ -260,6 +327,7 @@ export function Today() {
                 action={action}
                 onConfirm={pending.confirm}
                 onCancel={pending.cancel}
+                onEdit={setEditingPendingAction}
                 onEditAsRequest={handleEditAsRequest}
                 onEditAsTask={handleEditAsTask}
               />
@@ -321,6 +389,15 @@ export function Today() {
             setCorrectionTitle(null);
             data.refresh();
           }}
+        />
+      )}
+      {editingPendingAction && (
+        <PendingActionEditModal
+          action={editingPendingAction}
+          onClose={() => setEditingPendingAction(null)}
+          onSave={(actionType, payload) =>
+            pending.update(editingPendingAction.id, actionType, payload)
+          }
         />
       )}
     </div>

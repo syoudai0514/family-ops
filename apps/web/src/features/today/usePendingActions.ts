@@ -21,10 +21,18 @@ export interface UsePendingActionsResult {
   pendingActions: PendingAction[];
   confirm: (id: string) => Promise<void>;
   cancel: (id: string) => Promise<void>;
+  update: (
+    id: string,
+    actionType: PendingAction['action_type'],
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
-export function usePendingActions(householdId: string | null, userId: string | null): UsePendingActionsResult {
+export function usePendingActions(
+  householdId: string | null,
+  userId: string | null,
+): UsePendingActionsResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
@@ -39,7 +47,9 @@ export function usePendingActions(householdId: string | null, userId: string | n
       const result = await callEdgeFunction<PendingAction[]>(EDGE_FUNCTIONS.listPendingActions, {});
       setPendingActions(result);
     } catch (err) {
-      setError(err instanceof FamilyOpsApiError ? err.message : '判断待ちの読み込みに失敗しました。');
+      setError(
+        err instanceof FamilyOpsApiError ? err.message : '判断待ちの読み込みに失敗しました。',
+      );
     } finally {
       setLoading(false);
     }
@@ -78,5 +88,21 @@ export function usePendingActions(householdId: string | null, userId: string | n
     [load],
   );
 
-  return { loading, error, pendingActions, confirm, cancel, refresh: load };
+  const update = useCallback(
+    async (
+      id: string,
+      actionType: PendingAction['action_type'],
+      payload: Record<string, unknown>,
+    ) => {
+      await callEdgeFunction(EDGE_FUNCTIONS.updatePendingAction, {
+        pending_action_id: id,
+        action_type: actionType,
+        normalized_payload: payload,
+      });
+      await load();
+    },
+    [load],
+  );
+
+  return { loading, error, pendingActions, confirm, cancel, update, refresh: load };
 }
