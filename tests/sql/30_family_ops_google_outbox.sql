@@ -81,11 +81,12 @@ begin
   delete from private.family_ops_calendar_mirrors
   where household_id = v_hh_id and projection_key <> 'transport:2026-09-01';
   -- Some bootstrap rows are re-enqueued by legacy recurrence triggers after
-  -- the delete above.  They are not the projection under test; delay any
-  -- such row so the generic worker claim remains deterministic.
+  -- the delete above.  The worker queue is intentionally global across
+  -- households, so defer every other fixture row as well and keep this
+  -- projection as the sole claimable item.
   update private.family_ops_calendar_mirrors
   set next_attempt_at = now() + interval '1 day'
-  where household_id = v_hh_id and projection_key <> 'transport:2026-09-01';
+  where not (household_id = v_hh_id and projection_key = 'transport:2026-09-01');
   v_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-30', 120);
   if v_claim->>'action' <> 'upsert'
      or v_claim #>> '{event,summary}' <> '送 P ｜ 迎 M'
