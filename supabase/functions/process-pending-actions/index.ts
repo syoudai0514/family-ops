@@ -89,6 +89,44 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
         result_id: (data as { request_id?: string })?.request_id ?? null,
       };
     }
+    case 'request_accept': {
+      const requestId = typeof p.request_id === 'string' ? p.request_id : '';
+      if (!requestId) throw new Error('request_accept missing request_id');
+      const { data, error } = await client.rpc('server_tx_accept_request', {
+        p_actor_id: item.actor_id,
+        p_operation_id: item.operation_id,
+        p_request_id: requestId,
+      });
+      if (error) {
+        if (/REQUEST_(?:NOT_PENDING|ACCEPT_NOT_ALLOWED)/.test(error.message)) {
+          return { result_type: 'request', result_id: requestId };
+        }
+        throw new Error(error.message);
+      }
+      return {
+        result_type: 'task',
+        result_id: (data as { task_id?: string })?.task_id ?? null,
+      };
+    }
+    case 'request_decline': {
+      const requestId = typeof p.request_id === 'string' ? p.request_id : '';
+      if (!requestId) throw new Error('request_decline missing request_id');
+      const { data, error } = await client.rpc('server_tx_decline_request', {
+        p_actor_id: item.actor_id,
+        p_operation_id: item.operation_id,
+        p_request_id: requestId,
+      });
+      if (error) {
+        if (/REQUEST_(?:NOT_PENDING|DECLINE_NOT_ALLOWED)/.test(error.message)) {
+          return { result_type: 'request', result_id: requestId };
+        }
+        throw new Error(error.message);
+      }
+      return {
+        result_type: 'request',
+        result_id: (data as { request_id?: string })?.request_id ?? requestId,
+      };
+    }
     case 'assignment_change_request': {
       const { data, error } = await client.rpc('server_tx_create_assignment_change_request', {
         p_actor_id: item.actor_id,
@@ -147,7 +185,7 @@ Deno.serve(
       } catch (err) {
         failed++;
         const message = err instanceof Error ? err.message : String(err);
-        console.error('process-pending-actions: item execution failed', { id: item.id, message });
+        console.error('process-pending-actions: item processing failed', { id: item.id, message });
         await client.rpc('server_tx_fail_pending_action', {
           p_id: item.id,
           p_lease_token: item.lease_token,
