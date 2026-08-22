@@ -1,31 +1,5 @@
-// verify_jwt=false — worker class (see supabase/config.toml +
-// EDGE_FUNCTION_AUTH_MATRIX.md "Worker"). docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md
-// #6 "process-pending-actions: confirmed only, lease/reclaim,
-// reauthorization, DB/external side effect recovery."
-//
-// This is a *separate* execution queue from process-line-inbox's own inbox
-// draining (01_ARCHITECTURE.md draws two distinct arrows: webhook_inbox ->
-// process-line-inbox, and pending_actions -> process-pending-actions).
-// process-line-inbox only ever writes 'draft' pending_actions and flips
-// draft->confirmed/cancelled on postback; this worker claims 'confirmed'
-// rows (private.mutation_receipts-backed lease/reclaim/dead-letter — same
-// mechanics as process-line-inbox's webhook_inbox queue, see
-// 20260819000042) and performs the actual business mutation.
-//
-// "Reauthorization": every execution re-derives the household via
-// public.household_members inside the target server_tx_* mutation itself
-// (each mutation function does its own `select household_id from
-// household_members where user_id = p_actor_id` before acting) — so if the
-// actor left the household or was removed between confirm and execution,
-// the mutation's own NOT_HOUSEHOLD_MEMBER/CROSS_HOUSEHOLD_RESOURCE checks
-// reject it at execution time, not just at staging time.
-//
-// Only executes action_types this worker knows how to turn into a
-// server_tx_* mutation call (currently: shopping_item_add, task_create_once
-// — the same deterministic subset process-line-inbox's parser produces).
-// An unrecognized action_type is treated as an execution failure (goes
-// through the normal fail/retry/dead-letter path below) rather than being
-// silently skipped, so a bad action_type doesn't jam the queue forever.
+// verify_jwt=false — worker class. Confirmed LINE/PWA pending actions are
+// executed here, never inline in the sender's confirmation postback.
 import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts';
 import { withServiceHandler, jsonResponse } from '../_shared/handler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -50,6 +24,16 @@ interface PendingActionItem {
 interface ExecutionOutcome {
   result_type: string;
   result_id: string | null;
+}
+
+function requestDueAt(payload: Record<string, unknown>): string | null {
+  const date = typeof payload.scheduled_date === 'string' ? payload.scheduled_date : null;
+  if (!date) return null;
+  const localTime = typeof payload.due_local_time === 'string' && /^\d{2}:\d{2}$/.test(payload.due_local_time)
+    ? payload.due_local_time
+    : '23:59';
+  const value = new Date(`${date}T${localTime}:00+09:00`);
+  return Number.isNaN(value.getTime()) ? null : value.toISOString();
 }
 
 async function execute(client: SupabaseClient, item: PendingActionItem): Promise<ExecutionOutcome> {
@@ -88,6 +72,23 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
       if (error) throw new Error(error.message);
       return { result_type: 'task', result_id: (data as { task_id?: string })?.task_id ?? null };
     }
+    case 'request_create': {
+      const recipient = typeof p.recipient_user_id === 'string' ? p.recipient_user_id : '';
+      if (!recipient) throw new Error('request_create missing recipient_user_id');
+      const { data, error } = await client.rpc('server_tx_send_request', {
+        p_actor_id: item.actor_id,
+        p_operation_id: item.operation_id,
+        p_recipient_user_id: recipient,
+        p_shared_title: String(p.title ?? ''),
+        p_shared_message: typeof p.shared_message === 'string' ? p.shared_message : null,
+        p_due_at: requestDueAt(p),
+      });
+      if (error) throw new Error(error.message);
+      return {
+        result_type: 'request',
+        result_id: (data as { request_id?: string })?.request_id ?? null,
+      };
+    }
     case 'assignment_change_request': {
       const { data, error } = await client.rpc('server_tx_create_assignment_change_request', {
         p_actor_id: item.actor_id,
@@ -110,8 +111,7 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
 
 Deno.serve(
   withServiceHandler(async (req: Request) => {
-    requireWorkerToken(req); // throws EDGE_WORKER_UNAUTHORIZED before any DB access
-
+    requireWorkerToken(req);
     const client = createServiceRoleClient();
 
     const { data: batchData, error: claimError } = await client.rpc(
@@ -126,10 +126,7 @@ Deno.serve(
       console.error('process-pending-actions: claim batch failed', claimError.message);
       return new Response(
         JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'internal error' } }),
-        {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        },
+        { status: 500, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
