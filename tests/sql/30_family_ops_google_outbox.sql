@@ -75,6 +75,11 @@ begin
   if (select count(*) from private.family_ops_calendar_mirrors where household_id = v_hh_id and projection_key = 'transport:2026-09-01') <> 1 then
     raise exception 'FAIL family-google-outbox: dropoff/pickup must coalesce to one daily mirror';
   end if;
+  -- Bootstrap recurrence materialisation can enqueue an existing date after
+  -- the connection reconciliation.  Keep only this fixture's projection so
+  -- the generic worker claim below deterministically tests the intended day.
+  delete from private.family_ops_calendar_mirrors
+  where household_id = v_hh_id and projection_key <> 'transport:2026-09-01';
   v_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-30', 120);
   if v_claim->>'action' <> 'upsert'
      or v_claim #>> '{event,summary}' <> '送 P ｜ 迎 M'
