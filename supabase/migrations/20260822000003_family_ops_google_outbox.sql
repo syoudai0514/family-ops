@@ -76,7 +76,9 @@ begin
     from public.task_definitions
     where household_id = new.household_id and id = new.task_definition_id;
   end if;
-  if new.routine_phase in ('morning', 'evening') then
+  -- Transport definitions are intentionally morning/evening phased but are
+  -- the one routine-shaped domain that must still mirror to Google.
+  if new.routine_phase in ('morning', 'evening') and new.calendar_visibility <> 'transport' then
     new.calendar_visibility := 'hidden';
   end if;
   return new;
