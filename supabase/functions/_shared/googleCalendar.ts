@@ -252,6 +252,25 @@ export function listEligibleCalendarCandidates(items: CalendarListEntry[]): Cale
   });
 }
 
+// One live predicate for OAuth completion, explicit target selection, watch
+// renewal, and 403 recovery.  Calendar titles are presentation-only; the
+// stable Google calendar id is the only identity used here.
+export async function isLiveCalendarEligible(accessToken: string, externalCalendarId: string): Promise<boolean> {
+  const candidates = listEligibleCalendarCandidates(await listCalendarList(accessToken));
+  return candidates.some((candidate) => candidate.id === externalCalendarId);
+}
+
+export async function recordGoogleCalendarEligibility(
+  client: SupabaseClient,
+  opts: { calendarConnectionId: string; eligible: boolean; reason: string },
+): Promise<{ eligible: boolean }> {
+  return await callGoogleServerTx<{ eligible: boolean }>(client, "server_tx_revalidate_google_calendar_eligibility", {
+    p_calendar_connection_id: opts.calendarConnectionId,
+    p_is_eligible: opts.eligible,
+    p_reason: opts.reason,
+  });
+}
+
 // Re-check exactly the same eligibility predicate used at OAuth completion.
 // It never marks reauth_required: only invalid_grant means the household
 // credential itself needs a new OAuth grant.
@@ -260,12 +279,11 @@ export async function revalidateCalendarEligibilityAfterForbidden(
   opts: { calendarConnectionId: string; externalCalendarId: string; accessToken: string; reason: string },
 ): Promise<{ eligible: boolean } | null> {
   try {
-    const candidates = listEligibleCalendarCandidates(await listCalendarList(opts.accessToken));
-    const eligible = candidates.some((candidate) => candidate.id === opts.externalCalendarId);
-    return await callGoogleServerTx<{ eligible: boolean }>(client, "server_tx_revalidate_google_calendar_eligibility", {
-      p_calendar_connection_id: opts.calendarConnectionId,
-      p_is_eligible: eligible,
-      p_reason: opts.reason,
+    const eligible = await isLiveCalendarEligible(opts.accessToken, opts.externalCalendarId);
+    return await recordGoogleCalendarEligibility(client, {
+      calendarConnectionId: opts.calendarConnectionId,
+      eligible,
+      reason: opts.reason,
     });
   } catch (err) {
     // A failed recheck is intentionally non-destructive.  The original 403

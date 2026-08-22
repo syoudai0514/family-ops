@@ -2,6 +2,7 @@ import { assertEquals } from 'jsr:@std/assert@1';
 import {
   GOOGLE_CALENDAR_SCOPES,
   GoogleCalendarApiError,
+  isLiveCalendarEligible,
   isGoogleCalendarForbiddenError,
   listEligibleCalendarCandidates,
   revalidateCalendarEligibilityAfterForbidden,
@@ -82,4 +83,39 @@ Deno.test('rechecks a 403 and rejects a calendar absent from calendarList', asyn
     { id: 'other@example.com', accessRole: 'owner', timeZone: 'Asia/Tokyo' },
   ]);
   assertEquals(args?.p_is_eligible, false);
+});
+
+Deno.test('does not infer eligibility when calendarList has a transient error', async () => {
+  const originalFetch = globalThis.fetch;
+  let rpcCalls = 0;
+  globalThis.fetch = () => Promise.resolve(new Response('temporary error', { status: 503 }));
+  try {
+    const result = await revalidateCalendarEligibilityAfterForbidden({
+      rpc: () => {
+        rpcCalls++;
+        return Promise.resolve({ data: { eligible: false }, error: null });
+      },
+    } as never, {
+      calendarConnectionId: 'connection-1',
+      externalCalendarId: 'family@example.com',
+      accessToken: 'access-token',
+      reason: '403 test',
+    });
+    assertEquals(result, null);
+    assertEquals(rpcCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test('uses the same live predicate for a target candidate and rejects non-Tokyo access', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => Promise.resolve(new Response(JSON.stringify({ items: [
+    { id: 'family@example.com', accessRole: 'writer', timeZone: 'America/New_York' },
+  ] })));
+  try {
+    assertEquals(await isLiveCalendarEligible('access-token', 'family@example.com'), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
