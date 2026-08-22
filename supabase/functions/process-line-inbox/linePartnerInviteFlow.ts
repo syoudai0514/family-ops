@@ -2,9 +2,7 @@ import type { LineQuickReplyAction } from '../_shared/lineMessaging.ts';
 
 export function missingRoleQuickReplies(
   pendingActionId: string,
-  role: 'papa' | 'mama',
 ): LineQuickReplyAction[] {
-  const roleLabel = role === 'papa' ? 'パパ' : 'ママ';
   return [
     {
       type: 'postback',

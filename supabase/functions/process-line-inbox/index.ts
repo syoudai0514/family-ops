@@ -413,7 +413,7 @@ async function sendMissingRoleRecovery(
     item,
     actor,
     missingRoleRecoveryText(role, Boolean(partner)),
-    partner ? editQuickReplies(pendingActionId) : missingRoleQuickReplies(pendingActionId, role),
+    partner ? editQuickReplies(pendingActionId) : missingRoleQuickReplies(pendingActionId),
   );
 }
 

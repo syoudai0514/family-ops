@@ -6,7 +6,7 @@ Deno.test('missing partner role preserves the draft and exposes a safe invite re
   assertStringIncludes(text, 'ママはまだおうちノートに参加していません');
   assertStringIncludes(text, '下書きはそのまま');
 
-  const quickReplies = missingRoleQuickReplies('pending-1', 'mama');
+  const quickReplies = missingRoleQuickReplies('pending-1');
   assertEquals(quickReplies.map((item) => item.label), [
     '招待リンクを作る',
     '自分に戻す',
