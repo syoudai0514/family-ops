@@ -128,6 +128,9 @@ verify_jwt = true
 [functions.edit-task-definition]
 verify_jwt = true
 
+[functions.update-task-categories]
+verify_jwt = true
+
 [functions.deactivate-task-definition]
 verify_jwt = true
 
@@ -313,6 +316,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.process-google-sync]
+verify_jwt = false
+
+[functions.process-family-ops-calendar-outbox]
 verify_jwt = false
 
 [functions.dispatch-routine-automation]

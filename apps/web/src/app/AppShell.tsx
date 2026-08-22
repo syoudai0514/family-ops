@@ -10,6 +10,8 @@ import { HistoryPage } from '../features/history/HistoryPage';
 import { WeekView } from '../features/planning/WeekView';
 import { MonthView } from '../features/planning/MonthView';
 import { SettingsHome } from '../features/settings/SettingsHome';
+import { CategorySettings } from '../features/settings/CategorySettings';
+import { QuickAdd } from '../features/tasks/QuickAdd';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -44,6 +46,7 @@ export function AppShell() {
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/settings" element={<SettingsHome />} />
         <Route path="/settings/routines" element={<RoutineSchedule />} />
+        <Route path="/settings/categories" element={<CategorySettings />} />
         <Route path="/checkin/:sessionId" element={<CheckinPage />} />
         <Route path="*" element={<Today />} />
       </Routes>
@@ -53,7 +56,7 @@ export function AppShell() {
             <span aria-hidden="true">{item.icon}</span>{item.label}
           </NavLink>
         ))}
-        <NavLink to="/requests" aria-label="お願いを作成" className="bottom-nav-add">＋</NavLink>
+        <QuickAdd className="bottom-nav-add" />
       </nav>
     </div>
   );

@@ -9,6 +9,7 @@ import { TodayTaskItem } from './TodayTaskItem';
 import { TodaySchedule } from './TodaySchedule';
 import { PendingActionCard } from './PendingActionCard';
 import { TaskFormModal } from '../tasks/TaskFormModal';
+import { QuickAdd } from '../tasks/QuickAdd';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
@@ -93,24 +94,23 @@ export function Today() {
   const schedule = useTodaySchedule(household?.id ?? null, user?.id ?? null);
   const pending = usePendingActions(household?.id ?? null, user?.id ?? null);
   const navigate = useNavigate();
-  const [creating, setCreating] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskInstance | null>(null);
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
   const [shoppingCollapsed, setShoppingCollapsed] = useState(true);
 
-  const { myTasks, partnerTasks, unassignedTasks } = useMemo(() => {
-    const mine: TaskInstance[] = [];
-    const partnerList: TaskInstance[] = [];
-    const unassigned: TaskInstance[] = [];
-    for (const task of data.tasks) {
-      if (!task.planned_assignee_id) unassigned.push(task);
-      else if (task.planned_assignee_id === me?.user_id) mine.push(task);
-      else partnerList.push(task);
-    }
-    return { myTasks: mine, partnerTasks: partnerList, unassignedTasks: unassigned };
-  }, [data.tasks, me]);
-
   const nextTask = useMemo(() => selectNextOwnedTask(data.tasks, me?.user_id), [data.tasks, me]);
+  const todaySections = useMemo(() => {
+    const transport = data.tasks.filter((task) => task.category === 'dropoff' || task.category === 'pickup');
+    const morningPreparation = data.tasks.filter((task) => task.category === 'morning_preparation');
+    const morningChores = data.tasks.filter(
+      (task) => task.routine_phase === 'morning' && task.category !== 'dropoff' && task.category !== 'morning_preparation',
+    );
+    const eveningChores = data.tasks.filter((task) => task.routine_phase === 'evening' && task.category !== 'pickup');
+    const special = data.tasks.filter(
+      (task) => !transport.includes(task) && !morningPreparation.includes(task) && !morningChores.includes(task) && !eveningChores.includes(task),
+    );
+    return { transport, morningPreparation, morningChores, eveningChores, special };
+  }, [data.tasks]);
 
   function renderTaskList(tasks: TaskInstance[]) {
     return (
@@ -127,6 +127,23 @@ export function Today() {
           />
         ))}
       </ul>
+    );
+  }
+
+  function renderOperationalSection(title: string, tasks: TaskInstance[], description?: string) {
+    if (tasks.length === 0) return null;
+    const completedCount = 0;
+    return (
+      <section className="card task-section">
+        <div className="section-heading">
+          <div>
+            <h2>{title}</h2>
+            {description && <p className="empty-hint">{description}</p>}
+          </div>
+          <span>{completedCount}/{tasks.length}</span>
+        </div>
+        {renderTaskList(tasks)}
+      </section>
     );
   }
 
@@ -168,9 +185,7 @@ export function Today() {
           </p>
           <h1>今日</h1>
         </div>
-        <button type="button" onClick={() => setCreating(true)}>
-          ＋ 追加
-        </button>
+        <QuickAdd label="＋ 追加" ariaLabel="追加する" onTaskSaved={data.refresh} />
       </div>
 
       {data.error && (
@@ -215,30 +230,12 @@ export function Today() {
         members={members}
       />
 
-      {/* Priority 3: 自分の残り */}
-      {myTasks.length > 0 && (
-        <section className="card task-section">
-          <div className="section-heading">
-            <h2>自分の残り</h2>
-            <span>{myTasks.length}件</span>
-          </div>
-          {renderTaskList(myTasks)}
-        </section>
-      )}
-
-      {partnerTasks.length > 0 && (
-        <details className="card partner-summary">
-          <summary>パートナーの残り {partnerTasks.length}件</summary>
-          {renderTaskList(partnerTasks)}
-        </details>
-      )}
-
-      {unassignedTasks.length > 0 && (
-        <section className="card">
-          <h2>未割り当て</h2>
-          {renderTaskList(unassignedTasks)}
-        </section>
-      )}
+      {renderOperationalSection('昨夜からの持ち越し', data.carryoverTasks, '前夜の予定のまま、ここで完了できます。')}
+      {renderOperationalSection('今日の送迎', todaySections.transport)}
+      {renderOperationalSection('今日の特別対応', todaySections.special)}
+      {renderOperationalSection('朝準備', todaySections.morningPreparation)}
+      {renderOperationalSection('朝の定例家事', todaySections.morningChores)}
+      {renderOperationalSection('夜の定例作業', todaySections.eveningChores, '月・週には表示しません。')}
 
       {/* 判断待ちは、今日の実行情報を見た後に、あるときだけ表示する。 */}
       {hasPendingDecisions && (
@@ -306,16 +303,6 @@ export function Today() {
         </section>
       )}
 
-      {creating && (
-        <TaskFormModal
-          mode="create"
-          onClose={() => setCreating(false)}
-          onSaved={() => {
-            setCreating(false);
-            data.refresh();
-          }}
-        />
-      )}
       {editingTask && (
         <TaskFormModal
           mode="edit"

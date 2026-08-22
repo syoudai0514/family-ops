@@ -67,6 +67,8 @@ export interface TaskInstance {
   routine_phase: RoutinePhase | null;
   scheduled_date: string;
   due_at: string | null;
+  calendar_ends_at?: string | null;
+  calendar_visibility?: 'transport' | 'special' | 'hidden' | null;
   planned_assignee_id: string | null;
   completion_mode: CompletionMode;
   status: TaskInstanceStatus;

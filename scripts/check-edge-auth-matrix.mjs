@@ -74,6 +74,8 @@ const GAP_FILL_FUNCTIONS = new Set([
   'get-week-schedule',
   'complete-onboarding-step',
   'replace-recurrence-schedule',
+  'update-task-categories',
+  'process-family-ops-calendar-outbox',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

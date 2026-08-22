@@ -332,6 +332,20 @@ export async function patchEvent(opts: { accessToken: string; calendarId: string
   return { status: res.status, body };
 }
 
+// A generated mirror is removed only by its stored provider_event_id.  This
+// intentionally has no search/query variant: titles and dates are display
+// data, never provider identity.
+export async function deleteEvent(opts: { accessToken: string; calendarId: string; eventId: string; ifMatchEtag?: string | null }): Promise<number> {
+  const res = await fetch(`${GOOGLE_CALENDAR_API_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events/${encodeURIComponent(opts.eventId)}?sendUpdates=none`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${opts.accessToken}`,
+      ...(opts.ifMatchEtag ? { "If-Match": opts.ifMatchEtag } : {}),
+    },
+  });
+  return res.status;
+}
+
 export async function createWatchChannel(opts: { accessToken: string; calendarId: string; channelId: string; token: string; webhookUrl: string }): Promise<{ resourceId: string; expiration: number }> {
   const res = await fetch(`${GOOGLE_CALENDAR_API_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events/watch`, {
     method: "POST",

@@ -1,24 +1,21 @@
-// Local (browser-clock) date in YYYY-MM-DD form, matching the
-// `scheduled_date`/`occurred_on` column format used across the read model.
-// Household timezone lives on `households.timezone`, but WP2's screens all
-// operate on "today" from the perspective of whoever is holding the phone,
-// so the browser's own local date is the right source of truth here.
+// Household time is canonicalized to Asia/Tokyo. Device-local date causes
+// the wrong task to appear around midnight for a travelling family member.
 export function todayIsoDate(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+  return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
 export function formatDateTimeJa(iso: string | null): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleString('ja-JP');
+  return new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
 }
 
 // HH:MM only, matching docs/design/v6/02_UX_AND_SCREENS.md #3's own
 // Priority-1 examples ("17:30 お迎え", "18:00 ママ予定あり").
 export function formatTimeJa(iso: string | null): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
 }

@@ -9,6 +9,7 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import type { TaskInstance } from '../../lib/types';
 import { useWeekSchedule } from './useWeekSchedule';
+import { assigneeToken, buildCalendarProjection, transportLabel } from './calendarProjection';
 
 export function WeekView() {
   const { household, members, me, partner } = useHousehold();
@@ -17,7 +18,7 @@ export function WeekView() {
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
     [weekStart],
   );
-  const { loading, error, events, tasks, refresh } = usePlanningData(
+  const { loading, error, tasks, occurrences, refresh } = usePlanningData(
     household?.id ?? null,
     localIsoDate(days[0]),
     localIsoDate(days[6]),
@@ -28,8 +29,12 @@ export function WeekView() {
     localIsoDate(days[6]),
   );
   const [changingTask, setChangingTask] = useState<TaskInstance | null>(null);
-  const nameFor = (id: string | null) =>
-    members.find((member) => member.user_id === id)?.profile?.display_name ?? '';
+  const primaryUserId = members.find((member) => member.member_role === 'primary')?.user_id ?? null;
+  const partnerUserId = members.find((member) => member.member_role === 'partner')?.user_id ?? null;
+  const projection = useMemo(
+    () => buildCalendarProjection({ tasks, occurrences, primaryUserId, partnerUserId }),
+    [occurrences, partnerUserId, primaryUserId, tasks],
+  );
   return (
     <main className="app-shell planning-page">
       <div className="today-header">
@@ -67,17 +72,22 @@ export function WeekView() {
         <div className="week-cards">
           {days.map((day) => {
             const date = localIsoDate(day);
-            const dayEvents = events.filter((event) => event.date === date);
+            const transport = projection.transportByDate.get(date);
+            const dayItems = projection.itemsByDate.get(date) ?? [];
             return (
               <section className="week-day-card" key={date}>
                 <h2>{formatShortDate(day)}</h2>
-                {dayEvents.length === 0 ? (
+                {!transport && dayItems.length === 0 ? (
                   <p className="empty-hint">予定なし</p>
                 ) : (
                   <ul>
-                    {dayEvents.map((event) => {
-                      const task =
-                        event.kind === 'task' ? tasks.find((item) => item.id === event.id) : null;
+                    {transport && (
+                      <li className="transport-event">
+                        <strong>{transportLabel(transport, primaryUserId, partnerUserId)}</strong>
+                      </li>
+                    )}
+                    {dayItems.map((item) => {
+                      const task = item.linkedTaskId ? tasks.find((candidate) => candidate.id === item.linkedTaskId) : null;
                       const hasConflict = Boolean(
                         task &&
                         canonical.schedule?.assignments.some(
@@ -86,13 +96,13 @@ export function WeekView() {
                       );
                       return (
                         <li
-                          key={`${event.kind}-${event.id}`}
-                          className={event.kind === 'calendar' ? 'calendar-event' : 'task-event'}
+                          key={item.id}
+                          className={item.source === 'google' ? 'calendar-event' : 'task-event'}
                         >
-                          <span>{event.time ? formatTimeJa(event.time) : '終日'}</span>
-                          <strong>{event.title}</strong>
-                          {hasConflict && <span className="error-text">⚠ 予定と重複</span>}
-                          {event.assigneeId && <small>担当: {nameFor(event.assigneeId)}</small>}
+                          <span>{item.startsAt ? formatTimeJa(item.startsAt) : '終日'}</span>
+                          <strong>{item.fullTitle}</strong>
+                          {(hasConflict || item.hasConflict) && <span className="error-text">⚠ 予定と重複</span>}
+                          <small className={`assignee-badge ${item.ownerKind}`}>[{assigneeToken(item.ownerKind)}]</small>
                           {task?.planned_assignee_id === me?.user_id && partner && (
                             <button
                               className="inline-link-button"

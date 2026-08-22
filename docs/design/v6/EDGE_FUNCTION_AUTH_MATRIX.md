@@ -20,6 +20,7 @@
 - reassign-task-once
 - create-task-definition
 - edit-task-definition
+- update-task-categories
 - deactivate-task-definition
 - change-recurrence
 - deactivate-recurrence
@@ -73,6 +74,7 @@ Verify single-use OAuth state; callback needs no browser JWT.
 - dispatch-routine-automation
 - enqueue-periodic-google-sync
 - process-google-sync
+- process-family-ops-calendar-outbox
 - renew-google-watch
 - materialize-recurring
 - cleanup-expired-private-data

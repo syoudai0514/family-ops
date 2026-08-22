@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { localIsoDate } from './dateHelpers';
 import { usePlanningData } from './usePlanningData';
+import { assigneeToken, buildCalendarProjection, transportLabel } from './calendarProjection';
 
 function monthRange(anchor: Date) {
   const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
@@ -9,15 +10,21 @@ function monthRange(anchor: Date) {
   return { start, end };
 }
 export function MonthView() {
-  const { household } = useHousehold();
+  const { household, members } = useHousehold();
   const [anchor, setAnchor] = useState(() => new Date());
   const { start, end } = monthRange(anchor);
-  const { events, loading, error } = usePlanningData(
+  const { tasks, occurrences, loading, error } = usePlanningData(
     household?.id ?? null,
     localIsoDate(start),
     localIsoDate(end),
   );
   const [selected, setSelected] = useState(localIsoDate(new Date()));
+  const primaryUserId = members.find((member) => member.member_role === 'primary')?.user_id ?? null;
+  const partnerUserId = members.find((member) => member.member_role === 'partner')?.user_id ?? null;
+  const projection = useMemo(
+    () => buildCalendarProjection({ tasks, occurrences, primaryUserId, partnerUserId }),
+    [occurrences, partnerUserId, primaryUserId, tasks],
+  );
   const days = useMemo(
     () =>
       Array.from(
@@ -66,7 +73,8 @@ export function MonthView() {
               const day = days[index - firstOffset];
               if (!day) return <span className="month-day empty" key={`empty-${index}`} />;
               const date = localIsoDate(day);
-              const dayEvents = events.filter((event) => event.date === date);
+              const transport = projection.transportByDate.get(date);
+              const dayItems = projection.itemsByDate.get(date) ?? [];
               return (
                 <button
                   key={date}
@@ -74,27 +82,35 @@ export function MonthView() {
                   className={selected === date ? 'month-day selected' : 'month-day'}
                 >
                   <span>{day.getDate()}</span>
-                  {dayEvents.slice(0, 2).map((event) => (
-                    <small key={`${event.kind}-${event.id}`} className={event.kind}>
-                      {event.title}
+                  {transport && (
+                    <small className="transport-row">
+                      {transportLabel(transport, primaryUserId, partnerUserId)}
+                    </small>
+                  )}
+                  {dayItems.slice(0, 2).map((item) => (
+                    <small key={item.id} className={`projection-row ${item.source}`}>
+                      {item.shortTitle} <b>{assigneeToken(item.ownerKind)}</b>
                     </small>
                   ))}
-                  {dayEvents.length > 2 && <small>ほか {dayEvents.length - 2}件</small>}
+                  {dayItems.length > 2 && <small className="month-more">+{dayItems.length - 2}</small>}
                 </button>
               );
             })}
           </div>
           <section className="card day-detail">
             <h2>{selected} の予定</h2>
-            {events.filter((event) => event.date === selected).length === 0 ? (
+            {!projection.transportByDate.get(selected) && (projection.itemsByDate.get(selected) ?? []).length === 0 ? (
               <p className="empty-hint">予定はありません</p>
             ) : (
               <ul>
-                {events
-                  .filter((event) => event.date === selected)
-                  .map((event) => (
-                    <li key={`${event.kind}-${event.id}`}>{event.title}</li>
-                  ))}
+                {projection.transportByDate.get(selected) && (
+                  <li>{transportLabel(projection.transportByDate.get(selected), primaryUserId, partnerUserId)}</li>
+                )}
+                {(projection.itemsByDate.get(selected) ?? []).map((item) => (
+                  <li key={item.id}>
+                    {item.fullTitle} <small>[{assigneeToken(item.ownerKind)}]</small>
+                  </li>
+                ))}
               </ul>
             )}
           </section>

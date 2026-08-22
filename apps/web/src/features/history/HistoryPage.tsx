@@ -3,6 +3,7 @@ import { useHousehold, type HouseholdMemberWithProfile } from '../../app/Househo
 import { formatDateTimeJa } from '../../lib/date';
 import { useHistoryData, type HistoryEntry, type PlannedVsActualOutcome } from './useHistoryData';
 import type { TaskEvent, TaskEventType } from '../../lib/types';
+import { useMemo, useState } from 'react';
 
 // WP4 — planned vs actual history view. Read-only: no score, ranking, or
 // "who did more" comparison is shown here or ever should be (see
@@ -87,6 +88,13 @@ export function HistoryPage() {
   const { user } = useAuth();
   const { household, members } = useHousehold();
   const { loading, error, entries } = useHistoryData(household?.id ?? null, user?.id ?? null);
+  const [filter, setFilter] = useState<'all' | 'routine' | 'planned' | 'request'>('all');
+  const visibleEntries = useMemo(() => entries.filter((entry) => {
+    if (filter === 'all') return true;
+    if (filter === 'routine') return entry.task.routine_phase === 'morning' || entry.task.routine_phase === 'evening';
+    if (filter === 'planned') return entry.task.routine_phase !== 'morning' && entry.task.routine_phase !== 'evening';
+    return entry.events.some((event) => event.source === 'request');
+  }), [entries, filter]);
 
   if (loading) {
     return (
@@ -102,6 +110,11 @@ export function HistoryPage() {
         <h1>履歴</h1>
       </div>
       <p className="task-item-meta">直近2週間の予定と実際の結果です。</p>
+      <div className="filter-chips" aria-label="履歴の絞り込み">
+        {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => (
+          <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{label}</button>
+        ))}
+      </div>
 
       {error && (
         <p role="alert" className="error-text">
@@ -110,8 +123,8 @@ export function HistoryPage() {
       )}
 
       <ul className="history-list">
-        {entries.length === 0 && <li className="empty-hint">この期間の記録はありません。</li>}
-        {entries.map((entry) => (
+        {visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}
+        {visibleEntries.map((entry) => (
           <HistoryRow key={entry.task.id} entry={entry} members={members} />
         ))}
       </ul>
