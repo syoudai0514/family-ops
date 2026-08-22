@@ -179,6 +179,35 @@ end $$;
 revoke all on function public.server_tx_replace_routine_subtasks(uuid,uuid,uuid,jsonb) from public,anon,authenticated;
 grant execute on function public.server_tx_replace_routine_subtasks(uuid,uuid,uuid,jsonb) to service_role;
 
+-- Disable/re-enable must also be valid for a rule whose effective start is in
+-- the future. An inactive future rule needs no effective_to date; assigning
+-- yesterday would violate the recurrence date-range constraint.
+create or replace function public.server_tx_set_routine_definition_options(
+  p_actor_id uuid,p_operation_id uuid,p_task_definition_id uuid,p_enabled boolean,p_include_in_routine_line boolean
+) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare v_household uuid; v_receipt record; v_hash text; v_result jsonb; v_today date := (now() at time zone 'Asia/Tokyo')::date;
+begin
+  v_hash:=encode(sha256(convert_to(jsonb_build_object('definition',p_task_definition_id,'enabled',p_enabled,'line',p_include_in_routine_line)::text,'UTF8')),'hex');
+  insert into private.mutation_receipts(actor_id,operation_id,action_type,request_hash) values(p_actor_id,p_operation_id,'routine-definition-options-v1',v_hash) on conflict(actor_id,operation_id) do nothing;
+  if not found then select * into v_receipt from private.mutation_receipts where actor_id=p_actor_id and operation_id=p_operation_id for update; if v_receipt.request_hash<>v_hash then raise exception 'IDEMPOTENCY_CONFLICT'; end if; return v_receipt.result_payload; end if;
+  select household_id into v_household from public.household_members where user_id=p_actor_id; if v_household is null then raise exception 'NOT_HOUSEHOLD_MEMBER'; end if;
+  update public.task_definitions set is_active=p_enabled,include_in_routine_line=p_include_in_routine_line where id=p_task_definition_id and household_id=v_household and task_kind in ('morning_chore','evening_chore');
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  if not p_include_in_routine_line then
+    delete from public.routine_checkin_session_items si using public.routine_checkin_sessions s, public.task_instances ti
+    where si.household_id=v_household and si.session_id=s.id and si.task_instance_id=ti.id and ti.task_definition_id=p_task_definition_id and s.status='open' and s.scheduled_date>=v_today;
+  end if;
+  if not p_enabled then
+    update public.recurrence_rules set active=false,
+      effective_to=case when effective_from<=v_today then v_today-1 else effective_to end
+    where household_id=v_household and task_definition_id=p_task_definition_id and active;
+    delete from public.task_instances where household_id=v_household and task_definition_id=p_task_definition_id and scheduled_date>=v_today and status='todo';
+  end if;
+  v_result:=jsonb_build_object('ok',true); update private.mutation_receipts set result_payload=v_result,result_type='task_definition',result_id=p_task_definition_id where actor_id=p_actor_id and operation_id=p_operation_id; return v_result;
+end $$;
+revoke all on function public.server_tx_set_routine_definition_options(uuid,uuid,uuid,boolean,boolean) from public,anon,authenticated;
+grant execute on function public.server_tx_set_routine_definition_options(uuid,uuid,uuid,boolean,boolean) to service_role;
+
 -- New recurring task instances take a snapshot of the currently active
 -- canonical definitions. Existing future/past materialized rows are not
 -- changed by an edit, and completed History therefore remains immutable.
