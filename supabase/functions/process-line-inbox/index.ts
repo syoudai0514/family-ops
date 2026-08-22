@@ -77,6 +77,10 @@ import {
   rewritePickupRequest,
 } from '../_shared/lineMessageBuilders.ts';
 import { resolveJapanesePickupDate } from '../_shared/pickupDate.ts';
+import {
+  missingRoleQuickReplies,
+  missingRoleRecoveryText,
+} from './linePartnerInviteFlow.ts';
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get('LINE_INBOX_BATCH_LIMIT') ?? '25');
@@ -396,6 +400,61 @@ async function updateEditablePending(
   return data as EditablePendingAction;
 }
 
+async function sendMissingRoleRecovery(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  pendingActionId: string,
+  role: 'papa' | 'mama',
+): Promise<void> {
+  const partner = await partnerUserId(client, actor);
+  await sendConfirmation(
+    client,
+    item,
+    actor,
+    missingRoleRecoveryText(role, Boolean(partner)),
+    partner ? editQuickReplies(pendingActionId) : missingRoleQuickReplies(pendingActionId),
+  );
+}
+
+async function sendPartnerInviteLink(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  pendingActionId: string,
+): Promise<void> {
+  if (await partnerUserId(client, actor)) {
+    await sendConfirmation(client, item, actor, 'すでにパートナーは参加しています。もう一度「担当はママ」または「担当はパパ」と送ってください。');
+    return;
+  }
+  const operationId = await deterministicOperationId('line-partner-invite', actor.user_id, pendingActionId);
+  const { data, error } = await client.rpc('server_tx_create_household_invite', {
+    p_actor_id: actor.user_id,
+    p_operation_id: operationId,
+  });
+  if (error || !data || typeof (data as { raw_token?: unknown }).raw_token !== 'string') {
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      'この下書き用の招待リンクはすでに発行済みです。上の招待リンクをパートナーへ共有してください。下書きはそのまま残っています。',
+    );
+    return;
+  }
+  const base = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
+  const url = base
+    ? `${base}/join?token=${encodeURIComponent((data as { raw_token: string }).raw_token)}`
+    : null;
+  await sendConfirmation(
+    client,
+    item,
+    actor,
+    url
+      ? `ママを招待するリンクです（24時間有効）。パートナーに共有してください。参加後、この下書きで「担当はママ」と送れば変更できます。\n${url}`
+      : '招待リンクを作れませんでした。PWAの「設定 ＞ 家族」から招待してください。下書きはそのまま残っています。',
+  );
+}
+
 async function tryApplyLineTextEdit(
   client: SupabaseClient,
   item: WebhookInboxItem,
@@ -434,12 +493,11 @@ async function tryApplyLineTextEdit(
         ? actor.user_id
         : await householdUserForRole(client, actor.household_id, role);
     if (!selected) {
-      await sendConfirmation(
-        client,
-        item,
-        actor,
-        'その担当者を見つけられませんでした。家族設定を確認してください。',
-      );
+      // Only a requested family role can be absent; `self` always resolves to
+      // the authenticated LINE actor.
+      if (role === 'papa' || role === 'mama') {
+        await sendMissingRoleRecovery(client, item, actor, pending.id, role);
+      }
       return true;
     }
     const label = role === 'papa' ? 'パパ' : role === 'mama' ? 'ママ' : '自分';
@@ -618,6 +676,16 @@ async function handlePostback(
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
 
+  if (fields.action === 'create_partner_invite' && fields.pending_action_id) {
+    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+    if (!pending) {
+      await sendConfirmation(client, item, actor, 'この下書きはすでに確定・期限切れです。');
+      return;
+    }
+    await sendPartnerInviteLink(client, item, actor, pending.id);
+    return;
+  }
+
   if (fields.action === 'edit_pending' && fields.pending_action_id) {
     const pending = await getEditablePending(client, actor, fields.pending_action_id);
     if (!pending) {
@@ -713,7 +781,11 @@ async function handlePostback(
             ? await householdUserForRole(client, actor.household_id, fields.value)
             : null;
       if (!selected) {
-        await sendConfirmation(client, item, actor, 'その担当者を見つけられませんでした。');
+        if (fields.value === 'papa' || fields.value === 'mama') {
+          await sendMissingRoleRecovery(client, item, actor, pending.id, fields.value);
+        } else {
+          await sendConfirmation(client, item, actor, '担当者を変更できませんでした。下書きは変更していません。');
+        }
         return;
       }
       payload.target_label =
