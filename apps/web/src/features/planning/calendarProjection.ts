@@ -1,39 +1,205 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛvN‹Z–‹­¦ëeŠw¬Õ¥µÁ½ÉĞÑåÁ”ìQ…Í­%¹ÍÑ…¹”ô™É½´€œ¸¸¼¸¸½±¥ˆ½ÑåÁ•Ìœì()•áÁ½ÉĞÑåÁ”…±•¹‘…ÉAÉ½©•Ñ¥½¹-¥¹€ô€ÑÉ…¹ÍÁ½ÉĞœğ€ÍÁ•¥…°œğ€…±•¹‘…Èœğ€É•ÅÕ•ÍĞœì)•áÁ½ÉĞÑåÁ”…±•¹‘…ÉAÉ½©•Ñ¥½¹M½ÕÉ”€ô€™…µ¥±å}½ÁÌœğ€½½±”œì)•áÁ½ÉĞÑåÁ”…±•¹‘…É=İ¹•É-¥¹€ô€ÁÉ¥µ…Éäœğ€Á…ÉÑ¹•Èœğ€™…µ¥±äœğ€Õ¹­¹½İ¸œì()•áÁ½ÉĞ¥¹Ñ•É™…”A±…¹¹¥¹Q…Í¬•áÑ•¹‘ÌQ…Í­%¹ÍÑ…¹”ì(€‘•™¥¹¥Ñ¥½¹}½‘”üèÍÑÉ¥¹œğ¹Õ±°ì(€…±•¹‘…É}Ù¥Í¥‰¥±¥Ñäüè€ÑÉ…¹ÍÁ½ÉĞœğ€ÍÁ•¥…°œğ€¡¥‘‘•¸œğ¹Õ±°ì)ô()•áÁ½ÉĞ¥¹Ñ•É™…”½½±•A±…¹¹¥¹=ÕÉÉ•¹”ì(€¥èÍÑÉ¥¹œì(€‘…Ñ”èÍÑÉ¥¹œì(€Ñ¥µ”èÍÑÉ¥¹œğ¹Õ±°ì(€•¹‘ÍĞüèÍÑÉ¥¹œğ¹Õ±°ì(€Ñ¥Ñ±”èÍÑÉ¥¹œì(€…±±…äè‰½½±•…¸ì(€ÑÉ…¹ÍÁ…É•¹Ğè‰½½±•…¸ì(€½İ¹•ÉUÍ•É%èÍÑÉ¥¹œğ¹Õ±°ì(€ÁÉ½Ù¥‘•ÉÙ•¹Ñ%èÍÑÉ¥¹œğ¹Õ±°ì(€•¹•É…Ñ•‘	å…µ¥±å=ÁÌè‰½½±•…¸ì(€¡…Í½¹™±¥Ğè‰½½±•…¸ì(€±½…Ñ¥½¸üèÍÑÉ¥¹œğ¹Õ±°ì(€‘•ÍÉ¥ÁÑ¥½¸üèÍÑÉ¥¹œğ¹Õ±°ì(€Í½ÕÉ•…±•¹‘…ÈüèÍÑÉ¥¹œğ¹Õ±°ì)ô()•áÁ½ÉĞ¥¹Ñ•É™…”…±•¹‘…ÉAÉ½©•Ñ¥½¹%Ñ•´ì(€¥èÍÑÉ¥¹œì(€Í½ÕÉ”è…±•¹‘…ÉAÉ½©•Ñ¥½¹M½ÕÉ”ì(€­¥¹è…±•¹‘…ÉAÉ½©•Ñ¥½¹-¥¹ì(€±½…±…Ñ”èÍÑÉ¥¹œì(€ÍÑ…ÉÑÍĞèÍÑÉ¥¹œğ¹Õ±°ì(€•¹‘ÍĞèÍÑÉ¥¹œğ¹Õ±°ì(€…±±…äè‰½½±•…¸ì(€Í¡½ÉÑQ¥Ñ±”èÍÑÉ¥¹œì(€™Õ±±Q¥Ñ±”èÍÑÉ¥¹œì(€½İ¹•ÉUÍ•É%èÍÑÉ¥¹œğ¹Õ±°ì(€½İ¹•É-¥¹è…±•¹‘…É=İ¹•É-¥¹ì(€¡…Í½¹™±¥Ğè‰½½±•…¸ì(€ÁÉ½Ù¥‘•ÉÙ•¹Ñ%èÍÑÉ¥¹œğ¹Õ±°ì(€±¥¹­•‘Q…Í­%èÍÑÉ¥¹œğ¹Õ±°ì(€±½…Ñ¥½¸èÍÑÉ¥¹œğ¹Õ±°ì(€‘•ÍÉ¥ÁÑ¥½¸èÍÑÉ¥¹œğ¹Õ±°ì(€Í½ÕÉ•…±•¹‘…ÈèÍÑÉ¥¹œğ¹Õ±°ì)ô()•áÁ½ÉĞ¥¹Ñ•É™…”QÉ…¹ÍÁ½ÉÑAÉ½©•Ñ¥½¸ì(€¥èÍÑÉ¥¹œì(€±½…±…Ñ”èÍÑÉ¥¹œì(€‘É½Á½™™ÍÍ¥¹••%èÍÑÉ¥¹œğ¹Õ±°ì(€Á¥­ÕÁÍÍ¥¹••%èÍÑÉ¥¹œğ¹Õ±°ì(€‘É½Á½™™Q…Í­%èÍÑÉ¥¹œğ¹Õ±°ì(€Á¥­ÕÁQ…Í­%èÍÑÉ¥¹œğ¹Õ±°ì)ô()•áÁ½ÉĞ¥¹Ñ•É™…”…±•¹‘…ÉAÉ½©•Ñ¥½¸ì(€ÑÉ…¹ÍÁ½ÉÑ	å…Ñ”è5…ÀñÍÑÉ¥¹œ°QÉ…¹ÍÁ½ÉÑAÉ½©•Ñ¥½¸øì(€¥Ñ•µÍ	å…Ñ”è5…ÀñÍÑÉ¥¹œ°…±•¹‘…ÉAÉ½©•Ñ¥½¹%Ñ•µmtøì(€…±±%Ñ•µÌè…±•¹‘…ÉAÉ½©•Ñ¥½¹%Ñ•µmtì)ô()½¹ÍĞ¥ÍQÉ…¹ÍÁ½ÉĞ€ô€¡Ñ…Í¬èA±…¹¹¥¹Q…Í¬¤€ôø(€Ñ…Í¬¹‘•™¥¹¥Ñ¥½¹}½‘”€ôôô€‘É½Á½™˜œñğÑ…Í¬¹‘•™¥¹¥Ñ¥½¹}½‘”€ôôô€Á¥­ÕÀœñğ(€Ñ…Í¬¹…Ñ•½Éä€ôôô€‘É½Á½™˜œñğÑ…Í¬¹…Ñ•½Éä€ôôô€Á¥­ÕÀœì()½¹ÍĞ¥ÍI½ÕÑ¥¹”€ô€¡Ñ…Í¬èA±…¹¹¥¹Q…Í¬¤€ôø(€Ñ…Í¬¹É½ÕÑ¥¹•}Á¡…Í”€ôôô€µ½É¹¥¹œœñğÑ…Í¬¹É½ÕÑ¥¹•}Á¡…Í”€ôôô€•Ù•¹¥¹œœì()™Õ¹Ñ¥½¸Ñ…Í­-¥¹¡Ñ…Í¬èA±…¹¹¥¹Q…Í¬¤è…±•¹‘…ÉAÉ½©•Ñ¥½¹-¥¹ğ¹Õ±°ì(€¥˜€¡¥ÍQÉ…¹ÍÁ½ÉĞ¡Ñ…Í¬¤¤É•ÑÕÉ¸€ÑÉ…¹ÍÁ½ÉĞœì(€€¼¼Y¥Í¥‰¥±¥Ñä¥Ì…¸•áÁ±¥¥Ğ‘½µ…¥¸Ù…±Õ”¸Q¡”±•…ä™…±±‰…¬¥Ì‰…Í•½¹±ä(€€¼¼½¸Á•ÉÍ¥ÍÑ•…Ñ•½Éä½É½ÕÑ¥¹”™¥•±‘Ì°¹•Ù•È½¸„ÑÉ…¹Í±…Ñ•Ñ¥Ñ±”¸(€¥˜€¡Ñ…Í¬¹…±•¹‘…É}Ù¥Í¥‰¥±¥Ñä€ôôô€ÍÁ•¥…°œ¤É•ÑÕÉ¸€ÍÁ•¥…°œì(€¥˜€¡Ñ…Í¬¹…±•¹‘…É}Ù¥Í¥‰¥±¥Ñä€ôôô€¡¥‘‘•¸œñğ¥ÍI½ÕÑ¥¹”¡Ñ…Í¬¤¤É•ÑÕÉ¸¹Õ±°ì(€€¼¼¸Õ¹­¹½İ¸½±•…äÉ½Ü¥Ì¹½Ğ„ÍÁ•¥…°•Ù•¹Ğµ•É•±ä‰•…ÕÍ”¥Ğ¥Ì(€€¼¼¹½¸µÉ½ÕÑ¥¹”¸…±•¹‘…ÈÙ¥Í¥‰¥±¥ÑäµÕÍĞ‰”…¸•áÁ±¥¥ĞÁ•ÉÍ¥ÍÑ•¡½¥”¸(€É•ÑÕÉ¸¹Õ±°ì)ô()™Õ¹Ñ¥½¸½İ¹•É-¥¹¡½İ¹•ÉUÍ•É%èÍÑÉ¥¹œğ¹Õ±°°ÁÉ¥µ…ÉåUÍ•É%èÍÑÉ¥¹œğ¹Õ±°°Á…ÉÑ¹•ÉUÍ•É%èÍÑÉ¥¹œğ¹Õ±°¤è…±•¹‘…É=İ¹•É-¥¹ì(€¥˜€¡½İ¹•ÉUÍ•É%€˜˜½İ¹•ÉUÍ•É%€ôôôÁÉ¥µ…ÉåUÍ•É%¤É•ÑÕÉ¸€ÁÉ¥µ…Éäœì(€¥˜€¡½İ¹•ÉUÍ•É%€˜˜½İ¹•ÉUÍ•É%€ôôôÁ…ÉÑ¹•ÉUÍ•É%¤É•ÑÕÉ¸€Á…ÉÑ¹•Èœì(€É•ÑÕÉ¸½İ¹•ÉUÍ•É%€ü€™…µ¥±äœ€è€Õ¹­¹½İ¸œì)ô()™Õ¹Ñ¥½¸½µÁ…ÑQ¥Ñ±”¡Ñ¥µ”èÍÑÉ¥¹œğ¹Õ±°°Ñ¥Ñ±”èÍÑÉ¥¹œ°…±±…äè‰½½±—v¶‰ËkºwµçHYˆ
-\ÚË™Yš[š][Û—ØÛÙHOOH	Ù›ÜÙ™‰È\ÚË˜Ø]YÛÜHOOH	Ù›ÜÙ™‰ÊHÂˆİ\œ™[™›ÜÙ™\ÜÚYÛ™YRYH\ÚËœ[›™YØ\ÜÚYÛ™YWÚYÂˆİ\œ™[™›ÜÙ™•\ÚÒYH\ÚËšYÂˆH[ÙHÂˆİ\œ™[œXÚİ\\ÜÚYÛ™YRYH\ÚËœ[›™YØ\ÜÚYÛ™YWÚYÂˆİ\œ™[œXÚİ\\ÚÒYH\ÚËšYÂˆBˆ˜[œÜÜQ]KœÙ]
-\ÚËœØÚY[YÙ]Kİ\œ™[
-NÂˆB‚ˆÛÛœİ][\ÎˆØ[[™\”›Ú™Xİ[Û’][V×HH×NÂˆ›Üˆ
-ÛÛœİ\ÚÈÙˆ\ÚÜÊHÂˆÛÛœİÚ[™H\ÚÒÚ[™
-\ÚÊNÂˆYˆ
-ZÚ[™Ú[™OOH	İ˜[œÜÜ	ÊHÛÛ[YNÂˆÛÛœİİÛ™\ˆHİÛ™\’Ú[™
-\ÚËœ[›™YØ\ÜÚYÛ™YWÚYš[X\U\Ù\’Y\™\•\Ù\’Y
-NÂˆ][\Ëœ\Ú
-ÂˆYˆ\ÚÎ‰İ\ÚËšYXˆÛİ\˜ÙNˆ	Ù˜[Z[WÛÜÉËˆÚ[™ˆØØ[]Nˆ\ÚËœØÚY[YÙ]Kˆİ\Ğ]ˆ\ÚË™YWØ]ˆ[™Ğ]ˆ\ÚË˜Ø[[™\—Ù[™×Ø]ÏÈ[ˆ[^Nˆ]\ÚË™YWØ]ˆÚÜ]NˆÛÛ\Xİ]J\ÚË™YWØ]\ÚË]K]\ÚË™YWØ]
-Kˆ[]Nˆ\ÚË]KˆİÛ™\•\Ù\’Yˆ\ÚËœ[›™YØ\ÜÚYÛ™YWÚYˆİÛ™\’Ú[™ˆİÛ™\‹ˆ\ĞÛÛ™›Xİˆ˜[ÙKˆ›İšY\‘]™[Yˆ[ˆ[šÙY\ÚÒYˆ\ÚËšYˆØØ][Ûˆ[ˆ\ØÜš\[Ûˆ[ˆÛİ\˜ÙPØ[[™\ˆ	Ñ˜[Z[HÜÉËˆJNÂˆBˆ›Üˆ
-ÛÛœİ]™[ÙˆØØİ\œ™[˜Ù\ÊHÂˆËÈH˜[Z[HÜÈZ\œ›Üˆ™[XZ[œÈ™\™\Ù[YH]ÈØ[›ÛšXØ[\ÚË›İBˆËÈ[˜›İ[™ÛÛÙÛHØØİ\œ™[˜ÙKˆ›È]KÙ]HÛÛ\\š\ÛÛˆ\È\ÙY‚ˆYˆ
-]™[™Ù[™\˜]YQ˜[Z[SÜÊHÛÛ[YNÂˆÛÛœİİÛ™\ˆHİÛ™\’Ú[™
-]™[›İÛ™\•\Ù\’Yš[X\U\Ù\’Y\™\•\Ù\’Y
-NÂˆ][\Ëœ\Ú
-ÂˆYˆÛÛÙÛN‰Ù]™[šYXˆÛİ\˜ÙNˆ	ÙÛÛÙÛIËˆÚ[™ˆ	ØØ[[™\‰ËˆØØ[]Nˆ]™[™]Kˆİ\Ğ]ˆ]™[[YKˆ[™Ğ]ˆ]™[™[™Ğ]ÏÈ[ˆ[^Nˆ]™[˜[^KˆÚÜ]NˆÛÛ\Xİ]J]™[[YK]™[]K]™[˜[^JKˆ[]Nˆ]™[]KˆİÛ™\•\Ù\’Yˆ]™[›İÛ™\•\Ù\’YˆİÛ™\’Ú[™ˆİÛ™\‹ˆ\ĞÛÛ™›Xİˆ]™[š\ĞÛÛ™›Xİˆ›İšY\‘]™[Yˆ]™[œ›İšY\‘]™[Yˆ[šÙY\ÚÒYˆ[ˆØØ][Ûˆ]™[›ØØ][ÛˆÏÈ[ˆ\ØÜš\[Ûˆ]™[™\ØÜš\[ÛˆÏÈ[ˆÛİ\˜ÙPØ[[™\ˆ]™[œÛİ\˜ÙPØ[[™\ˆÏÈ[ˆJNÂˆBˆÛÛœİ˜[šÈH
-][NˆØ[[™\”›Ú™Xİ[Û’][JHO‚ˆ
-][Kš\ĞÛÛ™›XİÈˆL
-H
-È
-][KšÚ[™OOH	ÜÜXÚX[	ÈÈˆ][K˜[^HÈÈˆŠNÂˆ][\ËœÛÜ
+import type { TaskInstance } from '../../lib/types';
 
-KŠHOˆ˜[šÊJHH˜[šÊŠH
-Kœİ\Ğ]ÏÈ	ÉÊK›ØØ[PÛÛ\\™J‹œİ\Ğ]ÏÈ	ÉÊHKšY›ØØ[PÛÛ\\™J‹šY
-JNÂˆÛÛœİ][\ĞQ]HH™]ÈX\İš[™ËØ[[™\”›Ú™Xİ[Û’][V×OŠ
-NÂˆ›Üˆ
-ÛÛœİ][HÙˆ][\ÊH][\ĞQ]KœÙ]
-][K›ØØ[]KË‹‹Š][\ĞQ]K™Ù]
-][K›ØØ[]JHÏÈ×JK][WJNÂˆ™]\›ˆÈ˜[œÜÜQ]K][\ĞQ]K[][\Îˆ][\ÈNÂŸB‚™^Ü[˜İ[Ûˆ˜[œÜÜX™[
-˜[œÜÜˆ˜[œÜÜ›Ú™Xİ[Ûˆ[™Yš[™Yš[X\U\Ù\’Yˆİš[™È[\™\•\Ù\’Yˆİš[™È[
-HÂˆYˆ
-]˜[œÜÜ
-H™]\›ˆ[ÂˆÛÛœİÚÙ[ˆH
-Yˆİš[™È[
-HOˆYÈ\ÜÚYÛ™YUÚÙ[ŠİÛ™\’Ú[™
-Yš[X\U\Ù\’Y\™\•\Ù\’Y
-JHˆ	ø %	ÎÂˆ™]\›ˆ:` H	İÚÙ[Š˜[œÜÜ™›ÜÙ™\ÜÚYÛ™YRY
-_H;ïg:/ãˆ	İÚÙ[Š˜[œÜÜœXÚİ\\ÜÚYÛ™YRY
-_XÂŸB
+export type CalendarProjectionKind = 'transport' | 'special' | 'calendar' | 'request';
+export type CalendarProjectionSource = 'family_ops' | 'google';
+export type CalendarOwnerKind = 'primary' | 'partner' | 'family' | 'unknown';
+
+export interface PlanningTask extends TaskInstance {
+  definition_code?: string | null;
+  calendar_visibility?: 'transport' | 'special' | 'hidden' | null;
+}
+
+export interface GooglePlanningOccurrence {
+  id: string;
+  date: string;
+  time: string | null;
+  endsAt?: string | null;
+  title: string;
+  allDay: boolean;
+  transparent: boolean;
+  ownerUserId: string | null;
+  providerEventId: string | null;
+  generatedByFamilyOps: boolean;
+  hasConflict: boolean;
+  location?: string | null;
+  description?: string | null;
+  sourceCalendar?: string | null;
+}
+
+export interface CalendarProjectionItem {
+  id: string;
+  source: CalendarProjectionSource;
+  kind: CalendarProjectionKind;
+  localDate: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  allDay: boolean;
+  shortTitle: string;
+  fullTitle: string;
+  ownerUserId: string | null;
+  ownerKind: CalendarOwnerKind;
+  hasConflict: boolean;
+  providerEventId: string | null;
+  linkedTaskId: string | null;
+  location: string | null;
+  description: string | null;
+  sourceCalendar: string | null;
+}
+
+export interface TransportProjection {
+  id: string;
+  localDate: string;
+  dropoffAssigneeId: string | null;
+  pickupAssigneeId: string | null;
+  dropoffTaskId: string | null;
+  pickupTaskId: string | null;
+}
+
+export interface CalendarProjection {
+  transportByDate: Map<string, TransportProjection>;
+  itemsByDate: Map<string, CalendarProjectionItem[]>;
+  allItems: CalendarProjectionItem[];
+}
+
+const isTransport = (task: PlanningTask) =>
+  task.definition_code === 'dropoff' || task.definition_code === 'pickup' ||
+  task.category === 'dropoff' || task.category === 'pickup';
+
+const isRoutine = (task: PlanningTask) =>
+  task.routine_phase === 'morning' || task.routine_phase === 'evening';
+
+function taskKind(task: PlanningTask): CalendarProjectionKind | null {
+  if (isTransport(task)) return 'transport';
+  // Visibility is an explicit domain value. The legacy fallback is based only
+  // on persisted category/routine fields, never on a translated title.
+  if (task.calendar_visibility === 'special') return 'special';
+  if (task.calendar_visibility === 'hidden' || isRoutine(task)) return null;
+  // An unknown/legacy row is not a special event merely because it is
+  // non-routine. Calendar visibility must be an explicit persisted choice.
+  return null;
+}
+
+function ownerKind(ownerUserId: string | null, primaryUserId: string | null, partnerUserId: string | null): CalendarOwnerKind {
+  if (ownerUserId && ownerUserId === primaryUserId) return 'primary';
+  if (ownerUserId && ownerUserId === partnerUserId) return 'partner';
+  return ownerUserId ? 'family' : 'unknown';
+}
+
+function compactTitle(time: string | null, title: string, allDay: boolean) {
+  if (!time || allDay) return title;
+  const parsed = new Date(time);
+  if (Number.isNaN(parsed.getTime())) return title;
+  return `${new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false }).format(parsed)} ${title}`;
+}
+
+export function assigneeToken(ownerKind: CalendarOwnerKind) {
+  if (ownerKind === 'primary') return 'P';
+  if (ownerKind === 'partner') return 'M';
+  if (ownerKind === 'family') return 'å®¶æ—';
+  return 'æœª';
+}
+
+export function transportTokens(transport: TransportProjection | undefined, primaryUserId: string | null, partnerUserId: string | null) {
+  const value = (userId: string | null) => {
+    if (!userId) return { token: 'â€”', tone: 'none' };
+    const owner = ownerKind(userId, primaryUserId, partnerUserId);
+    return { token: assigneeToken(owner), tone: owner };
+  };
+  return { dropoff: value(transport?.dropoffAssigneeId ?? null), pickup: value(transport?.pickupAssigneeId ?? null) };
+}
+
+export function buildCalendarProjection({
+  tasks,
+  occurrences,
+  primaryUserId,
+  partnerUserId,
+}: {
+  tasks: PlanningTask[];
+  occurrences: GooglePlanningOccurrence[];
+  primaryUserId: string | null;
+  partnerUserId: string | null;
+}): CalendarProjection {
+  const transportByDate = new Map<string, TransportProjection>();
+  for (const task of tasks) {
+    if (!isTransport(task)) continue;
+    const current = transportByDate.get(task.scheduled_date) ?? {
+      id: `transport:${task.scheduled_date}`,
+      localDate: task.scheduled_date,
+      dropoffAssigneeId: null,
+      pickupAssigneeId: null,
+      dropoffTaskId: null,
+      pickupTaskId: null,
+    };
+    if (task.definition_code === 'dropoff' || task.category === 'dropoff') {
+      current.dropoffAssigneeId = task.planned_assignee_id;
+      current.dropoffTaskId = task.id;
+    } else {
+      current.pickupAssigneeId = task.planned_assignee_id;
+      current.pickupTaskId = task.id;
+    }
+    transportByDate.set(task.scheduled_date, current);
+  }
+
+  const items: CalendarProjectionItem[] = [];
+  for (const task of tasks) {
+    const kind = taskKind(task);
+    if (!kind || kind === 'transport') continue;
+    const owner = ownerKind(task.planned_assignee_id, primaryUserId, partnerUserId);
+    items.push({
+      id: `task:${task.id}`,
+      source: 'family_ops',
+      kind,
+      localDate: task.scheduled_date,
+      startsAt: task.due_at,
+      endsAt: task.calendar_ends_at ?? null,
+      allDay: !task.due_at,
+      shortTitle: compactTitle(task.due_at, task.title, !task.due_at),
+      fullTitle: task.title,
+      ownerUserId: task.planned_assignee_id,
+      ownerKind: owner,
+      hasConflict: false,
+      providerEventId: null,
+      linkedTaskId: task.id,
+      location: null,
+      description: null,
+      sourceCalendar: 'Family Ops',
+    });
+  }
+  for (const event of occurrences) {
+    // A Family Ops mirror remains represented by its canonical task, not the
+    // inbound Google occurrence. No title/date comparison is used.
+    if (event.generatedByFamilyOps) continue;
+    const owner = ownerKind(event.ownerUserId, primaryUserId, partnerUserId);
+    items.push({
+      id: `google:${event.id}`,
+      source: 'google',
+      kind: 'calendar',
+      localDate: event.date,
+      startsAt: event.time,
+      endsAt: event.endsAt ?? null,
+      allDay: event.allDay,
+      shortTitle: compactTitle(event.time, event.title, event.allDay),
+      fullTitle: event.title,
+      ownerUserId: event.ownerUserId,
+      ownerKind: owner,
+      hasConflict: event.hasConflict,
+      providerEventId: event.providerEventId,
+      linkedTaskId: null,
+      location: event.location ?? null,
+      description: event.description ?? null,
+      sourceCalendar: event.sourceCalendar ?? null,
+    });
+  }
+  const rank = (item: CalendarProjectionItem) =>
+    (item.hasConflict ? 0 : 10) + (item.kind === 'special' ? 0 : item.allDay ? 3 : 2);
+  items.sort((a, b) => rank(a) - rank(b) || (a.startsAt ?? '').localeCompare(b.startsAt ?? '') || a.id.localeCompare(b.id));
+  const itemsByDate = new Map<string, CalendarProjectionItem[]>();
+  for (const item of items) itemsByDate.set(item.localDate, [...(itemsByDate.get(item.localDate) ?? []), item]);
+  return { transportByDate, itemsByDate, allItems: items };
+}
+
+export function transportLabel(transport: TransportProjection | undefined, primaryUserId: string | null, partnerUserId: string | null) {
+  if (!transport) return null;
+  const token = (id: string | null) => id ? assigneeToken(ownerKind(id, primaryUserId, partnerUserId)) : 'â€”';
+  return `é€ ${token(transport.dropoffAssigneeId)} ï½œ è¿ ${token(transport.pickupAssigneeId)}`;
+}

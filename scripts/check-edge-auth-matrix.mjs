@@ -1,52 +1,199 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛÞµN‹Z–‹­¦ëeŠw¬Ô¼¼‘”…ÕÑ µ…ÑÉ¥à±¥¹Ð€¡‘½Ì½‘•Í¥¸½ØØ½}U9Q%=9}UQ!}5QI%`¹µ$Í•Ñ¥½¸¤è(¼¼(¼¼ØØÉ•Ù¥•Ü™¥à€¡@Äµ°Ñ¡¥ÌÉ½Õ¹¤èÍÕÁ…‰…Í”½½¹™¥œ¹Ñ½µ°Ìm™Õ¹Ñ¥½¹Ì¸©t(¼¼‰±½¬¥Ì¹½Ü„1%Y‘•Á±½åµ•¹ÐÍ¹…ÁÍ¡½Ð€¡½¹±ä™Õ¹Ñ¥½¹Ì…ÑÕ…±±äÁÉ•Í•¹Ð(¼¼Õ¹‘•ÈÍÕÁ…‰…Í”½™Õ¹Ñ¥½¹Ì¼¤°¹½Ð„€ÄèÄµ¥ÉÉ½È½˜Ñ¡”™Õ±°€ÔÈµ™Õ¹Ñ¥½¸ØØ(¼¼‘•Í¥¸µ…ÑÉ¥àƒŠP‘•±…É¥¹œ„½¹™¥œ¹Ñ½µ°•¹ÑÉä™½È„™Õ¹Ñ¥½¸Ñ¡…Ð¡…Ì¹¼(¼¼¥¹‘•à¹ÑÌ½¸‘¥Í¬¥ÌÝ¡…Ð„É•…°ÍÕÁ…‰…Í”ÍÑ…ÉÑ€½ÍÕÁ…‰…Í”‘ˆÉ•Í•Ñ€(¼¼…¹¹½Ð•á•ÕÑ”……¥¹ÍÐ¸Q¡”ÑÝ¼µ…ÑÉ¥•Ì…É”Ñ¡•É•™½É”±¥¹Ñ•(¼¼¥¹‘•Á•¹‘•¹Ñ±ä°‰½Ñ É•ÅÕ¥É•Ñ¼Á…ÍÌè(¼¼(¼¼€€€Ä¸‘•Í¥¸µµ…ÑÉ¥à½µÁ±•Ñ•¹•ÍÌ€¡ÍÑ…¹‘…±½¹”¤èÑ¡”™Õ±°¹½Éµ…Ñ¥Ù”(¼¼€€€€€Í¹…ÁÍ¡½ÐÙ•¹‘½É•…Ð‘½Ì½‘•Í¥¸½ØØ½ÍÕÁ…‰…Í”½½¹™¥œ¹Ñ½µ°ÍÑ¥±°(¼¼€€€€€‘•±…É•Ì•Ù•Éä™Õ¹Ñ¥½¸±…ÍÍ¥™¥•¥¸(¼¼€€€€€‘½Ì½‘•Í¥¸½ØØ½}U9Q%=9}UQ!}5QI%`¹µƒŠPÑ¡¥Ì¥Ì„‘É¥™Ð¡•¬(¼¼€€€€€½¸Ñ¡”Ù•¹‘½É•ØØ‘•Í¥¸Á…­…”…±½¹”°Õ¹É•±…Ñ•Ñ¼Ý¡…ÐÌ(¼¼€€€€€‘•Á±½å•Í¼™…È¸(¼¼€€€È¸±¥Ù”‘•Á±½åµ•¹Ð½ÉÉ•Ñ¹•ÍÌè•Ù•Éä™Õ¹Ñ¥½¸…ÑÕ…±±ä‘•Á±½å•Õ¹‘•È(¼¼€€€€€ÍÕÁ…‰…Í”½™Õ¹Ñ¥½¹Ì¼€¡¡…Ì…¸¥¹‘•à¹ÑÌ¤¡…Ì„ÍÕÁ…‰…Í”½½¹™¥œ¹Ñ½µ°(¼¼€€€€€•¹ÑÉä°Ñ¡…Ð•¹ÑÉäÌÙ•É¥™å}©ÝÐµ…Ñ¡•ÌÑ¡”¹½Éµ…Ñ¥Ù”±…ÍÍ¥™¥…Ñ¥½¸(¼¼€€€€€™½ÈÑ¡…Ð¹…µ”°…¹ÍÕÁ…‰…Í”½½¹™¥œ¹Ñ½µ°‘•±…É•Ì¹¼•¹ÑÉä™½È„(¼¼€€€€€™Õ¹Ñ¥½¸Ñ¡…Ð¥Í¸Ð‘•Á±½å•€¡±¥Ù”½¹™¥œ¹•Ù•È•ÑÌ…¡•…½˜(¼¼€€€€€Ý¡…ÐÌ…ÑÕ…±±ä¥µÁ±•µ•¹Ñ•¤¸)¥µÁ½ÉÐìÉ•…‘¥±•Må¹Œ°É•…‘‘¥ÉMå¹Œ°ÍÑ…ÑMå¹Œô™É½´€¹½‘”é™Ìœì)¥µÁ½ÉÐì™¥±•UI1Q½A…Ñ ô™É½´€¹½‘”éÕÉ°œì)¥µÁ½ÉÐÁ…Ñ ™É½´€¹½‘”éÁ…Ñ œì()½¹ÍÐ}}‘¥É¹…µ”€ôÁ…Ñ ¹‘¥É¹…µ”¡™¥±•UI1Q½A…Ñ ¡¥µÁ½ÉÐ¹µ•Ñ„¹ÕÉ°¤¤ì)½¹ÍÐÉ•Á½I½½Ð€ôÁ…Ñ ¹É•Í½±Ù”¡}}‘¥É¹…µ”°€œ¸¸œ¤ì()™Õ¹Ñ¥½¸Á…ÉÍ•Õ¹Ñ¥½¹Í	±½¬¡Ñ½µ±Q•áÐ¤ì(€½¹ÍÐ•¹ÑÉ¥•Ì€ô¹•Ü5…À ¤ì(€½¹ÍÐÉ”€ô€½qm™Õ¹Ñ¥½¹Íp¸¡m„µèÀ´äµt¬¥quqÌ©q¹qÌ©Ù•É¥™å}©ÝÑqÌ¨õqÌ¨¡ÑÉÕ•ñ™…±Í”¤½œì(€±•Ðµ…Ñ ì(€Ý¡¥±”€ ¡µ…Ñ €ôÉ”¹•á•Œ¡Ñ½µ±Q•áÐ¤¤€„ôô¹Õ±°¤ì(€€€•¹ÑÉ¥•Ì¹Í•Ð¡µ…Ñ¡lÅt°µ…Ñ¡lÉt€ôôô€ÑÉÕ”œ¤ì(€ô(€É•ÑÕÉ¸•¹ÑÉ¥•Ìì)ô((¼¼ØØÉ•Ù¥•Ü™¥à€¡]@È¤èÑ¡”Ù•¹‘½É•€ÔÈµ™Õ¹Ñ¥½¸‘•Í¥¸µ…ÑÉ¥à¡…Ì¹¼¹…µ•(¼¼•¹‘Á½¥¹Ð™½È€‰¥¹¥Ñ¥…°‘É½Á½™˜½Á¥­ÕÀÑ¥µ•Ì…¹Ý••­±ä…ÍÍ¥¹•”Í•ÑÕÀˆ(¼¼€ ÄÁ}]=I-}A-L¹µÌ]@È±¥¹”¥Ñ•´¤ƒŠPÍ•”(¼¼ÍÕÁ…‰…Í”½µ¥É…Ñ¥½¹Ì¼ÈÀÈØÀàÄäÀÀÀÀÄá}‘É½Á½™™}Á¥­ÕÁ}Í•ÑÕÀ¹ÍÅ°Ì¡•…‘•È(¼¼½µµ•¹Ð™½ÈÑ¡”™Õ±°…À…¹…±åÍ¥Ì°…¹‘½Ì½…‘È¼ÀÀÀÈµ‘É½Á½™˜µÁ¥­ÕÀµÍ•ÑÕÀµ•¹‘Á½¥¹Ð¹µ(¼¼™½ÈÑ¡”HÉ•½É‘¥¹œÑ¡¥Ì‘•¥Í¥½¸¸I…Ñ¡•ÈÑ¡…¸Í¥±•¹Ñ±ä±½½Í•¹¥¹œÑ¡”(¼¼€‰•Ù•Éä‘•Á±½å•™Õ¹Ñ¥½¸µÕÍÐ‰”¥¸Ñ¡”¹½Éµ…Ñ¥Ù”µ…ÑÉ¥àˆ¡•¬™½È(¼¼•Ù•ÉåÑ¡¥¹œ°Ñ¡¥Ì½¹”¹…µ”¥Ì•áÁ±¥¥Ñ±ä…±±½Ý±¥ÍÑ•ƒŠP…¹ä½Ñ¡•È‘•Á±½å•(¼¼™Õ¹Ñ¥½¸¹½Ð¥¸Ñ¡”¹½Éµ…Ñ¥Ù”µ…ÑÉ¥àÍÑ¥±°™…¥±ÌÑ¡”±¥¹Ð¸(¼¼(¼¼]@Ô…‘‘¥Ñ¥½¹ÌèÁÉ½Á½Í”µ…¤µ‘É…™Ð°½¹™¥É´µÉ•ÅÕ•ÍÐµ‘É…™Ð°…¹(¼¼½¹™¥É´µ¡…¹‘½Ù•Èµ‘É…™Ð…É”±¥­•Ý¥Í”…‰Í•¹Ð™É½´Ñ¡”Ù•¹‘½É•€ÔÈµ™Õ¹Ñ¥½¸(¼¼µ…ÑÉ¥àƒŠP€Äá}5UQQ%=9}=9QIQ}5QI%`¹µ€ŒÄÌ‘•ÍÉ¥‰•ÌÑ¡”$µ‘É…™Ð(¼¼ÁÉ½Á½Í”½½¹™¥É´™±½Ü¥¸ÁÉ½Í”‰ÕÐ¹•Ù•ÈÍ•ÑÑ±•Ì½¸‘”Õ¹Ñ¥½¸¹…µ•Ì¸(¼¼M•”‘½Ì½…‘È¼ÀÀÀÌµ…¤µ‘É…™ÐµÁÉ½Á½Í”µ•¹‘Á½¥¹Ð¹µ¸(¼¼(¼¼M½°É”µÉ•Ù¥•Ü€ŒÌ…‘‘¥Ñ¥½¹Ì€¡‘½Ì½…‘È¼ÀÀÄÄ¤è±¥ÍÐµÁ•¹‘¥¹œµ…Ñ¥½¹Ì¼(¼¼½¹™¥É´µÁ•¹‘¥¹œµ…Ñ¥½¸½…¹•°µÁ•¹‘¥¹œµ…Ñ¥½¸€¡Q½‘…äAÉ¥½É¥Ñä€ÈÌ€‰1%9ŽÞµ¶‰žËkºwµçJ[	Ú[™^ÉÊJKš\Ñš[J
-NÂŸJNÂ‚šYˆ
-\ÞYY›[™ÝOOH
-HÂˆÛÛœÛÛK™\œ›ÜŠ	ÑRSˆ›È\ÞYY[˜Ý[ÛœÈ›Ý[™[™\ˆÝ\X˜\ÙKÙ[˜Ý[ÛœËÉÊNÂˆ˜Z[YHYNÂŸB‚™›Üˆ
-ÛÛœÝ˜[YHÙˆ\ÞYY
-HÂˆYˆ
-[›Ü›X]]™Kš\Ê˜[YJJHÂˆYˆ
-ÐTÑ’SÑ•SÕSÓ”Ëš\Ê˜[YJJHÂˆYˆ
-XXÝX[š\Ê˜[YJJHÂˆÛÛœÛÛK™\œ›ÜŠRSˆØ\Yš[[˜Ý[Ûˆ‰Û˜[Y_Hˆ\È›ÈÝ\X˜\ÙKØÛÛ™šYËÛ[Ù[˜Ý[ÛœË‰Û˜[Y_WH[žX
-NÂˆ˜Z[YHYNÂˆBˆÛÛ[YNÂˆBˆÛÛœÛÛK™\œ›ÜŠRSˆ\ÞYY[˜Ý[Ûˆ‰Û˜[Y_Hˆ\È›Ý[ˆHˆ\ÚYÛˆX]š^
-QÑWÑ•SÕSÓ—ÐUUÓPU’V›Y
-H][
-NÂˆ˜Z[YHYNÂˆÛÛ[YNÂˆBˆYˆ
-XXÝX[š\Ê˜[YJJHÂˆÛÛœÛÛK™\œ›ÜŠRSˆ\ÞYY[˜Ý[Ûˆ‰Û˜[Y_Hˆ\È›ÈÝ\X˜\ÙKØÛÛ™šYËÛ[Ù[˜Ý[ÛœË‰Û˜[Y_WH[žX
-NÂˆ˜Z[YHYNÂˆÛÛ[YNÂˆBˆYˆ
-XÝX[™Ù]
-˜[YJHOOH›Ü›X]]™K™Ù]
-˜[YJJHÂˆÛÛœÛÛK™\œ›ÜŠˆRSˆÝ\X˜\ÙKØÛÛ™šYËÛ[Ù[˜Ý[ÛœË‰Û˜[Y_WH™\šYžWÚÝIØXÝX[™Ù]
-˜[YJ_HÙ\È›ÝX]Ú›Ü›X]]™H™\šYžWÚÝIÛ›Ü›X]]™K™Ù]
-˜[YJ_Xˆ
-NÂˆ˜Z[YHYNÂˆBŸB‚˜ÛÛœÝ\ÞYYÙ]H™]ÈÙ]
-\ÞYY
-NÂ™›Üˆ
-ÛÛœÝ˜[YHÙˆXÝX[šÙ^\Ê
-JHÂˆYˆ
-Y\ÞYYÙ]š\Ê˜[YJJHÂˆÛÛœÛÛK™\œ›ÜŠˆRSˆÝ\X˜\ÙKØÛÛ™šYËÛ[XÛ\™\ÈÙ[˜Ý[ÛœË‰Û˜[Y_WH]Ý\X˜\ÙKÙ[˜Ý[ÛœËÉÛ˜[Y_KÚ[™^ÈÙ\È›Ý^\Ý8 %]™HÛÛ™šYÈ]\ÝÛ›HÛÛZ[ˆ\ÞYY[˜Ý[ÛœØˆ
-NÂˆ˜Z[YHYNÂˆBŸB‚‹ËÈˆ™]šY]Èš^
-KMÊNˆÛÛÙÛHÚYÛ‹R[ˆ\ÈHÛ›HÛ˜›Ø\™[™È]
-ÙYB‹ËÈØÜËÙ\ÚYÛ‹Ý‹ÌWÐTÒUPÕT‘K›Y
-KÛÈ[˜X›WÜÚYÛ\]\ÝÝ^HYH[™‹ËÈHÛÛÙÛH^\›˜[›ÝšY\ˆ]\ÝÝ^H[˜X›Y8 %H™YÜ™\ÜÚ[Ûˆ\™HÛÝ[‹ËÈÚ[[HØÚÈ]™\žH™]È˜[Z[HÝ]ÙˆÜ™X][™ÈHÝ\ÙZÛ‚˜ÛÛœÝXÝX[ÛÛ™šYÕ^H™XYš[TÞ[˜ÊXÝX[ÛÛ™šYÔ]	Ý]Ž	ÊNÂšYˆ
-K×™[˜X›WÜÚYÛ\ÊWÊYW‹Ë\Ý
-XÝX[ÛÛ™šYÕ^
-JHÂˆÛÛœÛÛK™\œ›ÜŠ	ÑRSˆÝ\X˜\ÙKØÛÛ™šYËÛ[Ø]]H[˜X›WÜÚYÛ\]\Ý™HYH
-ÛÛÙÛHÚYÛ‹R[ˆ\ÈHÛ˜›Ø\™[™È]
-IÊNÂˆ˜Z[YHYNÂŸBšYˆ
-K×Ø]]™^\›˜[™ÛÛÙÛWV×–×J—™[˜X›YÊWÊYW‹Ë\Ý
-XÝX[ÛÛ™šYÕ^
-JHÂˆÛÛœÛÛK™\œ›ÜŠ	ÑRSˆÝ\X˜\ÙKØÛÛ™šYËÛ[Ø]]™^\›˜[™ÛÛÙÛWH]\Ý™H[˜X›YHYIÊNÂˆ˜Z[YHYNÂŸB‹ËÈˆ™]šY]Èš^
-KPË\È›Ý[™
-NˆHÛÛÙÛHOˆÛÕYHØ[˜XÚÈ[™B‹ËÈ\	ÜÈÝÛˆÜÝ[ÙÚ[ˆ™Y\™XÝ]\ÝÝ^HÛˆÛÈ\Ý[˜Ý[ˆ˜\œÈ8 %B‹ËÈ™YÜ™\ÜÚ[Ûˆ˜XÚÈÈHÚ[™ÛHÚ\™Y˜\ˆÛÝ[Ú[[Hœ™XZÈZ]\ˆB‹ËÈÐ]][™ÚZÙH
-Ü›Û™ÈØ[˜XÚÈ™YÚ\Ý\™YÚ]ÛÛÙÛJHÜˆH\‹ËÈ™Y\™XÝ[ÝÛ\Ý‚šYˆ
-KÜ™Y\™XÝÝ\šWÊWÊˆ™[—
-ÓÓÑÓWÔÒQÓ’S—ÐÐSPÒ×ÕT“
-H‹Ë\Ý
-XÝX[ÛÛ™šYÕ^
-JHÂˆÛÛœÛÛK™\œ›ÜŠˆ	ÑRSˆÝ\X˜\ÙKØÛÛ™šYËÛ[Ø]]™^\›˜[™ÛÛÙÛWH™Y\™XÝÝ\šH]\Ý™XY[ŠÓÓÑÓWÔÒQÓ’S—ÐÐSPÒ×ÕT“
-K›Ý[ˆ\\™Y\™XÝ\Ú\Y˜\‰Ëˆ
-NÂˆ˜Z[YHYNÂŸB‚šYˆ
-˜Z[Y
-HÂˆ›ØÙ\ÜË™^]
-JNÂŸB‚˜ÛÛœÛÛK›ÙÊˆÒÎˆ\ÚYÛˆX]š^\È	Û›Ü›X]]™KœÚ^™_H[˜Ý[ÛœÎÈ]™HÝ\X˜\ÙKØÛÛ™šYËÛ[XÛ\™\È^XÝHH	Ù\ÞYY›[™ÝH\ÞYY[˜Ý[ÛœÈ
-	Ù\ÞYYš›Ú[Š	Ë	Ê_JKXXÚX]Ú[™È]È›Ü›X]]™H™\šYžWÚÝÛ\ÜÚYšXØ][Û‹˜ŠNÂ
+// Edge auth matrix lint (docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md CI section):
+//
+// v6 review fix (P1-D, this round): supabase/config.toml's [functions.*]
+// block is now a LIVE deployment snapshot (only functions actually present
+// under supabase/functions/), not a 1:1 mirror of the full 52-function v6
+// design matrix â€” declaring a config.toml entry for a function that has no
+// index.ts on disk is what a real `supabase start`/`supabase db reset`
+// cannot execute against. The two matrices are therefore linted
+// independently, both required to pass:
+//
+//   1. design-matrix completeness (standalone): the full normative
+//      snapshot vendored at docs/design/v6/supabase/config.toml still
+//      declares every function classified in
+//      docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md â€” this is a drift check
+//      on the vendored v6 design package alone, unrelated to what's
+//      deployed so far.
+//   2. live deployment correctness: every function actually deployed under
+//      supabase/functions/ (has an index.ts) has a supabase/config.toml
+//      entry, that entry's verify_jwt matches the normative classification
+//      for that name, and supabase/config.toml declares no entry for a
+//      function that isn't deployed (live config never gets ahead of
+//      what's actually implemented).
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '..');
+
+function parseFunctionsBlock(tomlText) {
+  const entries = new Map();
+  const re = /\[functions\.([a-z0-9-]+)\]\s*\n\s*verify_jwt\s*=\s*(true|false)/g;
+  let match;
+  while ((match = re.exec(tomlText)) !== null) {
+    entries.set(match[1], match[2] === 'true');
+  }
+  return entries;
+}
+
+// v6 review fix (WP2): the vendored 52-function design matrix has no named
+// endpoint for "initial dropoff/pickup times and weekly assignee setup"
+// (10_WORK_PACKAGES.md's WP2 line item) â€” see
+// supabase/migrations/20260819000018_dropoff_pickup_setup.sql's header
+// comment for the full gap analysis, and docs/adr/0002-dropoff-pickup-setup-endpoint.md
+// for the ADR recording this decision. Rather than silently loosening the
+// "every deployed function must be in the normative matrix" check for
+// everything, this one name is explicitly allowlisted â€” any other deployed
+// function not in the normative matrix still fails the lint.
+//
+// WP5 additions: propose-ai-draft, confirm-request-draft, and
+// confirm-handover-draft are likewise absent from the vendored 52-function
+// matrix â€” 18_MUTATION_CONTRACT_MATRIX.md #13 describes the AI-draft
+// propose/confirm flow in prose but never settles on Edge Function names.
+// See docs/adr/0003-ai-draft-propose-endpoint.md.
+//
+// Sol re-review #3 additions (docs/adr/0011): list-pending-actions/
+// confirm-pending-action/cancel-pending-action (Today Priority 2's "LINEã‹ã‚‰
+// ä½œã£ãŸpending action", 02_UX_AND_SCREENS.md #3) and get-today-schedule
+// (Today Priority 1's calendar/conflict schedule) fill read/mutation gaps
+// against already-built backend state â€” no named endpoint exists for any of
+// these in the vendored matrix.
+const GAP_FILL_FUNCTIONS = new Set([
+  'configure-dropoff-pickup',
+  'propose-ai-draft',
+  'confirm-request-draft',
+  'confirm-handover-draft',
+  'list-pending-actions',
+  'confirm-pending-action',
+  'cancel-pending-action',
+  'get-today-schedule',
+  'create-assignment-change-request',
+  'accept-assignment-change-request',
+  'deactivate-recurrence',
+  'get-week-schedule',
+  'complete-onboarding-step',
+  'replace-recurrence-schedule',
+  'update-task-categories',
+  'process-family-ops-calendar-outbox',
+  // v3.3 review-fix P1: explicit household role, routine inclusion, and
+  // calendar write-target mutations are implemented endpoints but were not
+  // named in the frozen v6 design bundle.
+  'set-routine-definition-options',
+  // Final sweep Issue #11: canonical custom routine subtask definition
+  // mutation, added after the frozen v6 endpoint matrix.
+  'replace-routine-subtasks',
+  'set-family-calendar-target',
+  'set-family-role',
+]);
+
+const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');
+const normativeConfigPath = path.join(repoRoot, 'docs/design/v6/supabase/config.toml');
+
+const actual = parseFunctionsBlock(readFileSync(actualConfigPath, 'utf8'));
+const normative = parseFunctionsBlock(readFileSync(normativeConfigPath, 'utf8'));
+
+let failed = false;
+
+// ---------------------------------------------------------------------------
+// 1. design-matrix completeness (standalone, independent of live deploys)
+// ---------------------------------------------------------------------------
+const EXPECTED_DESIGN_MATRIX_SIZE = 52;
+if (normative.size === 0) {
+  console.error('FAIL: no [functions.*] entries parsed from docs/design/v6/supabase/config.toml');
+  failed = true;
+} else if (normative.size !== EXPECTED_DESIGN_MATRIX_SIZE) {
+  console.error(
+    `FAIL: docs/design/v6/supabase/config.toml design matrix has ${normative.size} functions, expected exactly ${EXPECTED_DESIGN_MATRIX_SIZE} (EDGE_FUNCTION_AUTH_MATRIX.md drift)`,
+  );
+  failed = true;
+}
+
+// ---------------------------------------------------------------------------
+// 2. live deployment correctness
+// ---------------------------------------------------------------------------
+if (actual.size === 0) {
+  console.error('FAIL: no [functions.*] entries parsed from supabase/config.toml');
+  failed = true;
+}
+
+const functionsDir = path.join(repoRoot, 'supabase/functions');
+const deployed = readdirSync(functionsDir).filter((entry) => {
+  if (entry.startsWith('_') || entry.startsWith('.')) return false;
+  const full = path.join(functionsDir, entry);
+  return statSync(full).isDirectory() && statSync(path.join(full, 'index.ts')).isFile();
+});
+
+if (deployed.length === 0) {
+  console.error('FAIL: no deployed functions found under supabase/functions/');
+  failed = true;
+}
+
+for (const name of deployed) {
+  if (!normative.has(name)) {
+    if (GAP_FILL_FUNCTIONS.has(name)) {
+      if (!actual.has(name)) {
+        console.error(`FAIL: gap-fill function "${name}" has no supabase/config.toml [functions.${name}] entry`);
+        failed = true;
+      }
+      continue;
+    }
+    console.error(`FAIL: deployed function "${name}" is not in the v6 design matrix (EDGE_FUNCTION_AUTH_MATRIX.md) at all`);
+    failed = true;
+    continue;
+  }
+  if (!actual.has(name)) {
+    console.error(`FAIL: deployed function "${name}" has no supabase/config.toml [functions.${name}] entry`);
+    failed = true;
+    continue;
+  }
+  if (actual.get(name) !== normative.get(name)) {
+    console.error(
+      `FAIL: supabase/config.toml [functions.${name}] verify_jwt=${actual.get(name)} does not match normative verify_jwt=${normative.get(name)}`,
+    );
+    failed = true;
+  }
+}
+
+const deployedSet = new Set(deployed);
+for (const name of actual.keys()) {
+  if (!deployedSet.has(name)) {
+    console.error(
+      `FAIL: supabase/config.toml declares [functions.${name}] but supabase/functions/${name}/index.ts does not exist â€” live config must only contain deployed functions`,
+    );
+    failed = true;
+  }
+}
+
+// v6 review fix (P1-7): Google Sign-In is the only onboarding path (see
+// docs/design/v6/01_ARCHITECTURE.md), so enable_signup must stay true and
+// the Google external provider must stay enabled â€” a regression here would
+// silently lock every new family out of creating a household.
+const actualConfigText = readFileSync(actualConfigPath, 'utf8');
+if (!/\benable_signup\s*=\s*true\b/.test(actualConfigText)) {
+  console.error('FAIL: supabase/config.toml [auth] enable_signup must be true (Google Sign-In is the onboarding path)');
+  failed = true;
+}
+if (!/\[auth\.external\.google\][^[]*\benabled\s*=\s*true\b/.test(actualConfigText)) {
+  console.error('FAIL: supabase/config.toml [auth.external.google] must be enabled = true');
+  failed = true;
+}
+// v6 review fix (P1-C, this round): the Google -> GoTrue callback and the
+// app's own post-login redirect must stay on two distinct env vars â€” a
+// regression back to a single shared var would silently break either the
+// OAuth handshake (wrong callback registered with Google) or the app
+// redirect allowlist.
+if (!/redirect_uri\s*=\s*"env\(GOOGLE_SIGNIN_CALLBACK_URL\)"/.test(actualConfigText)) {
+  console.error(
+    'FAIL: supabase/config.toml [auth.external.google] redirect_uri must read env(GOOGLE_SIGNIN_CALLBACK_URL), not an app-redirect-shaped var',
+  );
+  failed = true;
+}
+
+if (failed) {
+  process.exit(1);
+}
+
+console.log(
+  `OK: design matrix has ${normative.size} functions; live supabase/config.toml declares exactly the ${deployed.length} deployed functions (${deployed.join(', ')}), each matching its normative verify_jwt classification.`,
+);

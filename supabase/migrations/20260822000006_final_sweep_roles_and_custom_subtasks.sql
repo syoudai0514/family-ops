@@ -1,4 +1,193 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíãÏtN‹Z–‹­¦ëeŠw¬Ô´´¥¹…°Íİ••Àè…Ñ½µ¥Œ™…µ¥±äµÉ½±”Íİ…ÁÌ…¹•‘¥Ñ…‰±”ÕÍÑ½´µÉ½ÕÑ¥¹”(´´ÍÕ‰Ñ…Í¬‘•™¥¹¥Ñ¥½¹Ì¸€Q¡¥Ì¥Ì‘•±¥‰•É…Ñ•±ä™½Éİ…Éµ½¹±äèµ…Ñ•É¥…±¥é•(´´Ñ…Í¬½ÍÕ‰Ñ…Í¬É½İÌÉ•µ…¥¸¡¥ÍÑ½É¥…°Í¹…ÁÍ¡½ÑÌ¸()…±Ñ•ÈÑ…‰±”ÁÕ‰±¥Œ¹Ñ…Í­}ÍÕ‰Ñ…Í­}‘•™¥¹¥Ñ¥½¹Ì(€…‘½±Õµ¸¥˜¹½Ğ•á¥ÍÑÌ¥Í}…Ñ¥Ù”‰½½±•…¸¹½Ğ¹Õ±°‘•™…Õ±ĞÑÉÕ”ì()É•…Ñ”¥¹‘•à¥˜¹½Ğ•á¥ÍÑÌÑ…Í­}ÍÕ‰Ñ…Í­}‘•™¥¹¥Ñ¥½¹Í}…Ñ¥Ù•}‘•™¥¹¥Ñ¥½¹}¥‘à(€½¸ÁÕ‰±¥Œ¹Ñ…Í­}ÍÕ‰Ñ…Í­}‘•™¥¹¥Ñ¥½¹Ì€¡¡½ÕÍ•¡½±‘}¥°Ñ…Í­}‘•™¥¹¥Ñ¥½¹}¥°Í½ÉÑ}½É‘•È¤(€İ¡•É”¥Í}…Ñ¥Ù”ì((´´=ÕÉÉ•¹•Ì…É”½µÁ…Ğ…±•¹‘…ÈÁÉ½©•Ñ¥½¹Ì°‰ÕĞ„Ñ…ÁÁ•‘•Ñ…¥°Ù¥•Üµ…ä(´´Í…™•±ä•áÁ½Í”Ñ¡”…¡•½½±”•Ù•¹Ğ™¥•±‘Ì¸Q¡”ÑÉ¥•È­••ÁÌÁÉ½©•Ñ¥½¸(´´İÉ¥Ñ•Ì•¹ÑÉ…±¥é•…¹‘½•Ì¹½Ğ¡…¹”Íå¹Œ½‘•‘ÕÁ”¥‘•¹Ñ¥Ñä¸)…±Ñ•ÈÑ…‰±”ÁÕ‰±¥Œ¹…±•¹‘…É}•Ù•¹Ñ}½ÕÉÉ•¹•Ì(€…‘½±Õµ¸¥˜¹½Ğ•á¥ÍÑÌ‘•ÍÉ¥ÁÑ¥½¸Ñ•áĞ°(€…‘½±Õµ¸¥˜¹½Ğ•á¥ÍÑÌ±½…Ñ¥½¸Ñ•áĞì)É•…Ñ”½ÈÉ•Á±…”™Õ¹Ñ¥½¸ÁÉ¥Ù…Ñ”¹™¹}¡å‘É…Ñ•}…±•¹‘…É}½ÕÉÉ•¹•}‘•Ñ…¥° ¤)É•ÑÕÉ¹ÌÑÉ¥•È±…¹Õ…”Á±ÁÍÅ°Í•ÕÉ¥Ñä‘•™¥¹•ÈÍ•ĞÍ•…É¡}Á…Ñ €ô€œœ…Ì€)‰•¥¸(€Í•±•ĞŒ¹‘•ÍÉ¥ÁÑ¥½¸±Œ¹±½…Ñ¥½¸¥¹Ñ¼¹•Ü¹‘•ÍÉ¥ÁÑ¥½¸±¹•Ü¹±½…Ñ¥½¸(€™É½´ÁÕ‰±¥Œ¹…±•¹‘…É}•Ù•¹ÑÍ}…¡”Œ(€İ¡•É”Œ¹¡½ÕÍ•¡½±‘}¥õ¹•Ü¹¡½ÕÍ•¡½±‘}¥…¹Œ¹…±•¹‘…É}½¹¹•Ñ¥½¹}¥õ¹•Ü¹…±•¹‘…É}½¹¹•Ñ¥½¹}¥(€€€…¹Œ¹½½±•}•Ù•¹Ñ}¥õ¹•Ü¹½½±•}•Ù•¹Ñ}¥ì(€É•ÑÕÉ¸¹•Üì)•¹€ì)‘É½ÀÑÉ¥•È¥˜•á¥ÍÑÌ…±•¹‘…É}½ÕÉÉ•¹•}¡å‘É…Ñ•}‘•Ñ…¥°½¸ÁÕ‰±¥Œ¹…±•¹‘…É}•Ù•¹Ñ}½ÕÉÉ•¹•Ìì)É•…Ñ”ÑÉ¥•È…±•¹‘…É}½ÕÉÉ•¹•}¡å‘É…Ñ•}‘•Ñ…¥°‰•™½É”¥¹Í•ÉĞ½ÈÕÁ‘…Ñ”½˜½½±•}•Ù•¹Ñ}¥±…±•¹‘…É}½¹¹•Ñ¥½¹}¥)½¸ÁÕ‰±¥Œ¹…±•¹‘…É}•Ù•¹Ñ}½ÕÉÉ•¹•Ì™½È•… É½Ü•á•ÕÑ”™Õ¹Ñ¥½¸ÁÉ¥Ù…Ñ”¹™¹}¡å‘É…Ñ•}…±•¹‘…É}½ÕÉÉ•¹•}‘•Ñ…¥° ¤ì)É•Ù½­”…±°½¸™Õ¹Ñ¥½¸ÁÉ¥Ù…Ñ”¹™¹}¡å‘É…Ñ•}…±•¹‘…É}½ÕÉÉ•¹•}‘•Ñ…¥° ¤™É½´ÁÕ‰±¥Œ±…¹½¸±…ÕÑ¡•¹Ñ¥…Ñ•ì((´´Í¥¹±”É½±”Í•±•Ñ¥½¸µÕÍĞ¹½ĞÑÕÉ¸„¹½Éµ…°Ñİ¼µ…‘Õ±Ğ¡½ÕÍ•¡½±¥¹Ñ¼„(´´½¹”µÉ½±”¡½ÕÍ•¡½±¸1½¬Ñ¡”¡½ÕÍ•¡½±Ì…‘Õ±ĞÍ±½ÑÌ°Ñ•µÁ½É…É¥±ä±•…ÈÑ¡”(´´Ñ…É•ĞÍ±½ĞÑ¼Í…Ñ¥Í™äÑ¡”¥µµ•‘¥…Ñ”Õ¹¥ÅÕ”¥¹‘•à°Ñ¡•¸…ÍÍ¥¸Ñ¡”™½Éµ•È(´´¡½±‘•ÈÑ¡”Ñ…É•Ğµ•µ‰•ÈÌ½±É½±”‰•™½É”…ÍÍ¥¹¥¹œÑ¡”É•ÅÕ•ÍÑ•É½±”¸)É•…Ñ”½ÈÉ•Á±…”™Õ¹Ñ¥½¸ÁÕ‰±¥Œ¹Í•ÉÙ•É}Ñá}Í•Ñ}™…µ¥±å}É½±” (€Á}…Ñ½É}¥ÕÕ¥±Á}½Á•É…Ñ¥½¹}¥ÕÕ¥±Á}ÕÍ•É}¥ÕÕ¥±Á}™…µ¥±å}É½±”Ñ•áĞ(¤É•ÑÕÉ¹Ì©Í½¹ˆ±…¹Õ…”Á±ÁÍÅ°Í•ÕÉ¥Ñä¥¹Ù½­•ÈÍ•ĞÍ•…É¡}Á…Ñ €ô€œœ…Ì€)‘•±…É”(€Ù}¡½ÕÍ•¡½±ÕÕ¥ìÙ}¡…Í Ñ•áĞìÙ}É••¥ÁĞÉ•½ÉìÙ}É•ÍÕ±Ğ©Í½¹ˆì(€Ù}ÕÉÉ•¹Ñ}É½±”Ñ•áĞìÙ}É•ÅÕ•ÍÑ•‘}¡½±‘•ÈÕÕ¥ìÙ}Íİ…Á}É½±”Ñ•áĞì(€Ù}…‘Õ±Ñ}½Õ¹Ğ¥¹Ñ••ÈìÙ}Á…Á…}½Õ¹Ğ¥¹Ñ••ÈìÙ}µ…µ…}½Õ¹Ğ¥¹Ñ••Èì)‰•¥¸(€¥˜Á}…Ñ½É}¥¥Ì¹Õ±°½ÈÁ}½Á•É…Ñ¥½¹}¥¥Ì¹Õ±°½ÈÁ}ÕÍ•É}¥¥Ì¹Õ±°(€€€€½ÈÁ}™…µ¥±å}É½±”¹½Ğ¥¸€ Á…Á„œ°µ…µ„œ¤Ñ¡•¸(€€€É…¥Í”•á•ÁÑ¥½¸€%9Y1%}%9AUPœì(€•¹¥˜ì(€Ù}¡…Í €èô•¹½‘”¡Í¡„ÈÔØ¡½¹Ù•ÉÑ}Ñ¼¡©Í½¹‰}‰Õ¥±‘}½‰©•Ğ ÕÍ•É}¥œ±Á}ÕÍ•É}¥°™…µ¥±å}É½±”œ±Á}™…µ¥±å}É½±”¤èéÑ•áĞ°UQàœ¤¤°¡•àœ¤ì(€¥¹Í•ÉĞ¥¹Ñ¼ÁÉ¥Ù…Ñ”¹µÕÑ…Ñ¥½¹}É••¥ÁÑÌ¡…Ñ½É}¥±½Á•É…Ñ¥½¹}¥±…Ñ¥½¹}ÑåÁ”±É•ÅÕ•ÍÑ}¡…Í ¤(€Ù…±Õ•Ì¡Á}…Ñ½É}¥±Á}½Á•É…Ñ¥½¹}¥°Í•Ğµ™…µ¥±äµÉ½±”µØÈœ±Ù}¡…Í ¤(€½¸½¹™±¥Ğ¡…Ñ½É}¥±½Á•É…Ñ¥½¹}¥¤‘¼¹½Ñ¡¥¹œì(€¥˜¹½Ğ™½Õ¹Ñ¡•¸(€€€Í•±•Ğ€¨¥¹Ñ¼Ù}É••¥ÁĞ™É½´ÁÉ¥Ù…Ñ”¹µÕÑ…Ñ¥½¹o=ÒÚ$z{-®éÜj×om public.task_instances where household_id=p_household_id and logical_occurrence_key=v_logical_key) then
+-- Final sweep: atomic family-role swaps and editable custom-routine
+-- subtask definitions.  This is deliberately forward-only: materialized
+-- task/subtask rows remain historical snapshots.
+
+alter table public.task_subtask_definitions
+  add column if not exists is_active boolean not null default true;
+
+create index if not exists task_subtask_definitions_active_definition_idx
+  on public.task_subtask_definitions (household_id, task_definition_id, sort_order)
+  where is_active;
+
+-- Occurrences are compact calendar projections, but a tapped detail view may
+-- safely expose the cached Google event fields. The trigger keeps projection
+-- writes centralized and does not change sync/dedupe identity.
+alter table public.calendar_event_occurrences
+  add column if not exists description text,
+  add column if not exists location text;
+create or replace function private.fn_hydrate_calendar_occurrence_detail()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  select c.description,c.location into new.description,new.location
+  from public.calendar_events_cache c
+  where c.household_id=new.household_id and c.calendar_connection_id=new.calendar_connection_id
+    and c.google_event_id=new.google_event_id;
+  return new;
+end $$;
+drop trigger if exists calendar_occurrence_hydrate_detail on public.calendar_event_occurrences;
+create trigger calendar_occurrence_hydrate_detail before insert or update of google_event_id,calendar_connection_id
+on public.calendar_event_occurrences for each row execute function private.fn_hydrate_calendar_occurrence_detail();
+revoke all on function private.fn_hydrate_calendar_occurrence_detail() from public,anon,authenticated;
+
+-- A single role selection must not turn a normal two-adult household into a
+-- one-role household. Lock the household's adult slots, temporarily clear the
+-- target slot to satisfy the immediate unique index, then assign the former
+-- holder the target member's old role before assigning the requested role.
+create or replace function public.server_tx_set_family_role(
+  p_actor_id uuid,p_operation_id uuid,p_user_id uuid,p_family_role text
+) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+  v_household uuid; v_hash text; v_receipt record; v_result jsonb;
+  v_current_role text; v_requested_holder uuid; v_swap_role text;
+  v_adult_count integer; v_papa_count integer; v_mama_count integer;
+begin
+  if p_actor_id is null or p_operation_id is null or p_user_id is null
+     or p_family_role not in ('papa','mama') then
+    raise exception 'INVALID_INPUT';
+  end if;
+  v_hash := encode(sha256(convert_to(jsonb_build_object('user_id',p_user_id,'family_role',p_family_role)::text,'UTF8')),'hex');
+  insert into private.mutation_receipts(actor_id,operation_id,action_type,request_hash)
+  values(p_actor_id,p_operation_id,'set-family-role-v2',v_hash)
+  on conflict(actor_id,operation_id) do nothing;
+  if not found then
+    select * into v_receipt from private.mutation_receipts
+    where actor_id=p_actor_id and operation_id=p_operation_id for update;
+    if v_receipt.request_hash<>v_hash then raise exception 'IDEMPOTENCY_CONFLICT'; end if;
+    return v_receipt.result_payload;
+  end if;
+
+  select household_id into v_household from public.household_members where user_id=p_actor_id;
+  if v_household is null then raise exception 'NOT_HOUSEHOLD_MEMBER'; end if;
+  -- Serialise all concurrent P/M changes in this household.
+  perform 1 from public.household_members
+  where household_id=v_household and member_role='adult'
+  order by user_id for update;
+  select family_role into v_current_role from public.household_members
+  where household_id=v_household and user_id=p_user_id and member_role='adult';
+  if not found then
+    if exists(select 1 from public.household_members where user_id=p_user_id) then
+      raise exception 'CROSS_HOUSEHOLD_RESOURCE';
+    end if;
+    raise exception 'CROSS_HOUSEHOLD_RESOURCE';
+  end if;
+
+  if v_current_role is distinct from p_family_role then
+    select user_id into v_requested_holder from public.household_members
+    where household_id=v_household and family_role=p_family_role and user_id<>p_user_id
+    for update;
+    -- A newly assigned adult fills the requested slot and gives its existing
+    -- holder the opposite role. Normal two-adult households always take the
+    -- main swap path below.
+    v_swap_role := coalesce(v_current_role, case p_family_role when 'papa' then 'mama' else 'papa' end);
+    update public.household_members set family_role=null
+    where household_id=v_household and user_id=p_user_id;
+    if v_requested_holder is not null then
+      update public.household_members set family_role=v_swap_role
+      where household_id=v_household and user_id=v_requested_holder;
+    end if;
+    update public.household_members set family_role=p_family_role
+    where household_id=v_household and user_id=p_user_id;
+  end if;
+
+  select count(*), count(*) filter(where family_role='papa'), count(*) filter(where family_role='mama')
+  into v_adult_count,v_papa_count,v_mama_count
+  from public.household_members where household_id=v_household and member_role='adult';
+  if v_adult_count=2 and (v_papa_count<>1 or v_mama_count<>1) then
+    raise exception 'FAMILY_ROLE_INVARIANT';
+  end if;
+  v_result:=jsonb_build_object('ok',true,'user_id',p_user_id,'family_role',p_family_role,'swapped',v_current_role is distinct from p_family_role);
+  update private.mutation_receipts set result_type='household_member',result_id=p_user_id,result_payload=v_result
+  where actor_id=p_actor_id and operation_id=p_operation_id;
+  return v_result;
+end $$;
+revoke all on function public.server_tx_set_family_role(uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.server_tx_set_family_role(uuid,uuid,uuid,text) to service_role;
+
+-- Canonical definition mutation for the existing custom morning/evening
+-- routine editor. Retired rows are kept if historical subtask instances point
+-- at them; their copied instance title/required/order is never rewritten.
+create or replace function public.server_tx_replace_routine_subtasks(
+  p_actor_id uuid,p_operation_id uuid,p_task_definition_id uuid,p_subtasks jsonb
+) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+  v_household uuid; v_hash text; v_receipt record; v_result jsonb; v_subtask jsonb;
+  v_existing_id uuid; v_seen_ids uuid[] := '{}'; v_count integer := 0;
+begin
+  if p_actor_id is null or p_operation_id is null or p_task_definition_id is null
+     or jsonb_typeof(p_subtasks) <> 'array' then raise exception 'INVALID_INPUT'; end if;
+  v_hash:=encode(sha256(convert_to(jsonb_build_object('definition',p_task_definition_id,'subtasks',p_subtasks)::text,'UTF8')),'hex');
+  insert into private.mutation_receipts(actor_id,operation_id,action_type,request_hash)
+  values(p_actor_id,p_operation_id,'replace-routine-subtasks-v1',v_hash)
+  on conflict(actor_id,operation_id) do nothing;
+  if not found then
+    select * into v_receipt from private.mutation_receipts where actor_id=p_actor_id and operation_id=p_operation_id for update;
+    if v_receipt.request_hash<>v_hash then raise exception 'IDEMPOTENCY_CONFLICT'; end if;
+    return v_receipt.result_payload;
+  end if;
+  select household_id into v_household from public.household_members where user_id=p_actor_id;
+  if v_household is null then raise exception 'NOT_HOUSEHOLD_MEMBER'; end if;
+  perform 1 from public.task_definitions
+  where household_id=v_household and id=p_task_definition_id and task_kind in ('morning_chore','evening_chore') for update;
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+
+  for v_subtask in select * from jsonb_array_elements(p_subtasks) loop
+    if coalesce(btrim(v_subtask->>'title'),'')='' then raise exception 'INVALID_INPUT'; end if;
+    if v_subtask ? 'id' and nullif(v_subtask->>'id','') is not null then
+      begin v_existing_id := (v_subtask->>'id')::uuid; exception when invalid_text_representation then raise exception 'INVALID_INPUT'; end;
+      update public.task_subtask_definitions
+      set title=btrim(v_subtask->>'title'), required=coalesce((v_subtask->>'required')::boolean,true),
+          sort_order=v_count, is_active=true
+      where household_id=v_household and task_definition_id=p_task_definition_id and id=v_existing_id;
+      if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+    else
+      insert into public.task_subtask_definitions(household_id,task_definition_id,title,required,sort_order,is_active)
+      values(v_household,p_task_definition_id,btrim(v_subtask->>'title'),coalesce((v_subtask->>'required')::boolean,true),v_count,true)
+      returning id into v_existing_id;
+    end if;
+    v_seen_ids := array_append(v_seen_ids,v_existing_id);
+    v_count := v_count + 1;
+  end loop;
+
+  -- Delete unmaterialized removed definitions. Historical references are
+  -- retired instead, preserving the FK and the past snapshot.
+  update public.task_subtask_definitions d set is_active=false
+  where d.household_id=v_household and d.task_definition_id=p_task_definition_id
+    and not (d.id=any(v_seen_ids))
+    and exists(select 1 from public.task_subtask_instances i where i.household_id=d.household_id and i.source_definition_id=d.id);
+  delete from public.task_subtask_definitions d
+  where d.household_id=v_household and d.task_definition_id=p_task_definition_id
+    and not (d.id=any(v_seen_ids))
+    and not exists(select 1 from public.task_subtask_instances i where i.household_id=d.household_id and i.source_definition_id=d.id);
+  update public.task_definitions set completion_mode=case when v_count>0 then 'subtasks' else 'whole' end
+  where household_id=v_household and id=p_task_definition_id;
+  v_result:=jsonb_build_object('ok',true,'task_definition_id',p_task_definition_id,'subtask_count',v_count);
+  update private.mutation_receipts set result_type='task_definition',result_id=p_task_definition_id,result_payload=v_result
+  where actor_id=p_actor_id and operation_id=p_operation_id;
+  return v_result;
+end $$;
+revoke all on function public.server_tx_replace_routine_subtasks(uuid,uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.server_tx_replace_routine_subtasks(uuid,uuid,uuid,jsonb) to service_role;
+
+-- New recurring task instances take a snapshot of the currently active
+-- canonical definitions. Existing future/past materialized rows are not
+-- changed by an edit, and completed History therefore remains immutable.
+create or replace function private.materialize_recurrence_rule(
+  p_household_id uuid,p_rule_id uuid,p_from_date date,p_to_date date
+) returns void language plpgsql security invoker set search_path = '' as $$
+declare
+  v_rule public.recurrence_rules%rowtype; v_task public.task_definitions%rowtype;
+  v_date date; v_logical_key text; v_planned_assignee uuid; v_pickup_assignee uuid;
+  v_due_at timestamptz; v_instance_id uuid; v_subtask record;
+begin
+  select * into v_rule from public.recurrence_rules where id=p_rule_id and household_id=p_household_id;
+  if not found or not v_rule.active then return; end if;
+  select * into v_task from public.task_definitions where id=v_rule.task_definition_id and household_id=p_household_id;
+  if not found or not v_task.is_active then return; end if;
+  v_date:=p_from_date;
+  while v_date<=p_to_date loop
+    if extract(isodow from v_date)::smallint=v_rule.weekday and v_date>=v_rule.effective_from and (v_rule.effective_to is null or v_date<=v_rule.effective_to) then
+      v_logical_key:='rec:'||v_rule.task_definition_id::text||':'||v_date::text||':'||v_rule.slot_key;
+      if not exists(select 1 from public.task_instances where household_id=p_household_id and logical_occurrence_key=v_logical_key) then
         v_planned_assignee:=null;
         if v_rule.assignee_strategy='fixed' then v_planned_assignee:=v_rule.planned_assignee_id;
         elsif v_rule.assignee_strategy='dropoff_assignee' then
