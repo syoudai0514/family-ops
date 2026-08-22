@@ -557,6 +557,10 @@ revoke all on function private.fn_default_family_write_target() from public, ano
 revoke all on function private.fn_default_task_definition_calendar_visibility() from public, anon, authenticated;
 revoke all on function private.fn_copy_task_calendar_visibility() from public, anon, authenticated;
 revoke all on function private.family_ops_member_token(uuid, uuid) from public, anon, authenticated;
+-- The outbox worker is the only caller of this helper.  Its public RPC runs
+-- as service_role, so grant that role explicitly instead of reopening the
+-- helper to browser roles.
+grant execute on function private.family_ops_member_token(uuid, uuid) to service_role;
 revoke all on function private.enqueue_family_ops_calendar_projection(uuid, uuid, date, uuid) from public, anon, authenticated;
 revoke all on function private.fn_enqueue_family_ops_calendar_task() from public, anon, authenticated;
 revoke all on function private.fn_reconcile_family_ops_calendar_target() from public, anon, authenticated;
