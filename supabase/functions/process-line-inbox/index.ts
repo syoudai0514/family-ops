@@ -339,10 +339,27 @@ function scheduleLabel(payload: Record<string, unknown>): string {
   const daypart = typeof payload.daypart === 'string' ? payload.daypart : null;
   const localTime = typeof payload.due_local_time === 'string' ? payload.due_local_time : null;
   const dateLabel = date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : '今日';
-  const part = daypart
+  // A concrete AI-extracted deadline (for example "10:00 出発") is more
+  // useful than the broad daypart that was also present in the original text.
+  const part = localTime ?? (daypart
     ? daypartLabel(daypart as 'morning' | 'noon' | 'evening' | 'night')
-    : (localTime ?? '時刻なし');
+    : '時刻なし');
   return `${dateLabel} ${part}`;
+}
+
+function previewDetailLines(payload: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  if (typeof payload.context === 'string' && payload.context.trim()) {
+    lines.push(`予定: ${payload.context.trim()}`);
+  }
+  if (Array.isArray(payload.subtasks) && payload.subtasks.length > 0) {
+    const subtasks = payload.subtasks
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .slice(0, 5)
+      .map((item) => `・${item.trim()}`);
+    if (subtasks.length > 0) lines.push('準備: ' + subtasks.join(' '));
+  }
+  return lines;
 }
 
 async function sendPendingActionPreview(
@@ -402,6 +419,7 @@ async function sendPendingActionPreview(
       scheduleLabel: scheduleLabel(payload),
       targetLabel:
         actionType === 'shopping_item_add' ? '買い物リスト' : targetLabel(payload, actor),
+      detailLines: previewDetailLines(payload),
       confirmLabel,
     }),
     dedupKey: `line-pending-preview:${item.provider_event_id}`,
@@ -959,7 +977,7 @@ async function handleText(
       const targetUser = intent.targetRole
         ? await householdUserForRole(client, actor.household_id, intent.targetRole)
         : null;
-      const dueLocalTime = daypartToLocalTime(intent.daypart);
+      const dueLocalTime = intent.dueLocalTime ?? daypartToLocalTime(intent.daypart);
       const roleLabel =
         intent.targetRole === 'papa' ? 'パパ' : intent.targetRole === 'mama' ? 'ママ' : null;
 
@@ -971,9 +989,10 @@ async function handleText(
           purchase_method: /amazon|アマゾン/i.test(text) ? 'amazon' : 'store',
           assignee_user_id: targetUser,
           scheduled_date: intent.scheduledDate,
-          due_local_time: dueLocalTime,
-          daypart: intent.daypart,
-          target_label: roleLabel ?? '買い物リスト',
+            due_local_time: dueLocalTime,
+            daypart: intent.daypart,
+            context: intent.context,
+            target_label: roleLabel ?? '買い物リスト',
           parse_source: intent.source,
         };
       } else {
@@ -989,6 +1008,7 @@ async function handleText(
             scheduled_date: intent.scheduledDate,
             due_local_time: dueLocalTime,
             daypart: intent.daypart,
+            context: intent.context,
             target_label: roleLabel ?? 'パートナー',
             parse_source: intent.source,
           };
@@ -1003,6 +1023,8 @@ async function handleText(
             planned_assignee_user_id: targetUser ?? actor.user_id,
             routine_phase: 'anytime',
             daypart: intent.daypart,
+            subtasks: intent.subtasks,
+            context: intent.context,
             target_label: roleLabel ?? '自分',
             parse_source: intent.source,
           };

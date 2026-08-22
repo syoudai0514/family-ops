@@ -63,3 +63,19 @@ Deno.test('natural-language sender preview supports in-LINE edit before confirma
   assertStringIncludes(raw, 'action=confirm_pending&pending_action_id=pending-2');
   assertEquals(raw.includes('病院の保険証を準備'), true);
 });
+
+Deno.test('structured sender preview keeps appointment context and checklist visible before confirmation', () => {
+  const raw = JSON.stringify(
+    buildPendingActionPreviewFlex({
+      pendingActionId: 'pending-3',
+      kindLabel: 'タスク',
+      title: '皮膚科の準備',
+      scheduleLabel: '8/23 10:00',
+      targetLabel: '自分',
+      detailLines: ['予定: 藤沢の皮膚科 11:00', '準備: ・子供の身支度 ・診察カード ・保険証'],
+    }),
+  );
+  assertStringIncludes(raw, '皮膚科の準備');
+  assertStringIncludes(raw, '予定: 藤沢の皮膚科 11:00');
+  assertStringIncludes(raw, '準備: ・子供の身支度 ・診察カード ・保険証');
+});

@@ -24,7 +24,10 @@ LINE_CHANNEL_SECRET=
 LINE_CHANNEL_ACCESS_TOKEN=
 
 GEMINI_API_KEY=
-# Current runtime uses GEMINI_MODEL_REWRITE; GEMINI_MODEL_PARSE is not read.
+# LINE natural-language intent uses GEMINI_MODEL_LINE_INTENT when set, then
+# falls back to GEMINI_MODEL_REWRITE for compatibility. GEMINI_MODEL_PARSE is
+# not read. Never commit real secret values.
+GEMINI_MODEL_LINE_INTENT=
 GEMINI_MODEL_REWRITE=
 AI_MODE=free_lightweight
 

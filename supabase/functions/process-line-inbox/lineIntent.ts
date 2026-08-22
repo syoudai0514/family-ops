@@ -8,9 +8,14 @@ export type LineIntent = {
   kind: LineIntentKind;
   title: string;
   scheduledDate: string;
+  dueLocalTime: string | null;
   daypart: LineDaypart;
   targetRole: LineTargetRole;
   sharedMessage: string | null;
+  /** Small, actionable checklist items. They become canonical task subtasks. */
+  subtasks: string[];
+  /** Context shown in the sender preview; it is never used to infer a task. */
+  context: string | null;
   source: 'deterministic' | 'gemini';
 };
 
@@ -100,6 +105,51 @@ function cleanNoun(value: string): string {
     .trim();
 }
 
+function isTokyoIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() + 1 === month &&
+    parsed.getUTCDate() === day
+  );
+}
+
+function cleanShortText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.replace(/\s+/g, ' ').trim();
+  return text && text.length <= maxLength ? text : null;
+}
+
+function cleanSubtasks(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const subtasks: string[] = [];
+  for (const item of value) {
+    const title = cleanShortText(item, 60);
+    if (!title || seen.has(title)) continue;
+    seen.add(title);
+    subtasks.push(title);
+    if (subtasks.length === 5) break;
+  }
+  return subtasks;
+}
+
+/**
+ * Convert the untrusted/preview checklist into the exact RPC payload used for
+ * canonical task subtasks.  Keeping this next to the model-response boundary
+ * means a confirm can never turn a long raw sentence into a subtask.
+ */
+export function toTaskSubtasks(
+  value: unknown,
+): Array<{ title: string; required: boolean; sort_order: number }> | null {
+  const titles = cleanSubtasks(value);
+  return titles.length > 0
+    ? titles.map((title, index) => ({ title, required: true, sort_order: index + 1 }))
+    : null;
+}
+
 export function deterministicLineIntent(text: string, now = new Date()): LineIntent | null {
   const normalized = text
     .normalize('NFKC')
@@ -128,9 +178,12 @@ export function deterministicLineIntent(text: string, now = new Date()): LineInt
         kind: 'shopping',
         title: item,
         scheduledDate,
+        dueLocalTime: null,
         daypart,
         targetRole: role,
         sharedMessage: null,
+        subtasks: [],
+        context: null,
         source: 'deterministic',
       };
     }
@@ -145,9 +198,12 @@ export function deterministicLineIntent(text: string, now = new Date()): LineInt
         kind: role || requestSignal ? 'request' : 'task',
         title,
         scheduledDate,
+        dueLocalTime: null,
         daypart,
         targetRole: role,
         sharedMessage: `${title}をお願いできますか？`,
+        subtasks: [],
+        context: null,
         source: 'deterministic',
       };
     }
@@ -164,9 +220,12 @@ export function deterministicLineIntent(text: string, now = new Date()): LineInt
       kind: role && requestSignal ? 'request' : 'task',
       title,
       scheduledDate,
+      dueLocalTime: null,
       daypart,
       targetRole: role,
       sharedMessage: role && requestSignal ? `${title}をお願いできますか？` : null,
+      subtasks: [],
+      context: null,
       source: 'deterministic',
     };
   }
@@ -180,9 +239,12 @@ export function deterministicLineIntent(text: string, now = new Date()): LineInt
         kind: role && requestSignal ? 'request' : 'task',
         title,
         scheduledDate,
+        dueLocalTime: null,
         daypart,
         targetRole: role,
         sharedMessage: role && requestSignal ? `${title}をお願いできますか？` : null,
+        subtasks: [],
+        context: null,
         source: 'deterministic',
       };
     }
@@ -196,49 +258,81 @@ function parseJson(text: string): Record<string, unknown> {
   return JSON.parse(fenced.trim()) as Record<string, unknown>;
 }
 
+/**
+ * Boundary between an untrusted model response and the canonical action
+ * payload.  Keep this exported so regression tests exercise the same strict
+ * validation used in production without calling a provider.
+ */
+export function normalizeGeminiLineIntent(raw: string): Omit<LineIntent, 'source'> | null {
+  let p: Record<string, unknown>;
+  try {
+    p = parseJson(raw);
+  } catch {
+    return null;
+  }
+
+  if (!['task', 'request', 'shopping'].includes(String(p.kind))) return null;
+  const title = cleanShortText(p.title, 80);
+  const scheduledDate = typeof p.scheduled_date === 'string' ? p.scheduled_date : '';
+  if (!title || !isTokyoIsoDate(scheduledDate)) return null;
+
+  const dueLocalTime =
+    typeof p.due_local_time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(p.due_local_time)
+      ? p.due_local_time
+      : null;
+  const daypart = ['morning', 'noon', 'evening', 'night'].includes(String(p.daypart))
+    ? (p.daypart as Exclude<LineDaypart, null>)
+    : null;
+  const targetRole = ['papa', 'mama'].includes(String(p.target_role))
+    ? (p.target_role as Exclude<LineTargetRole, null>)
+    : null;
+  const sharedMessage = cleanShortText(p.shared_message, 240);
+
+  // A non-request must not accidentally carry an AI-written partner message.
+  if (p.kind !== 'request' && sharedMessage !== null) return null;
+
+  return {
+    kind: p.kind as LineIntentKind,
+    title,
+    scheduledDate,
+    dueLocalTime,
+    daypart,
+    targetRole,
+    sharedMessage,
+    subtasks: cleanSubtasks(p.subtasks),
+    context: cleanShortText(p.context, 120),
+  };
+}
+
 async function geminiLineIntent(text: string, now: Date): Promise<LineIntent | null> {
-  const model = Deno.env.get('GEMINI_MODEL_REWRITE') ?? '';
+  const model = Deno.env.get('GEMINI_MODEL_LINE_INTENT') ?? Deno.env.get('GEMINI_MODEL_REWRITE') ?? '';
   if (!model) return null;
   const today = addJstDays(now, 0);
   const prompt = [
-    '家庭内タスク管理LINEの日本語入力を構造化してください。',
+    '家庭内タスク管理LINEの自然文を、送信者が確認できる1件の安全なアクションへ構造化してください。',
     `今日(Asia/Tokyo)は ${today} です。`,
-    '重要: 「今日の夜に明日の病院の保険証を準備」は、作業日は今日・夜です。「明日の病院」は理由です。',
+    '重要: 作業の実行日と、病院・行事などの予定日は区別する。',
+    '例: 「明日11時から藤沢の皮膚科。10時には出発必要なので子供の身支度、診察カード、保険証を準備」は、',
+    'title「皮膚科の準備」、scheduled_date は明日、due_local_time は「10:00」、',
+    'subtasks は「子供の身支度」「診察カード」「保険証」、context は「藤沢の皮膚科 11:00」とする。',
+    '予定そのものを新しいGoogle Calendar予定として作らない。入力に書かれていない事実・時刻・担当を作らない。',
     'kind は task/request/shopping のいずれか。相手に「してほしい」「お願い」なら request。',
     'target_role は papa/mama/null。嫁さん・妻・奥さんは mama。',
     'daypart は morning/noon/evening/night/null。',
     'scheduled_date は YYYY-MM-DD。明示が無い場合は今日。',
-    'title は短い行動名。メタ文言「タスクとして追加して」は入れない。',
+    'due_local_time は入力にある実行期限・出発時刻を HH:MM で返す。無ければ null。',
+    'title は80文字以内の短い行動名。メタ文言「タスクとして追加して」は入れない。',
+    'subtasks は実際にチェックできる持ち物・手順だけを最大5件。無ければ空配列。',
+    'context は予定の場所・開始時刻等の短い補足だけ。無ければnull。',
     'shared_message は request のときだけ、事実を増やさず柔らかい依頼文。それ以外null。',
-    '必ずJSONのみ: {"kind":"task|request|shopping","title":"...","scheduled_date":"YYYY-MM-DD","daypart":"morning|noon|evening|night|null","target_role":"papa|mama|null","shared_message":"...|null"}',
+    '必ずJSONのみ: {"kind":"task|request|shopping","title":"...","scheduled_date":"YYYY-MM-DD","due_local_time":"HH:MM|null","daypart":"morning|noon|evening|night|null","target_role":"papa|mama|null","shared_message":"...|null","subtasks":["..."],"context":"...|null"}',
     '',
     `入力: ${JSON.stringify(text)}`,
   ].join('\n');
   try {
     const raw = await callGemini(prompt, model);
-    const p = parseJson(raw);
-    if (!['task', 'request', 'shopping'].includes(String(p.kind))) return null;
-    const title = typeof p.title === 'string' ? p.title.trim() : '';
-    const scheduledDate = typeof p.scheduled_date === 'string' ? p.scheduled_date : '';
-    if (!title || title.length > 100 || !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) return null;
-    const daypart = ['morning', 'noon', 'evening', 'night'].includes(String(p.daypart))
-      ? (p.daypart as Exclude<LineDaypart, null>)
-      : null;
-    const role = ['papa', 'mama'].includes(String(p.target_role))
-      ? (p.target_role as Exclude<LineTargetRole, null>)
-      : null;
-    return {
-      kind: p.kind as LineIntentKind,
-      title,
-      scheduledDate,
-      daypart,
-      targetRole: role,
-      sharedMessage:
-        typeof p.shared_message === 'string' && p.shared_message.trim()
-          ? p.shared_message.trim()
-          : null,
-      source: 'gemini',
-    };
+    const normalized = normalizeGeminiLineIntent(raw);
+    return normalized ? { ...normalized, source: 'gemini' } : null;
   } catch (error) {
     console.warn('process-line-inbox: Gemini intent extraction unavailable', {
       code: error instanceof Error ? error.message : 'unknown',
@@ -251,5 +345,7 @@ export async function extractLineIntent(
   text: string,
   now = new Date(),
 ): Promise<LineIntent | null> {
-  return deterministicLineIntent(text, now) ?? (await geminiLineIntent(text, now));
+  // Natural language is AI-first. The deterministic parser is only a safe
+  // availability fallback when the provider is unavailable or rejects output.
+  return (await geminiLineIntent(text, now)) ?? deterministicLineIntent(text, now);
 }

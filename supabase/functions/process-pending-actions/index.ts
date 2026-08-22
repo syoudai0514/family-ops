@@ -9,6 +9,7 @@ import {
   daypartLabel,
   daypartToLocalTime,
   extractLineIntent,
+  toTaskSubtasks,
 } from '../process-line-inbox/lineIntent.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
@@ -85,11 +86,27 @@ function scheduleLabel(payload: Record<string, unknown>): string {
   const dateLabel = /^\d{4}-\d{2}-\d{2}$/.test(date)
     ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`
     : date || '今日';
-  const part =
+  const part = time ?? (
     daypart && ['morning', 'noon', 'evening', 'night'].includes(daypart)
       ? daypartLabel(daypart as 'morning' | 'noon' | 'evening' | 'night')
-      : (time ?? '時刻なし');
+      : '時刻なし'
+  );
   return `${dateLabel} ${part}`;
+}
+
+function previewDetailLines(payload: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  if (typeof payload.context === 'string' && payload.context.trim()) {
+    lines.push(`予定: ${payload.context.trim()}`);
+  }
+  if (Array.isArray(payload.subtasks)) {
+    const subtasks = payload.subtasks
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .slice(0, 5)
+      .map((item) => `・${item.trim()}`);
+    if (subtasks.length > 0) lines.push('準備: ' + subtasks.join(' '));
+  }
+  return lines;
 }
 
 async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<PreparedDraft | null> {
@@ -130,7 +147,7 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
     : null;
   const roleLabel =
     intent.targetRole === 'papa' ? 'パパ' : intent.targetRole === 'mama' ? 'ママ' : null;
-  const dueLocalTime = daypartToLocalTime(intent.daypart);
+  const dueLocalTime = intent.dueLocalTime ?? daypartToLocalTime(intent.daypart);
 
   if (intent.kind === 'shopping') {
     return {
@@ -143,6 +160,7 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
         scheduled_date: intent.scheduledDate,
         due_local_time: dueLocalTime,
         daypart: intent.daypart,
+        context: intent.context,
         target_label: roleLabel ?? '買い物リスト',
         parse_source: intent.source,
       },
@@ -168,6 +186,7 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
         scheduled_date: intent.scheduledDate,
         due_local_time: dueLocalTime,
         daypart: intent.daypart,
+        context: intent.context,
         target_label: roleLabel ?? 'パートナー',
         parse_source: intent.source,
       },
@@ -187,6 +206,8 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
       planned_assignee_user_id: roleUser ?? row.actor_id,
       routine_phase: 'anytime',
       daypart: intent.daypart,
+      subtasks: intent.subtasks,
+      context: intent.context,
       target_label: roleLabel ?? '自分',
       parse_source: intent.source,
     },
@@ -211,6 +232,7 @@ async function enqueueDraftPreview(
       title: String(prepared.payload.title ?? '予定'),
       scheduleLabel: scheduleLabel(prepared.payload),
       targetLabel: prepared.targetLabel,
+      detailLines: previewDetailLines(prepared.payload),
       confirmLabel: prepared.actionType === 'request_create' ? 'この内容で送る' : 'この内容で登録',
     }),
   });
@@ -307,6 +329,7 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
       };
     }
     case 'task_create_once': {
+      const subtasks = toTaskSubtasks(p.subtasks);
       const { data, error } = await client.rpc('server_tx_create_task', {
         p_actor_id: item.actor_id,
         p_operation_id: item.operation_id,
@@ -315,9 +338,9 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
         p_scheduled_date: p.scheduled_date,
         p_due_local_time: p.due_local_time ?? null,
         p_planned_assignee_user_id: p.planned_assignee_user_id ?? null,
-        p_completion_mode: 'whole',
+        p_completion_mode: subtasks ? 'subtasks' : 'whole',
         p_routine_phase: p.routine_phase ?? 'anytime',
-        p_subtasks: null,
+        p_subtasks: subtasks,
       });
       if (error) throw new Error(error.message);
       return { result_type: 'task', result_id: (data as { task_id?: string })?.task_id ?? null };

@@ -1,5 +1,9 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { deterministicLineIntent } from './lineIntent.ts';
+import {
+  deterministicLineIntent,
+  normalizeGeminiLineIntent,
+  toTaskSubtasks,
+} from './lineIntent.ts';
 
 const now = new Date('2026-08-22T09:00:00Z'); // 2026-08-22 18:00 JST
 
@@ -31,4 +35,50 @@ Deno.test('simple shopping remains structurally parseable', () => {
   const intent = deterministicLineIntent('明日オムツをAmazonで買って', now);
   assertEquals(intent?.kind, 'shopping');
   assertEquals(intent?.scheduledDate, '2026-08-23');
+});
+
+Deno.test('Gemini response separates a hospital preparation task from its appointment context', () => {
+  const intent = normalizeGeminiLineIntent(JSON.stringify({
+    kind: 'task',
+    title: '皮膚科の準備',
+    scheduled_date: '2026-08-23',
+    due_local_time: '10:00',
+    daypart: null,
+    target_role: null,
+    shared_message: null,
+    subtasks: ['子供の身支度', '診察カード', '保険証'],
+    context: '藤沢の皮膚科 11:00',
+  }));
+
+  assertEquals(intent?.title, '皮膚科の準備');
+  assertEquals(intent?.scheduledDate, '2026-08-23');
+  assertEquals(intent?.dueLocalTime, '10:00');
+  assertEquals(intent?.subtasks, ['子供の身支度', '診察カード', '保険証']);
+  assertEquals(intent?.context, '藤沢の皮膚科 11:00');
+});
+
+Deno.test('Gemini response rejects invalid dates, times, and non-request partner messages', () => {
+  assertEquals(
+    normalizeGeminiLineIntent('{"kind":"task","title":"準備","scheduled_date":"2026-02-30","due_local_time":"10:00","shared_message":null}'),
+    null,
+  );
+  assertEquals(
+    normalizeGeminiLineIntent('{"kind":"task","title":"準備","scheduled_date":"2026-08-23","due_local_time":"25:00","shared_message":null}'),
+    null,
+  );
+  assertEquals(
+    normalizeGeminiLineIntent('{"kind":"task","title":"準備","scheduled_date":"2026-08-23","due_local_time":null,"shared_message":"相手に送る文"}'),
+    null,
+  );
+});
+
+Deno.test('structured checklist becomes ordered canonical task subtasks on confirmation', () => {
+  assertEquals(toTaskSubtasks(['子供の身支度', '診察カード', '保険証']), [
+    { title: '子供の身支度', required: true, sort_order: 1 },
+    { title: '診察カード', required: true, sort_order: 2 },
+    { title: '保険証', required: true, sort_order: 3 },
+  ]);
+  assertEquals(toTaskSubtasks(['保険証', '保険証', '', 7]), [
+    { title: '保険証', required: true, sort_order: 1 },
+  ]);
 });
