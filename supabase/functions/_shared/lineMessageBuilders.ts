@@ -19,6 +19,8 @@ export function buildPendingActionPreviewFlex(data: {
   title: string;
   scheduleLabel: string;
   targetLabel: string;
+  /** Short, sender-visible structured facts such as a checklist or appointment context. */
+  detailLines?: string[];
   confirmLabel?: string;
 }): Record<string, unknown> {
   return {
@@ -48,6 +50,13 @@ export function buildPendingActionPreviewFlex(data: {
             color: '#555555',
             wrap: true,
           },
+          ...((data.detailLines ?? []).slice(0, 6).map((line) => ({
+            type: 'text',
+            text: line,
+            size: 'sm',
+            color: '#555555',
+            wrap: true,
+          }))),
           {
             type: 'text',
             text: '確定するまで登録・送信されません。編集で日付・時間・担当・種別をLINE内で修正できます。',

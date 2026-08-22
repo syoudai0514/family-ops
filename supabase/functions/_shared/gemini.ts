@@ -7,9 +7,9 @@
 // generateContent call asking for the exact "partner rewrite contract"
 // JSON shape from §4 — no multi-step pipeline, no paid-tier features. The
 // deterministic invariant check below is the "two-pass validation" §5
-// requires (model rewrite, then deterministic comparison) — MVP explicitly
-// specifies deterministic-first, model-based second-pass checking as
-// optional future work, not required here.
+// requires (model rewrite, then deterministic comparison). Natural-language
+// LINE actions use the model first and only accept a separately validated
+// structured result; a deterministic parser is an availability fallback.
 //
 // Absolute rule (§8): "AI失敗 -> raw textをpartnerへ送る" is forbidden. Every
 // failure path here (missing API key, HTTP error, malformed JSON, failed
