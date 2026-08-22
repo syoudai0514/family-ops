@@ -25,7 +25,7 @@ jobs:
           secrets=$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF/secrets")
           names=$(echo "$secrets" | jq -r '.. | objects | .name? // empty' | sort -u)
           required=(LINE_CHANNEL_SECRET LINE_CHANNEL_ACCESS_TOKEN CRON_WORKER_TOKEN APP_BASE_URL)
-          optional=(LINE_OA_BASIC_ID)
+          optional=(LINE_OA_BASIC_ID GEMINI_API_KEY GEMINI_MODEL_REWRITE)
           for name in "${required[@]}"; do
             grep -Fxq "$name" <<<"$names" || { echo "::error::$name is not configured"; exit 1; }
             echo "$name: configured"
@@ -34,7 +34,7 @@ jobs:
             if grep -Fxq "$name" <<<"$names"; then echo "$name: configured"; else echo "$name: not configured (optional)"; fi
           done
 
-      - name: Audit LINE link, notification bridge, cron, and quota state
+      - name: Audit LINE link, queues, cron, and quota state
         shell: bash
         run: |
           set -euo pipefail
@@ -52,7 +52,7 @@ jobs:
             'cron_jobs', coalesce((
               select jsonb_agg(jsonb_build_object('name', jobname, 'schedule', schedule, 'active', active) order by jobname)
               from cron.job
-              where jobname in ('family-ops-line-inbox-v1', 'family-ops-routine-dispatch-v1', 'family-ops-line-delivery-v1', 'family-ops-calendar-outbox-v1')
+              where jobname in ('family-ops-line-inbox-v1', 'family-ops-pending-actions-v1', 'family-ops-routine-dispatch-v1', 'family-ops-line-delivery-v1', 'family-ops-calendar-outbox-v1')
             ), '[]'::jsonb),
             'recent_cron_runs', coalesce((
               select jsonb_agg(jsonb_build_object('name', jobname, 'status', status, 'started_at', start_time, 'finished_at', end_time) order by start_time desc)
@@ -60,20 +60,23 @@ jobs:
                 select j.jobname, d.status, d.start_time, d.end_time
                 from cron.job_run_details d
                 join cron.job j on j.jobid = d.jobid
-                where j.jobname in ('family-ops-line-inbox-v1', 'family-ops-routine-dispatch-v1', 'family-ops-line-delivery-v1', 'family-ops-calendar-outbox-v1')
+                where j.jobname in ('family-ops-line-inbox-v1', 'family-ops-pending-actions-v1', 'family-ops-routine-dispatch-v1', 'family-ops-line-delivery-v1', 'family-ops-calendar-outbox-v1')
                 order by d.start_time desc
-                limit 12
+                limit 15
               ) runs
             ), '[]'::jsonb),
+            'pending_actions', jsonb_build_object(
+              'confirmed_or_executing', (select count(*) from private.pending_actions where status in ('confirmed','queued','executing')),
+              'oldest_confirmed_at', (select min(updated_at) from private.pending_actions where status in ('confirmed','queued','executing')),
+              'dead', (select count(*) from private.pending_actions where status = 'dead')
+            ),
             'quota_state', (
               select jsonb_build_object('provider_limit', provider_limit, 'provider_consumed', provider_consumed, 'local_counted_success', local_counted_success, 'last_provider_refresh_at', last_provider_refresh_at)
               from private.line_quota_state
               where billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date
               limit 1
             ),
-            'active_quota_reservations', (
-              select count(*) from private.line_quota_reservations where status = 'reserved'
-            ),
+            'active_quota_reservations', (select count(*) from private.line_quota_reservations where status = 'reserved'),
             'calendar_outbox', jsonb_build_object(
               'pending_or_failed', (select count(*) from private.family_ops_calendar_mirrors where sync_state in ('pending','failed')),
               'oldest_pending_at', (select min(next_attempt_at) from private.family_ops_calendar_mirrors where sync_state in ('pending','failed'))
@@ -87,5 +90,5 @@ jobs:
             .[0].audit.notification_bridge_trigger_present == true and
             .[0].audit.active_line_links >= 1 and
             .[0].audit.active_links_with_matching_household_preference >= 1 and
-            ([.[0].audit.cron_jobs[] | select(.schedule == "* * * * *" and .active == true)] | length) == 4
+            ([.[0].audit.cron_jobs[] | select(.schedule == "* * * * *" and .active == true)] | length) == 5
           ' >/dev/null

@@ -34,7 +34,10 @@ import { withServiceHandler, jsonResponse } from '../_shared/handler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { buildCheckinLink } from '../_shared/lineMessaging.ts';
 import { buildRoutineQuickReply } from './routineQuickReply.ts';
-import { buildAssignmentRequestFlex } from '../_shared/lineMessageBuilders.ts';
+import {
+  buildAssignmentRequestFlex,
+  buildGeneralRequestFlex,
+} from '../_shared/lineMessageBuilders.ts';
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -69,7 +72,14 @@ type OutboxItem = {
   // Opaque canonical id only -- no bearer credential.
   session_id?: string;
   session_type?: string;
-  payload?: { request_id?: string; request_kind?: string; scope?: 'once' | 'this_week' };
+  payload?: {
+    request_id?: string;
+    request_kind?: string;
+    scope?: 'once' | 'this_week';
+    due_at?: string | null;
+    accept_pending_action_id?: string;
+    decline_pending_action_id?: string;
+  };
 };
 
 type ClaimedNotification = {
@@ -144,24 +154,46 @@ function buildRichRequestMessage(
 ): Record<string, unknown> | null {
   if (payload?.rich_message) return payload.rich_message;
   const items = payload?.items ?? [];
-  // Actionable assignment requests must survive normal notification bundling.
-  // Select the request item instead of requiring it to be the only item; the
-  // caller sends the ordinary bundled summary as a first LINE message too.
-  const item = items.find((candidate) =>
-    candidate.type === 'request_received' &&
-    candidate.payload?.request_kind === 'assignment_change' &&
-    Boolean(candidate.payload.request_id),
+  const item = items.find(
+    (candidate) => candidate.type === 'request_received' && Boolean(candidate.payload?.request_id),
   );
-  if (!item) return null;
-  if (
-    !item.payload?.request_id
-  )
+  if (!item?.payload?.request_id) return null;
+
+  if (item.payload.request_kind === 'assignment_change') {
+    return buildAssignmentRequestFlex({
+      requestId: item.payload.request_id,
+      title: item.title ?? '担当変更',
+      message: item.body ?? '',
+      scope: item.payload.scope ?? 'once',
+    });
+  }
+
+  let label: string | undefined;
+  if (item.payload.due_at) {
+    const due = new Date(item.payload.due_at);
+    if (!Number.isNaN(due.getTime()))
+      label = new Intl.DateTimeFormat('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(due);
+  }
+  const acceptPendingActionId = item.payload.accept_pending_action_id;
+  const declinePendingActionId = item.payload.decline_pending_action_id;
+  // Older request notifications do not carry recipient-owned pending action
+  // IDs. They remain plain text; never emit a Flex card with unusable
+  // postbacks.
+  if (typeof acceptPendingActionId !== 'string' || typeof declinePendingActionId !== 'string') {
     return null;
-  return buildAssignmentRequestFlex({
-    requestId: item.payload.request_id,
-    title: item.title ?? '担当変更',
+  }
+  return buildGeneralRequestFlex({
+    title: item.title ?? 'お願い',
     message: item.body ?? '',
-    scope: item.payload.scope ?? 'once',
+    acceptPendingActionId,
+    declinePendingActionId,
+    scheduleLabel: label,
   });
 }
 
