@@ -5,6 +5,17 @@
 alter table public.task_subtask_definitions
   add column if not exists is_active boolean not null default true;
 
+-- Recurrence replacement already deletes future todo task instances. Once a
+-- recurring instance has its canonical subtask snapshots, the child rows must
+-- follow that same future-only cleanup; completed parents are never deleted by
+-- those mutations and therefore retain their History unchanged.
+alter table public.task_subtask_instances
+  drop constraint if exists task_subtask_instances_household_id_task_instance_id_fkey;
+alter table public.task_subtask_instances
+  add constraint task_subtask_instances_household_id_task_instance_id_fkey
+  foreign key (household_id, task_instance_id)
+  references public.task_instances (household_id, id) on delete cascade;
+
 create index if not exists task_subtask_definitions_active_definition_idx
   on public.task_subtask_definitions (household_id, task_definition_id, sort_order)
   where is_active;
