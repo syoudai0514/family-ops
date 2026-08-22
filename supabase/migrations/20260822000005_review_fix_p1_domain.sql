@@ -87,6 +87,12 @@ begin
   new.task_kind := private.family_ops_task_kind(new.code, new.category, new.routine_phase, new.calendar_visibility);
   if new.task_kind in ('transport','morning_preparation','morning_chore','evening_chore') then
     new.calendar_visibility := case when new.task_kind = 'transport' then 'transport' else 'hidden' end;
+  elsif new.task_kind = 'special' then
+    -- Definitions have no generic auto-special domain.  Explicit manual
+    -- special handling lives on task_instances; this prevents the legacy
+    -- default trigger from promoting an unknown definition during insert.
+    new.task_kind := 'generic_once';
+    new.calendar_visibility := 'hidden';
   elsif new.task_kind = 'generic_once' then
     new.calendar_visibility := 'hidden';
   elsif new.calendar_visibility is null then
