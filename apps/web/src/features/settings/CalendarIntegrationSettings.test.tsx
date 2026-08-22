@@ -40,4 +40,27 @@ describe('CalendarIntegrationSettings', () => {
     render(<CalendarIntegrationSettings />);
     expect(await screen.findByText('Google Calendarの接続を完了できませんでした。もう一度お試しください。')).toBeInTheDocument();
   });
+
+  it('does not request reauthentication for an inactive historical calendar when the active connection is healthy', async () => {
+    fixtures.rows = [
+      { id: 'old', external_calendar_id: 'old@example.com', display_name: 'Old calendar', active: false, reauth_required: true, is_family_write_target: false },
+      { id: 'family', external_calendar_id: 'family@example.com', display_name: 'Family calendar', active: true, reauth_required: false, is_family_write_target: true },
+    ];
+    render(<CalendarIntegrationSettings />);
+    expect(await screen.findByLabelText(/Family calendar/)).toBeChecked();
+    expect(screen.getByText('Google Calendarを接続')).toBeInTheDocument();
+    expect(screen.queryByText('Google Calendarを再接続')).not.toBeInTheDocument();
+  });
+
+  it('does not request target selection again when reauthentication preserved the explicit target', async () => {
+    fixtures.rows = [
+      { id: 'family', external_calendar_id: 'family@example.com', display_name: 'Family calendar', active: true, reauth_required: false, is_family_write_target: true },
+      { id: 'secondary', external_calendar_id: 'secondary@example.com', display_name: 'Secondary', active: true, reauth_required: false, is_family_write_target: false },
+    ];
+    window.history.replaceState({}, '', '/settings?google_calendar_connected=1');
+    render(<CalendarIntegrationSettings />);
+    await screen.findByLabelText(/Family calendar/);
+    expect(screen.queryByText('家族予定を書き込むカレンダーを選んでください')).not.toBeInTheDocument();
+    expect(screen.getByText('Google Calendarの接続を更新しました。現在の家族カレンダーを継続して使います。')).toBeInTheDocument();
+  });
 });

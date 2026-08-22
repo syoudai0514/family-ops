@@ -9,10 +9,13 @@ import {
   deleteEvent,
   getAccessTokenForConnection,
   getEvent,
+  GoogleCalendarApiError,
   GoogleInvalidGrantError,
   insertEvent,
   mergePrivateExtendedProperties,
   patchEvent,
+  isGoogleCalendarForbiddenError,
+  revalidateCalendarEligibilityAfterForbidden,
 } from "../_shared/googleCalendar.ts";
 import { decryptRefreshToken } from "../_shared/cryptoHelper.ts";
 
@@ -41,6 +44,10 @@ interface ClaimedTargetDeletion {
 function mirrorProperties(event: Record<string, unknown>) {
   const props = event.extendedProperties as { private?: Record<string, string> } | undefined;
   return props?.private ?? {};
+}
+
+function requireExpectedGoogleStatus(operation: string, status: number, expected: number[]) {
+  if (!expected.includes(status)) throw new GoogleCalendarApiError(operation, status);
 }
 
 function eventPayloadWithStableIdentity(event: Record<string, unknown>) {
@@ -98,10 +105,14 @@ Deno.serve(withServiceHandler(async (req: Request) => {
     p_lease_seconds: 120,
   });
   if (targetDeletion) {
+    let cleanupAccessToken: string | null = null;
+    let cleanupCalendarId: string | null = null;
     try {
       const { accessToken, externalCalendarId } = await getAccessTokenForConnection(
         serviceClient, targetDeletion.calendar_connection_id, decryptRefreshToken,
       );
+      cleanupAccessToken = accessToken;
+      cleanupCalendarId = externalCalendarId;
       const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
       if (existing.status === 200) {
         let status = await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id, ifMatchEtag: existing.etag });
@@ -109,13 +120,21 @@ Deno.serve(withServiceHandler(async (req: Request) => {
           const latest = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
           status = latest.status === 200 ? await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id, ifMatchEtag: latest.etag }) : latest.status;
         }
-        if (![200, 204, 404, 410].includes(status)) throw new Error(`target deletion returned ${status}`);
+        requireExpectedGoogleStatus("target deletion", status, [200, 204, 404, 410]);
       }
       await callGoogleServerTx(serviceClient, "server_tx_complete_family_ops_calendar_target_deletion", {
         p_id: targetDeletion.id, p_lease_token: targetDeletion.lease_token,
       });
       return new Response(JSON.stringify({ processed: 1, target_cleanup: targetDeletion.projection_key }), { status: 200, headers: { "Content-Type": "application/json" } });
     } catch (error) {
+      if (isGoogleCalendarForbiddenError(error) && cleanupAccessToken && cleanupCalendarId) {
+        await revalidateCalendarEligibilityAfterForbidden(serviceClient, {
+          calendarConnectionId: targetDeletion.calendar_connection_id,
+          externalCalendarId: cleanupCalendarId,
+          accessToken: cleanupAccessToken,
+          reason: "403 during stale target cleanup",
+        });
+      }
       await callGoogleServerTx(serviceClient, "server_tx_fail_family_ops_calendar_target_deletion", {
         p_id: targetDeletion.id, p_lease_token: targetDeletion.lease_token,
         p_error: String(error instanceof Error ? error.message : error),
@@ -132,12 +151,16 @@ Deno.serve(withServiceHandler(async (req: Request) => {
     return new Response(JSON.stringify({ processed: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
+  let accessToken: string | null = null;
+  let externalCalendarId: string | null = null;
   try {
-    const { accessToken, externalCalendarId } = await getAccessTokenForConnection(
+    const connection = await getAccessTokenForConnection(
       serviceClient,
       item.calendar_connection_id,
       decryptRefreshToken,
     );
+    accessToken = connection.accessToken;
+    externalCalendarId = connection.externalCalendarId;
 
     if (item.action === "delete") {
       const targetId = item.provider_event_id;
@@ -152,7 +175,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
               : latest.status;
           }
           if (![200, 204, 404, 410].includes(status)) {
-            throw new Error(`deleteEvent returned ${status}`);
+            requireExpectedGoogleStatus("deleteEvent", status, [200, 204, 404, 410]);
           }
         }
       }
@@ -177,7 +200,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
         } else if (inserted.status === 200 || inserted.status === 201) {
           etag = typeof inserted.body?.etag === "string" ? inserted.body.etag : null;
         } else {
-          throw new Error(`insertEvent returned ${inserted.status}`);
+          requireExpectedGoogleStatus("insertEvent", inserted.status, [200, 201]);
         }
       } else {
         if (!item.provider_event_id && mirrorProperties(existing.body ?? {}).familyOpsProjectionKey !== item.projection_key) {
@@ -212,12 +235,12 @@ Deno.serve(withServiceHandler(async (req: Request) => {
             },
             ifMatchEtag: latest.etag,
           });
-          if (retry.status !== 200) throw new Error(`patchEvent retry returned ${retry.status}`);
+          requireExpectedGoogleStatus("patchEvent retry", retry.status, [200]);
           etag = typeof retry.body?.etag === "string" ? retry.body.etag : latest.etag;
         } else if (patched.status === 200) {
           etag = typeof patched.body?.etag === "string" ? patched.body.etag : existing.etag;
         } else {
-          throw new Error(`patchEvent returned ${patched.status}`);
+          requireExpectedGoogleStatus("patchEvent", patched.status, [200]);
         }
       }
       await complete(serviceClient, item, targetId, etag, false);
@@ -238,6 +261,13 @@ Deno.serve(withServiceHandler(async (req: Request) => {
         p_calendar_connection_id: item.calendar_connection_id,
         p_reason: "invalid_grant during Family Ops mirror write",
       }).catch(() => undefined);
+    } else if (isGoogleCalendarForbiddenError(error) && accessToken && externalCalendarId) {
+      await revalidateCalendarEligibilityAfterForbidden(serviceClient, {
+        calendarConnectionId: item.calendar_connection_id,
+        externalCalendarId,
+        accessToken,
+        reason: "403 during Family Ops mirror write",
+      });
     }
     await callGoogleServerTx(serviceClient, "server_tx_fail_family_ops_calendar_mirror", {
       p_household_id: item.household_id,

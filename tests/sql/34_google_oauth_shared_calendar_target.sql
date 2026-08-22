@@ -69,6 +69,14 @@ begin
     raise exception 'FAIL oauth_shared_target: eligible explicit target must survive reauth';
   end if;
 
+  insert into private.family_ops_calendar_mirrors(
+    household_id, projection_key, kind, local_date, calendar_connection_id,
+    provider_event_id, desired_action, sync_state
+  ) values (
+    v_household, 'special:oauth-target-lost-34', 'special', current_date,
+    v_primary, 'provider-event-oauth-34', 'upsert', 'pending'
+  );
+
   v_state := encode(sha256('oauth-v2-target-lost'), 'hex');
   perform public.server_tx_start_google_oauth(v_owner, v_state, '/settings');
   perform public.server_tx_complete_google_oauth_v2(
@@ -79,6 +87,21 @@ begin
      or (select is_family_write_target from public.calendar_connections where id = v_primary)
      or exists (select 1 from public.calendar_connections where household_id = v_household and is_family_write_target) then
     raise exception 'FAIL oauth_shared_target: access-lost target must be inactive and unselected';
+  end if;
+  if (select reauth_required from public.calendar_connections where id = v_primary)
+     or not exists (
+       select 1 from private.family_ops_calendar_mirrors
+       where household_id = v_household and projection_key = 'special:oauth-target-lost-34' and sync_state = 'blocked'
+     )
+     or not exists (
+       select 1 from private.family_ops_calendar_orphaned_mirrors
+       where calendar_connection_id = v_primary and provider_event_id = 'provider-event-oauth-34'
+     ) then
+    raise exception 'FAIL oauth_shared_target: missing candidate is not invalid_grant and must preserve blocked-mirror evidence';
+  end if;
+  perform public.server_tx_set_family_calendar_target(v_owner, gen_random_uuid(), v_shared);
+  if exists (select 1 from private.family_ops_calendar_target_deletions where calendar_connection_id = v_primary) then
+    raise exception 'FAIL oauth_shared_target: later target selection must not enqueue deletion after access loss';
   end if;
 
   begin
