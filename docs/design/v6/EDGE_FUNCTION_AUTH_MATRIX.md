@@ -20,8 +20,16 @@
 - reassign-task-once
 - create-task-definition
 - edit-task-definition
+- update-task-categories
 - deactivate-task-definition
 - change-recurrence
+- deactivate-recurrence
+- complete-onboarding-step
+- replace-recurrence-schedule
+- set-routine-definition-options
+- replace-routine-subtasks
+- set-family-calendar-target
+- set-family-role
 - configure-evening-routines
 - send-request
 - accept-request
@@ -46,6 +54,7 @@
 - update-calendar-event
 - classify-calendar-busy-members
 - ensure-calendar-fresh
+- get-week-schedule
 - create-line-link-token
 - unlink-line-account
 
@@ -69,6 +78,7 @@ Verify single-use OAuth state; callback needs no browser JWT.
 - dispatch-routine-automation
 - enqueue-periodic-google-sync
 - process-google-sync
+- process-family-ops-calendar-outbox
 - renew-google-watch
 - materialize-recurring
 - cleanup-expired-private-data

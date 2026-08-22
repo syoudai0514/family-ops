@@ -1,8 +1,10 @@
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold, type HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { formatDateTimeJa } from '../../lib/date';
+import { tokyoIsoDate } from '../planning/dateHelpers';
 import { useHistoryData, type HistoryEntry, type PlannedVsActualOutcome } from './useHistoryData';
 import type { TaskEvent, TaskEventType } from '../../lib/types';
+import { useMemo, useState } from 'react';
 
 // WP4 — planned vs actual history view. Read-only: no score, ranking, or
 // "who did more" comparison is shown here or ever should be (see
@@ -40,6 +42,8 @@ const EVENT_TYPE_LABELS: Record<TaskEventType, string> = {
 function memberLabel(userId: string | null, members: HouseholdMemberWithProfile[]): string {
   if (!userId) return '未定';
   const member = members.find((m) => m.user_id === userId);
+  if (member?.family_role === 'papa') return 'パパ';
+  if (member?.family_role === 'mama') return 'ママ';
   return member?.profile?.display_name ?? userId;
 }
 
@@ -59,25 +63,39 @@ function EventTrail({ events, members }: { events: TaskEvent[]; members: Househo
   );
 }
 
+export function reassignmentSummary(events: TaskEvent[], members: HouseholdMemberWithProfile[]): string | null {
+  const event = [...events].reverse().find((candidate) => candidate.event_type === 'reassigned_once');
+  if (!event) return null;
+  // Current mutations record these durable IDs. The legacy aliases preserve
+  // old History rows without ever guessing from the task's final assignee.
+  const oldId = typeof event.payload.old_assignee_id === 'string'
+    ? event.payload.old_assignee_id
+    : typeof event.payload.from === 'string' ? event.payload.from : null;
+  const newId = typeof event.payload.new_assignee_id === 'string'
+    ? event.payload.new_assignee_id
+    : typeof event.payload.to === 'string' ? event.payload.to : null;
+  if (!oldId || !newId) return '担当変更';
+  return `担当変更: ${memberLabel(oldId, members)} → ${memberLabel(newId, members)}`;
+}
+
+export function completedNextTokyoMorning(scheduledDate: string, completedAt: string | null): boolean {
+  return Boolean(completedAt && tokyoIsoDate(completedAt) > scheduledDate);
+}
+
 function HistoryRow({ entry, members }: { entry: HistoryEntry; members: HouseholdMemberWithProfile[] }) {
   const { task, outcome, events, wasReassigned } = entry;
+  const reassignment = wasReassigned ? reassignmentSummary(events, members) : null;
   return (
     <li className="history-item card">
       <div className="history-item-header">
         <strong>{task.title}</strong>
         <span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span>
       </div>
-      <p className="task-item-meta">
-        予定: {task.scheduled_date}
-        {task.due_at ? ` · 期限 ${formatDateTimeJa(task.due_at)}` : ''} · 担当予定: {memberLabel(task.planned_assignee_id, members)}
-      </p>
+      <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
       {task.status === 'completed' && (
-        <p className="task-item-meta">
-          実際: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} · 実施者:{' '}
-          {memberLabel(task.actual_completed_by_id, members)}
-        </p>
+        <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {memberLabel(task.actual_completed_by_id, members)}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 翌朝に完了' : ''}</p>
       )}
-      {wasReassigned && <p className="task-item-meta">この予定は再割り当てされました。</p>}
+      {reassignment && <p className="task-item-meta">{reassignment}</p>}
       <EventTrail events={events} members={members} />
     </li>
   );
@@ -87,6 +105,13 @@ export function HistoryPage() {
   const { user } = useAuth();
   const { household, members } = useHousehold();
   const { loading, error, entries } = useHistoryData(household?.id ?? null, user?.id ?? null);
+  const [filter, setFilter] = useState<'all' | 'routine' | 'planned' | 'request'>('all');
+  const visibleEntries = useMemo(() => entries.filter((entry) => {
+    if (filter === 'all') return true;
+    if (filter === 'routine') return entry.task.routine_phase === 'morning' || entry.task.routine_phase === 'evening';
+    if (filter === 'planned') return entry.task.routine_phase !== 'morning' && entry.task.routine_phase !== 'evening';
+    return entry.events.some((event) => event.source === 'request');
+  }), [entries, filter]);
 
   if (loading) {
     return (
@@ -102,6 +127,11 @@ export function HistoryPage() {
         <h1>履歴</h1>
       </div>
       <p className="task-item-meta">直近2週間の予定と実際の結果です。</p>
+      <div className="filter-chips" aria-label="履歴の絞り込み">
+        {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => (
+          <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{label}</button>
+        ))}
+      </div>
 
       {error && (
         <p role="alert" className="error-text">
@@ -110,8 +140,8 @@ export function HistoryPage() {
       )}
 
       <ul className="history-list">
-        {entries.length === 0 && <li className="empty-hint">この期間の記録はありません。</li>}
-        {entries.map((entry) => (
+        {visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}
+        {visibleEntries.map((entry) => (
           <HistoryRow key={entry.task.id} entry={entry} members={members} />
         ))}
       </ul>

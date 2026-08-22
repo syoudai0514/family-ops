@@ -70,6 +70,21 @@ const GAP_FILL_FUNCTIONS = new Set([
   'get-today-schedule',
   'create-assignment-change-request',
   'accept-assignment-change-request',
+  'deactivate-recurrence',
+  'get-week-schedule',
+  'complete-onboarding-step',
+  'replace-recurrence-schedule',
+  'update-task-categories',
+  'process-family-ops-calendar-outbox',
+  // v3.3 review-fix P1: explicit household role, routine inclusion, and
+  // calendar write-target mutations are implemented endpoints but were not
+  // named in the frozen v6 design bundle.
+  'set-routine-definition-options',
+  // Final sweep Issue #11: canonical custom routine subtask definition
+  // mutation, added after the frozen v6 endpoint matrix.
+  'replace-routine-subtasks',
+  'set-family-calendar-target',
+  'set-family-role',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

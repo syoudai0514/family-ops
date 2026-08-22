@@ -16,6 +16,7 @@ export const EDGE_FUNCTIONS = {
   setSubtaskCompletion: 'set-subtask-completion',
   createTaskDefinition: 'create-task-definition',
   editTaskDefinition: 'edit-task-definition',
+  updateTaskCategories: 'update-task-categories',
   deactivateTaskDefinition: 'deactivate-task-definition',
   sendRequest: 'send-request',
   acceptRequest: 'accept-request',
@@ -35,6 +36,7 @@ export const EDGE_FUNCTIONS = {
   createLineLinkToken: 'create-line-link-token',
   updateRoutineSchedule: 'update-routine-schedule',
   changeRecurrence: 'change-recurrence',
+  deactivateRecurrence: 'deactivate-recurrence',
   reassignTaskOnce: 'reassign-task-once',
   confirmRequestDraft: 'confirm-request-draft',
   createAssignmentChangeRequest: 'create-assignment-change-request',
@@ -48,6 +50,14 @@ export const EDGE_FUNCTIONS = {
   confirmPendingAction: 'confirm-pending-action',
   cancelPendingAction: 'cancel-pending-action',
   getTodaySchedule: 'get-today-schedule',
+  getWeekSchedule: 'get-week-schedule',
+  googleCalendarOauthStart: 'google-calendar-oauth-start',
+  completeOnboardingStep: 'complete-onboarding-step',
+  replaceRecurrenceSchedule: 'replace-recurrence-schedule',
+  setRoutineDefinitionOptions: 'set-routine-definition-options',
+  replaceRoutineSubtasks: 'replace-routine-subtasks',
+  setFamilyCalendarTarget: 'set-family-calendar-target',
+  setFamilyRole: 'set-family-role',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

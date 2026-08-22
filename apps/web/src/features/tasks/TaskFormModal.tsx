@@ -6,6 +6,7 @@ import { newOperationId } from '../../lib/id';
 import { todayIsoDate } from '../../lib/date';
 import { useHousehold } from '../../app/HouseholdContext';
 import type { CompletionMode, RoutinePhase, TaskInstance } from '../../lib/types';
+import { useTaskCategories } from './useTaskCategories';
 
 interface SubtaskDraft {
   title: string;
@@ -34,10 +35,16 @@ interface TaskFormModalProps {
 // they're ignored.
 export function TaskFormModal({ mode, task, initialTitle, onClose, onSaved }: TaskFormModalProps) {
   const { members } = useHousehold();
+  const { categories } = useTaskCategories();
   const [title, setTitle] = useState(task?.title ?? initialTitle ?? '');
-  const [category, setCategory] = useState(task?.category ?? '');
+  const [category, setCategory] = useState(task?.category ?? 'other');
   const [scheduledDate, setScheduledDate] = useState(task?.scheduled_date ?? todayIsoDate());
-  const [dueLocalTime, setDueLocalTime] = useState('');
+  const formatLocalTime = (value: string | null | undefined) => value
+    ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value))
+    : '';
+  const [dueLocalTime, setDueLocalTime] = useState(formatLocalTime(task?.due_at));
+  const [calendarEndLocalTime, setCalendarEndLocalTime] = useState(formatLocalTime(task?.calendar_ends_at));
+  const [calendarVisibility, setCalendarVisibility] = useState<'hidden' | 'special'>(task?.calendar_visibility === 'special' ? 'special' : 'hidden');
   const [assigneeId, setAssigneeId] = useState(task?.planned_assignee_id ?? '');
   const [completionMode, setCompletionMode] = useState<CompletionMode>(task?.completion_mode ?? 'whole');
   const [routinePhase, setRoutinePhase] = useState<RoutinePhase | ''>('');
@@ -81,9 +88,13 @@ export function TaskFormModal({ mode, task, initialTitle, onClose, onSaved }: Ta
         await callEdgeFunction(EDGE_FUNCTIONS.createTask, {
           operation_id: operationId,
           title: title.trim(),
-          category: category.trim() || 'other',
+          // A category is a household-maintained code. Do not turn it back
+          // into free text through the "その他" option.
+          category,
           scheduled_date: scheduledDate,
           due_local_time: dueLocalTime || undefined,
+          calendar_end_local_time: calendarVisibility === 'special' && dueLocalTime ? calendarEndLocalTime || undefined : undefined,
+          calendar_visibility: calendarVisibility,
           planned_assignee_user_id: assigneeId || undefined,
           completion_mode: completionMode,
           routine_phase: routinePhase || undefined,
@@ -94,8 +105,12 @@ export function TaskFormModal({ mode, task, initialTitle, onClose, onSaved }: Ta
           operation_id: operationId,
           task_id: task.id,
           title: title.trim(),
-          due_local_time: dueLocalTime || undefined,
-          planned_assignee_user_id: assigneeId || undefined,
+          scheduled_date: scheduledDate,
+          due_local_time: dueLocalTime || null,
+          calendar_end_local_time: calendarVisibility === 'special' && dueLocalTime ? calendarEndLocalTime || null : null,
+          category,
+          calendar_visibility: calendarVisibility,
+          planned_assignee_user_id: assigneeId || null,
         });
       }
       onSaved();
@@ -118,52 +133,38 @@ export function TaskFormModal({ mode, task, initialTitle, onClose, onSaved }: Ta
           <input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
 
-        {mode === 'create' && (
-          <>
-            <label>
-              カテゴリ
-              <input
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="例: meal, cleaning, other"
-                required
-              />
-            </label>
-            <label>
-              日付
-              <input
-                type="date"
-                value={scheduledDate}
-                onChange={(e) => setScheduledDate(e.target.value)}
-                required
-              />
-            </label>
-            <label>
-              時間帯（任意）
-              <select value={routinePhase} onChange={(e) => setRoutinePhase(e.target.value as RoutinePhase | '')}>
-                <option value="">指定なし</option>
-                <option value="morning">朝</option>
-                <option value="evening">夜</option>
-                <option value="anytime">いつでも</option>
-              </select>
-            </label>
-            <label>
-              完了方法
-              <select
-                value={completionMode}
-                onChange={(e) => setCompletionMode(e.target.value as CompletionMode)}
-              >
-                <option value="whole">まとめて完了</option>
-                <option value="subtasks">サブタスクごとに完了</option>
-              </select>
-            </label>
-          </>
-        )}
+        <label>
+          カテゴリ
+          <select value={category} onChange={(e) => setCategory(e.target.value)} required>
+            {categories.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+          </select>
+        </label>
+        <label>
+          日付
+          <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} required />
+        </label>
+        <label>
+          Google Calendar
+          <select value={calendarVisibility} onChange={(e) => setCalendarVisibility(e.target.value as 'hidden' | 'special')}>
+            <option value="hidden">同期しない</option><option value="special">特別対応として同期する</option>
+          </select>
+        </label>
+        {mode === 'create' && <>
+          <label>時間帯（任意）<select value={routinePhase} onChange={(e) => setRoutinePhase(e.target.value as RoutinePhase | '')}><option value="">指定なし</option><option value="morning">朝</option><option value="evening">夜</option><option value="anytime">いつでも</option></select></label>
+          <label>完了方法<select value={completionMode} onChange={(e) => setCompletionMode(e.target.value as CompletionMode)}><option value="whole">まとめて完了</option><option value="subtasks">サブタスクごとに完了</option></select></label>
+        </>}
 
         <label>
           期限時刻（任意）
           <input type="time" value={dueLocalTime} onChange={(e) => setDueLocalTime(e.target.value)} />
         </label>
+
+        {calendarVisibility === 'special' && dueLocalTime && (
+          <label>
+            Google Calendarの終了時刻
+            <input type="time" value={calendarEndLocalTime} onChange={(e) => setCalendarEndLocalTime(e.target.value)} required />
+          </label>
+        )}
 
         <label>
           担当者（任意）

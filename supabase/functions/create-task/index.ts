@@ -43,7 +43,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   const serviceClient = createServiceRoleClient();
   const result = await callServerTx<{ task_id: string }>(
     serviceClient,
-    "server_tx_create_task",
+    "server_tx_create_task_with_calendar",
     {
       p_actor_id: actorId,
       p_operation_id: operationId,
@@ -51,6 +51,8 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
       p_category: typeof body["category"] === "string" ? body["category"] : null,
       p_scheduled_date: scheduledDate,
       p_due_local_time: typeof body["due_local_time"] === "string" ? body["due_local_time"] : null,
+      p_calendar_end_local_time: typeof body["calendar_end_local_time"] === "string" ? body["calendar_end_local_time"] : null,
+      p_calendar_visibility: typeof body["calendar_visibility"] === "string" ? body["calendar_visibility"] : "hidden",
       p_planned_assignee_user_id: typeof body["planned_assignee_user_id"] === "string" ? body["planned_assignee_user_id"] : null,
       p_completion_mode: completionMode,
       p_routine_phase: typeof body["routine_phase"] === "string" ? body["routine_phase"] : null,

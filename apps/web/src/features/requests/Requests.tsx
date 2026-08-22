@@ -7,7 +7,7 @@ import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
-import type { RequestRow } from '../../lib/types';
+import type { PendingAction, RequestRow } from '../../lib/types';
 
 function useRequests(householdId: string | null) {
   const [requests, setRequests] = useState<RequestRow[]>([]);
@@ -46,10 +46,37 @@ export function Requests() {
   const pendingActionRawText = typeof (location.state as { pendingActionRawText?: unknown } | null)?.pendingActionRawText === 'string'
     ? (location.state as { pendingActionRawText: string }).pendingActionRawText
     : '';
-  const [showForm, setShowForm] = useState(() => new URLSearchParams(location.search).has('date') || Boolean(pendingActionRawText));
+  const pendingId = new URLSearchParams(location.search).get('pending');
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [pendingLoadError, setPendingLoadError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(() => Boolean(pendingId) || new URLSearchParams(location.search).has('date') || Boolean(pendingActionRawText));
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!pendingId) {
+      setPendingAction(null);
+      return () => { cancelled = true; };
+    }
+    void (async () => {
+      try {
+        // The edge function is actor-scoped. Never trust the URL alone or
+        // put the sender's private original text in a query parameter.
+        const actions = await callEdgeFunction<PendingAction[]>(EDGE_FUNCTIONS.listPendingActions, {});
+        const found = actions.find((action) => action.id === pendingId && action.action_type === 'assignment_change_request');
+        if (!found) throw new Error('この下書きは見つからないか、すでに処理済みです。');
+        if (!cancelled) setPendingAction(found);
+      } catch (err) {
+        if (!cancelled) setPendingLoadError(err instanceof FamilyOpsApiError ? err.message : err instanceof Error ? err.message : 'LINEの下書きを開けませんでした。');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pendingId]);
 
   function clearPrivatePrefill() {
-    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    const params = new URLSearchParams(location.search);
+    params.delete('pending');
+    const search = params.toString();
+    navigate(`${location.pathname}${search ? `?${search}` : ''}`, { replace: true, state: null });
   }
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
@@ -75,10 +102,15 @@ export function Requests() {
           {error}
         </p>
       )}
+      {pendingLoadError && <p role="alert" className="error-text">{pendingLoadError}</p>}
       {showForm && partner && (
         <SendRequestForm
           recipientId={partner.user_id}
-          initialRawMessage={pendingActionRawText}
+          initialRawMessage={String(pendingAction?.normalized_payload.raw_text ?? pendingActionRawText)}
+          initialMessage={String(pendingAction?.normalized_payload.shared_message ?? '')}
+          initialTitle={String(pendingAction?.normalized_payload.title ?? '')}
+          initialDueDate={pendingAction ? toDateTimeLocal(pendingAction.normalized_payload.due_at) : ''}
+          pendingActionId={pendingAction?.id ?? null}
           onSent={() => {
             setShowForm(false);
             clearPrivatePrefill();
@@ -229,16 +261,27 @@ function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onCha
   );
 }
 
-function SendRequestForm({ recipientId, initialRawMessage = '', onSent }: { recipientId: string; initialRawMessage?: string; onSent: () => void }) {
-  const [title, setTitle] = useState('');
+function toDateTimeLocal(value: unknown): string {
+  if (typeof value !== 'string' || !value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date).reduce<Record<string, string>>((result, part) => ({ ...result, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage = '', initialTitle = '', initialDueDate = '', pendingActionId = null, onSent }: { recipientId: string; initialRawMessage?: string; initialMessage?: string; initialTitle?: string; initialDueDate?: string; pendingActionId?: string | null; onSent: () => void }) {
+  const [title, setTitle] = useState(initialTitle);
   // This is navigation state from the sender's own pending action. It is not
   // persisted or sent to the recipient; only `message` is shared on submit.
   const [rawMessage, setRawMessage] = useState(initialRawMessage);
-  const [message, setMessage] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [message, setMessage] = useState(initialMessage);
+  const [dueDate, setDueDate] = useState(initialDueDate);
   const [submitting, setSubmitting] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [rawInputId, setRawInputId] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function rewriteMessageWithAi() {
@@ -281,6 +324,10 @@ function SendRequestForm({ recipientId, initialRawMessage = '', onSent }: { reci
       } else {
         await callEdgeFunction(EDGE_FUNCTIONS.sendRequest, { ...payload, shared_message: message.trim() });
       }
+      // The draft is private until this explicit PWA send. Mark it cancelled
+      // afterwards so a later tap on the old LINE confirmation cannot create
+      // a duplicate request. Cancellation never notifies the partner.
+      if (pendingActionId) await callEdgeFunction(EDGE_FUNCTIONS.cancelPendingAction, { pending_action_id: pendingActionId });
       onSent();
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '送信に失敗しました。');
@@ -291,10 +338,11 @@ function SendRequestForm({ recipientId, initialRawMessage = '', onSent }: { reci
 
   return (
     <form onSubmit={handleSubmit} className="stack-form card request-composer">
+      <div className="composer-steps" aria-label="お願い作成の手順"><span className={!previewing ? 'active' : ''}>1 作成</span><span className={previewing ? 'active' : ''}>2 確認</span><span>3 送信</span></div>
       <p className="eyebrow">相手に見えるのは、確認した文面だけです</p>
       <label>
         タイトル
-        <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="未入力なら「お願い」" />
       </label>
       <label>
         まずはそのまま入力
@@ -311,14 +359,22 @@ function SendRequestForm({ recipientId, initialRawMessage = '', onSent }: { reci
         期限（任意）
         <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
       </label>
+      <p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>
       {error && (
         <p role="alert" className="error-text">
           {error}
         </p>
       )}
-      <button type="submit" disabled={submitting}>
-        {submitting ? '送信中…' : 'この内容で送る'}
-      </button>
+      {!previewing ? <button type="button" disabled={submitting || !message.trim()} onClick={() => setPreviewing(true)}>送信内容を確認</button> : (
+        <section className="line-sender-preview" aria-label="LINE送信プレビュー">
+          <p className="line-preview-kicker">LINE · 送る側の確認</p>
+          <h3>この内容で送りますか？</h3>
+          <p className="line-preview-message">{message}</p>
+          <p className="line-preview-meta">{dueDate ? new Date(dueDate).toLocaleString('ja-JP') : '期限なし'} / 今回だけ</p>
+          <p className="empty-hint">送るまでは、相手に通知されません。</p>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '送信中…' : 'LINEで送る'}</button></div>
+        </section>
+      )}
     </form>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getAppEnv } from '../../lib/env';
+import { rememberAuthReturnTo } from './authReturnTo';
 
 export function SignIn() {
   const [error, setError] = useState<string | null>(null);
@@ -9,6 +10,9 @@ export function SignIn() {
     setError(null);
     setSubmitting(true);
     try {
+      // OAuth callbacks are always /auth/callback. Preserve a safe internal
+      // deep link before leaving so first-time invitees return to /join.
+      rememberAuthReturnTo(`${window.location.pathname}${window.location.search}${window.location.hash}`);
       const { supabaseUrl } = getAppEnv();
       const authorizeUrl = new URL(`${supabaseUrl}/auth/v1/authorize`);
       authorizeUrl.searchParams.set('provider', 'google');

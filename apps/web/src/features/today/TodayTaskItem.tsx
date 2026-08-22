@@ -29,6 +29,7 @@ export function TodayTaskItem({ task, subtasks, members, hasPartner, onEdit, onC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actor, setActor] = useState<'self' | 'partner'>('self');
+  const completed = task.status === 'completed';
 
   async function withOperation(fn: (operationId: string) => Promise<unknown>) {
     setError(null);
@@ -77,7 +78,7 @@ export function TodayTaskItem({ task, subtasks, members, hasPartner, onEdit, onC
   }
 
   return (
-    <li className="task-item">
+    <li className={completed ? 'task-item completed' : 'task-item'}>
       <div className="task-item-main">
         <div className="task-item-title">
           <strong>{task.title}</strong>
@@ -93,13 +94,13 @@ export function TodayTaskItem({ task, subtasks, members, hasPartner, onEdit, onC
               {expanded ? '詳細を閉じる' : '詳細'}
             </button>
           ) : null}
-          <button type="button" onClick={handleComplete} disabled={busy}>
-            完了
+          <button type="button" onClick={handleComplete} disabled={busy || completed}>
+            {completed ? '✓ 完了済み' : '完了'}
           </button>
           <details className="task-overflow"><summary aria-label="その他の操作">•••</summary><div>
             {hasPartner && <label>実施者<select aria-label="実施者" value={actor} onChange={(e) => setActor(e.target.value as 'self' | 'partner')} disabled={busy}><option value="self">自分</option><option value="partner">パートナー</option></select></label>}
-            <button type="button" onClick={() => onEdit(task)} disabled={busy}>編集</button>
-            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy}>キャンセル</button>
+            <button type="button" onClick={() => onEdit(task)} disabled={busy || completed}>編集</button>
+            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy || completed}>キャンセル</button>
           </div></details>
         </div>
       </div>
@@ -126,6 +127,7 @@ export function TodayTaskItem({ task, subtasks, members, hasPartner, onEdit, onC
           {error}
         </p>
       )}
+      {completed && <small className="task-item-meta">実績: {task.completed_at ? new Date(task.completed_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '完了'}</small>}
     </li>
   );
 }

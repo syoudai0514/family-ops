@@ -2,7 +2,8 @@
 // These are intentionally hand-written (not generated) — keep in sync with
 // supabase/migrations if columns change; do not add columns speculatively.
 
-export type MemberRole = 'primary' | 'partner' | string;
+export type MemberRole = 'adult' | string;
+export type FamilyRole = 'papa' | 'mama' | null;
 
 export interface Household {
   id: string;
@@ -12,12 +13,17 @@ export interface Household {
   evening_routine_setup_completed_at: string | null;
   /** Set by the dropoff/pickup setup Edge Function on successful submission; null = wizard step not done. */
   dropoff_pickup_setup_completed_at: string | null;
+  morning_preparation_setup_completed_at: string | null;
+  connections_setup_completed_at: string | null;
+  notification_preferences_setup_completed_at: string | null;
+  onboarding_preview_completed_at: string | null;
 }
 
 export interface HouseholdMember {
   household_id: string;
   user_id: string;
   member_role: MemberRole;
+  family_role?: FamilyRole;
   joined_at: string;
 }
 
@@ -39,7 +45,11 @@ export interface TaskDefinition {
   completion_mode: CompletionMode;
   is_active: boolean;
   sort_order: number;
+  task_kind?: TaskKind;
+  include_in_routine_line?: boolean;
 }
+
+export type TaskKind = 'transport' | 'morning_preparation' | 'morning_chore' | 'evening_chore' | 'special' | 'generic_once';
 
 export interface TaskSubtaskDefinition {
   id: string;
@@ -63,6 +73,9 @@ export interface TaskInstance {
   routine_phase: RoutinePhase | null;
   scheduled_date: string;
   due_at: string | null;
+  calendar_ends_at?: string | null;
+  calendar_visibility?: 'transport' | 'special' | 'hidden' | null;
+  task_kind?: TaskKind;
   planned_assignee_id: string | null;
   completion_mode: CompletionMode;
   status: TaskInstanceStatus;
@@ -124,12 +137,7 @@ export interface HandoverRead {
 
 export type PurchaseMethod = 'store' | 'online' | 'either' | 'undecided';
 export type ShoppingItemStatus =
-  | 'wanted'
-  | 'assigned'
-  | 'ordered'
-  | 'purchased'
-  | 'arrived'
-  | 'cancelled';
+  'wanted' | 'assigned' | 'ordered' | 'purchased' | 'arrived' | 'cancelled';
 
 export interface ShoppingItem {
   id: string;
@@ -251,7 +259,11 @@ export interface TaskEvent {
 // (20260819000102_pending_action_review_and_today_schedule.sql). Only ever
 // the current actor's own rows — never the partner's.
 export type PendingActionStatus = 'draft' | 'confirmed' | 'queued' | 'executing';
-export type PendingActionType = 'shopping_item_add' | 'task_create_once' | 'needs_pwa_review';
+export type PendingActionType =
+  | 'shopping_item_add'
+  | 'task_create_once'
+  | 'assignment_change_request'
+  | 'needs_pwa_review';
 
 export interface PendingAction {
   id: string;

@@ -128,6 +128,9 @@ verify_jwt = true
 [functions.edit-task-definition]
 verify_jwt = true
 
+[functions.update-task-categories]
+verify_jwt = true
+
 [functions.deactivate-task-definition]
 verify_jwt = true
 
@@ -183,6 +186,15 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.change-recurrence]
+verify_jwt = true
+
+[functions.deactivate-recurrence]
+verify_jwt = true
+
+[functions.complete-onboarding-step]
+verify_jwt = true
+
+[functions.replace-recurrence-schedule]
 verify_jwt = true
 
 [functions.reassign-task-once]
@@ -265,6 +277,21 @@ verify_jwt = true
 [functions.get-today-schedule]
 verify_jwt = true
 
+[functions.get-week-schedule]
+verify_jwt = true
+
+[functions.set-routine-definition-options]
+verify_jwt = true
+
+[functions.replace-routine-subtasks]
+verify_jwt = true
+
+[functions.set-family-calendar-target]
+verify_jwt = true
+
+[functions.set-family-role]
+verify_jwt = true
+
 # External provider — verify_jwt = false (signature validated in-handler
 # before any DB access)
 
@@ -301,6 +328,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.process-google-sync]
+verify_jwt = false
+
+[functions.process-family-ops-calendar-outbox]
 verify_jwt = false
 
 [functions.dispatch-routine-automation]

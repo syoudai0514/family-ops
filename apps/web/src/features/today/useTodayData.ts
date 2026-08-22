@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { todayIsoDate } from '../../lib/date';
+import { previousTokyoIsoDate, todayIsoDate } from '../../lib/date';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type {
   Handover,
@@ -14,6 +14,7 @@ export interface TodayData {
   loading: boolean;
   error: string | null;
   tasks: TaskInstance[];
+  carryoverTasks: TaskInstance[];
   subtasksByTaskId: Map<string, TaskSubtaskInstance[]>;
   incomingRequests: RequestRow[];
   unreadHandovers: Handover[];
@@ -22,6 +23,7 @@ export interface TodayData {
 }
 
 const ACTIVE_TASK_STATUSES = ['todo', 'in_progress'];
+const TODAY_TASK_STATUSES = ['todo', 'in_progress', 'completed'];
 const OPEN_SHOPPING_STATUSES = ['wanted', 'assigned', 'ordered'];
 // Handovers older than this are excluded from the unread-scan, matching the
 // "Today" screen's day-to-day scope — old unread handovers are still
@@ -32,6 +34,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
+  const [carryoverTasks, setCarryoverTasks] = useState<TaskInstance[]>([]);
   const [subtasksByTaskId, setSubtasksByTaskId] = useState<Map<string, TaskSubtaskInstance[]>>(new Map());
   const [incomingRequests, setIncomingRequests] = useState<RequestRow[]>([]);
   const [unreadHandovers, setUnreadHandovers] = useState<Handover[]>([]);
@@ -50,13 +53,22 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const lookbackDate = new Date();
       lookbackDate.setDate(lookbackDate.getDate() - HANDOVER_LOOKBACK_DAYS);
 
-      const [taskRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
+      const [taskRes, carryoverRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
         supabase
           .from('task_instances')
           .select('*')
           .eq('household_id', householdId)
           .eq('scheduled_date', today)
+          .in('status', TODAY_TASK_STATUSES)
+          .order('due_at', { ascending: true, nullsFirst: false }),
+        supabase
+          .from('task_instances')
+          .select('*')
+          .eq('household_id', householdId)
+          .eq('task_kind', 'evening_chore')
+          .eq('scheduled_date', previousTokyoIsoDate(today))
           .in('status', ACTIVE_TASK_STATUSES)
+          .order('scheduled_date', { ascending: false })
           .order('due_at', { ascending: true, nullsFirst: false }),
         supabase
           .from('requests')
@@ -80,16 +92,24 @@ export function useTodayData(householdId: string | null, userId: string | null):
       ]);
 
       if (taskRes.error) throw taskRes.error;
+      if (carryoverRes.error) throw carryoverRes.error;
       if (requestRes.error) throw requestRes.error;
       if (handoverRes.error) throw handoverRes.error;
       if (shoppingRes.error) throw shoppingRes.error;
 
       const taskRows = taskRes.data ?? [];
       setTasks(taskRows);
+      setCarryoverTasks(
+        (carryoverRes.data ?? []).filter(
+          (task) => task.task_kind === 'evening_chore' && task.scheduled_date === previousTokyoIsoDate(today),
+        ),
+      );
       setIncomingRequests(requestRes.data ?? []);
       setOpenShoppingItems(shoppingRes.data ?? []);
 
-      const subtaskModeTaskIds = taskRows.filter((t) => t.completion_mode === 'subtasks').map((t) => t.id);
+      const subtaskModeTaskIds = [...taskRows, ...(carryoverRes.data ?? [])]
+        .filter((t) => t.completion_mode === 'subtasks')
+        .map((t) => t.id);
       if (subtaskModeTaskIds.length > 0) {
         const { data: subtaskRows, error: subtaskError } = await supabase
           .from('task_subtask_instances')
@@ -146,6 +166,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
     loading,
     error,
     tasks,
+    carryoverTasks,
     subtasksByTaskId,
     incomingRequests,
     unreadHandovers,

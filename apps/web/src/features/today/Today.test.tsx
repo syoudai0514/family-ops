@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { createSupabaseFromMock } from '../../test/supabaseMock';
-import { Today } from './Today';
+import { Today, selectNextOwnedTask } from './Today';
 import type { PendingAction, TodaySchedule } from '../../lib/types';
 
 vi.mock('../../lib/supabaseClient', () => ({
@@ -111,27 +111,104 @@ vi.mock('../../app/HouseholdContext', () => ({
       timezone: 'Asia/Tokyo',
       evening_routine_setup_completed_at: '2026-08-01T00:00:00Z',
       dropoff_pickup_setup_completed_at: '2026-08-01T00:00:00Z',
+      morning_preparation_setup_completed_at: '2026-08-01T00:00:00Z',
+      connections_setup_completed_at: '2026-08-01T00:00:00Z',
+      notification_preferences_setup_completed_at: '2026-08-01T00:00:00Z',
+      onboarding_preview_completed_at: '2026-08-01T00:00:00Z',
     },
-    members: [{ household_id: 'household-1', user_id: 'user-1', member_role: 'primary', joined_at: '2026-01-01', profile: { user_id: 'user-1', display_name: '本人' } }],
-    me: { household_id: 'household-1', user_id: 'user-1', member_role: 'primary', joined_at: '2026-01-01', profile: { user_id: 'user-1', display_name: '本人' } },
+    members: [
+      {
+        household_id: 'household-1',
+        user_id: 'user-1',
+        member_role: 'primary',
+        joined_at: '2026-01-01',
+        profile: { user_id: 'user-1', display_name: '本人' },
+      },
+    ],
+    me: {
+      household_id: 'household-1',
+      user_id: 'user-1',
+      member_role: 'primary',
+      joined_at: '2026-01-01',
+      profile: { user_id: 'user-1', display_name: '本人' },
+    },
     partner: null,
     refresh: vi.fn(),
   }),
 }));
 
 describe('Today', () => {
+  it('selects my next task even when the partner has an earlier task', () => {
+    const base = {
+      household_id: 'household-1',
+      task_definition_id: null,
+      recurrence_rule_id: null,
+      origin: 'manual',
+      category: 'todo',
+      routine_phase: 'anytime' as const,
+      scheduled_date: '2026-08-19',
+      completion_mode: 'whole' as const,
+      status: 'todo' as const,
+      actual_completed_by_id: null,
+      completed_at: null,
+    };
+    const selected = selectNextOwnedTask(
+      [
+        {
+          ...base,
+          id: 'partner',
+          title: '相手の仕事',
+          due_at: '2026-08-19T06:00:00Z',
+          planned_assignee_id: 'user-2',
+        },
+        {
+          ...base,
+          id: 'mine',
+          title: '自分の仕事',
+          due_at: '2026-08-19T07:00:00Z',
+          planned_assignee_id: 'user-1',
+        },
+      ],
+      'user-1',
+    );
+    expect(selected?.id).toBe('mine');
+    expect(
+      selectNextOwnedTask(
+        [
+          {
+            ...base,
+            id: 'partner',
+            title: '相手だけ',
+            due_at: null,
+            planned_assignee_id: 'user-2',
+          },
+        ],
+        'user-1',
+      ),
+    ).toBeNull();
+  });
+
   it('renders without crashing and shows the fetched task', async () => {
-    render(<MemoryRouter><Today /></MemoryRouter>);
+    render(
+      <MemoryRouter>
+        <Today />
+      </MemoryRouter>,
+    );
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
     });
     await waitFor(() => {
-      expect(screen.getByText('牛乳を買う')).toBeInTheDocument();
+      expect(screen.getAllByText('牛乳を買う')).toHaveLength(2);
     });
+    expect(screen.getByText('次にやること')).toBeInTheDocument();
   });
 
   it('shows Priority 1 (今/次の予定) with the conflict warning from get-today-schedule', async () => {
-    render(<MemoryRouter><Today /></MemoryRouter>);
+    render(
+      <MemoryRouter>
+        <Today />
+      </MemoryRouter>,
+    );
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '今/次の予定' })).toBeInTheDocument();
     });
@@ -142,7 +219,11 @@ describe('Today', () => {
   });
 
   it('shows Priority 2 (判断待ち) with the LINE-created pending action from list-pending-actions', async () => {
-    render(<MemoryRouter><Today /></MemoryRouter>);
+    render(
+      <MemoryRouter>
+        <Today />
+      </MemoryRouter>,
+    );
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '判断待ち' })).toBeInTheDocument();
     });

@@ -3,12 +3,22 @@ import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { useHousehold } from '../../app/HouseholdContext';
+import { useNavigate } from 'react-router-dom';
 
 type Tab = 'create' | 'join';
 
 export function HouseholdSetup() {
   const [tab, setTab] = useState<Tab>('create');
   const { refresh } = useHousehold();
+  const navigate = useNavigate();
+  const tokenFromLink = new URLSearchParams(window.location.search).get('token') ?? '';
+
+  const onJoined = () => {
+    // An invite token is single-use and must not remain in browser history
+    // after a successful household join.
+    navigate('/', { replace: true });
+    refresh();
+  };
 
   return (
     <main className="app-shell">
@@ -33,7 +43,11 @@ export function HouseholdSetup() {
           招待コードで参加する
         </button>
       </div>
-      {tab === 'create' ? <CreateHouseholdForm onDone={refresh} /> : <JoinHouseholdForm onDone={refresh} />}
+      {tab === 'create' && !tokenFromLink ? (
+        <CreateHouseholdForm onDone={refresh} />
+      ) : (
+        <JoinHouseholdForm onDone={onJoined} initialToken={tokenFromLink} />
+      )}
     </main>
   );
 }
@@ -95,8 +109,14 @@ function CreateHouseholdForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function JoinHouseholdForm({ onDone }: { onDone: () => void }) {
-  const [inviteToken, setInviteToken] = useState('');
+function JoinHouseholdForm({
+  onDone,
+  initialToken = '',
+}: {
+  onDone: () => void;
+  initialToken?: string;
+}) {
+  const [inviteToken, setInviteToken] = useState(initialToken);
   const [displayName, setDisplayName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

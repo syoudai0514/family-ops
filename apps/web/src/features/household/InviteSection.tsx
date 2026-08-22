@@ -14,6 +14,19 @@ export function InviteSection() {
   const [invite, setInvite] = useState<InviteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const inviteUrl = invite
+    ? `${window.location.origin}/join?token=${encodeURIComponent(invite.raw_token)}`
+    : '';
+  async function shareInvite() {
+    if (!invite) return;
+    if (navigator.share)
+      await navigator.share({
+        title: 'おうちノートへ招待',
+        text: '一緒に家庭の予定を管理しよう',
+        url: inviteUrl,
+      });
+    else await navigator.clipboard.writeText(inviteUrl);
+  }
 
   async function handleGenerate() {
     setError(null);
@@ -25,7 +38,9 @@ export function InviteSection() {
       setInvite(result);
     } catch (err) {
       if (err instanceof FamilyOpsApiError && err.code === 'INVITE_TOKEN_ALREADY_ISSUED') {
-        setError('すでに発行済みの招待コードがあります。パートナーに以前共有したコードを確認してください。');
+        setError(
+          'すでに発行済みの招待コードがあります。パートナーに以前共有したコードを確認してください。',
+        );
       } else {
         setError(err instanceof FamilyOpsApiError ? err.message : '招待の作成に失敗しました。');
       }
@@ -48,14 +63,20 @@ export function InviteSection() {
   return (
     <section className="card">
       <h2>パートナーを招待</h2>
-      <p>招待コードを発行して、パートナーに共有してください。</p>
+      <p>招待リンクを作って、パートナーに共有してください。</p>
       <button type="button" onClick={handleGenerate} disabled={submitting}>
-        {submitting ? '発行中…' : '招待コードを発行'}
+        {submitting ? '発行中…' : '招待リンクを作る'}
       </button>
       {invite && (
         <div className="invite-result">
+          <button type="button" onClick={() => void shareInvite()}>
+            招待リンクを共有
+          </button>
           <p>
-            招待コード: <code>{invite.raw_token}</code>
+            <a href={inviteUrl}>{inviteUrl}</a>
+          </p>
+          <p>
+            リンクを使えない場合の招待コード: <code>{invite.raw_token}</code>
           </p>
           <p>有効期限: {new Date(invite.expires_at).toLocaleString('ja-JP')}</p>
         </div>

@@ -4,6 +4,13 @@ import { DropoffPickupStep } from '../features/household/DropoffPickupStep';
 import { EveningRoutinesStep } from '../features/household/EveningRoutinesStep';
 import { AppShell } from './AppShell';
 import { LoadingScreen } from '../components/LoadingScreen';
+import { InviteSection } from '../features/household/InviteSection';
+import {
+  ConnectionsStep,
+  MorningPreparationStep,
+  RecommendedNotificationsStep,
+  WeekPreviewStep,
+} from '../features/household/OnboardingSteps';
 
 // Household-level gating: no household -> setup/invite; household exists
 // but the two-step wizard isn't finished -> the relevant wizard step;
@@ -27,10 +34,30 @@ export function HouseholdGate() {
       );
     case 'no-household':
       return <HouseholdSetup />;
+    case 'partner-invite':
+      return (
+        <main className="app-shell">
+          <p className="eyebrow">初期設定 2 / 8</p>
+          <h1>パートナーを招待</h1>
+          <p>担当を決める前に、パートナーに参加してもらいます。</p>
+          <InviteSection />
+          <button type="button" className="secondary-button" onClick={() => void refresh()}>
+            参加状況を確認
+          </button>
+        </main>
+      );
     case 'dropoff-pickup-wizard':
       return <DropoffPickupStep />;
     case 'evening-routines-wizard':
       return <EveningRoutinesStep />;
+    case 'morning-preparation-wizard':
+      return <MorningPreparationStep />;
+    case 'connections-wizard':
+      return <ConnectionsStep />;
+    case 'notifications-wizard':
+      return <RecommendedNotificationsStep />;
+    case 'week-preview-wizard':
+      return <WeekPreviewStep />;
     case 'ready':
       return <AppShell />;
     default:

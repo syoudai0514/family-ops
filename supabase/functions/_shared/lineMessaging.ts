@@ -25,15 +25,15 @@
 // notification_outbox row, which is later drained by send-notifications
 // through its own existing quota-reserve/push logic exactly like any other
 // queued LINE message.
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
-const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
+const LINE_REPLY_URL = 'https://api.line.me/v2/bot/message/reply';
 // Matches the FETCH_TIMEOUT_MS constant/style already used for provider
 // calls in send-notifications/index.ts.
 const REPLY_FETCH_TIMEOUT_MS = 10_000;
 
 export interface LinePostbackQuickReplyAction {
-  type: "postback";
+  type: 'postback';
   label: string;
   data: string;
   displayText?: string;
@@ -43,7 +43,7 @@ export interface LinePostbackQuickReplyAction {
 // button (17_ROUTINE_LINE_AUTOMATION.md #8 top-level action 4) opens the
 // checkin link directly rather than round-tripping through a postback.
 export interface LineUriQuickReplyAction {
-  type: "uri";
+  type: 'uri';
   label: string;
   uri: string;
 }
@@ -58,28 +58,34 @@ export interface ReplyOrEnqueuePushArgs {
   householdId: string;
   recipientUserId: string;
   text: string;
+  message?: Record<string, unknown>;
   quickReplyItems?: LineQuickReplyAction[];
   /** Stable key (e.g. derived from the webhook's provider_event_id) so a redelivered event's fallback push does not double-enqueue. */
   dedupKey?: string;
 }
 
-export type ReplyOrEnqueueResult = "replied" | "push_fallback" | "no_channel";
+export type ReplyOrEnqueueResult = 'replied' | 'push_fallback' | 'no_channel';
 
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   return await fetch(url, { ...init, signal: AbortSignal.timeout(REPLY_FETCH_TIMEOUT_MS) });
 }
 
-function buildLineMessages(text: string, quickReplyItems?: LineQuickReplyAction[]) {
-  const message: Record<string, unknown> = { type: "text", text };
+function buildLineMessages(
+  text: string,
+  quickReplyItems?: LineQuickReplyAction[],
+  richMessage?: Record<string, unknown>,
+) {
+  if (richMessage) return [richMessage];
+  const message: Record<string, unknown> = { type: 'text', text };
   if (quickReplyItems && quickReplyItems.length > 0) {
-    message.quickReply = { items: quickReplyItems.map((action) => ({ type: "action", action })) };
+    message.quickReply = { items: quickReplyItems.map((action) => ({ type: 'action', action })) };
   }
   return [message];
 }
 
 /** {APP_BASE_URL}/checkin/{session_id} -- 06_LINE_INTEGRATION.md #8 "No bearer credential in URL". */
 export function buildCheckinLink(sessionId: string): string {
-  const base = Deno.env.get("APP_BASE_URL") ?? "";
+  const base = Deno.env.get('APP_BASE_URL') ?? '';
   return `${base}/checkin/${sessionId}`;
 }
 
@@ -94,46 +100,49 @@ export async function replyOrEnqueuePush(
   serviceClient: SupabaseClient,
   args: ReplyOrEnqueuePushArgs,
 ): Promise<ReplyOrEnqueueResult> {
-  const channelAccessToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN");
+  const channelAccessToken = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN');
 
   if (args.replyToken && channelAccessToken) {
     try {
       const response = await fetchWithTimeout(LINE_REPLY_URL, {
-        method: "POST",
+        method: 'POST',
         headers: {
           Authorization: `Bearer ${channelAccessToken}`,
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           replyToken: args.replyToken,
-          messages: buildLineMessages(args.text, args.quickReplyItems),
+          messages: buildLineMessages(args.text, args.quickReplyItems, args.message),
         }),
       });
       if (response.ok) {
-        return "replied";
+        return 'replied';
       }
       // Never log the token itself -- only the outcome.
-      console.warn("lineMessaging: reply API non-2xx, falling back to push outbox", { status: response.status });
+      console.warn('lineMessaging: reply API non-2xx, falling back to push outbox', {
+        status: response.status,
+      });
     } catch (err) {
-      console.warn("lineMessaging: reply API request failed, falling back to push outbox", {
+      console.warn('lineMessaging: reply API request failed, falling back to push outbox', {
         message: err instanceof Error ? err.message : String(err),
       });
     }
   }
 
   if (!args.lineUserId) {
-    return "no_channel"; // no reply token attempted/available AND no linked LINE user to push to
+    return 'no_channel'; // no reply token attempted/available AND no linked LINE user to push to
   }
 
-  const { error } = await serviceClient.rpc("server_tx_enqueue_immediate_line_push", {
+  const { error } = await serviceClient.rpc('server_tx_enqueue_immediate_line_push', {
     p_household_id: args.householdId,
     p_recipient_user_id: args.recipientUserId,
     p_text: args.text,
     p_dedup_key: args.dedupKey ?? null,
+    p_rich_message: args.message ?? null,
   });
   if (error) {
-    console.error("lineMessaging: push-fallback enqueue failed", error.message);
-    return "no_channel";
+    console.error('lineMessaging: push-fallback enqueue failed', error.message);
+    return 'no_channel';
   }
-  return "push_fallback";
+  return 'push_fallback';
 }

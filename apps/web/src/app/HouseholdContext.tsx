@@ -1,22 +1,32 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from './AuthContext';
 import type { Household, HouseholdMember, Profile } from '../lib/types';
 
 export type HouseholdMemberWithProfile = HouseholdMember & { profile: Profile | null };
 
-// Setup is a strict two-step wizard, gated by two nullable timestamp columns
-// on `households` (set by their respective Edge Functions on success):
-//   dropoff_pickup_setup_completed_at   -> configure-dropoff-pickup
-//   evening_routine_setup_completed_at  -> configure-evening-routines
-// Both null/either null means the corresponding step still needs doing;
-// both non-null means the household is fully set up.
+// First-class onboarding state is persisted on the household. Partner invite
+// intentionally precedes every assignment step so a new household never
+// silently assigns the partner's work to the creator.
 export type HouseholdPhase =
   | 'loading'
   | 'error'
   | 'no-household'
+  | 'partner-invite'
   | 'dropoff-pickup-wizard'
   | 'evening-routines-wizard'
+  | 'morning-preparation-wizard'
+  | 'connections-wizard'
+  | 'notifications-wizard'
+  | 'week-preview-wizard'
   | 'ready';
 
 interface HouseholdContextValue {
@@ -32,9 +42,14 @@ interface HouseholdContextValue {
 
 const HouseholdContext = createContext<HouseholdContextValue | undefined>(undefined);
 
-function phaseForHousehold(household: Household): HouseholdPhase {
+export function phaseForHousehold(household: Household, memberCount: number): HouseholdPhase {
+  if (memberCount < 2) return 'partner-invite';
   if (!household.dropoff_pickup_setup_completed_at) return 'dropoff-pickup-wizard';
   if (!household.evening_routine_setup_completed_at) return 'evening-routines-wizard';
+  if (!household.morning_preparation_setup_completed_at) return 'morning-preparation-wizard';
+  if (!household.connections_setup_completed_at) return 'connections-wizard';
+  if (!household.notification_preferences_setup_completed_at) return 'notifications-wizard';
+  if (!household.onboarding_preview_completed_at) return 'week-preview-wizard';
   return 'ready';
 }
 
@@ -60,7 +75,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     try {
       const { data: myMembership, error: myMembershipError } = await supabase
         .from('household_members')
-        .select('household_id, user_id, member_role, joined_at')
+        .select('household_id, user_id, member_role, family_role, joined_at')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -76,12 +91,14 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       const [householdResult, membersResult] = await Promise.all([
         supabase
           .from('households')
-          .select('id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at')
+          .select(
+            'id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at, morning_preparation_setup_completed_at, connections_setup_completed_at, notification_preferences_setup_completed_at, onboarding_preview_completed_at',
+          )
           .eq('id', householdId)
           .maybeSingle(),
         supabase
           .from('household_members')
-          .select('household_id, user_id, member_role, joined_at')
+          .select('household_id, user_id, member_role, family_role, joined_at')
           .eq('household_id', householdId),
       ]);
       if (householdResult.error) throw householdResult.error;
@@ -103,7 +120,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
 
       setHousehold(householdResult.data);
       setMembers(membersWithProfiles);
-      setPhase(phaseForHousehold(householdResult.data));
+      setPhase(phaseForHousehold(householdResult.data, membersWithProfiles.length));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '家庭情報を読み込めませんでした。');
       setPhase('error');
@@ -114,10 +131,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     load();
   }, [load]);
 
-  const me = useMemo(
-    () => members.find((m) => m.user_id === user?.id) ?? null,
-    [members, user],
-  );
+  const me = useMemo(() => members.find((m) => m.user_id === user?.id) ?? null, [members, user]);
   const partner = useMemo(
     () => members.find((m) => m.user_id !== user?.id) ?? null,
     [members, user],

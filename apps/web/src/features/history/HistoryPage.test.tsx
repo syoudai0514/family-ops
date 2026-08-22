@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createSupabaseFromMock } from '../../test/supabaseMock';
-import { HistoryPage } from './HistoryPage';
+import { completedNextTokyoMorning, HistoryPage, reassignmentSummary } from './HistoryPage';
 
 vi.mock('../../lib/supabaseClient', () => ({
   supabase: {
@@ -95,10 +95,14 @@ vi.mock('../../app/HouseholdContext', () => ({
       timezone: 'Asia/Tokyo',
       evening_routine_setup_completed_at: '2026-08-01T00:00:00Z',
       dropoff_pickup_setup_completed_at: '2026-08-01T00:00:00Z',
+      morning_preparation_setup_completed_at: '2026-08-01T00:00:00Z',
+      connections_setup_completed_at: '2026-08-01T00:00:00Z',
+      notification_preferences_setup_completed_at: '2026-08-01T00:00:00Z',
+      onboarding_preview_completed_at: '2026-08-01T00:00:00Z',
     },
     members: [
-      { household_id: 'household-1', user_id: 'user-1', member_role: 'primary', joined_at: '2026-01-01', profile: { user_id: 'user-1', display_name: '本人' } },
-      { household_id: 'household-1', user_id: 'user-2', member_role: 'partner', joined_at: '2026-01-01', profile: { user_id: 'user-2', display_name: 'パートナー' } },
+      { household_id: 'household-1', user_id: 'user-1', member_role: 'primary', family_role: 'papa', joined_at: '2026-01-01', profile: { user_id: 'user-1', display_name: '本人' } },
+      { household_id: 'household-1', user_id: 'user-2', member_role: 'partner', family_role: 'mama', joined_at: '2026-01-01', profile: { user_id: 'user-2', display_name: 'パートナー' } },
     ],
     me: { household_id: 'household-1', user_id: 'user-1', member_role: 'primary', joined_at: '2026-01-01', profile: { user_id: 'user-1', display_name: '本人' } },
     partner: { household_id: 'household-1', user_id: 'user-2', member_role: 'partner', joined_at: '2026-01-01', profile: { user_id: 'user-2', display_name: 'パートナー' } },
@@ -122,9 +126,22 @@ describe('HistoryPage', () => {
     expect(screen.getByText('スキップ')).toBeInTheDocument();
 
     // Reassignment shows up as a plain fact, not a comparison.
-    expect(screen.getByText('この予定は再割り当てされました。')).toBeInTheDocument();
+    expect(screen.getByText('担当変更: パパ → ママ')).toBeInTheDocument();
 
     // No score/ranking vocabulary anywhere on the page.
     expect(screen.queryByText(/スコア|ランキング|ポイント/)).not.toBeInTheDocument();
+  });
+
+  it('uses Tokyo local dates for next-morning completion and reassignment payload IDs', () => {
+    expect(completedNextTokyoMorning('2026-08-18', '2026-08-18T15:30:00Z')).toBe(true);
+    expect(completedNextTokyoMorning('2026-08-18', '2026-08-18T14:30:00Z')).toBe(false);
+    expect(reassignmentSummary([{
+      id: 'event', household_id: 'household-1', task_instance_id: 'task', actor_id: 'user-2',
+      event_type: 'reassigned_once', payload: { old_assignee_id: 'user-1', new_assignee_id: 'user-2' },
+      source: 'pwa', idempotency_key: null, created_at: '2026-08-18T08:00:00Z',
+    }], [
+      { household_id: 'household-1', user_id: 'user-1', member_role: 'primary', family_role: 'papa', joined_at: '2026-01-01', profile: { user_id: 'user-1', display_name: '本人' } },
+      { household_id: 'household-1', user_id: 'user-2', member_role: 'partner', family_role: 'mama', joined_at: '2026-01-01', profile: { user_id: 'user-2', display_name: 'パートナー' } },
+    ])).toBe('担当変更: パパ → ママ');
   });
 });
