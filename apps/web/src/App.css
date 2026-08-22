@@ -18,10 +18,10 @@
     --color-border: #33353f;
     --color-text: #f2f3f5;
     --color-text-muted: #a3a8b5;
-    --color-accent: #6d9bff;
-    --color-accent-text: #0b0c10;
+    --color-accent: #72b9a4;
+    --color-accent-text: #10231d;
     --color-danger: #ff6b6b;
-    --color-unread-bg: #22304d;
+    --color-unread-bg: #1e3a32;
   }
 }
 
@@ -240,6 +240,21 @@ body {
   font-size: 0.85rem;
   padding: 0.45rem;
   border-radius: 0.4rem;
+}
+.calendar-detail-trigger {
+  display: grid;
+  justify-items: start;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+.calendar-detail-trigger:hover strong,
+.calendar-detail-trigger:focus-visible strong {
+  text-decoration: underline;
 }
 .task-event {
   background: #e3f3ec;

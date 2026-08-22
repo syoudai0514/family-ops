@@ -78,4 +78,19 @@ describe('CalendarProjection', () => {
       dropoff: { token: 'P', tone: 'primary' }, pickup: { token: '—', tone: 'none' },
     });
   });
+
+  it('projects a multi-day Google all-day event onto every visible covered date', () => {
+    const projection = buildCalendarProjection({
+      primaryUserId: 'p', partnerUserId: 'm', tasks: [],
+      occurrences: [{
+        id: 'camp', date: '2026-08-24', allDayEndExclusive: '2026-08-27', time: null,
+        title: '夏季休園', allDay: true, transparent: true, ownerUserId: null,
+        providerEventId: 'event-camp', generatedByFamilyOps: false, hasConflict: false,
+      }],
+    });
+    expect([...projection.itemsByDate.keys()]).toEqual(['2026-08-24', '2026-08-25', '2026-08-26']);
+    expect(projection.itemsByDate.get('2026-08-25')?.[0]).toMatchObject({
+      id: 'google:camp:2026-08-25', fullTitle: '夏季休園', allDay: true,
+    });
+  });
 });

@@ -9,6 +9,21 @@ import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 type SubtaskDraft = { id?: string; title: string; required: boolean };
 type Row = { id: string; title: string; is_active: boolean; include_in_routine_line: boolean; weekdays: number[]; localTime: string; strategy: string; assignee: string; subtasks: SubtaskDraft[] };
 
+// `code` is the durable domain marker.  Do not infer "custom" from a title:
+// built-in chores may be renamed by a household, but must remain owned by
+// EveningRoutineEditor so their independent weekday patterns are never folded
+// into this editor's single schedule form.
+export function isCustomRoutineDefinition(kind: 'morning_chore' | 'evening_chore', code: string | null | undefined) {
+  if (!code) return false;
+  const phase = kind === 'morning_chore' ? 'morning' : 'evening';
+  return code.startsWith(`${kind}_custom_`) || code.startsWith(`${phase}_custom_`);
+}
+
+function customRoutineCodeFilter(kind: 'morning_chore' | 'evening_chore') {
+  const phase = kind === 'morning_chore' ? 'morning' : 'evening';
+  return `code.like.${kind}_custom_%,code.like.${phase}_custom_%`;
+}
+
 function move<T>(items: T[], from: number, to: number) {
   if (to < 0 || to >= items.length) return items;
   const next = [...items];
@@ -31,7 +46,7 @@ export function CustomRoutineEditor({ householdId, members, kind }: { householdI
   const load = useCallback(async () => {
     if (!householdId) return;
     const [defs, rules, subtasks] = await Promise.all([
-      supabase.from('task_definitions').select('id,title,is_active,include_in_routine_line').eq('household_id', householdId).eq('task_kind', kind),
+      supabase.from('task_definitions').select('id,code,title,is_active,include_in_routine_line').eq('household_id', householdId).eq('task_kind', kind).or(customRoutineCodeFilter(kind)),
       supabase.from('recurrence_rules').select('task_definition_id,weekday,scheduled_local_time,assignee_strategy,planned_assignee_id').eq('household_id', householdId).eq('active', true),
       supabase.from('task_subtask_definitions').select('id,task_definition_id,title,required,sort_order,is_active').eq('household_id', householdId).eq('is_active', true).order('sort_order'),
     ]);
@@ -39,7 +54,7 @@ export function CustomRoutineEditor({ householdId, members, kind }: { householdI
       setError(defs.error?.message ?? rules.error?.message ?? subtasks.error?.message ?? '読み込みに失敗しました。');
       return;
     }
-    setRows((defs.data ?? []).map((definition) => {
+    setRows((defs.data ?? []).filter((definition) => isCustomRoutineDefinition(kind, definition.code)).map((definition) => {
       const definitionRules = (rules.data ?? []).filter((rule) => rule.task_definition_id === definition.id);
       return { id: definition.id, title: definition.title, is_active: definition.is_active, include_in_routine_line: definition.include_in_routine_line,
         weekdays: definitionRules.map((rule) => rule.weekday), localTime: definitionRules[0]?.scheduled_local_time?.slice(0, 5) ?? time,

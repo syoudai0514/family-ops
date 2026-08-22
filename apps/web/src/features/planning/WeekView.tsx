@@ -9,7 +9,7 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import type { TaskInstance } from '../../lib/types';
 import { useWeekSchedule } from './useWeekSchedule';
-import { assigneeToken, buildCalendarProjection, transportTokens } from './calendarProjection';
+import { assigneeToken, buildCalendarProjection, transportTokens, type CalendarProjectionItem } from './calendarProjection';
 import { mamaUserId, papaUserId } from '../../lib/familyRoles';
 
 export function WeekView() {
@@ -30,6 +30,7 @@ export function WeekView() {
     localIsoDate(days[6]),
   );
   const [changingTask, setChangingTask] = useState<TaskInstance | null>(null);
+  const [detail, setDetail] = useState<CalendarProjectionItem | null>(null);
   const primaryUserId = papaUserId(members);
   const partnerUserId = mamaUserId(members);
   const projection = useMemo(
@@ -100,8 +101,10 @@ export function WeekView() {
                           key={item.id}
                           className={item.source === 'google' ? 'calendar-event' : 'task-event'}
                         >
-                          <span>{item.startsAt ? formatTimeJa(item.startsAt) : '終日'}</span>
-                          <strong>{item.fullTitle}</strong>
+                          <button type="button" className="calendar-detail-trigger" onClick={() => setDetail(item)}>
+                            <span>{item.startsAt ? formatTimeJa(item.startsAt) : '終日'}</span>
+                            <strong>{item.fullTitle}</strong>
+                          </button>
                           {(hasConflict || item.hasConflict) && <span className="error-text">⚠ 予定と重複</span>}
                           <small className={`assignee-badge ${item.ownerKind}`}>[{assigneeToken(item.ownerKind)}]</small>
                           {task?.planned_assignee_id === me?.user_id && partner && (
@@ -138,7 +141,23 @@ export function WeekView() {
           }}
         />
       )}
+      {detail && <CalendarItemDetail detail={detail} onClose={() => setDetail(null)} />}
     </main>
+  );
+}
+
+function CalendarItemDetail({ detail, onClose }: { detail: CalendarProjectionItem; onClose: () => void }) {
+  const source = detail.source === 'google' ? 'Google Calendar' : 'Family Ops';
+  return (
+    <section className="card calendar-detail" aria-label="予定の詳細">
+      <div className="section-heading"><h2>予定の詳細</h2><button type="button" className="text-button" onClick={onClose}>閉じる</button></div>
+      <strong>{detail.fullTitle}</strong>
+      <p>開始: {detail.allDay ? `${detail.localDate}（終日）` : detail.startsAt ?? '—'}</p>
+      <p>終了: {detail.allDay ? `${detail.localDate}（終日）` : detail.endsAt ?? '—'}</p>
+      {detail.location && <p>場所: {detail.location}</p>}
+      {detail.description && <p>説明: {detail.description}</p>}
+      <p>出所: {source}{detail.sourceCalendar ? ` · ${detail.sourceCalendar}` : ''}</p>
+    </section>
   );
 }
 

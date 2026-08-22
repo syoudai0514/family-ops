@@ -5,6 +5,14 @@ import { TaskFormModal } from './TaskFormModal';
 
 type QuickAddTarget = 'task' | 'request' | 'shopping' | 'handover' | 'routine' | 'preparation';
 
+export function quickAddDestination(target: Exclude<QuickAddTarget, 'task'>) {
+  if (target === 'request') return '/requests';
+  if (target === 'shopping') return '/shopping';
+  if (target === 'handover') return '/handovers';
+  if (target === 'preparation') return '/settings/routines#morning-preparation';
+  return '/settings/routines#custom-routines';
+}
+
 export function QuickAdd({ className, label = '＋', ariaLabel = '追加する', onTaskSaved }: {
   className?: string;
   label?: string;
@@ -17,7 +25,7 @@ export function QuickAdd({ className, label = '＋', ariaLabel = '追加する',
   const choose = (target: QuickAddTarget) => {
     setOpen(false);
     if (target === 'task') setTaskFormOpen(true);
-    else navigate(target === 'request' ? '/requests' : target === 'shopping' ? '/shopping' : target === 'handover' ? '/handovers' : target === 'preparation' ? '/settings/routines#morning-preparation' : '/settings/routines#custom-routines');
+    else navigate(quickAddDestination(target));
   };
   return <>
     <button type="button" aria-label={ariaLabel} className={className} onClick={() => setOpen(true)}>{label}</button>

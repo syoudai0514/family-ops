@@ -39,8 +39,11 @@ export function usePlanningData(householdId: string | null, start: string, end: 
             .from('calendar_event_occurrences')
             .select('*, calendar_connections(display_name,external_calendar_id)')
             .eq('household_id', householdId)
-            .gte('all_day_start', start)
-            .lt('all_day_start', nextDay)
+            // all_day_end_exclusive is an exclusive local date. This is the
+            // standard interval-overlap predicate, so events that began
+            // before the visible range still appear on every covered day.
+            .lte('all_day_start', end)
+            .gt('all_day_end_exclusive', start)
             .order('all_day_start'),
         ]);
       if (taskError) throw taskError;
@@ -62,6 +65,7 @@ export function usePlanningData(householdId: string | null, start: string, end: 
           const startsAt = typeof row.starts_at === 'string' ? row.starts_at : null;
           const endsAt = typeof row.ends_at === 'string' ? row.ends_at : null;
           const allDayStart = typeof row.all_day_start === 'string' ? row.all_day_start : null;
+          const allDayEndExclusive = typeof row.all_day_end_exclusive === 'string' ? row.all_day_end_exclusive : null;
           const connection = row.calendar_connections as { display_name?: string; external_calendar_id?: string } | null;
           return {
             id: String(row.occurrence_key),
@@ -70,6 +74,7 @@ export function usePlanningData(householdId: string | null, start: string, end: 
             endsAt,
             title: typeof row.title === 'string' && row.title ? row.title : '予定',
             allDay: Boolean(allDayStart),
+            allDayEndExclusive,
             transparent: row.transparency === 'transparent',
             ownerUserId: typeof row.creator_mapped_user_id === 'string' ? row.creator_mapped_user_id : null,
             providerEventId: typeof row.google_event_id === 'string' ? row.google_event_id : null,

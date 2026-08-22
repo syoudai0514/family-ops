@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
@@ -29,6 +30,16 @@ const SCHEDULE_LABELS: Record<RoutineScheduleKind, string> = {
 };
 
 const DEFAULT_TIME = '19:00';
+
+export function scrollToRoutineAnchor(hash: string, documentRef: Document = document) {
+  const id = hash.replace(/^#/, '');
+  if (id !== 'custom-routines' && id !== 'morning-preparation') return false;
+  const target = documentRef.getElementById(id);
+  if (!target) return false;
+  target.scrollIntoView({ block: 'start' });
+  if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+  return true;
+}
 
 interface RowState {
   enabled: boolean;
@@ -65,6 +76,7 @@ function useRoutineSchedules(householdId: string | null) {
 
 export function RoutineSchedule() {
   const { household, members } = useHousehold();
+  const location = useLocation();
   const { rows, loading, error, refresh } = useRoutineSchedules(household?.id ?? null);
   const [draft, setDraft] = useState<Record<RoutineScheduleKind, RowState>>(
     {} as Record<RoutineScheduleKind, RowState>,
@@ -72,6 +84,13 @@ export function RoutineSchedule() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const cancel = requestAnimationFrame(() => {
+      scrollToRoutineAnchor(location.hash);
+    });
+    return () => cancelAnimationFrame(cancel);
+  }, [location.hash]);
 
   useEffect(() => {
     const next = {} as Record<RoutineScheduleKind, RowState>;
@@ -127,7 +146,7 @@ export function RoutineSchedule() {
         毎週くり返す担当を変えます。今日だけの交代は、週の予定から相談してください。
       </p>
       <DropoffPickupMatrix householdId={household?.id ?? null} members={members} />
-      <div id="custom-routines"><CustomRoutineEditor householdId={household?.id ?? null} members={members} kind="morning_chore" /></div>
+      <div id="custom-routines" tabIndex={-1}><CustomRoutineEditor householdId={household?.id ?? null} members={members} kind="morning_chore" /></div>
       <EveningRoutineEditor householdId={household?.id ?? null} members={members} />
       <CustomRoutineEditor householdId={household?.id ?? null} members={members} kind="evening_chore" />
       <MorningPreparationEditor householdId={household?.id ?? null} members={members} />

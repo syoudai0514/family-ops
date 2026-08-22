@@ -16,6 +16,7 @@ export interface GooglePlanningOccurrence {
   endsAt?: string | null;
   title: string;
   allDay: boolean;
+  allDayEndExclusive?: string | null;
   transparent: boolean;
   ownerUserId: string | null;
   providerEventId: string | null;
@@ -24,6 +25,24 @@ export interface GooglePlanningOccurrence {
   location?: string | null;
   description?: string | null;
   sourceCalendar?: string | null;
+}
+
+function addUtcDate(date: string, days: number) {
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString().slice(0, 10);
+}
+
+function projectionDates(event: GooglePlanningOccurrence): string[] {
+  if (!event.allDay) return [event.date];
+  const endExclusive = event.allDayEndExclusive ?? addUtcDate(event.date, 1);
+  const dates: string[] = [];
+  // Google all-day ends are exclusive. The guard prevents a bad provider row
+  // from turning a Month/Week render into an unbounded loop.
+  for (let date = event.date; date < endExclusive && dates.length < 366; date = addUtcDate(date, 1)) {
+    dates.push(date);
+  }
+  return dates.length > 0 ? dates : [event.date];
 }
 
 export interface CalendarProjectionItem {
@@ -170,25 +189,28 @@ export function buildCalendarProjection({
     // inbound Google occurrence. No title/date comparison is used.
     if (event.generatedByFamilyOps) continue;
     const owner = ownerKind(event.ownerUserId, primaryUserId, partnerUserId);
-    items.push({
-      id: `google:${event.id}`,
-      source: 'google',
-      kind: 'calendar',
-      localDate: event.date,
-      startsAt: event.time,
-      endsAt: event.endsAt ?? null,
-      allDay: event.allDay,
-      shortTitle: compactTitle(event.time, event.title, event.allDay),
-      fullTitle: event.title,
-      ownerUserId: event.ownerUserId,
-      ownerKind: owner,
-      hasConflict: event.hasConflict,
-      providerEventId: event.providerEventId,
-      linkedTaskId: null,
-      location: event.location ?? null,
-      description: event.description ?? null,
-      sourceCalendar: event.sourceCalendar ?? null,
-    });
+    const dates = projectionDates(event);
+    for (const date of dates) {
+      items.push({
+        id: dates.length === 1 ? `google:${event.id}` : `google:${event.id}:${date}`,
+        source: 'google',
+        kind: 'calendar',
+        localDate: date,
+        startsAt: event.time,
+        endsAt: event.endsAt ?? null,
+        allDay: event.allDay,
+        shortTitle: compactTitle(event.time, event.title, event.allDay),
+        fullTitle: event.title,
+        ownerUserId: event.ownerUserId,
+        ownerKind: owner,
+        hasConflict: event.hasConflict,
+        providerEventId: event.providerEventId,
+        linkedTaskId: null,
+        location: event.location ?? null,
+        description: event.description ?? null,
+        sourceCalendar: event.sourceCalendar ?? null,
+      });
+    }
   }
   const rank = (item: CalendarProjectionItem) =>
     (item.hasConflict ? 0 : 10) + (item.kind === 'special' ? 0 : item.allDay ? 3 : 2);

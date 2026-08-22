@@ -1,6 +1,7 @@
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold, type HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { formatDateTimeJa } from '../../lib/date';
+import { tokyoIsoDate } from '../planning/dateHelpers';
 import { useHistoryData, type HistoryEntry, type PlannedVsActualOutcome } from './useHistoryData';
 import type { TaskEvent, TaskEventType } from '../../lib/types';
 import { useMemo, useState } from 'react';
@@ -62,8 +63,28 @@ function EventTrail({ events, members }: { events: TaskEvent[]; members: Househo
   );
 }
 
+export function reassignmentSummary(events: TaskEvent[], members: HouseholdMemberWithProfile[]): string | null {
+  const event = [...events].reverse().find((candidate) => candidate.event_type === 'reassigned_once');
+  if (!event) return null;
+  // Current mutations record these durable IDs. The legacy aliases preserve
+  // old History rows without ever guessing from the task's final assignee.
+  const oldId = typeof event.payload.old_assignee_id === 'string'
+    ? event.payload.old_assignee_id
+    : typeof event.payload.from === 'string' ? event.payload.from : null;
+  const newId = typeof event.payload.new_assignee_id === 'string'
+    ? event.payload.new_assignee_id
+    : typeof event.payload.to === 'string' ? event.payload.to : null;
+  if (!oldId || !newId) return '担当変更';
+  return `担当変更: ${memberLabel(oldId, members)} → ${memberLabel(newId, members)}`;
+}
+
+export function completedNextTokyoMorning(scheduledDate: string, completedAt: string | null): boolean {
+  return Boolean(completedAt && tokyoIsoDate(completedAt) > scheduledDate);
+}
+
 function HistoryRow({ entry, members }: { entry: HistoryEntry; members: HouseholdMemberWithProfile[] }) {
   const { task, outcome, events, wasReassigned } = entry;
+  const reassignment = wasReassigned ? reassignmentSummary(events, members) : null;
   return (
     <li className="history-item card">
       <div className="history-item-header">
@@ -72,9 +93,9 @@ function HistoryRow({ entry, members }: { entry: HistoryEntry; members: Househol
       </div>
       <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
       {task.status === 'completed' && (
-        <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {memberLabel(task.actual_completed_by_id, members)}{task.completed_at && task.completed_at.slice(0, 10) > task.scheduled_date ? ' · 翌朝に完了' : ''}</p>
+        <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {memberLabel(task.actual_completed_by_id, members)}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 翌朝に完了' : ''}</p>
       )}
-      {wasReassigned && <p className="task-item-meta">担当変更: {memberLabel(task.planned_assignee_id, members)} へ変更。この予定は再割り当てされました。</p>}
+      {reassignment && <p className="task-item-meta">{reassignment}</p>}
       <EventTrail events={events} members={members} />
     </li>
   );
