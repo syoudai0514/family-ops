@@ -50,6 +50,24 @@ begin
     raise exception 'FAIL line-native: task preview edit must preserve an explicitly selected partner assignee';
   end if;
 
+  -- A typed LINE correction may only discover the sender's explicitly opened
+  -- draft.  The worker will apply the structured "パパに変更" patch through
+  -- server_tx_update_pending_action; this getter must never expose it to the
+  -- partner or select an unrelated draft.
+  perform public.server_tx_update_pending_action(
+    'f1000000-0000-0000-0000-000000000001', v_pending_id, 'task_create_once',
+    jsonb_build_object('title', '病院の保険証を準備', 'scheduled_date', '2026-08-22',
+      'due_local_time', '20:00', 'planned_assignee_user_id', 'f1000000-0000-0000-0000-000000000002',
+      'line_edit_mode', true)
+  );
+  v_result := public.server_tx_get_line_pending_text_edit('f1000000-0000-0000-0000-000000000001');
+  if (v_result->>'id')::uuid <> v_pending_id or v_result->'normalized_payload'->>'line_edit_mode' <> 'true' then
+    raise exception 'FAIL line-native: sender must recover only their active text-edit draft';
+  end if;
+  if public.server_tx_get_line_pending_text_edit('f1000000-0000-0000-0000-000000000002') is not null then
+    raise exception 'FAIL line-native: partner must not discover sender text-edit draft';
+  end if;
+
   begin
     perform public.server_tx_get_pending_action('f1000000-0000-0000-0000-000000000002', v_pending_id);
     raise exception 'FAIL line-native: another user must not read sender preview';

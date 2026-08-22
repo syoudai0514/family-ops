@@ -67,6 +67,7 @@ const GAP_FILL_FUNCTIONS = new Set([
   'list-pending-actions',
   'confirm-pending-action',
   'cancel-pending-action',
+  'update-pending-action',
   'get-today-schedule',
   'create-assignment-change-request',
   'accept-assignment-change-request',

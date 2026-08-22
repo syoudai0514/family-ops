@@ -49,6 +49,7 @@ export const EDGE_FUNCTIONS = {
   listPendingActions: 'list-pending-actions',
   confirmPendingAction: 'confirm-pending-action',
   cancelPendingAction: 'cancel-pending-action',
+  updatePendingAction: 'update-pending-action',
   getTodaySchedule: 'get-today-schedule',
   getWeekSchedule: 'get-week-schedule',
   googleCalendarOauthStart: 'google-calendar-oauth-start',

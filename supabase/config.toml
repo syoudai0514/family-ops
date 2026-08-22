@@ -274,6 +274,9 @@ verify_jwt = true
 [functions.cancel-pending-action]
 verify_jwt = true
 
+[functions.update-pending-action]
+verify_jwt = true
+
 [functions.get-today-schedule]
 verify_jwt = true
 

@@ -16,6 +16,8 @@ export type LineIntent = {
   subtasks: string[];
   /** Context shown in the sender preview; it is never used to infer a task. */
   context: string | null;
+  /** Explicit visibility decision, independent from category/title. */
+  calendarVisibility: 'special' | 'hidden';
   source: 'deterministic' | 'gemini';
 };
 
@@ -90,6 +92,16 @@ export function daypartLabel(daypart: LineDaypart): string {
 }
 
 function targetRole(text: string): LineTargetRole {
+  // A correction such as "ママじゃなくてパパ" must select the replacement,
+  // not the first name mentioned.  This is used both for a fresh LINE input
+  // and for a draft correction, so keep it deterministic instead of relying
+  // on the model to infer Japanese contrast grammar every time.
+  const correction = text.match(
+    /(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
+  );
+  if (correction) {
+    return /^(?:パパ|父|お父さん)$/.test(correction[1]) ? 'papa' : 'mama';
+  }
   if (/(?:パパ|父|お父さん)/.test(text)) return 'papa';
   if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return 'mama';
   return null;
@@ -184,6 +196,7 @@ export function deterministicLineIntent(text: string, now = new Date()): LineInt
         sharedMessage: null,
         subtasks: [],
         context: null,
+        calendarVisibility: 'hidden',
         source: 'deterministic',
       };
     }
@@ -204,6 +217,7 @@ export function deterministicLineIntent(text: string, now = new Date()): LineInt
         sharedMessage: `${title}をお願いできますか？`,
         subtasks: [],
         context: null,
+        calendarVisibility: 'hidden',
         source: 'deterministic',
       };
     }
@@ -226,6 +240,7 @@ export function deterministicLineIntent(text: string, now = new Date()): LineInt
       sharedMessage: role && requestSignal ? `${title}をお願いできますか？` : null,
       subtasks: [],
       context: null,
+      calendarVisibility: 'hidden',
       source: 'deterministic',
     };
   }
@@ -245,6 +260,7 @@ export function deterministicLineIntent(text: string, now = new Date()): LineInt
         sharedMessage: role && requestSignal ? `${title}をお願いできますか？` : null,
         subtasks: [],
         context: null,
+        calendarVisibility: 'hidden',
         source: 'deterministic',
       };
     }
@@ -290,6 +306,7 @@ export function normalizeGeminiLineIntent(raw: string): Omit<LineIntent, 'source
     ? (p.target_role as Exclude<LineTargetRole, null>)
     : null;
   const sharedMessage = cleanShortText(p.shared_message, 240);
+  const calendarVisibility = p.calendar_visibility === 'special' ? 'special' : 'hidden';
 
   // A non-request must not accidentally carry an AI-written partner message.
   if (p.kind !== 'request' && sharedMessage !== null) return null;
@@ -304,11 +321,13 @@ export function normalizeGeminiLineIntent(raw: string): Omit<LineIntent, 'source
     sharedMessage,
     subtasks: cleanSubtasks(p.subtasks),
     context: cleanShortText(p.context, 120),
+    calendarVisibility,
   };
 }
 
 async function geminiLineIntent(text: string, now: Date): Promise<LineIntent | null> {
-  const model = Deno.env.get('GEMINI_MODEL_LINE_INTENT') ?? Deno.env.get('GEMINI_MODEL_REWRITE') ?? '';
+  const model =
+    Deno.env.get('GEMINI_MODEL_LINE_INTENT') ?? Deno.env.get('GEMINI_MODEL_REWRITE') ?? '';
   if (!model) return null;
   const today = addJstDays(now, 0);
   const prompt = [
@@ -327,8 +346,9 @@ async function geminiLineIntent(text: string, now: Date): Promise<LineIntent | n
     'title は80文字以内の短い行動名。メタ文言「タスクとして追加して」は入れない。',
     'subtasks は実際にチェックできる持ち物・手順だけを最大5件。無ければ空配列。',
     'context は予定の場所・開始時刻等の短い補足だけ。無ければnull。',
+    'calendar_visibility は、病院・習い事・学校/保育園行事・特別な持ち物など家族予定として見通しとGoogle Calendarに出すべき一回限りの対応だけ special。それ以外の日常タスクは hidden。タイトルの単語だけで判断せず、入力全体の意味だけで選ぶ。',
     'shared_message は request のときだけ、事実を増やさず柔らかい依頼文。それ以外null。',
-    '必ずJSONのみ: {"kind":"task|request|shopping","title":"...","scheduled_date":"YYYY-MM-DD","due_local_time":"HH:MM|null","daypart":"morning|noon|evening|night|null","target_role":"papa|mama|null","shared_message":"...|null","subtasks":["..."],"context":"...|null"}',
+    '必ずJSONのみ: {"kind":"task|request|shopping","title":"...","scheduled_date":"YYYY-MM-DD","due_local_time":"HH:MM|null","daypart":"morning|noon|evening|night|null","target_role":"papa|mama|null","shared_message":"...|null","subtasks":["..."],"context":"...|null","calendar_visibility":"special|hidden"}',
     '',
     `入力: ${JSON.stringify(text)}`,
   ].join('\n');
