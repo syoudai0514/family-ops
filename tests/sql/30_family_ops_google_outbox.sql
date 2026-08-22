@@ -47,6 +47,11 @@ begin
     raise exception 'FAIL family-google-outbox: first active connection must become the household write target';
   end if;
 
+  -- Connecting a calendar deliberately reconciles the household's existing
+  -- horizon.  This fixture asserts one particular future projection, so
+  -- discard that bootstrap work before inserting the isolated test tasks.
+  delete from private.family_ops_calendar_mirrors where household_id = v_hh_id;
+
   select id into v_dropoff from public.task_definitions where household_id = v_hh_id and code = 'dropoff';
   select id into v_pickup from public.task_definitions where household_id = v_hh_id and code = 'pickup';
   insert into public.task_definitions
