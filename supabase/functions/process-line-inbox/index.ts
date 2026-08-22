@@ -493,7 +493,11 @@ async function tryApplyLineTextEdit(
         ? actor.user_id
         : await householdUserForRole(client, actor.household_id, role);
     if (!selected) {
-      await sendMissingRoleRecovery(client, item, actor, pending.id, role);
+      // Only a requested family role can be absent; `self` always resolves to
+      // the authenticated LINE actor.
+      if (role === 'papa' || role === 'mama') {
+        await sendMissingRoleRecovery(client, item, actor, pending.id, role);
+      }
       return true;
     }
     const label = role === 'papa' ? 'パパ' : role === 'mama' ? 'ママ' : '自分';
