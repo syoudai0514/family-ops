@@ -13,9 +13,9 @@ import type { Household, HouseholdMember, Profile } from '../lib/types';
 
 export type HouseholdMemberWithProfile = HouseholdMember & { profile: Profile | null };
 
-// First-class onboarding state is persisted on the household. Partner invite
-// intentionally precedes every assignment step so a new household never
-// silently assigns the partner's work to the creator.
+// First-class onboarding state is persisted on the household. A household can
+// finish its own setup before the second adult joins; partner-only actions stay
+// unavailable until membership actually exists.
 export type HouseholdPhase =
   | 'loading'
   | 'error'
@@ -43,7 +43,7 @@ interface HouseholdContextValue {
 const HouseholdContext = createContext<HouseholdContextValue | undefined>(undefined);
 
 export function phaseForHousehold(household: Household, memberCount: number): HouseholdPhase {
-  if (memberCount < 2) return 'partner-invite';
+  void memberCount;
   if (!household.dropoff_pickup_setup_completed_at) return 'dropoff-pickup-wizard';
   if (!household.evening_routine_setup_completed_at) return 'evening-routines-wizard';
   if (!household.morning_preparation_setup_completed_at) return 'morning-preparation-wizard';

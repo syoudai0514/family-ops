@@ -39,6 +39,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Safari may keep an installed app shell alive across deployments.
+        // Activate each new worker immediately so onboarding fixes cannot be
+        // masked by the previous JavaScript bundle.
+        skipWaiting: true,
+        clientsClaim: true,
         // A newly activated worker reloads existing PWA windows (see this
         // script). That moves an iPhone off an old precached app shell while
         // leaving localStorage and the Supabase session untouched.

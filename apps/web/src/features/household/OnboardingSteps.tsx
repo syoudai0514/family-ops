@@ -47,7 +47,7 @@ export function MorningPreparationStep() {
   };
   return (
     <main className="app-shell onboarding-step">
-      <p className="eyebrow">初期設定 5 / 8</p>
+      <p className="eyebrow">初期設定 4 / 7</p>
       <h1>朝の準備</h1>
       <p>曜日ごとの持ち物を送り担当へ割り当てます。あとから設定で変更できます。</p>
       <MorningPreparationEditor ref={editorRef} householdId={household?.id ?? null} members={members} />
@@ -95,7 +95,7 @@ export function ConnectionsStep() {
   };
   return (
     <main className="app-shell onboarding-step">
-      <p className="eyebrow">初期設定 6 / 8</p>
+      <p className="eyebrow">初期設定 5 / 7</p>
       <h1>LINE・カレンダー連携</h1>
       <p>連携は任意です。未接続でも家庭の予定とタスクは利用できます。</p>
       <LineLinkSection />
@@ -160,7 +160,7 @@ export function RecommendedNotificationsStep() {
   };
   return (
     <main className="app-shell onboarding-step">
-      <p className="eyebrow">初期設定 7 / 8</p>
+      <p className="eyebrow">初期設定 6 / 7</p>
       <h1>おすすめ通知</h1>
       <section className="card">
         <h2>必要なときだけ知らせる</h2>
@@ -183,7 +183,7 @@ export function WeekPreviewStep() {
   return (
     <div className="onboarding-preview">
       <div className="app-shell onboarding-preview-heading">
-        <p className="eyebrow">初期設定 8 / 8</p>
+        <p className="eyebrow">初期設定 7 / 7</p>
         <h1>1週間を確認</h1>
         <p>Monthは送迎と特別対応、Weekは週の調整、Todayは実行を確認します。朝夜家事はToday・LINE・Historyに表示されます。</p>
         {done.error && (

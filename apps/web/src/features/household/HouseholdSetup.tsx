@@ -129,7 +129,7 @@ function JoinHouseholdForm({
     try {
       await callEdgeFunction(EDGE_FUNCTIONS.joinHousehold, {
         operation_id: operationId,
-        invite_token: inviteToken,
+        raw_invite_token: inviteToken,
         display_name: displayName,
       });
       onDone();
