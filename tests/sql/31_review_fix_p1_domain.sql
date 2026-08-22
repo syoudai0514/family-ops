@@ -4,7 +4,7 @@ set role service_role;
 do $$
 declare a uuid:='3a000000-0000-0000-0000-000000000001'; b uuid:='3a000000-0000-0000-0000-000000000002'; h uuid; r jsonb; task_id uuid; conflict boolean:=false;
 begin
-  r:=public.server_tx_create_household(a,gen_random_uuid(),'review p1 household',''); h:=(r->>'household_id')::uuid;
+  r:=public.server_tx_create_household(a,gen_random_uuid(),'review p1 household','Review owner'); h:=(r->>'household_id')::uuid;
   insert into public.household_members(household_id,user_id,member_role) values(h,b,'adult');
   if (select family_role from public.household_members where household_id=h and user_id=a) <> 'papa' or (select family_role from public.household_members where household_id=h and user_id=b) <> 'mama' then raise exception 'FAIL P1-01: adult members need stable P/M backfill'; end if;
   insert into public.task_definitions(household_id,code,title,category,routine_phase,completion_mode,created_by) values(h,'unknown_31','未知','other','anytime','whole',a);
