@@ -15,9 +15,9 @@ const complete: Household = {
 };
 
 describe('onboarding phase order', () => {
-  it('requires partner invite before partner-dependent assignment', () => {
+  it('lets a one-person household start setup before inviting a partner', () => {
     expect(phaseForHousehold({ ...complete, dropoff_pickup_setup_completed_at: null }, 1)).toBe(
-      'partner-invite',
+      'dropoff-pickup-wizard',
     );
   });
 
