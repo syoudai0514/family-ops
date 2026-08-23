@@ -1,6 +1,10 @@
 name: Deploy LINE menu UX hotfix
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/_deploy-line-menu-ux-hotfix.yml'
   workflow_dispatch:
 
 permissions:
