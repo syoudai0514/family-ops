@@ -5,10 +5,16 @@ export function Modal({
   title,
   onClose,
   children,
+  headerAction,
+  panelClassName,
+  backdropClassName,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  headerAction?: ReactNode;
+  panelClassName?: string;
+  backdropClassName?: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const modalId = useId();
@@ -54,9 +60,12 @@ export function Modal({
   };
 
   return (
-    <div className="modal-backdrop" onClick={requestClose}>
+    <div
+      className={['modal-backdrop', backdropClassName].filter(Boolean).join(' ')}
+      onClick={requestClose}
+    >
       <div
-        className="modal-panel"
+        className={['modal-panel', panelClassName].filter(Boolean).join(' ')}
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
@@ -66,9 +75,12 @@ export function Modal({
       >
         <div className="modal-header">
           <h2>{title}</h2>
-          <button type="button" aria-label="閉じる" onClick={requestClose} className="modal-close">
-            ×
-          </button>
+          <div className="modal-header-actions">
+            {headerAction}
+            <button type="button" aria-label="閉じる" onClick={requestClose} className="modal-close">
+              ×
+            </button>
+          </div>
         </div>
         {children}
       </div>
