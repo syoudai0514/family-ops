@@ -43,6 +43,7 @@ export function TaskChecklistItem({
   showTime = true,
 }: TaskChecklistItemProps) {
   const completed = task.status === 'completed';
+  const editable = task.origin === 'manual' && !completed;
   const [expanded, setExpanded] = useState(task.completion_mode === 'subtasks' && !completed);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,9 +155,14 @@ export function TaskChecklistItem({
                 </select>
               </label>
             )}
-            <button type="button" onClick={() => onEdit(task)} disabled={busy || completed}>
-              編集
-            </button>
+            {editable && (
+              <button type="button" onClick={() => onEdit(task)} disabled={busy}>
+                編集
+              </button>
+            )}
+            {!editable && !completed && task.origin !== 'manual' && (
+              <small className="task-menu-note">定例から作られた項目です</small>
+            )}
             <button
               type="button"
               className="danger-button"
@@ -172,7 +178,7 @@ export function TaskChecklistItem({
       {expanded && task.completion_mode === 'subtasks' && (
         <ul className="subtask-list subtask-checklist">
           {subtasks.length === 0 ? (
-            <li className="empty-hint">チェック項目がありません。編集から内容を追加してください。</li>
+            <li className="empty-hint">チェック項目が設定されていません。</li>
           ) : (
             subtasks.map((subtask) => (
               <li key={subtask.id}>
