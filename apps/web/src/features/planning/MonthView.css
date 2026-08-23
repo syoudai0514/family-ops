@@ -1,0 +1,293 @@
+.month-page .month-toolbar {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+}
+
+.month-page .month-title-wrap {
+  min-width: 0;
+  text-align: center;
+}
+
+.month-page .month-nav-button {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-size: 1.9rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.month-page .month-nav-button:last-child {
+  justify-self: end;
+}
+
+.month-page .month-weekdays {
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.month-page .month-weekdays span {
+  padding: 0.35rem 0 0.3rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.month-page .month-weekdays span:nth-child(6) {
+  color: #1769aa;
+}
+
+.month-page .month-weekdays span:nth-child(7) {
+  color: #c43a3a;
+}
+
+.month-page .month-calendar {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+  background: var(--color-border);
+}
+
+.month-page .month-day {
+  position: relative;
+  min-width: 0;
+  min-height: 6.15rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 0.2rem 0.12rem 0.25rem;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.month-page .month-day.empty {
+  background: var(--color-bg);
+}
+
+.month-page .month-day.selected {
+  z-index: 1;
+  outline: 0;
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
+.month-page .month-date-number {
+  align-self: flex-start;
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.14rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.month-page .month-day.today .month-date-number {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  font-weight: 800;
+}
+
+.month-page .month-events {
+  display: grid;
+  gap: 0.13rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.month-page .month-day small {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  padding: 0.08rem 0.12rem;
+  overflow: hidden;
+  border-radius: 0.2rem;
+  font-size: 0.62rem;
+  font-weight: 650;
+  line-height: 1.22;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-page .transport-chip.primary {
+  background: #dff4eb;
+  color: #075d48;
+}
+
+.month-page .transport-chip.partner {
+  background: #fff0df;
+  color: #98500f;
+}
+
+.month-page .transport-chip.family,
+.month-page .transport-chip.unknown {
+  background: #eef1f0;
+  color: #52605a;
+}
+
+.month-page .projection-row {
+  border-left: 0.18rem solid transparent;
+}
+
+.month-page .projection-row.google {
+  background: #edf2ff;
+  color: #304f93;
+}
+
+.month-page .projection-row.family_ops {
+  background: #e9f6f1;
+  color: #075d48;
+}
+
+.month-page .projection-row.owner-primary {
+  border-left-color: #19866b;
+}
+
+.month-page .projection-row.owner-partner {
+  border-left-color: #dc7b25;
+}
+
+.month-page .projection-row.owner-family,
+.month-page .projection-row.owner-unknown {
+  border-left-color: #87918d;
+}
+
+.month-page .month-day small.month-more {
+  width: auto;
+  justify-self: end;
+  padding-inline: 0.15rem;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: 800;
+  text-align: right;
+}
+
+.month-page .day-detail {
+  margin-top: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .month-page .transport-chip.primary,
+  .month-page .projection-row.family_ops {
+    background: #163d33;
+    color: #bdebdc;
+  }
+
+  .month-page .transport-chip.partner {
+    background: #49301c;
+    color: #ffd6ad;
+  }
+
+  .month-page .projection-row.google {
+    background: #26334f;
+    color: #cbd8ff;
+  }
+
+  .month-page .transport-chip.family,
+  .month-page .transport-chip.unknown {
+    background: #303633;
+    color: #d3d9d6;
+  }
+}
+
+@media (max-width: 899px) {
+  .app-shell.month-page {
+    padding-top: 0.7rem;
+    padding-left: max(0.2rem, env(safe-area-inset-left));
+    padding-right: max(0.2rem, env(safe-area-inset-right));
+  }
+
+  .month-page .month-toolbar {
+    margin-inline: 0.25rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .month-page .month-title-wrap .eyebrow {
+    display: none;
+  }
+
+  .month-page .month-title-wrap h1 {
+    font-size: 1.45rem;
+    line-height: 1.15;
+  }
+
+  .month-page .month-nav-button {
+    width: 2.35rem;
+    min-height: 2.35rem;
+    font-size: 1.7rem;
+  }
+
+  .month-page .month-weekdays span {
+    padding-block: 0.28rem;
+    font-size: 0.7rem;
+  }
+
+  .month-page .month-day {
+    min-height: 6rem;
+    font-size: 0.8rem;
+  }
+
+  .month-page .month-day small {
+    font-size: 0.61rem;
+  }
+
+  .month-page .day-detail,
+  .month-page .calendar-detail,
+  .month-page > .error-text,
+  .month-page > [role='status'] {
+    margin-inline: 0.45rem;
+  }
+}
+
+@media (max-width: 390px) {
+  .month-page .month-day {
+    min-height: 5.75rem;
+  }
+
+  .month-page .month-day small {
+    font-size: 0.58rem;
+    padding-inline: 0.08rem;
+  }
+
+  .month-page .month-date-number {
+    min-width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.74rem;
+  }
+}
+
+@media (min-width: 900px) {
+  .month-page .month-toolbar {
+    max-width: 36rem;
+    margin-inline: auto;
+  }
+
+  .month-page .month-day {
+    min-height: 7.5rem;
+    padding: 0.35rem;
+  }
+
+  .month-page .month-day small {
+    font-size: 0.72rem;
+  }
+}

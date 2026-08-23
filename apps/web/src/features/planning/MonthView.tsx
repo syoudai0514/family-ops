@@ -1,15 +1,31 @@
 import { useMemo, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
+import { papaUserId, mamaUserId } from '../../lib/familyRoles';
+import {
+  assigneeToken,
+  buildCalendarProjection,
+  transportLabel,
+  transportTokens,
+  type CalendarProjectionItem,
+} from './calendarProjection';
 import { localIsoDate } from './dateHelpers';
 import { usePlanningData } from './usePlanningData';
-import { assigneeToken, buildCalendarProjection, transportLabel, transportTokens, type CalendarProjectionItem } from './calendarProjection';
-import { mamaUserId, papaUserId } from '../../lib/familyRoles';
+import './MonthView.css';
 
 function monthRange(anchor: Date) {
   const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
   return { start, end };
 }
+
+function transportPersonLabel(token: string) {
+  if (token === 'P') return 'パパ';
+  if (token === 'M') return 'ママ';
+  if (token === '—') return '';
+  if (token === '未') return '未定';
+  return token;
+}
+
 export function MonthView() {
   const { household, members } = useHousehold();
   const [anchor, setAnchor] = useState(() => new Date());
@@ -37,24 +53,39 @@ export function MonthView() {
   );
   const firstOffset = (start.getDay() + 6) % 7;
   const totalCells = firstOffset + days.length > 35 ? 42 : 35;
+  const today = localIsoDate(new Date());
+
   const changeMonth = (delta: number) => {
     const next = new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1);
     setAnchor(next);
     setSelected(localIsoDate(next));
   };
+
   return (
-    <main className="app-shell planning-page">
-      <div className="today-header">
-        <div>
+    <main className="app-shell planning-page month-page">
+      <div className="month-toolbar" aria-label="月の移動">
+        <button
+          type="button"
+          className="month-nav-button"
+          aria-label="前月"
+          onClick={() => changeMonth(-1)}
+        >
+          ‹
+        </button>
+        <div className="month-title-wrap">
           <p className="eyebrow">全体を把握</p>
           <h1>
             {anchor.getFullYear()}年{anchor.getMonth() + 1}月
           </h1>
         </div>
-      </div>
-      <div className="period-control">
-        <button onClick={() => changeMonth(-1)}>前月</button>
-        <button onClick={() => changeMonth(1)}>次月</button>
+        <button
+          type="button"
+          className="month-nav-button"
+          aria-label="次月"
+          onClick={() => changeMonth(1)}
+        >
+          ›
+        </button>
       </div>
       {error && (
         <p role="alert" className="error-text">
@@ -70,51 +101,122 @@ export function MonthView() {
               <span key={day}>{day}</span>
             ))}
           </div>
-          <div className="month-grid" aria-label="月間カレンダー">
+          <div className="month-grid month-calendar" aria-label="月間カレンダー">
             {Array.from({ length: totalCells }, (_, index) => {
               const day = days[index - firstOffset];
               if (!day) return <span className="month-day empty" key={`empty-${index}`} />;
               const date = localIsoDate(day);
               const transport = projection.transportByDate.get(date);
               const dayItems = projection.itemsByDate.get(date) ?? [];
+              const tokens = transportTokens(transport, primaryUserId, partnerUserId);
+              const transportRows = [
+                tokens.dropoff.token !== '—'
+                  ? {
+                      key: 'dropoff',
+                      label: `${transportPersonLabel(tokens.dropoff.token)}送`,
+                      tone: tokens.dropoff.tone,
+                    }
+                  : null,
+                tokens.pickup.token !== '—'
+                  ? {
+                      key: 'pickup',
+                      label: `${transportPersonLabel(tokens.pickup.token)}迎`,
+                      tone: tokens.pickup.tone,
+                    }
+                  : null,
+              ].filter(Boolean) as Array<{ key: string; label: string; tone: string }>;
+              const visibleItems = dayItems.slice(0, 3);
+              const hiddenCount = Math.max(0, dayItems.length - visibleItems.length);
+
               return (
                 <button
                   key={date}
+                  type="button"
                   onClick={() => setSelected(date)}
-                  className={selected === date ? 'month-day selected' : 'month-day'}
+                  aria-pressed={selected === date}
+                  className={[
+                    'month-day',
+                    selected === date ? 'selected' : '',
+                    date === today ? 'today' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                 >
-                  <span>{day.getDate()}</span>
-                  {transport && (
-                    <small className="transport-row">{(() => { const tokens = transportTokens(transport, primaryUserId, partnerUserId); return <><span>送 </span><b className={`transport-token ${tokens.dropoff.tone}`}>{tokens.dropoff.token}</b><span> ｜ 迎 </span><b className={`transport-token ${tokens.pickup.tone}`}>{tokens.pickup.token}</b></>; })()}</small>
-                  )}
-                  {dayItems.slice(0, 2).map((item) => (
-                    <small key={item.id} className={`projection-row ${item.source}`}>
-                      {item.shortTitle} <b>{assigneeToken(item.ownerKind)}</b>
-                    </small>
-                  ))}
-                  {dayItems.length > 2 && <small className="month-more">+{dayItems.length - 2}</small>}
+                  <span className="month-date-number">{day.getDate()}</span>
+                  <span className="month-events">
+                    {transportRows.map((row) => (
+                      <small key={row.key} className={`transport-chip ${row.tone}`}>
+                        {row.label}
+                      </small>
+                    ))}
+                    {visibleItems.map((item) => (
+                      <small
+                        key={item.id}
+                        title={item.shortTitle}
+                        className={`projection-row ${item.source} owner-${item.ownerKind}`}
+                      >
+                        {item.shortTitle}
+                      </small>
+                    ))}
+                    {hiddenCount > 0 && <small className="month-more">+{hiddenCount}</small>}
+                  </span>
                 </button>
               );
             })}
           </div>
           <section className="card day-detail">
             <h2>{selected} の予定</h2>
-            {!projection.transportByDate.get(selected) && (projection.itemsByDate.get(selected) ?? []).length === 0 ? (
+            {!projection.transportByDate.get(selected) &&
+            (projection.itemsByDate.get(selected) ?? []).length === 0 ? (
               <p className="empty-hint">予定はありません</p>
             ) : (
               <ul>
                 {projection.transportByDate.get(selected) && (
-                  <li>{transportLabel(projection.transportByDate.get(selected), primaryUserId, partnerUserId)}</li>
+                  <li>
+                    {transportLabel(
+                      projection.transportByDate.get(selected),
+                      primaryUserId,
+                      partnerUserId,
+                    )}
+                  </li>
                 )}
                 {(projection.itemsByDate.get(selected) ?? []).map((item) => (
                   <li key={item.id}>
-                    <button type="button" className="text-button calendar-detail-trigger" onClick={() => setDetail(item)}>{item.fullTitle} <small>[{assigneeToken(item.ownerKind)}]</small></button>
+                    <button
+                      type="button"
+                      className="text-button calendar-detail-trigger"
+                      onClick={() => setDetail(item)}
+                    >
+                      {item.fullTitle} <small>[{assigneeToken(item.ownerKind)}]</small>
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
           </section>
-          {detail && <section className="card calendar-detail" aria-label="Google Calendar予定の詳細"><div className="section-heading"><h2>予定の詳細</h2><button type="button" className="text-button" onClick={() => setDetail(null)}>閉じる</button></div><strong>{detail.fullTitle}</strong><p>開始: {detail.allDay ? `${detail.localDate}（終日）` : detail.startsAt ?? '—'}</p><p>終了: {detail.allDay ? `${detail.localDate}（終日）` : detail.endsAt ?? '—'}</p>{detail.location && <p>場所: {detail.location}</p>}{detail.description && <p>説明: {detail.description}</p>}<p>出所: {detail.source === 'google' ? 'Google Calendar' : 'Family Ops'}{detail.sourceCalendar ? ` · ${detail.sourceCalendar}` : ''}</p></section>}
+          {detail && (
+            <section className="card calendar-detail" aria-label="Google Calendar予定の詳細">
+              <div className="section-heading">
+                <h2>予定の詳細</h2>
+                <button type="button" className="text-button" onClick={() => setDetail(null)}>
+                  閉じる
+                </button>
+              </div>
+              <strong>{detail.fullTitle}</strong>
+              <p>
+                開始: {detail.allDay ? `${detail.localDate}（終日）` : detail.startsAt ?? '—'}
+              </p>
+              <p>
+                終了: {detail.allDay ? `${detail.localDate}（終日）` : detail.endsAt ?? '—'}
+              </p>
+              {detail.location && <p>場所: {detail.location}</p>}
+              {detail.description && <p>説明: {detail.description}</p>}
+              <p>
+                出所: {detail.source === 'google' ? 'Google Calendar' : 'Family Ops'}
+                {detail.sourceCalendar ? ` · ${detail.sourceCalendar}` : ''}
+              </p>
+            </section>
+          )}
         </>
       )}
     </main>
