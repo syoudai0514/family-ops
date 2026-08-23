@@ -38,9 +38,9 @@ jobs:
           start = next(i for i, line in enumerate(lines) if "python3 <<'PY'" in line) + 1
           end = next(i for i in range(start, len(lines)) if lines[i].strip() == 'PY')
           body = lines[start:end]
-          nonempty = [line for line in body if line.strip()]
-          indent = min(len(line) - len(line.lstrip(' ')) for line in nonempty)
-          code = '\n'.join(line[indent:] if line.strip() else '' for line in body) + '\n'
+          first = next(line for line in body if line.strip())
+          indent = len(first) - len(first.lstrip(' '))
+          code = '\n'.join(line[indent:] if len(line) >= indent else line for line in body) + '\n'
           exec(compile(code, str(workflow) + '::<patch>', 'exec'), {'__name__': '__main__'})
           PY
           sed -i 's/明日の朝、歯医者の予約をパパのタスクとして追加して/明日の朝、歯医者の予約して、パパのタスクとして追加/g' supabase/functions/process-line-inbox/lineIntent.test.ts
