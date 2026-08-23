@@ -60,7 +60,10 @@ Deno.test('natural-language sender preview supports in-LINE edit before confirma
     }),
   );
   assertStringIncludes(raw, 'タスクの確認');
-  assertStringIncludes(raw, '8/22 夜 ・ パパ');
+  assertStringIncludes(raw, '日時');
+  assertStringIncludes(raw, '8/22 夜');
+  assertStringIncludes(raw, '担当');
+  assertStringIncludes(raw, 'パパ');
   assertStringIncludes(raw, 'action=edit_pending&pending_action_id=pending-2');
   assertStringIncludes(raw, 'action=confirm_pending&pending_action_id=pending-2');
   assertEquals(raw.includes('病院の保険証を準備'), true);

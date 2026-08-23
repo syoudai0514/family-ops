@@ -22,10 +22,12 @@ export interface ParsedCommand {
 }
 
 // e.g. "オムツをAmazonで買う" / "オムツAmazonで買う" / "牛乳買う" / "パンを買っておいて"
-const SHOPPING_RE = /^(.+?)を?(Amazon|amazon|アマゾン)?で?買(?:う|って|っておいて)。?$/;
+const SHOPPING_RE =
+  /^(.+?)を?(Amazon|amazon|アマゾン)?で?買(?:う|って|っておいて)。?$/;
 
 // e.g. "明日クリーニング出さないと" / "今日ゴミ出さないと" / "明後日書類出さないと"
-const TASK_RELATIVE_DATE_RE = /^(明日|今日|明後日)(.+?)(?:出さないと|しないと|やらないと|忘れずに)。?$/;
+const TASK_RELATIVE_DATE_RE =
+  /^(明日|今日|明後日)(.+?)(?:出さないと|しないと|やらないと|忘れずに)。?$/;
 
 function scheduledDateFor(relative: string): string {
   // The worker environment's clock is UTC; offset to Asia/Tokyo (households
