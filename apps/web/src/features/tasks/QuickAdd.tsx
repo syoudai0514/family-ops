@@ -41,6 +41,7 @@ export function QuickAdd({
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const navigate = useNavigate();
   // Keep the bottom-nav action rightmost; only the glyph is centered inside the button.
+  // Explicit geometry avoids font/padding differences on iOS shifting the plus visually.
   const isBottomNavAdd = className?.split(/\s+/).includes('bottom-nav-add') ?? false;
   const choose = (target: QuickAddTarget) => {
     setOpen(false);
