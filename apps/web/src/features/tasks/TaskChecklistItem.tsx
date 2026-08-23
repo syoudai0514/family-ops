@@ -49,6 +49,9 @@ export function TaskChecklistItem({
   const [error, setError] = useState<string | null>(null);
   const [actor, setActor] = useState<'self' | 'partner'>('self');
   const doneSubtasks = subtasks.filter((item) => item.is_completed).length;
+  const requiredSubtasks = subtasks.filter((item) => item.required);
+  const optionalOnlyChecklist =
+    task.completion_mode === 'subtasks' && subtasks.length > 0 && requiredSubtasks.length === 0;
 
   async function withOperation(fn: (operationId: string) => Promise<unknown>) {
     setError(null);
@@ -73,6 +76,7 @@ export function TaskChecklistItem({
         operation_id: operationId,
         task_id: task.id,
         completion_actor: actor,
+        complete_remaining_subtasks: task.completion_mode === 'subtasks',
       }),
     );
   }
@@ -138,6 +142,17 @@ export function TaskChecklistItem({
           </span>
         </button>
 
+        {optionalOnlyChecklist && !completed && (
+          <button
+            type="button"
+            className="task-inline-finish"
+            onClick={handleComplete}
+            disabled={busy}
+          >
+            完了
+          </button>
+        )}
+
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
@@ -196,6 +211,9 @@ export function TaskChecklistItem({
                 </label>
               </li>
             ))
+          )}
+          {optionalOnlyChecklist && !completed && (
+            <li className="optional-checklist-hint">必要な項目だけチェックして、最後に「完了」を押します。</li>
           )}
         </ul>
       )}
