@@ -4,7 +4,29 @@ export type LineReadOnlyIntent = 'today' | 'tomorrow' | 'week' | 'menu';
 
 export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
   const value = text.normalize('NFKC').replace(/\s+/g, '').trim();
-  if (/^(?:メニュー|何ができる[？?]?|使い方|ヘルプ)$/.test(value)) return 'menu';
+
+  // Treat help/menu questions broadly and before natural-language mutation parsing.
+  // Phrases such as 「何ができるんだっけ？」 must never become a task like
+  // 「機能の確認」. Vague creation starters are also routed to the safe menu
+  // instead of creating a fake task whose title is merely 「タスクの追加」.
+  if (
+    /^(?:メニュー(?:を)?(?:出して|見せて|表示して)?|何(?:が|を)?できる(?:んだっけ|の|こと)?|何できる(?:んだっけ)?|できること(?:は|教えて)?|使い方(?:は|教えて)?|ヘルプ(?:お願い)?)[？?。!！]*$/.test(
+      value,
+    )
+  )
+    return 'menu';
+
+  if (
+    /^(?:(?:今日|明日|明後日)の?(?:朝|昼|夕方|夜)?(?:に)?)?タスク(?:を)?(?:追加|登録)(?:したい|して|する|お願い)?[？?。!！]*$/.test(
+      value,
+    ) ||
+    /^(?:(?:今日|明日|明後日)の?(?:朝|昼|夕方|夜)?(?:に)?)?(?:お願い|依頼)(?:を)?(?:送りたい|したい|送って|する)[？?。!！]*$/.test(
+      value,
+    ) ||
+    /^(?:買い物|買うもの)(?:を)?(?:追加|登録)(?:したい|して|する|お願い)?[？?。!！]*$/.test(value)
+  )
+    return 'menu';
+
   if (/^今週(?:の予定(?:は|教えて)?|どうなってる)?[？?]?$/.test(value)) return 'week';
   if (/^明日(?:の予定(?:は|教えて)?|なにある)?[？?]?$/.test(value)) return 'tomorrow';
   if (/^今日(?:の予定(?:は|教えて)?|なにある)?[？?]?$/.test(value)) return 'today';
@@ -18,14 +40,14 @@ const message = (label: string, text = label): LineQuickReplyAction => ({
 });
 
 export function menuQuickReplies(): LineQuickReplyAction[] {
+  // Keep quick replies read-only. Creation shortcuts previously sent vague
+  // phrases such as 「明日の夜にタスクを追加したい」, which could be mistaken
+  // for an actual task. Registration is intentionally done by sending the
+  // concrete natural-language request itself.
   return [
     message('今日の予定', '今日の予定は？'),
     message('明日の予定', '明日の予定教えて'),
     message('今週の予定', '今週の予定は？'),
-    message('タスクを追加', '明日の夜にタスクを追加したい'),
-    message('お願いを送る', 'ママに明日の朝のお願いを送りたい'),
-    message('買い物を追加', '買い物を追加したい'),
-    message('朝/夜チェック', '今日の夜のチェックをしたい'),
     { type: 'uri', label: 'PWAを開く', uri: `${Deno.env.get('APP_BASE_URL') ?? ''}/today` },
   ];
 }
