@@ -18,7 +18,7 @@
 //   (new-or-duplicate) event. A genuine DB failure while persisting a new
 //   event propagates as 5xx so LINE's own delivery retries it — silently
 //   swallowing that failure and returning 200 would drop the event forever.
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import 'jsr:@supabase/functions-js@2/edge-runtime.d.ts';
 import { createServiceRoleClient, verifyLineSignature } from '../_shared/auth.ts';
 import { withServiceHandler } from '../_shared/handler.ts';
 import { kickLineWorkers } from './lineWorkerKick.ts';
