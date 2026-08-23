@@ -29,17 +29,23 @@ export function Modal({
     const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const originalOverflow = document.body.style.overflow;
     const originalTouchAction = document.body.style.touchAction;
+    const previousHistoryState = window.history.state;
     document.body.style.overflow = 'hidden';
     document.body.style.touchAction = 'none';
-    window.history.pushState({ ...window.history.state, familyOpsModal: modalId }, '');
+    window.history.pushState({ ...previousHistoryState, familyOpsModal: modalId }, '');
     panelRef.current?.focus();
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onCloseRef.current();
     };
     const onPopState = () => {
+      // Nested modals share the same popstate event. If the new history state
+      // belongs to this modal, a child modal just closed and this one must stay.
+      if (window.history.state?.familyOpsModal === modalId) return;
       restoredByBack.current = true;
       onCloseRef.current();
     };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('popstate', onPopState);
     return () => {
@@ -47,6 +53,12 @@ export function Modal({
       document.body.style.touchAction = originalTouchAction;
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('popstate', onPopState);
+      // A successful save can unmount a modal without pressing its close
+      // button. Restore the parent modal marker so Back/close still targets
+      // the right layer instead of leaving a stale modal id behind.
+      if (!restoredByBack.current && window.history.state?.familyOpsModal === modalId) {
+        window.history.replaceState(previousHistoryState, '');
+      }
       if (!restoredByBack.current && focused) focused.focus();
     };
   }, [modalId]);
