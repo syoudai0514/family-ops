@@ -61,7 +61,17 @@ export function QuickAdd({
             {quickAddOptions.map((option) => (
               <button key={option.target} type="button" onClick={() => choose(option.target)}>
                 <b>{option.label}</b>
-                {option.detail && <small>{option.detail}</small>}
+                {option.detail && (
+                  <small
+                    style={{
+                      color: 'var(--color-accent-text)',
+                      opacity: 0.9,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {option.detail}
+                  </small>
+                )}
               </button>
             ))}
           </div>
