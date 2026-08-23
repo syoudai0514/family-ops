@@ -36,7 +36,7 @@ Deno.test(
       editUrl: 'https://example.test/requests?pending=pending-1',
     });
     const raw = JSON.stringify(message);
-    assertStringIncludes(raw, 'この内容で送りますか？');
+    assertStringIncludes(raw, 'お願いの確認');
     assertStringIncludes(raw, 'action=confirm_pending&pending_action_id=pending-1');
     assertEquals(raw.includes('data=迎えお願い'), false);
   },
@@ -59,13 +59,16 @@ Deno.test('natural-language sender preview supports in-LINE edit before confirma
       targetLabel: 'パパ',
     }),
   );
+  assertStringIncludes(raw, 'タスクの確認');
+  assertStringIncludes(raw, '8/22 夜 ・ パパ');
   assertStringIncludes(raw, 'action=edit_pending&pending_action_id=pending-2');
   assertStringIncludes(raw, 'action=confirm_pending&pending_action_id=pending-2');
   assertEquals(raw.includes('病院の保険証を準備'), true);
+  assertEquals(raw.includes('この内容でいいですか？'), false);
 });
 
 Deno.test(
-  'three confirmation actions fit in two footer rows on iPhone LINE',
+  'three confirmation actions fit in two compact footer rows on iPhone LINE',
   () => {
     const message = buildPendingActionPreviewFlex({
       pendingActionId: 'pending-compact',
@@ -75,6 +78,7 @@ Deno.test(
       targetLabel: 'ママ',
     }) as {
       contents: {
+        body: { paddingAll: string; spacing: string };
         footer: {
           paddingAll: string;
           spacing: string;
@@ -90,8 +94,10 @@ Deno.test(
       };
     };
 
+    assertEquals(message.contents.body.paddingAll, '12px');
+    assertEquals(message.contents.body.spacing, 'xs');
     const footer = message.contents.footer;
-    assertEquals(footer.paddingAll, '8px');
+    assertEquals(footer.paddingAll, '6px');
     assertEquals(footer.spacing, 'xs');
     assertEquals(footer.contents.length, 2);
     assertEquals(footer.contents[0].type, 'button');
