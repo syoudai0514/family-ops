@@ -10,6 +10,7 @@ import {
 } from './calendarProjection';
 import { localIsoDate } from './dateHelpers';
 import { usePlanningData } from './usePlanningData';
+import './MonthView.css';
 
 function monthRange(anchor: Date) {
   const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
