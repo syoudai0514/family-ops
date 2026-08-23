@@ -67,8 +67,8 @@ function compactActionFooter(
   return {
     type: "box",
     layout: "vertical",
-    spacing: "none",
-    paddingAll: "4px",
+    spacing: "xs",
+    paddingAll: "6px",
     contents,
   };
 }
@@ -80,7 +80,7 @@ function compactBody(
     type: "box",
     layout: "vertical",
     spacing: "xs",
-    paddingAll: "9px",
+    paddingAll: "12px",
     contents,
   };
 }
@@ -163,7 +163,7 @@ export function buildPendingActionPreviewFlex(data: {
           data.targetLabel,
         ),
         fact("種別", data.kindLabel),
-        ...(data.detailLines ?? []).slice(0, 1).map((line) => ({
+        ...(data.detailLines ?? []).slice(0, 2).map((line) => ({
           type: "text",
           text: line,
           size: "xxs",
