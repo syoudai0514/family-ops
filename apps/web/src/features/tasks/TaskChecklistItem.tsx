@@ -145,7 +145,7 @@ export function TaskChecklistItem({
         {optionalOnlyChecklist && !completed && (
           <button
             type="button"
-            className="task-inline-finish"
+            className="secondary-button task-inline-finish"
             onClick={handleComplete}
             disabled={busy}
           >
@@ -213,7 +213,7 @@ export function TaskChecklistItem({
             ))
           )}
           {optionalOnlyChecklist && !completed && (
-            <li className="optional-checklist-hint">必要な項目だけチェックして、最後に「完了」を押します。</li>
+            <li className="empty-hint">必要な項目だけチェックして、最後に「完了」を押します。</li>
           )}
         </ul>
       )}
