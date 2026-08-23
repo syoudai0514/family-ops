@@ -1,0 +1,65 @@
+/* Mobile safety fixes for iOS Safari / LINE in-app browser. */
+@media (max-width: 899px) {
+  html,
+  body,
+  #root,
+  .app-root {
+    min-height: 100%;
+    min-height: 100dvh;
+  }
+
+  .app-root {
+    overflow-x: hidden;
+  }
+
+  .app-shell {
+    min-height: calc(100dvh - 64px);
+    /* Fixed bottom nav + iOS/LINE browser chrome need a larger content guard. */
+    padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
+    scroll-padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
+  }
+
+  .bottom-nav {
+    min-height: 64px;
+    padding-top: 0.35rem;
+    padding-bottom: max(0.55rem, env(safe-area-inset-bottom));
+    isolation: isolate;
+    pointer-events: auto;
+    touch-action: manipulation;
+  }
+
+  .bottom-nav-link,
+  .bottom-nav-add {
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .bottom-nav-link {
+    min-height: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.12rem;
+  }
+
+  .bottom-nav-link > span {
+    line-height: 1;
+    font-size: 1rem;
+  }
+
+  .week-cards,
+  .month-grid,
+  .shopping-list,
+  .task-list {
+    padding-bottom: 1rem;
+  }
+
+  .week-day-card:last-child,
+  .card:last-child {
+    margin-bottom: 1rem;
+  }
+}

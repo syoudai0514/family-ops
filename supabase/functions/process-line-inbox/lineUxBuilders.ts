@@ -35,10 +35,10 @@ function row(label: string, value: string): Record<string, unknown> {
   return {
     type: "box",
     layout: "horizontal",
-    spacing: "md",
-    paddingAll: "4px",
+    spacing: "sm",
+    paddingAll: "2px",
     contents: [
-      { type: "text", text: label, size: "sm", color: MUTED, flex: 2 },
+      { type: "text", text: label, size: "xs", color: MUTED, flex: 2 },
       {
         type: "text",
         text: value,
@@ -63,22 +63,22 @@ export function buildLineMenuFlex(appBaseUrl: string): Record<string, unknown> {
       header: {
         type: "box",
         layout: "vertical",
-        paddingAll: "16px",
+        paddingAll: "11px",
         backgroundColor: "#F2FBF7",
         contents: [
           {
             type: "text",
             text: "できること",
-            size: "xl",
+            size: "lg",
             weight: "bold",
             color: TEXT,
           },
           {
             type: "text",
             text: "文章でそのまま話しかけてOKです。",
-            size: "sm",
+            size: "xs",
             color: GREEN,
-            margin: "sm",
+            margin: "xs",
             wrap: true,
           },
         ],
@@ -86,14 +86,14 @@ export function buildLineMenuFlex(appBaseUrl: string): Record<string, unknown> {
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "sm",
-        paddingAll: "14px",
+        spacing: "xs",
+        paddingAll: "9px",
         contents: [
           {
             type: "text",
             text: "予定を確認",
             weight: "bold",
-            size: "sm",
+            size: "xs",
             color: MUTED,
           },
           {
@@ -106,33 +106,47 @@ export function buildLineMenuFlex(appBaseUrl: string): Record<string, unknown> {
               messageButton("今週", "今週の予定は？"),
             ],
           },
-          { type: "separator", margin: "md", color: BORDER },
+          { type: "separator", margin: "sm", color: BORDER },
           {
             type: "text",
             text: "追加・お願い",
             weight: "bold",
-            size: "sm",
+            size: "xs",
             color: MUTED,
-            margin: "md",
+            margin: "sm",
           },
-          messageButton("予定を追加", "予定を追加したい"),
-          messageButton("タスクを追加", "タスクを追加したい"),
-          messageButton("お願いを送る", "お願いを送りたい"),
-          messageButton("買い物を追加", "買い物を追加したい"),
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "xs",
+            contents: [
+              messageButton("予定", "予定を追加したい"),
+              messageButton("タスク", "タスクを追加したい"),
+            ],
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "xs",
+            contents: [
+              messageButton("お願い", "お願いを送りたい"),
+              messageButton("買い物", "買い物を追加したい"),
+            ],
+          },
           {
             type: "text",
             text: "例「明日の夜にゴミ出し」「牛乳を買い物に追加」",
-            size: "xs",
+            size: "xxs",
             color: MUTED,
             wrap: true,
-            margin: "md",
+            margin: "sm",
           },
         ],
       },
       footer: {
         type: "box",
         layout: "vertical",
-        paddingAll: "10px",
+        paddingAll: "4px",
         contents: [
           {
             type: "button",
@@ -160,33 +174,25 @@ export function buildIntentClarificationFlex(
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "sm",
-        paddingAll: "16px",
+        spacing: "xs",
+        paddingAll: "11px",
         contents: [
           {
             type: "text",
-            text: "まず確認してください",
-            size: "xl",
+            text: "どれとして登録しますか？",
+            size: "lg",
             weight: "bold",
             color: TEXT,
-          },
-          {
-            type: "text",
-            text: "内容を推定できませんでした。登録する種類を選んでください。",
-            size: "sm",
-            color: MUTED,
-            wrap: true,
           },
           ...(data.scheduleHint
             ? [{
               type: "text",
-              text: `日時の手がかり: ${data.scheduleHint}`,
+              text: `日時: ${data.scheduleHint}`,
               size: "xs",
               color: GREEN,
               wrap: true,
             }]
             : []),
-          { type: "separator", margin: "md", color: BORDER },
           {
             type: "box",
             layout: "horizontal",
@@ -219,18 +225,17 @@ export function buildIntentClarificationFlex(
           },
           {
             type: "text",
-            text: "選んだあと、不足している内容だけ1つずつ確認します。",
-            size: "xs",
+            text: "選んだあと、不足している内容だけ確認します。",
+            size: "xxs",
             color: MUTED,
             wrap: true,
-            margin: "sm",
           },
         ],
       },
       footer: {
         type: "box",
         layout: "vertical",
-        paddingAll: "8px",
+        paddingAll: "4px",
         contents: [
           actionButton(
             "キャンセル",
@@ -265,24 +270,24 @@ export function buildMissingTitleFlex(
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "sm",
-        paddingAll: "16px",
+        spacing: "xs",
+        paddingAll: "11px",
         contents: [
           {
             type: "text",
             text: "あと1つ教えてください",
-            size: "xl",
+            size: "lg",
             weight: "bold",
             color: TEXT,
           },
           {
             type: "text",
             text: `「${kindLabel}」として進めます。`,
-            size: "sm",
+            size: "xs",
             color: GREEN,
           },
           row("日時", data.scheduleLabel),
-          { type: "separator", margin: "sm", color: BORDER },
+          { type: "separator", margin: "xs", color: BORDER },
           {
             type: "text",
             text: data.kind === "shopping"
@@ -290,16 +295,15 @@ export function buildMissingTitleFlex(
               : data.kind === "request"
               ? "何をお願いしますか？"
               : "何を追加しますか？",
-            size: "lg",
+            size: "md",
             weight: "bold",
             color: TEXT,
             wrap: true,
           },
           {
             type: "text",
-            text:
-              "そのまま文章で返信してください。例「皮膚科の準備」「ゴミ出し」",
-            size: "xs",
+            text: "そのまま文章で返信してください。",
+            size: "xxs",
             color: MUTED,
             wrap: true,
           },
@@ -308,7 +312,7 @@ export function buildMissingTitleFlex(
       footer: {
         type: "box",
         layout: "vertical",
-        paddingAll: "8px",
+        paddingAll: "4px",
         contents: [
           actionButton(
             "キャンセル",
@@ -325,7 +329,9 @@ export function buildScheduleSummaryFlex(
   entries: CompactScheduleEntry[],
   appBaseUrl: string,
 ): Record<string, unknown> {
-  const shown = entries.slice(0, 8);
+  // Keep enough room for the navigation actions in iPhone LINE, including
+  // while the software keyboard is visible. The PWA remains the full view.
+  const shown = entries.slice(0, 6);
   const body: Record<string, unknown>[] = shown.map((entry) => {
     const time = entry.startsAt
       ? new Intl.DateTimeFormat("ja-JP", {
@@ -346,7 +352,7 @@ export function buildScheduleSummaryFlex(
     body.push({
       type: "text",
       text: `ほか${entries.length - shown.length}件`,
-      size: "xs",
+      size: "xxs",
       color: MUTED,
       align: "end",
     });
@@ -368,12 +374,12 @@ export function buildScheduleSummaryFlex(
       header: {
         type: "box",
         layout: "vertical",
-        paddingAll: "14px",
+        paddingAll: "9px",
         backgroundColor: "#F2FBF7",
         contents: [{
           type: "text",
           text: `📅 ${title}`,
-          size: "lg",
+          size: "md",
           weight: "bold",
           color: TEXT,
         }],
@@ -381,16 +387,16 @@ export function buildScheduleSummaryFlex(
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "xs",
-        paddingAll: "12px",
+        spacing: "none",
+        paddingAll: "8px",
         contents: body,
       },
       footer: {
         type: "box",
         layout: "horizontal",
         spacing: "xs",
-        paddingAll: "8px",
-        contents: [messageButton("明日の予定", "明日の予定教えて"), {
+        paddingAll: "4px",
+        contents: [messageButton("明日", "明日の予定教えて"), {
           type: "button",
           style: "secondary",
           height: "sm",

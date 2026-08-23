@@ -35,9 +35,9 @@ function flexButton(item: FlexFooterAction): Record<string, unknown> {
 
 /**
  * Keep confirmation actions inside two rows at most. LINE's iPhone client can
- * clip the bottom of a tall bubble even when every individual button uses
- * height=sm, so three vertically stacked buttons are not safe. The primary
- * action stays full width and secondary actions share one horizontal row.
+ * clip the bottom of a tall bubble while the keyboard is visible, so primary
+ * and secondary actions stay compact and every nonessential line lives outside
+ * the footer.
  */
 function compactActionFooter(
   actions: FlexFooterAction[],
@@ -98,10 +98,10 @@ export function buildPendingActionPreviewFlex(data: {
   const fact = (label: string, value: string): Record<string, unknown> => ({
     type: "box",
     layout: "horizontal",
-    spacing: "md",
-    paddingAll: "3px",
+    spacing: "sm",
+    paddingAll: "2px",
     contents: [
-      { type: "text", text: label, size: "sm", color: "#667085", flex: 2 },
+      { type: "text", text: label, size: "xs", color: "#667085", flex: 2 },
       {
         type: "text",
         text: value,
@@ -122,21 +122,21 @@ export function buildPendingActionPreviewFlex(data: {
       header: {
         type: "box",
         layout: "vertical",
-        paddingAll: "12px",
+        paddingAll: "9px",
         backgroundColor: "#F2FBF7",
         contents: [
           {
             type: "text",
             text: `${data.kindLabel}の確認`,
-            size: "lg",
+            size: "md",
             color: "#202124",
             weight: "bold",
           },
           ...(data.sourceLabel
             ? [{
               type: "text",
-              text: data.sourceLabel,
-              size: "xs",
+              text: "AIが推定しました。登録前に確認してください。",
+              size: "xxs",
               color: "#16815D",
               wrap: true,
               margin: "xs",
@@ -149,7 +149,7 @@ export function buildPendingActionPreviewFlex(data: {
           type: "text",
           text: data.title,
           weight: "bold",
-          size: "xl",
+          size: "lg",
           wrap: true,
           color: "#202124",
         },
@@ -166,18 +166,10 @@ export function buildPendingActionPreviewFlex(data: {
         ...(data.detailLines ?? []).slice(0, 2).map((line) => ({
           type: "text",
           text: line,
-          size: "xs",
+          size: "xxs",
           color: "#667085",
           wrap: true,
         })),
-        {
-          type: "text",
-          text: "登録前なら「編集」で日付・時間・担当・種別を変更できます。",
-          size: "xs",
-          color: "#667085",
-          wrap: true,
-          margin: "sm",
-        },
       ]),
       footer: compactActionFooter([
         {
@@ -214,6 +206,7 @@ export function buildAssignmentSenderPreviewFlex(data: {
     altText: `この内容で送りますか？ ${data.title}`,
     contents: {
       type: "bubble",
+      size: "mega",
       body: compactBody([
         {
           type: "text",
@@ -282,6 +275,7 @@ export function buildGeneralRequestFlex(data: {
     altText: `お願い: ${data.title}`,
     contents: {
       type: "bubble",
+      size: "mega",
       body: compactBody([
         {
           type: "text",
@@ -316,7 +310,7 @@ export function buildGeneralRequestFlex(data: {
         {
           type: "text",
           text: "引き受けるまでタスクにはなりません。",
-          size: "xs",
+          size: "xxs",
           wrap: true,
           color: "#777777",
         },
@@ -347,6 +341,7 @@ export function buildAssignmentRequestFlex(
     altText: `${scopeLabel}の担当変更のお願い: ${data.title}`,
     contents: {
       type: "bubble",
+      size: "mega",
       body: compactBody([
         {
           type: "text",
@@ -372,7 +367,7 @@ export function buildAssignmentRequestFlex(
         {
           type: "text",
           text: "「引き受ける」を押すまで、予定の担当は変わりません。",
-          size: "xs",
+          size: "xxs",
           wrap: true,
           color: "#777777",
         },

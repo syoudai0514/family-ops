@@ -21,11 +21,26 @@ const PRIMARY_NAV_ITEMS = [
   { to: '/history', label: '履歴', icon: '◷' },
 ];
 
+function isLineInAppBrowser(): boolean {
+  return typeof navigator !== 'undefined' && /\bLine\//i.test(navigator.userAgent);
+}
+
 function BottomNavLink({ item }: { item: (typeof PRIMARY_NAV_ITEMS)[number] }) {
   return (
     <NavLink
       to={item.to}
       className={({ isActive }) => (isActive ? 'bottom-nav-link active' : 'bottom-nav-link')}
+      onClick={(event) => {
+        // LINE's iOS in-app browser occasionally swallows SPA history navigation
+        // after a deep link. Fall back to a native page navigation there so the
+        // bottom tabs always remain operable.
+        if (isLineInAppBrowser()) {
+          event.preventDefault();
+          window.location.assign(item.to);
+          return;
+        }
+        window.scrollTo(0, 0);
+      }}
     >
       <span aria-hidden="true">{item.icon}</span>
       {item.label}
