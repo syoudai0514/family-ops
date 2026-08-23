@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import './App.css';
+import './mobileHotfix.css';
 import { SignIn } from './features/auth/SignIn';
 import { LoadingScreen } from './components/LoadingScreen';
 
