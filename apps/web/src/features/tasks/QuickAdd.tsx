@@ -40,6 +40,7 @@ export function QuickAdd({
   const [open, setOpen] = useState(false);
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const navigate = useNavigate();
+  const isBottomNavAdd = className?.split(/\s+/).includes('bottom-nav-add') ?? false;
   const choose = (target: QuickAddTarget) => {
     setOpen(false);
     if (target === 'task') setTaskFormOpen(true);
@@ -53,7 +54,25 @@ export function QuickAdd({
         className={className}
         onClick={() => setOpen(true)}
       >
-        {label}
+        {isBottomNavAdd ? (
+          <svg
+            aria-hidden="true"
+            focusable="false"
+            viewBox="0 0 24 24"
+            width="24"
+            height="24"
+          >
+            <path
+              d="M12 5v14M5 12h14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+            />
+          </svg>
+        ) : (
+          label
+        )}
       </button>
       {open && (
         <Modal title="追加するもの" onClose={() => setOpen(false)}>
