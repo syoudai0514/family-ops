@@ -175,7 +175,6 @@
 .month-page .month-day small.month-more {
   width: auto;
   justify-self: end;
-  justify-self: end;
   padding-inline: 0.15rem;
   background: transparent;
   color: var(--color-text-muted);
@@ -214,7 +213,8 @@
 @media (max-width: 899px) {
   .app-shell.month-page {
     padding-top: 0.7rem;
-    padding-inline: max(0.2rem, env(safe-area-inset-left));
+    padding-left: max(0.2rem, env(safe-area-inset-left));
+    padding-right: max(0.2rem, env(safe-area-inset-right));
   }
 
   .month-page .month-toolbar {
