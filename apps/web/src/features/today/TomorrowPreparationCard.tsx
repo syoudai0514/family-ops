@@ -41,7 +41,7 @@ export function TomorrowPreparationCard({
     setError(null);
     setSuccess(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.createPreparationHandoff, {
+      await callEdgeFunction(EDGE_FUNCTIONS.createHandover, {
         operation_id: newOperationId(),
         title: cleanTitle,
         scheduled_date: tomorrowDate,
@@ -67,17 +67,16 @@ export function TomorrowPreparationCard({
         <span>{formattedDate}</span>
       </div>
 
-      <p className="tomorrow-preparation-copy">
+      <p className="page-lead">
         登録すると、明日の「引き継ぎ・今日だけの準備」にチェック項目として出ます。
         {assigneeLabel ? ` 朝担当：${assigneeLabel}` : ' 朝担当はまだ未定です。'}
       </p>
 
-      <div className="preparation-preset-grid">
+      <div className="quick-add-list">
         {PRESETS.map((title) => (
           <button
             key={title}
             type="button"
-            className="preparation-preset-button"
             disabled={Boolean(busyTitle)}
             onClick={() => void register(title)}
           >
@@ -87,7 +86,7 @@ export function TomorrowPreparationCard({
         ))}
       </div>
 
-      <div className="preparation-custom-row">
+      <div className="task-item-actions preparation-custom-row">
         <input
           aria-label="その他の明日の準備"
           value={customTitle}
@@ -104,11 +103,7 @@ export function TomorrowPreparationCard({
         </button>
       </div>
 
-      {success && (
-        <p className="success-text" role="status">
-          ✓ {success}
-        </p>
-      )}
+      {success && <p role="status">✓ {success}</p>}
       {error && (
         <p className="error-text" role="alert">
           {error}
