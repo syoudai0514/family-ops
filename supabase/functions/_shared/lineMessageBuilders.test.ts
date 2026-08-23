@@ -65,7 +65,7 @@ Deno.test('natural-language sender preview supports in-LINE edit before confirma
 });
 
 Deno.test(
-  'all confirmation actions use the compact footer so iPhone LINE can show every button',
+  'three confirmation actions fit in two footer rows on iPhone LINE',
   () => {
     const message = buildPendingActionPreviewFlex({
       pendingActionId: 'pending-compact',
@@ -77,21 +77,59 @@ Deno.test(
       contents: {
         footer: {
           paddingAll: string;
-          contents: Array<{ height: string; action: { label: string } }>;
+          spacing: string;
+          contents: Array<
+            | { type: 'button'; height: string; action: { label: string } }
+            | {
+                type: 'box';
+                layout: string;
+                contents: Array<{ type: 'button'; height: string; action: { label: string } }>;
+              }
+          >;
         };
       };
     };
-    assertEquals(message.contents.footer.paddingAll, '12px');
-    assertEquals(
-      message.contents.footer.contents.map((button) => button.height),
-      ['sm', 'sm', 'sm'],
-    );
-    assertEquals(
-      message.contents.footer.contents.map((button) => button.action.label),
-      ['この内容で登録', '編集', 'キャンセル'],
-    );
+
+    const footer = message.contents.footer;
+    assertEquals(footer.paddingAll, '8px');
+    assertEquals(footer.spacing, 'xs');
+    assertEquals(footer.contents.length, 2);
+    assertEquals(footer.contents[0].type, 'button');
+    assertEquals((footer.contents[0] as { action: { label: string } }).action.label, 'この内容で登録');
+
+    const secondaryRow = footer.contents[1] as {
+      type: 'box';
+      layout: string;
+      contents: Array<{ height: string; action: { label: string } }>;
+    };
+    assertEquals(secondaryRow.type, 'box');
+    assertEquals(secondaryRow.layout, 'horizontal');
+    assertEquals(secondaryRow.contents.map((button) => button.height), ['sm', 'sm']);
+    assertEquals(secondaryRow.contents.map((button) => button.action.label), ['編集', 'キャンセル']);
   },
 );
+
+Deno.test('two recipient actions share one horizontal row', () => {
+  const message = buildAssignmentRequestFlex({
+    requestId: 'request-compact',
+    title: '今日のお迎え',
+    message: 'お願いできますか？',
+    scope: 'once',
+  }) as {
+    contents: {
+      footer: {
+        contents: Array<{
+          type: 'box';
+          layout: string;
+          contents: Array<{ action: { label: string } }>;
+        }>;
+      };
+    };
+  };
+  const row = message.contents.footer.contents[0];
+  assertEquals(row.layout, 'horizontal');
+  assertEquals(row.contents.map((button) => button.action.label), ['引き受ける', '今日は難しい']);
+});
 
 Deno.test(
   'structured sender preview keeps appointment context and checklist visible before confirmation',

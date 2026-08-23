@@ -21,6 +21,22 @@ export type LineIntent = {
   source: 'deterministic' | 'gemini';
 };
 
+/**
+ * Menu/guidance phrases express an intention to start adding something, not
+ * the task itself. Never let Gemini turn these into placeholder titles such
+ * as "タスクの追加". Returning null makes the existing safe clarification path
+ * ask for the actual content instead of creating a bogus pending action.
+ */
+export function isLineCreateStarter(text: string): boolean {
+  const value = text
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+    .replace(/[。.!！?？]+$/g, '');
+  return /^(?:(?:パパ|ママ|父|母|お父さん|お母さん|嫁さん|奥さん|妻)に)?(?:(?:今日|明日|明後日)(?:の)?(?:朝|昼|夕方|夜)?(?:の|に)?)?(?:タスク(?:を)?追加したい|お願い(?:を)?送りたい|買い物(?:を)?追加したい)$/.test(
+    value,
+  );
+}
+
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 function jstDateParts(now: Date): { year: number; month: number; day: number } {
@@ -368,6 +384,7 @@ export async function extractLineIntent(
   text: string,
   now = new Date(),
 ): Promise<LineIntent | null> {
+  if (isLineCreateStarter(text)) return null;
   // Natural language is AI-first. The deterministic parser is only a safe
   // availability fallback when the provider is unavailable or rejects output.
   return (await geminiLineIntent(text, now)) ?? deterministicLineIntent(text, now);

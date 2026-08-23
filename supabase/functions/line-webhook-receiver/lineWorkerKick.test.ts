@@ -6,9 +6,9 @@ Deno.test('immediate kick drains inbox, pending actions, then delivery', async (
   const result = await kickLineWorkers(
     'https://example.supabase.co/',
     'worker-token',
-    async (url) => {
+    (url) => {
       calls.push(String(url));
-      return new Response(null, { status: 200 });
+      return Promise.resolve(new Response(null, { status: 200 }));
     },
   );
   assertEquals(result, { ok: true, failedWorker: null });
@@ -23,7 +23,7 @@ Deno.test('a failed immediate kick leaves durable work for cron recovery', async
   const result = await kickLineWorkers(
     'https://example.supabase.co',
     'worker-token',
-    async () => new Response(null, { status: 503 }),
+    () => Promise.resolve(new Response(null, { status: 503 })),
   );
   assertEquals(result, { ok: false, failedWorker: 'process-line-inbox' });
 });

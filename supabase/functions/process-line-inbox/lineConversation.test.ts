@@ -26,6 +26,7 @@ Deno.test('menu has one-tap schedule shortcuts and schedule reply remains compac
       roleLabel: index === 0 ? 'P' : null,
     })),
   );
-  assertStringIncludes(text, '09:30 予定1 P');
+  // 01:30 UTC is 10:30 in Asia/Tokyo.
+  assertStringIncludes(text, '10:30 予定1 P');
   assertStringIncludes(text, 'ほか1件');
 });
