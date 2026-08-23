@@ -44,7 +44,7 @@ function compactActionFooter(actions: FlexFooterAction[]): Record<string, unknow
           {
             type: 'box',
             layout: 'horizontal',
-            spacing: 'sm',
+            spacing: 'xs',
             contents: buttons.slice(1),
           },
         ]
@@ -53,7 +53,7 @@ function compactActionFooter(actions: FlexFooterAction[]): Record<string, unknow
             {
               type: 'box',
               layout: 'horizontal',
-              spacing: 'sm',
+              spacing: 'xs',
               contents: buttons,
             },
           ]
@@ -63,7 +63,17 @@ function compactActionFooter(actions: FlexFooterAction[]): Record<string, unknow
     type: 'box',
     layout: 'vertical',
     spacing: 'xs',
-    paddingAll: '8px',
+    paddingAll: '6px',
+    contents,
+  };
+}
+
+function compactBody(contents: Record<string, unknown>[]): Record<string, unknown> {
+  return {
+    type: 'box',
+    layout: 'vertical',
+    spacing: 'xs',
+    paddingAll: '12px',
     contents,
   };
 }
@@ -83,37 +93,30 @@ export function buildPendingActionPreviewFlex(data: {
     altText: `確認: ${data.title}`,
     contents: {
       type: 'bubble',
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          { type: 'text', text: 'この内容でいいですか？', weight: 'bold', size: 'lg' },
-          { type: 'text', text: data.kindLabel, size: 'sm', color: '#166B5D', weight: 'bold' },
-          { type: 'text', text: data.title, weight: 'bold', size: 'xl', wrap: true },
-          {
-            type: 'text',
-            text: `日時: ${data.scheduleLabel}`,
-            size: 'sm',
-            color: '#555555',
-            wrap: true,
-          },
-          {
-            type: 'text',
-            text: `担当: ${data.targetLabel}`,
-            size: 'sm',
-            color: '#555555',
-            wrap: true,
-          },
-          ...(data.detailLines ?? []).slice(0, 3).map((line) => ({
-            type: 'text',
-            text: line,
-            size: 'sm',
-            color: '#555555',
-            wrap: true,
-          })),
-        ],
-      },
+      body: compactBody([
+        {
+          type: 'text',
+          text: `${data.kindLabel}の確認`,
+          size: 'sm',
+          color: '#166B5D',
+          weight: 'bold',
+        },
+        { type: 'text', text: data.title, weight: 'bold', size: 'lg', wrap: true },
+        {
+          type: 'text',
+          text: `${data.scheduleLabel} ・ ${data.targetLabel}`,
+          size: 'sm',
+          color: '#555555',
+          wrap: true,
+        },
+        ...(data.detailLines ?? []).slice(0, 2).map((line) => ({
+          type: 'text',
+          text: line,
+          size: 'xs',
+          color: '#666666',
+          wrap: true,
+        })),
+      ]),
       footer: compactActionFooter([
         {
           label: data.confirmLabel ?? 'この内容で登録',
@@ -144,20 +147,15 @@ export function buildAssignmentSenderPreviewFlex(data: {
     altText: `この内容で送りますか？ ${data.title}`,
     contents: {
       type: 'bubble',
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          { type: 'text', text: 'この内容で送りますか？', weight: 'bold', size: 'lg' },
-          { type: 'text', text: data.title, weight: 'bold', wrap: true },
-          { type: 'text', text: data.message, wrap: true, color: '#555555' },
-          ...(data.scheduleLabel
-            ? [{ type: 'text', text: data.scheduleLabel, size: 'sm', color: '#555555' }]
-            : []),
-          { type: 'text', text: `${scopeLabel} / 自分 → パートナー`, size: 'xs', color: '#777777' },
-        ],
-      },
+      body: compactBody([
+        { type: 'text', text: 'お願いの確認', weight: 'bold', size: 'sm', color: '#166B5D' },
+        { type: 'text', text: data.title, weight: 'bold', size: 'lg', wrap: true },
+        { type: 'text', text: data.message, wrap: true, size: 'sm', color: '#555555' },
+        ...(data.scheduleLabel
+          ? [{ type: 'text', text: data.scheduleLabel, size: 'xs', color: '#666666', wrap: true }]
+          : []),
+        { type: 'text', text: `${scopeLabel} / 自分 → パートナー`, size: 'xs', color: '#777777' },
+      ]),
       footer: compactActionFooter([
         {
           label: '送る',
@@ -186,37 +184,33 @@ export function buildGeneralRequestFlex(data: {
     altText: `お願い: ${data.title}`,
     contents: {
       type: 'bubble',
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          {
-            type: 'text',
-            text: 'お願いが届いています',
-            weight: 'bold',
-            size: 'sm',
-            color: '#166B5D',
-          },
-          { type: 'text', text: data.title, weight: 'bold', size: 'xl', wrap: true },
-          ...(data.scheduleLabel
-            ? [{ type: 'text', text: data.scheduleLabel, size: 'sm', color: '#555555', wrap: true }]
-            : []),
-          {
-            type: 'text',
-            text: data.message || 'お願いできますか？',
-            wrap: true,
-            color: '#555555',
-          },
-          {
-            type: 'text',
-            text: '引き受けるまでタスクにはなりません。',
-            size: 'xs',
-            wrap: true,
-            color: '#777777',
-          },
-        ],
-      },
+      body: compactBody([
+        {
+          type: 'text',
+          text: 'お願いが届いています',
+          weight: 'bold',
+          size: 'sm',
+          color: '#166B5D',
+        },
+        { type: 'text', text: data.title, weight: 'bold', size: 'lg', wrap: true },
+        ...(data.scheduleLabel
+          ? [{ type: 'text', text: data.scheduleLabel, size: 'sm', color: '#555555', wrap: true }]
+          : []),
+        {
+          type: 'text',
+          text: data.message || 'お願いできますか？',
+          wrap: true,
+          size: 'sm',
+          color: '#555555',
+        },
+        {
+          type: 'text',
+          text: '引き受けるまでタスクにはなりません。',
+          size: 'xs',
+          wrap: true,
+          color: '#777777',
+        },
+      ]),
       footer: compactActionFooter([
         {
           label: '引き受ける',
@@ -241,34 +235,30 @@ export function buildAssignmentRequestFlex(
     altText: `${scopeLabel}の担当変更のお願い: ${data.title}`,
     contents: {
       type: 'bubble',
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          {
-            type: 'text',
-            text: `${scopeLabel}の担当変更`,
-            weight: 'bold',
-            size: 'sm',
-            color: '#166B5D',
-          },
-          { type: 'text', text: data.title, weight: 'bold', size: 'xl', wrap: true },
-          {
-            type: 'text',
-            text: data.message || '担当を引き受けられますか？',
-            wrap: true,
-            color: '#555555',
-          },
-          {
-            type: 'text',
-            text: '「引き受ける」を押すまで、予定の担当は変わりません。',
-            size: 'xs',
-            wrap: true,
-            color: '#777777',
-          },
-        ],
-      },
+      body: compactBody([
+        {
+          type: 'text',
+          text: `${scopeLabel}の担当変更`,
+          weight: 'bold',
+          size: 'sm',
+          color: '#166B5D',
+        },
+        { type: 'text', text: data.title, weight: 'bold', size: 'lg', wrap: true },
+        {
+          type: 'text',
+          text: data.message || '担当を引き受けられますか？',
+          wrap: true,
+          size: 'sm',
+          color: '#555555',
+        },
+        {
+          type: 'text',
+          text: '「引き受ける」を押すまで、予定の担当は変わりません。',
+          size: 'xs',
+          wrap: true,
+          color: '#777777',
+        },
+      ]),
       footer: compactActionFooter([
         {
           label: '引き受ける',
