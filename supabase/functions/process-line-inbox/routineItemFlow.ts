@@ -23,7 +23,9 @@ export interface RoutineSessionItem {
 
 const UNFINISHED_STATUSES = new Set(["todo", "in_progress"]);
 
-export function unfinishedItems(items: RoutineSessionItem[]): RoutineSessionItem[] {
+export function unfinishedItems(
+  items: RoutineSessionItem[],
+): RoutineSessionItem[] {
   return items.filter((i) => UNFINISHED_STATUSES.has(i.status));
 }
 
@@ -46,7 +48,9 @@ export function pickNextUnfinished(
   const pending = unfinishedItems(items);
   if (pending.length === 0) return null;
   if (!afterTaskInstanceId) return pending[0];
-  const idx = pending.findIndex((i) => i.task_instance_id === afterTaskInstanceId);
+  const idx = pending.findIndex((i) =>
+    i.task_instance_id === afterTaskInstanceId
+  );
   if (idx === -1) return pending[0];
   return pending[(idx + 1) % pending.length];
 }
@@ -56,30 +60,37 @@ export function pickNextUnfinished(
 // data carries only opaque resource ids (session_id, task_instance_id) --
 // no bearer secret, matching the existing routine_item/routine_complete
 // postback contract this reuses unchanged for 完了/相手が対応/今回は不要.
-export function buildItemQuickReply(sessionId: string, taskInstanceId: string): LinePostbackQuickReplyAction[] {
+export function buildItemQuickReply(
+  sessionId: string,
+  taskInstanceId: string,
+): LinePostbackQuickReplyAction[] {
   return [
     {
       type: "postback",
       label: "完了",
-      data: `action=routine_item&session_id=${sessionId}&task_instance_id=${taskInstanceId}&value=complete`,
+      data:
+        `action=routine_item&session_id=${sessionId}&task_instance_id=${taskInstanceId}&value=complete`,
       displayText: "完了",
     },
     {
       type: "postback",
       label: "相手が対応",
-      data: `action=routine_item&session_id=${sessionId}&task_instance_id=${taskInstanceId}&value=partner_handled`,
+      data:
+        `action=routine_item&session_id=${sessionId}&task_instance_id=${taskInstanceId}&value=partner_handled`,
       displayText: "相手が対応",
     },
     {
       type: "postback",
       label: "今回は不要",
-      data: `action=routine_item&session_id=${sessionId}&task_instance_id=${taskInstanceId}&value=skip`,
+      data:
+        `action=routine_item&session_id=${sessionId}&task_instance_id=${taskInstanceId}&value=skip`,
       displayText: "今回は不要",
     },
     {
       type: "postback",
       label: "次へ",
-      data: `action=routine_item_next&session_id=${sessionId}&task_instance_id=${taskInstanceId}`,
+      data:
+        `action=routine_item_next&session_id=${sessionId}&task_instance_id=${taskInstanceId}`,
       displayText: "次へ",
     },
   ];
@@ -90,14 +101,20 @@ export function buildItemQuickReply(sessionId: string, taskInstanceId: string): 
 // available as fallback") holds even when a reply attempt fails and the
 // confirmation degrades to a plain-text push-outbox fallback that cannot
 // carry the postback buttons (see lineMessaging.ts's push-fallback path).
-export function buildItemPromptText(sessionId: string, item: RoutineSessionItem): string {
+export function buildItemPromptText(
+  sessionId: string,
+  item: RoutineSessionItem,
+): string {
   return `📝 次の項目\n・${item.title}\n\n${buildCheckinLink(sessionId)}`;
 }
 
 // docs/adr/0007 decision 2's existing pattern, reused here: a
 // superseded/submitted/auto_closed session, or one this actor no longer
 // owns, must never mutate -- only ever resolve to the latest safe link.
-export function buildStaleSessionText(currentSessionId: string | null, fallbackSessionId: string): string {
+export function buildStaleSessionText(
+  currentSessionId: string | null,
+  fallbackSessionId: string,
+): string {
   const link = buildCheckinLink(currentSessionId ?? fallbackSessionId);
   return `⚠ このチェックは最新ではありません。最新の状態はこちら:\n${link}`;
 }
