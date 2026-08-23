@@ -1,13 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { mamaUserId, papaUserId } from '../../lib/familyRoles';
-import {
-  assigneeToken,
-  buildCalendarProjection,
-  transportTokens,
-  type CalendarProjectionItem,
-} from './calendarProjection';
+import { buildCalendarProjection, transportTokens, type CalendarProjectionItem } from './calendarProjection';
 import { localIsoDate } from './dateHelpers';
+import { DayAgendaSheet } from './DayAgendaSheet';
 import { usePlanningData } from './usePlanningData';
 import './MonthView.css';
 
@@ -38,27 +34,17 @@ function compactEventTitle(item: CalendarProjectionItem) {
   return withoutLeadingTime || title;
 }
 
-function selectedDateLabel(date: string) {
-  const parsed = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return date;
-  return new Intl.DateTimeFormat('ja-JP', {
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short',
-  }).format(parsed);
-}
-
 export function MonthView() {
   const { household, members } = useHousehold();
   const [anchor, setAnchor] = useState(() => new Date());
   const { start, end } = monthRange(anchor);
-  const { tasks, occurrences, loading, error } = usePlanningData(
+  const { tasks, occurrences, loading, error, refresh } = usePlanningData(
     household?.id ?? null,
     localIsoDate(start),
     localIsoDate(end),
   );
   const [selected, setSelected] = useState(localIsoDate(new Date()));
-  const [detail, setDetail] = useState<CalendarProjectionItem | null>(null);
+  const [sheetDate, setSheetDate] = useState<string | null>(null);
   const primaryUserId = papaUserId(members);
   const partnerUserId = mamaUserId(members);
   const projection = useMemo(
@@ -81,13 +67,8 @@ export function MonthView() {
     const next = new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1);
     setAnchor(next);
     setSelected(localIsoDate(next));
-    setDetail(null);
+    setSheetDate(null);
   };
-
-  const selectedTransport = projection.transportByDate.get(selected);
-  const selectedTokens = transportTokens(selectedTransport, primaryUserId, partnerUserId);
-  const selectedHasTransport =
-    selectedTokens.dropoff.token !== '—' || selectedTokens.pickup.token !== '—';
 
   return (
     <main className="app-shell planning-page month-page">
@@ -150,9 +131,10 @@ export function MonthView() {
                   type="button"
                   onClick={() => {
                     setSelected(date);
-                    setDetail(null);
+                    setSheetDate(date);
                   }}
                   aria-pressed={selected === date}
+                  aria-label={`${date}の予定とやることを開く`}
                   className={[
                     'month-day',
                     selected === date ? 'selected' : '',
@@ -206,64 +188,16 @@ export function MonthView() {
               );
             })}
           </div>
-          <section className="card day-detail">
-            <h2>{selectedDateLabel(selected)}の予定</h2>
-            {!selectedHasTransport && (projection.itemsByDate.get(selected) ?? []).length === 0 ? (
-              <p className="empty-hint">予定はありません</p>
-            ) : (
-              <ul>
-                {selectedHasTransport && (
-                  <li className="day-transport-summary">
-                    {selectedTokens.dropoff.token !== '—' && (
-                      <span>
-                        送<b className={`transport-owner ${selectedTokens.dropoff.tone}`}>{selectedTokens.dropoff.token}</b>
-                      </span>
-                    )}
-                    {selectedTokens.pickup.token !== '—' && (
-                      <span>
-                        迎<b className={`transport-owner ${selectedTokens.pickup.tone}`}>{selectedTokens.pickup.token}</b>
-                      </span>
-                    )}
-                  </li>
-                )}
-                {(projection.itemsByDate.get(selected) ?? []).map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      className="text-button calendar-detail-trigger"
-                      onClick={() => setDetail(item)}
-                    >
-                      {item.fullTitle} <small>[{assigneeToken(item.ownerKind)}]</small>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-          {detail && (
-            <section className="card calendar-detail" aria-label="Google Calendar予定の詳細">
-              <div className="section-heading">
-                <h2>予定の詳細</h2>
-                <button type="button" className="text-button" onClick={() => setDetail(null)}>
-                  閉じる
-                </button>
-              </div>
-              <strong>{detail.fullTitle}</strong>
-              <p>
-                開始: {detail.allDay ? `${detail.localDate}（終日）` : detail.startsAt ?? '—'}
-              </p>
-              <p>
-                終了: {detail.allDay ? `${detail.localDate}（終日）` : detail.endsAt ?? '—'}
-              </p>
-              {detail.location && <p>場所: {detail.location}</p>}
-              {detail.description && <p>説明: {detail.description}</p>}
-              <p>
-                出所: {detail.source === 'google' ? 'Google Calendar' : 'Family Ops'}
-                {detail.sourceCalendar ? ` · ${detail.sourceCalendar}` : ''}
-              </p>
-            </section>
-          )}
+          <p className="month-tap-hint">日付をタップすると、その日の予定・送迎・やることをまとめて確認できます。</p>
         </>
+      )}
+
+      {sheetDate && (
+        <DayAgendaSheet
+          date={sheetDate}
+          onClose={() => setSheetDate(null)}
+          onChanged={refresh}
+        />
       )}
     </main>
   );
