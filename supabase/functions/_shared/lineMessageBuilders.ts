@@ -17,22 +17,54 @@ type FlexFooterAction =
   | { label: string; data: string; primary?: boolean; type?: 'postback' }
   | { label: string; uri: string; primary?: boolean; type: 'uri' };
 
-/** One compact, shared footer prevents action buttons being pushed off an iPhone LINE card. */
+function flexButton(item: FlexFooterAction): Record<string, unknown> {
+  return {
+    type: 'button',
+    style: item.primary ? 'primary' : 'secondary',
+    height: 'sm',
+    action:
+      item.type === 'uri'
+        ? { type: 'uri', label: item.label, uri: item.uri }
+        : { type: 'postback', label: item.label, data: item.data, displayText: item.label },
+  };
+}
+
+/**
+ * Keep confirmation actions inside two rows at most. LINE's iPhone client can
+ * clip the bottom of a tall bubble even when every individual button uses
+ * height=sm, so three vertically stacked buttons are not safe. The primary
+ * action stays full width and secondary actions share one horizontal row.
+ */
 function compactActionFooter(actions: FlexFooterAction[]): Record<string, unknown> {
+  const buttons = actions.map(flexButton);
+  const contents =
+    buttons.length >= 3
+      ? [
+          buttons[0],
+          {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'sm',
+            contents: buttons.slice(1),
+          },
+        ]
+      : buttons.length === 2
+        ? [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              spacing: 'sm',
+              contents: buttons,
+            },
+          ]
+        : buttons;
+
   return {
     type: 'box',
     layout: 'vertical',
-    spacing: 'sm',
-    paddingAll: '12px',
-    contents: actions.map((item) => ({
-      type: 'button',
-      style: item.primary ? 'primary' : 'secondary',
-      height: 'sm',
-      action:
-        item.type === 'uri'
-          ? { type: 'uri', label: item.label, uri: item.uri }
-          : { type: 'postback', label: item.label, data: item.data, displayText: item.label },
-    })),
+    spacing: 'xs',
+    paddingAll: '8px',
+    contents,
   };
 }
 
@@ -54,7 +86,7 @@ export function buildPendingActionPreviewFlex(data: {
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'md',
+        spacing: 'sm',
         contents: [
           { type: 'text', text: 'この内容でいいですか？', weight: 'bold', size: 'lg' },
           { type: 'text', text: data.kindLabel, size: 'sm', color: '#166B5D', weight: 'bold' },
@@ -80,13 +112,6 @@ export function buildPendingActionPreviewFlex(data: {
             color: '#555555',
             wrap: true,
           })),
-          {
-            type: 'text',
-            text: '確定前ならLINE内で編集できます。',
-            size: 'xs',
-            wrap: true,
-            color: '#777777',
-          },
         ],
       },
       footer: compactActionFooter([
@@ -122,7 +147,7 @@ export function buildAssignmentSenderPreviewFlex(data: {
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'md',
+        spacing: 'sm',
         contents: [
           { type: 'text', text: 'この内容で送りますか？', weight: 'bold', size: 'lg' },
           { type: 'text', text: data.title, weight: 'bold', wrap: true },
@@ -164,7 +189,7 @@ export function buildGeneralRequestFlex(data: {
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'md',
+        spacing: 'sm',
         contents: [
           {
             type: 'text',
@@ -219,7 +244,7 @@ export function buildAssignmentRequestFlex(
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'md',
+        spacing: 'sm',
         contents: [
           {
             type: 'text',
