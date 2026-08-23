@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
-import { papaUserId, mamaUserId } from '../../lib/familyRoles';
+import { mamaUserId, papaUserId } from '../../lib/familyRoles';
 import {
   assigneeToken,
   buildCalendarProjection,
-  transportLabel,
   transportTokens,
   type CalendarProjectionItem,
 } from './calendarProjection';
@@ -18,12 +17,35 @@ function monthRange(anchor: Date) {
   return { start, end };
 }
 
-function transportPersonLabel(token: string) {
-  if (token === 'P') return 'パパ';
-  if (token === 'M') return 'ママ';
-  if (token === '—') return '';
-  if (token === '未') return '未定';
-  return token;
+function compactClock(value: string | null) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+    .format(parsed)
+    .replace(':', '');
+}
+
+function compactEventTitle(item: CalendarProjectionItem) {
+  const title = item.fullTitle.trim();
+  if (item.allDay) return title;
+  const withoutLeadingTime = title.replace(/^\s*\d{1,2}(?::\d{2}|時(?:\d{1,2}分?)?)\s*/, '');
+  return withoutLeadingTime || title;
+}
+
+function selectedDateLabel(date: string) {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return new Intl.DateTimeFormat('ja-JP', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(parsed);
 }
 
 export function MonthView() {
@@ -59,7 +81,13 @@ export function MonthView() {
     const next = new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1);
     setAnchor(next);
     setSelected(localIsoDate(next));
+    setDetail(null);
   };
+
+  const selectedTransport = projection.transportByDate.get(selected);
+  const selectedTokens = transportTokens(selectedTransport, primaryUserId, partnerUserId);
+  const selectedHasTransport =
+    selectedTokens.dropoff.token !== '—' || selectedTokens.pickup.token !== '—';
 
   return (
     <main className="app-shell planning-page month-page">
@@ -109,55 +137,69 @@ export function MonthView() {
               const transport = projection.transportByDate.get(date);
               const dayItems = projection.itemsByDate.get(date) ?? [];
               const tokens = transportTokens(transport, primaryUserId, partnerUserId);
-              const transportRows = [
-                tokens.dropoff.token !== '—'
-                  ? {
-                      key: 'dropoff',
-                      label: `${transportPersonLabel(tokens.dropoff.token)}送`,
-                      tone: tokens.dropoff.tone,
-                    }
-                  : null,
-                tokens.pickup.token !== '—'
-                  ? {
-                      key: 'pickup',
-                      label: `${transportPersonLabel(tokens.pickup.token)}迎`,
-                      tone: tokens.pickup.tone,
-                    }
-                  : null,
-              ].filter(Boolean) as Array<{ key: string; label: string; tone: string }>;
-              const visibleItems = dayItems.slice(0, 3);
+              const hasTransport =
+                tokens.dropoff.token !== '—' || tokens.pickup.token !== '—';
+              const visibleItemLimit = hasTransport ? 2 : 3;
+              const visibleItems = dayItems.slice(0, visibleItemLimit);
               const hiddenCount = Math.max(0, dayItems.length - visibleItems.length);
+              const dayOfWeek = day.getDay();
 
               return (
                 <button
                   key={date}
                   type="button"
-                  onClick={() => setSelected(date)}
+                  onClick={() => {
+                    setSelected(date);
+                    setDetail(null);
+                  }}
                   aria-pressed={selected === date}
                   className={[
                     'month-day',
                     selected === date ? 'selected' : '',
                     date === today ? 'today' : '',
+                    dayOfWeek === 6 ? 'saturday' : '',
+                    dayOfWeek === 0 ? 'sunday' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
                 >
                   <span className="month-date-number">{day.getDate()}</span>
                   <span className="month-events">
-                    {transportRows.map((row) => (
-                      <small key={row.key} className={`transport-chip ${row.tone}`}>
-                        {row.label}
+                    {visibleItems.map((item) => {
+                      const clock = compactClock(item.startsAt);
+                      return (
+                        <small
+                          key={item.id}
+                          title={item.shortTitle}
+                          className={`projection-row ${item.source} owner-${item.ownerKind} ${
+                            item.allDay ? 'all-day' : 'timed'
+                          }`}
+                        >
+                          {clock && <span className="event-time">{clock}</span>}
+                          <span className="event-title">{compactEventTitle(item)}</span>
+                        </small>
+                      );
+                    })}
+                    {hasTransport && (
+                      <small className="transport-compact" aria-label="送り迎え担当">
+                        {tokens.dropoff.token !== '—' && (
+                          <span className="transport-part">
+                            送
+                            <b className={`transport-owner ${tokens.dropoff.tone}`}>
+                              {tokens.dropoff.token}
+                            </b>
+                          </span>
+                        )}
+                        {tokens.pickup.token !== '—' && (
+                          <span className="transport-part">
+                            迎
+                            <b className={`transport-owner ${tokens.pickup.tone}`}>
+                              {tokens.pickup.token}
+                            </b>
+                          </span>
+                        )}
                       </small>
-                    ))}
-                    {visibleItems.map((item) => (
-                      <small
-                        key={item.id}
-                        title={item.shortTitle}
-                        className={`projection-row ${item.source} owner-${item.ownerKind}`}
-                      >
-                        {item.shortTitle}
-                      </small>
-                    ))}
+                    )}
                     {hiddenCount > 0 && <small className="month-more">+{hiddenCount}</small>}
                   </span>
                 </button>
@@ -165,18 +207,22 @@ export function MonthView() {
             })}
           </div>
           <section className="card day-detail">
-            <h2>{selected} の予定</h2>
-            {!projection.transportByDate.get(selected) &&
-            (projection.itemsByDate.get(selected) ?? []).length === 0 ? (
+            <h2>{selectedDateLabel(selected)}の予定</h2>
+            {!selectedHasTransport && (projection.itemsByDate.get(selected) ?? []).length === 0 ? (
               <p className="empty-hint">予定はありません</p>
             ) : (
               <ul>
-                {projection.transportByDate.get(selected) && (
-                  <li>
-                    {transportLabel(
-                      projection.transportByDate.get(selected),
-                      primaryUserId,
-                      partnerUserId,
+                {selectedHasTransport && (
+                  <li className="day-transport-summary">
+                    {selectedTokens.dropoff.token !== '—' && (
+                      <span>
+                        送<b className={`transport-owner ${selectedTokens.dropoff.tone}`}>{selectedTokens.dropoff.token}</b>
+                      </span>
+                    )}
+                    {selectedTokens.pickup.token !== '—' && (
+                      <span>
+                        迎<b className={`transport-owner ${selectedTokens.pickup.tone}`}>{selectedTokens.pickup.token}</b>
+                      </span>
                     )}
                   </li>
                 )}
