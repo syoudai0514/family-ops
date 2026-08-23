@@ -1,0 +1,525 @@
+.day-agenda-backdrop {
+  padding: max(0.4rem, env(safe-area-inset-top)) 0 0;
+  background: rgba(16, 20, 25, 0.34);
+}
+
+.day-agenda-modal {
+  position: relative;
+  width: min(100%, 760px);
+  max-width: 760px;
+  max-height: min(94dvh, calc(100dvh - env(safe-area-inset-top) - 0.35rem));
+  padding: 0;
+  border-radius: 1.45rem 1.45rem 0 0;
+  overflow: hidden;
+  background: var(--color-surface);
+  box-shadow: 0 -12px 42px rgba(12, 22, 30, 0.18);
+}
+
+.day-agenda-modal > .modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 1.05rem 1rem 0.8rem;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.day-agenda-modal > .modal-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 850;
+}
+
+.modal-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.day-agenda-header-add {
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.day-agenda-modal .modal-close {
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-size: 1.25rem;
+}
+
+.day-agenda {
+  position: relative;
+  min-height: 45dvh;
+  max-height: calc(94dvh - 4.2rem);
+  overflow-y: auto;
+  padding: 0.8rem 0.85rem calc(5.6rem + env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.day-agenda-handle {
+  position: absolute;
+  top: 0.25rem;
+  left: 50%;
+  width: 2.6rem;
+  height: 0.26rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  transform: translateX(-50%);
+}
+
+.day-agenda-loading,
+.day-agenda-error {
+  margin: 1.5rem 0.4rem;
+}
+
+.day-agenda-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0.4rem 0 0.9rem;
+}
+
+.day-agenda-overview > div {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: 0.8rem;
+  background: var(--color-bg);
+}
+
+.day-agenda-overview span {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.day-agenda-overview strong {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.day-agenda-overview .attention {
+  background: #fff4df;
+  color: #8a4f0a;
+}
+
+.day-agenda-overview .done {
+  background: #e7f6ef;
+  color: #075d48;
+}
+
+.day-agenda-section {
+  margin: 0 0 0.85rem;
+  padding: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: var(--color-surface);
+}
+
+.day-agenda-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.day-agenda-section-heading h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.day-agenda-section-heading .eyebrow {
+  margin-bottom: 0.05rem;
+}
+
+.day-agenda-transport-summary {
+  display: inline-flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.day-agenda-transport-summary b,
+.day-agenda-progress {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: #edf5f2;
+  color: #166b5d;
+  font-size: 0.75rem;
+}
+
+.day-agenda-timeline {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.day-agenda-timeline-row {
+  display: grid;
+  grid-template-columns: 3.35rem 0.22rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: stretch;
+  min-height: 4.7rem;
+}
+
+.day-agenda-time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding-top: 0.55rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.day-agenda-time strong {
+  font-size: 0.84rem;
+}
+
+.day-agenda-time span {
+  margin-top: 0.9rem;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+}
+
+.day-agenda-timeline-line {
+  width: 0.2rem;
+  min-height: 100%;
+  border-radius: 999px;
+  background: #9aa5b5;
+}
+
+.day-agenda-timeline-line.google {
+  background: #4d75c8;
+}
+
+.day-agenda-timeline-line.family_ops {
+  background: #2bbb8b;
+}
+
+.day-agenda-timeline-content {
+  min-width: 0;
+  padding-bottom: 0.45rem;
+}
+
+.day-agenda-inline-task-list,
+.day-agenda-task-list {
+  gap: 0.45rem;
+}
+
+.day-agenda-inline-task-list .task-checklist-item {
+  margin: 0;
+}
+
+.day-agenda-external-event {
+  display: grid;
+  gap: 0.25rem;
+  min-height: 4rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.75rem;
+  background: #f2f5fc;
+}
+
+.day-agenda-external-event > strong {
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+}
+
+.day-agenda-external-event p {
+  margin: 0.05rem 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.day-agenda-external-event small {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+}
+
+.day-agenda-source-badge {
+  justify-self: start;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  background: #e4eafa;
+  color: #3f5795;
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.day-agenda-empty-action {
+  width: 100%;
+  min-height: 3.4rem;
+  padding: 0.7rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-bg);
+  color: var(--color-accent);
+  text-align: left;
+}
+
+.day-agenda-sticky-actions {
+  position: sticky;
+  bottom: calc(-0.8rem - env(safe-area-inset-bottom));
+  z-index: 6;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin: 1rem -0.85rem -0.8rem;
+  padding: 0.7rem 0.85rem calc(0.7rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 95%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.day-agenda-sticky-actions button {
+  min-height: 3rem;
+  border-radius: 0.8rem;
+  font-weight: 800;
+}
+
+.task-checklist-item {
+  padding: 0.45rem 0.5rem;
+  border-radius: 0.8rem;
+  background: var(--color-surface);
+}
+
+.task-checklist-item.completed {
+  opacity: 0.58;
+  background: var(--color-bg);
+}
+
+.task-checklist-main {
+  display: grid;
+  grid-template-columns: 2.65rem minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.task-check-control {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 2px solid color-mix(in srgb, var(--color-accent) 70%, var(--color-border));
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-weight: 900;
+}
+
+.task-check-control:disabled {
+  opacity: 1;
+}
+
+.task-checklist-item.completed .task-check-control {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.task-progress-control {
+  font-size: 0.68rem;
+  letter-spacing: -0.03em;
+}
+
+.task-checklist-content {
+  display: grid;
+  justify-items: start;
+  gap: 0.12rem;
+  min-width: 0;
+  padding: 0.25rem 0;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+}
+
+.task-checklist-content:disabled {
+  opacity: 1;
+}
+
+.task-checklist-content strong {
+  width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 0.93rem;
+  line-height: 1.35;
+}
+
+.task-checklist-item.completed .task-checklist-content strong {
+  text-decoration: line-through;
+}
+
+.task-checklist-content .task-item-meta {
+  font-size: 0.72rem;
+}
+
+.task-checklist-item .task-overflow summary {
+  min-width: 2.2rem;
+  min-height: 2.2rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.subtask-checklist {
+  margin: 0.45rem 0 0 3.05rem;
+  gap: 0.25rem;
+}
+
+.subtask-check-row {
+  display: grid;
+  grid-template-columns: 1.55rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  min-height: 2.8rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.65rem;
+  background: var(--color-bg);
+  cursor: pointer;
+}
+
+.subtask-check-row input[type='checkbox'] {
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+.subtask-check-row span {
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.subtask-check-row span.checked {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
+.task-checklist-error {
+  margin: 0.4rem 0 0 3rem;
+  font-size: 0.8rem;
+}
+
+.task-form .form-help {
+  margin: -0.35rem 0 0.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.time-range-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.time-range-fields .time-range-help {
+  grid-column: 1 / -1;
+  margin-top: -0.35rem;
+}
+
+.task-form-actions {
+  position: sticky;
+  bottom: -1.25rem;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0.25rem -1.25rem -1.25rem;
+  padding: 0.8rem 1.25rem calc(0.8rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+.task-form-actions button {
+  min-height: 2.8rem;
+  font-weight: 800;
+}
+
+@media (prefers-color-scheme: dark) {
+  .day-agenda-overview .attention {
+    background: #49301c;
+    color: #ffd6ad;
+  }
+
+  .day-agenda-overview .done {
+    background: #163d33;
+    color: #bdebdc;
+  }
+
+  .day-agenda-external-event {
+    background: #26334f;
+  }
+
+  .day-agenda-source-badge {
+    background: #344667;
+    color: #d6e0ff;
+  }
+}
+
+@media (max-width: 420px) {
+  .day-agenda-modal > .modal-header {
+    padding-inline: 0.85rem;
+  }
+
+  .day-agenda {
+    padding-inline: 0.65rem;
+  }
+
+  .day-agenda-section {
+    padding: 0.75rem;
+  }
+
+  .day-agenda-timeline-row {
+    grid-template-columns: 2.9rem 0.18rem minmax(0, 1fr);
+    gap: 0.4rem;
+  }
+
+  .day-agenda-time strong {
+    font-size: 0.77rem;
+  }
+
+  .day-agenda-time span {
+    font-size: 0.68rem;
+  }
+
+  .task-checklist-main {
+    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+    gap: 0.35rem;
+  }
+
+  .task-check-control {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .subtask-checklist {
+    margin-left: 2.85rem;
+  }
+
+  .time-range-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .time-range-fields .time-range-help {
+    grid-column: auto;
+  }
+}
