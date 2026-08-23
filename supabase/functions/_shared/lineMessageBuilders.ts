@@ -13,6 +13,29 @@ export function rewritePickupRequest(rawText: string): string {
   return `${reason}お迎えをお願いしてもいい？`;
 }
 
+type FlexFooterAction =
+  | { label: string; data: string; primary?: boolean; type?: 'postback' }
+  | { label: string; uri: string; primary?: boolean; type: 'uri' };
+
+/** One compact, shared footer prevents action buttons being pushed off an iPhone LINE card. */
+function compactActionFooter(actions: FlexFooterAction[]): Record<string, unknown> {
+  return {
+    type: 'box',
+    layout: 'vertical',
+    spacing: 'sm',
+    paddingAll: '12px',
+    contents: actions.map((item) => ({
+      type: 'button',
+      style: item.primary ? 'primary' : 'secondary',
+      height: 'sm',
+      action:
+        item.type === 'uri'
+          ? { type: 'uri', label: item.label, uri: item.uri }
+          : { type: 'postback', label: item.label, data: item.data, displayText: item.label },
+    })),
+  };
+}
+
 export function buildPendingActionPreviewFlex(data: {
   pendingActionId: string;
   kindLabel: string;
@@ -50,59 +73,34 @@ export function buildPendingActionPreviewFlex(data: {
             color: '#555555',
             wrap: true,
           },
-          ...((data.detailLines ?? []).slice(0, 6).map((line) => ({
+          ...(data.detailLines ?? []).slice(0, 3).map((line) => ({
             type: 'text',
             text: line,
             size: 'sm',
             color: '#555555',
             wrap: true,
-          }))),
+          })),
           {
             type: 'text',
-            text: '確定するまで登録・送信されません。編集で日付・時間・担当・種別をLINE内で修正できます。',
+            text: '確定前ならLINE内で編集できます。',
             size: 'xs',
             wrap: true,
             color: '#777777',
           },
         ],
       },
-      footer: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          {
-            type: 'button',
-            style: 'primary',
-            action: {
-              type: 'postback',
-              label: data.confirmLabel ?? 'この内容で登録',
-              data: `action=confirm_pending&pending_action_id=${data.pendingActionId}`,
-              displayText: data.confirmLabel ?? 'この内容で登録',
-            },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: {
-              type: 'postback',
-              label: '編集',
-              data: `action=edit_pending&pending_action_id=${data.pendingActionId}`,
-              displayText: '編集',
-            },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: {
-              type: 'postback',
-              label: 'キャンセル',
-              data: `action=cancel_pending&pending_action_id=${data.pendingActionId}`,
-              displayText: 'キャンセル',
-            },
-          },
-        ],
-      },
+      footer: compactActionFooter([
+        {
+          label: data.confirmLabel ?? 'この内容で登録',
+          data: `action=confirm_pending&pending_action_id=${data.pendingActionId}`,
+          primary: true,
+        },
+        { label: '編集', data: `action=edit_pending&pending_action_id=${data.pendingActionId}` },
+        {
+          label: 'キャンセル',
+          data: `action=cancel_pending&pending_action_id=${data.pendingActionId}`,
+        },
+      ]),
     },
   };
 }
@@ -135,38 +133,18 @@ export function buildAssignmentSenderPreviewFlex(data: {
           { type: 'text', text: `${scopeLabel} / 自分 → パートナー`, size: 'xs', color: '#777777' },
         ],
       },
-      footer: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          {
-            type: 'button',
-            style: 'primary',
-            action: {
-              type: 'postback',
-              label: '送る',
-              data: `action=confirm_pending&pending_action_id=${data.pendingActionId}`,
-              displayText: '送る',
-            },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: { type: 'uri', label: '編集', uri: data.editUrl },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: {
-              type: 'postback',
-              label: 'キャンセル',
-              data: `action=cancel_pending&pending_action_id=${data.pendingActionId}`,
-              displayText: 'キャンセル',
-            },
-          },
-        ],
-      },
+      footer: compactActionFooter([
+        {
+          label: '送る',
+          data: `action=confirm_pending&pending_action_id=${data.pendingActionId}`,
+          primary: true,
+        },
+        { label: '編集', uri: data.editUrl, type: 'uri' },
+        {
+          label: 'キャンセル',
+          data: `action=cancel_pending&pending_action_id=${data.pendingActionId}`,
+        },
+      ]),
     },
   };
 }
@@ -214,33 +192,17 @@ export function buildGeneralRequestFlex(data: {
           },
         ],
       },
-      footer: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          {
-            type: 'button',
-            style: 'primary',
-            action: {
-              type: 'postback',
-              label: '引き受ける',
-              data: `action=confirm_pending&pending_action_id=${data.acceptPendingActionId}`,
-              displayText: '引き受ける',
-            },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: {
-              type: 'postback',
-              label: '今回は難しい',
-              data: `action=confirm_pending&pending_action_id=${data.declinePendingActionId}`,
-              displayText: '今回は難しい',
-            },
-          },
-        ],
-      },
+      footer: compactActionFooter([
+        {
+          label: '引き受ける',
+          data: `action=confirm_pending&pending_action_id=${data.acceptPendingActionId}`,
+          primary: true,
+        },
+        {
+          label: '今回は難しい',
+          data: `action=confirm_pending&pending_action_id=${data.declinePendingActionId}`,
+        },
+      ]),
     },
   };
 }
@@ -282,33 +244,17 @@ export function buildAssignmentRequestFlex(
           },
         ],
       },
-      footer: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          {
-            type: 'button',
-            style: 'primary',
-            action: {
-              type: 'postback',
-              label: '引き受ける',
-              data: `action=accept_assignment_change&request_id=${data.requestId}`,
-              displayText: '引き受ける',
-            },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: {
-              type: 'postback',
-              label: '今日は難しい',
-              data: `action=decline_assignment_change&request_id=${data.requestId}`,
-              displayText: '今日は難しい',
-            },
-          },
-        ],
-      },
+      footer: compactActionFooter([
+        {
+          label: '引き受ける',
+          data: `action=accept_assignment_change&request_id=${data.requestId}`,
+          primary: true,
+        },
+        {
+          label: '今日は難しい',
+          data: `action=decline_assignment_change&request_id=${data.requestId}`,
+        },
+      ]),
     },
   };
 }

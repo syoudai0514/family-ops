@@ -48,7 +48,14 @@ export interface LineUriQuickReplyAction {
   uri: string;
 }
 
-export type LineQuickReplyAction = LinePostbackQuickReplyAction | LineUriQuickReplyAction;
+export interface LineMessageQuickReplyAction {
+  type: 'message';
+  label: string;
+  text: string;
+}
+
+export type LineQuickReplyAction =
+  LinePostbackQuickReplyAction | LineUriQuickReplyAction | LineMessageQuickReplyAction;
 
 export interface ReplyOrEnqueuePushArgs {
   /** private.webhook_inbox item's payload.replyToken for THIS event, or null/undefined if none/already-used. Never logged in full. */

@@ -64,18 +64,50 @@ Deno.test('natural-language sender preview supports in-LINE edit before confirma
   assertEquals(raw.includes('病院の保険証を準備'), true);
 });
 
-Deno.test('structured sender preview keeps appointment context and checklist visible before confirmation', () => {
-  const raw = JSON.stringify(
-    buildPendingActionPreviewFlex({
-      pendingActionId: 'pending-3',
+Deno.test(
+  'all confirmation actions use the compact footer so iPhone LINE can show every button',
+  () => {
+    const message = buildPendingActionPreviewFlex({
+      pendingActionId: 'pending-compact',
       kindLabel: 'タスク',
-      title: '皮膚科の準備',
-      scheduleLabel: '8/23 10:00',
-      targetLabel: '自分',
-      detailLines: ['予定: 藤沢の皮膚科 11:00', '準備: ・子供の身支度 ・診察カード ・保険証'],
-    }),
-  );
-  assertStringIncludes(raw, '皮膚科の準備');
-  assertStringIncludes(raw, '予定: 藤沢の皮膚科 11:00');
-  assertStringIncludes(raw, '準備: ・子供の身支度 ・診察カード ・保険証');
-});
+      title: '歯医者の予約',
+      scheduleLabel: '明日 朝',
+      targetLabel: 'ママ',
+    }) as {
+      contents: {
+        footer: {
+          paddingAll: string;
+          contents: Array<{ height: string; action: { label: string } }>;
+        };
+      };
+    };
+    assertEquals(message.contents.footer.paddingAll, '12px');
+    assertEquals(
+      message.contents.footer.contents.map((button) => button.height),
+      ['sm', 'sm', 'sm'],
+    );
+    assertEquals(
+      message.contents.footer.contents.map((button) => button.action.label),
+      ['この内容で登録', '編集', 'キャンセル'],
+    );
+  },
+);
+
+Deno.test(
+  'structured sender preview keeps appointment context and checklist visible before confirmation',
+  () => {
+    const raw = JSON.stringify(
+      buildPendingActionPreviewFlex({
+        pendingActionId: 'pending-3',
+        kindLabel: 'タスク',
+        title: '皮膚科の準備',
+        scheduleLabel: '8/23 10:00',
+        targetLabel: '自分',
+        detailLines: ['予定: 藤沢の皮膚科 11:00', '準備: ・子供の身支度 ・診察カード ・保険証'],
+      }),
+    );
+    assertStringIncludes(raw, '皮膚科の準備');
+    assertStringIncludes(raw, '予定: 藤沢の皮膚科 11:00');
+    assertStringIncludes(raw, '準備: ・子供の身支度 ・診察カード ・保険証');
+  },
+);

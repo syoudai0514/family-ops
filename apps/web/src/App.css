@@ -337,7 +337,7 @@ body {
 .assignee-badge.partner { background: #fff0df; color: #a8520d; }
 .assignee-badge.family, .assignee-badge.unknown { background: #eef1f0; color: #52605a; }
 .quick-add-list { display: grid; gap: 0.45rem; }
-.quick-add-list button { min-height: 44px; text-align: left; display: grid; gap: 0.1rem; }
+.quick-add-list button { min-height: 52px; text-align: left; display: grid; gap: 0.1rem; padding: 0.7rem 0.8rem; }
 .quick-add-list small { color: var(--color-text-muted); }
 .category-settings-row { display: grid; grid-template-columns: minmax(0, 1fr) 5rem auto; gap: 0.5rem; align-items: center; }
 @media (max-width: 420px) { .category-settings-row { grid-template-columns: 1fr 5rem; } .category-settings-row label { grid-column: 1 / -1; } }
@@ -792,20 +792,25 @@ fieldset {
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  padding: 1rem;
+  padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom));
   z-index: 100;
 }
 
 .modal-panel {
   background: var(--color-surface);
-  border-radius: 0.75rem;
+  border-radius: 1rem 1rem 0.75rem 0.75rem;
   padding: 1.25rem;
   max-width: 480px;
   width: 100%;
-  max-height: 90vh;
+  max-height: min(
+    86dvh,
+    calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1.5rem)
+  );
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-header {
@@ -821,6 +826,15 @@ fieldset {
   font-size: 1.25rem;
   line-height: 1;
   padding: 0.1rem 0.4rem;
+}
+
+@media (min-width: 640px) {
+  .modal-backdrop {
+    align-items: center;
+  }
+  .modal-panel {
+    border-radius: 0.75rem;
+  }
 }
 
 .modal-actions {

@@ -77,10 +77,14 @@ import {
   rewritePickupRequest,
 } from '../_shared/lineMessageBuilders.ts';
 import { resolveJapanesePickupDate } from '../_shared/pickupDate.ts';
+import { missingRoleQuickReplies, missingRoleRecoveryText } from './linePartnerInviteFlow.ts';
 import {
-  missingRoleQuickReplies,
-  missingRoleRecoveryText,
-} from './linePartnerInviteFlow.ts';
+  completionHint,
+  formatScheduleReply,
+  menuQuickReplies,
+  readOnlyLineIntent,
+  type CompactScheduleEntry,
+} from './lineConversation.ts';
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get('LINE_INBOX_BATCH_LIMIT') ?? '25');
@@ -208,6 +212,110 @@ async function sendConfirmation(
   if (result === 'no_channel') {
     console.warn('process-line-inbox: confirmation reply/push both unavailable', { id: item.id });
   }
+}
+
+function jstWeekRange(): { start: string; end: string } {
+  const today = jstIsoDateOffset(0);
+  const date = new Date(`${today}T00:00:00Z`);
+  const day = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  const end = new Date(date);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return { start: date.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+async function sendLineSchedule(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  kind: 'today' | 'tomorrow' | 'week',
+): Promise<void> {
+  const today = jstIsoDateOffset(0);
+  const range =
+    kind === 'week'
+      ? jstWeekRange()
+      : kind === 'tomorrow'
+        ? { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) }
+        : { start: today, end: today };
+  const { data, error } =
+    kind === 'today'
+      ? await client.rpc('server_tx_get_today_schedule', { p_actor_id: actor.user_id })
+      : await client.rpc('server_tx_get_week_schedule', {
+          p_actor_id: actor.user_id,
+          p_start_date: range.start,
+          p_end_date: range.end,
+        });
+  if (error) {
+    console.error('process-line-inbox: schedule read failed', error.message);
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      '予定を読み込めませんでした。少し待ってからもう一度送ってください。',
+      menuQuickReplies(),
+    );
+    return;
+  }
+  const { data: members } = await client
+    .from('household_members')
+    .select('user_id,family_role')
+    .eq('household_id', actor.household_id);
+  const roles = new Map<string, string>();
+  for (const member of members ?? []) {
+    if (member.family_role === 'papa') roles.set(member.user_id, 'P');
+    if (member.family_role === 'mama') roles.set(member.user_id, 'M');
+  }
+  const schedule = (data ?? {}) as {
+    assignments?: Array<{
+      title?: string;
+      due_at?: string | null;
+      planned_assignee_id?: string | null;
+      has_conflict?: boolean;
+    }>;
+    occurrences?: Array<{ title?: string; starts_at?: string | null }>;
+  };
+  const entries: CompactScheduleEntry[] = [
+    ...(schedule.assignments ?? []).map((entry) => ({
+      title: entry.title ?? 'タスク',
+      startsAt: entry.due_at ?? null,
+      roleLabel: entry.planned_assignee_id ? (roles.get(entry.planned_assignee_id) ?? null) : null,
+      conflict: Boolean(entry.has_conflict),
+    })),
+    ...(schedule.occurrences ?? []).map((entry) => ({
+      title: entry.title ?? 'Google Calendar予定',
+      startsAt: entry.starts_at ?? null,
+    })),
+  ].sort((a, b) => (a.startsAt ?? '').localeCompare(b.startsAt ?? ''));
+  const title = kind === 'today' ? '今日の予定' : kind === 'tomorrow' ? '明日の予定' : '今週の予定';
+  await sendConfirmation(
+    client,
+    item,
+    actor,
+    formatScheduleReply(title, entries),
+    menuQuickReplies(),
+  );
+}
+
+async function tryHandleReadOnlyText(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  text: string,
+): Promise<boolean> {
+  const intent = readOnlyLineIntent(text);
+  if (!intent) return false;
+  if (intent === 'menu') {
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      'おうちノートでできること\n\n文章でそのまま話しかけてOKです。\n・今日／明日／今週の予定\n・タスクを追加\n・お願いを送る\n・買い物を追加\n・朝／夜チェック',
+      menuQuickReplies(),
+    );
+  } else {
+    await sendLineSchedule(client, item, actor, intent);
+  }
+  return true;
 }
 
 // Re-review fix (P1-1): reads a session's current, live item state --
@@ -380,6 +488,15 @@ function correctionTime(text: string): string | null | undefined {
   return undefined;
 }
 
+function correctionTitle(text: string): string | null {
+  const match = text
+    .trim()
+    .match(/^(?:タイトル|件名)\s*(?:は|を|:|：)\s*(.{1,80}?)(?:に変更|にして)?[。！!]?$/u);
+  if (!match) return null;
+  const title = match[1].replace(/\s+/g, ' ').trim();
+  return title.length > 0 && title.length <= 80 ? title : null;
+}
+
 async function updateEditablePending(
   client: SupabaseClient,
   actor: LineActor,
@@ -424,10 +541,19 @@ async function sendPartnerInviteLink(
   pendingActionId: string,
 ): Promise<void> {
   if (await partnerUserId(client, actor)) {
-    await sendConfirmation(client, item, actor, 'すでにパートナーは参加しています。もう一度「担当はママ」または「担当はパパ」と送ってください。');
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      'すでにパートナーは参加しています。もう一度「担当はママ」または「担当はパパ」と送ってください。',
+    );
     return;
   }
-  const operationId = await deterministicOperationId('line-partner-invite', actor.user_id, pendingActionId);
+  const operationId = await deterministicOperationId(
+    'line-partner-invite',
+    actor.user_id,
+    pendingActionId,
+  );
   const { data, error } = await client.rpc('server_tx_create_household_invite', {
     p_actor_id: actor.user_id,
     p_operation_id: operationId,
@@ -467,7 +593,8 @@ async function tryApplyLineTextEdit(
   const role = correctionRole(text);
   const date = correctionDate(text);
   const time = correctionTime(text);
-  if (!role && !date && time === undefined) {
+  const title = correctionTitle(text);
+  if (!role && !date && time === undefined && !title) {
     await sendConfirmation(
       client,
       item,
@@ -481,6 +608,7 @@ async function tryApplyLineTextEdit(
   let actionType = pending.action_type;
   const payload = { ...pending.normalized_payload };
   delete payload.line_edit_mode;
+  if (title) payload.title = title;
   if (date) payload.scheduled_date = date;
   if (time !== undefined) {
     payload.due_local_time = time;
@@ -737,7 +865,7 @@ async function handlePostback(
       client,
       item,
       actor,
-      '修正したい内容をそのまま送れます。例:「ママじゃなくてパパ」「明日10時に変更」。下のボタンで選んでも大丈夫です。',
+      '修正したい内容をそのまま送れます。例:「ママじゃなくてパパ」「明日10時に変更」「タイトル: 皮膚科の準備」。下のボタンで選んでも大丈夫です。',
       editQuickReplies(fields.pending_action_id),
     );
     return;
@@ -784,7 +912,12 @@ async function handlePostback(
         if (fields.value === 'papa' || fields.value === 'mama') {
           await sendMissingRoleRecovery(client, item, actor, pending.id, fields.value);
         } else {
-          await sendConfirmation(client, item, actor, '担当者を変更できませんでした。下書きは変更していません。');
+          await sendConfirmation(
+            client,
+            item,
+            actor,
+            '担当者を変更できませんでした。下書きは変更していません。',
+          );
         }
         return;
       }
@@ -855,7 +988,13 @@ async function handlePostback(
       console.error('process-line-inbox: confirm_pending failed', error.message);
       return;
     }
-    await sendConfirmation(client, item, actor, '✓ 確定しました');
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      completionHint('✓ 確定しました。'),
+      menuQuickReplies(),
+    );
     return;
   }
 
@@ -944,7 +1083,13 @@ async function handlePostback(
       } else console.error('process-line-inbox: accept request failed', error.message);
       return;
     }
-    await sendConfirmation(client, item, actor, '✓ 引き受けました。タスクに追加しました。');
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      completionHint('✓ 引き受けました。タスクに追加しました。'),
+      menuQuickReplies(),
+    );
     return;
   }
 
@@ -1157,6 +1302,7 @@ async function handleText(
 ): Promise<void> {
   if (await tryClaimLinkToken(client, item.source_external_user_id, text)) return;
   if (!actor) return;
+  if (await tryHandleReadOnlyText(client, item, actor, text)) return;
   if (await tryApplyLineTextEdit(client, item, actor, text)) return;
 
   const parsed = parseLineText(text);
