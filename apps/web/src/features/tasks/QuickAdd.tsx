@@ -40,6 +40,7 @@ export function QuickAdd({
   const [open, setOpen] = useState(false);
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const navigate = useNavigate();
+  // Keep the bottom-nav action rightmost; only the glyph is centered inside the button.
   const isBottomNavAdd = className?.split(/\s+/).includes('bottom-nav-add') ?? false;
   const choose = (target: QuickAddTarget) => {
     setOpen(false);
