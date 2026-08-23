@@ -21,19 +21,39 @@ const PRIMARY_NAV_ITEMS = [
   { to: '/history', label: '履歴', icon: '◷' },
 ];
 
+function BottomNavLink({ item }: { item: (typeof PRIMARY_NAV_ITEMS)[number] }) {
+  return (
+    <NavLink
+      to={item.to}
+      className={({ isActive }) => (isActive ? 'bottom-nav-link active' : 'bottom-nav-link')}
+    >
+      <span aria-hidden="true">{item.icon}</span>
+      {item.label}
+    </NavLink>
+  );
+}
+
 export function AppShell() {
   return (
     <div className="app-root">
       <header className="app-nav">
-        <NavLink className="app-nav-brand" to="/today"><span aria-hidden="true">⌂</span> おうちノート</NavLink>
+        <NavLink className="app-nav-brand" to="/today">
+          <span aria-hidden="true">⌂</span> おうちノート
+        </NavLink>
         <nav className="desktop-nav" aria-label="主要メニュー">
           {PRIMARY_NAV_ITEMS.map((item) => (
-            <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+            >
               {item.label}
             </NavLink>
           ))}
         </nav>
-        <NavLink to="/settings" className="header-icon" aria-label="設定">⚙</NavLink>
+        <NavLink to="/settings" className="header-icon" aria-label="設定">
+          ⚙
+        </NavLink>
       </header>
       <Routes>
         <Route path="/today" element={<Today />} />
@@ -51,12 +71,44 @@ export function AppShell() {
         <Route path="*" element={<Today />} />
       </Routes>
       <nav className="bottom-nav" aria-label="主要メニュー">
-        {PRIMARY_NAV_ITEMS.map((item) => (
-          <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'bottom-nav-link active' : 'bottom-nav-link')}>
-            <span aria-hidden="true">{item.icon}</span>{item.label}
-          </NavLink>
-        ))}
-        <QuickAdd className="bottom-nav-add" />
+        <div
+          style={{
+            gridColumn: '1 / -1',
+            display: 'flex',
+            alignItems: 'center',
+            width: '100%',
+          }}
+        >
+          <div
+            style={{
+              flex: '1 1 0',
+              minWidth: 0,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              alignItems: 'center',
+            }}
+          >
+            {PRIMARY_NAV_ITEMS.slice(0, 2).map((item) => (
+              <BottomNavLink key={item.to} item={item} />
+            ))}
+          </div>
+
+          <QuickAdd className="bottom-nav-add" />
+
+          <div
+            style={{
+              flex: '1 1 0',
+              minWidth: 0,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              alignItems: 'center',
+            }}
+          >
+            {PRIMARY_NAV_ITEMS.slice(2).map((item) => (
+              <BottomNavLink key={item.to} item={item} />
+            ))}
+          </div>
+        </div>
       </nav>
     </div>
   );
