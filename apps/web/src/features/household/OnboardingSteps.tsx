@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
@@ -6,6 +6,7 @@ import { newOperationId } from '../../lib/id';
 import { LineLinkSection } from '../notifications/Notifications';
 import { WeekView } from '../planning/WeekView';
 import { MorningPreparationEditor, type MorningPreparationEditorHandle } from '../settings/RoutineSchedule';
+import { CalendarIntegrationSettings } from '../settings/CalendarIntegrationSettings';
 
 type OnboardingStep = 'morning_preparation' | 'connections' | 'notifications' | 'week_preview';
 
@@ -65,55 +66,13 @@ export function MorningPreparationStep() {
 
 export function ConnectionsStep() {
   const done = useCompleteStep('connections');
-  const [calendarBusy, setCalendarBusy] = useState(false);
-  const [calendarError, setCalendarError] = useState<string | null>(null);
-  const [calendarStatus, setCalendarStatus] = useState<'loading' | 'connected' | 'reauth' | 'disconnected'>('loading');
-  useEffect(() => {
-    let cancelled = false;
-    void callEdgeFunction<{ calendar_connected: boolean; calendar_stale: boolean }>(EDGE_FUNCTIONS.getTodaySchedule, {})
-      .then((result) => {
-        if (!cancelled) setCalendarStatus(result.calendar_connected ? (result.calendar_stale ? 'reauth' : 'connected') : 'disconnected');
-      })
-      .catch(() => { if (!cancelled) setCalendarStatus('disconnected'); });
-    return () => { cancelled = true; };
-  }, []);
-  const connectCalendar = async () => {
-    setCalendarBusy(true);
-    setCalendarError(null);
-    try {
-      const result = await callEdgeFunction<{ authorization_url: string }>(
-        EDGE_FUNCTIONS.googleCalendarOauthStart,
-        { return_to: `${window.location.origin}/today` },
-      );
-      window.location.assign(result.authorization_url);
-    } catch (err) {
-      setCalendarError(
-        err instanceof FamilyOpsApiError ? err.message : 'Google Calendarを開けませんでした。',
-      );
-      setCalendarBusy(false);
-    }
-  };
   return (
     <main className="app-shell onboarding-step">
       <p className="eyebrow">初期設定 5 / 7</p>
       <h1>LINE・カレンダー連携</h1>
       <p>連携は任意です。未接続でも家庭の予定とタスクは利用できます。</p>
       <LineLinkSection />
-      <section className="card">
-        <h2>Google Calendar</h2>
-        <p>予定の重なりをTodayとWeekでお知らせします。接続後、送迎と特別対応は選択した家族カレンダーへ同期されます。</p>
-        <p role="status">
-          {calendarStatus === 'loading' ? '接続状態を確認中…' : calendarStatus === 'connected' ? 'Google Calendar ✓ 接続済み' : calendarStatus === 'reauth' ? 'Google Calendar: 再認証または同期が必要です' : 'Google Calendar: 未接続'}
-        </p>
-        <button type="button" onClick={() => void connectCalendar()} disabled={calendarBusy}>
-          {calendarBusy ? '接続中…' : 'Google Calendarを接続'}
-        </button>
-        {calendarError && (
-          <p role="alert" className="error-text">
-            {calendarError}
-          </p>
-        )}
-      </section>
+      <CalendarIntegrationSettings returnTo="/today" />
       {done.error && (
         <p role="alert" className="error-text">
           {done.error}

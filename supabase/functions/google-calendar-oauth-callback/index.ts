@@ -10,8 +10,8 @@ import {
   callGoogleServerTx,
   exchangeCodeForTokens,
   GoogleInvalidGrantError,
+  listEligibleCalendarCandidates,
   listCalendarList,
-  pickEligibleCalendar,
 } from "../_shared/googleCalendar.ts";
 import { encryptRefreshToken, sha256Hex } from "../_shared/cryptoHelper.ts";
 
@@ -34,10 +34,10 @@ Deno.serve(async (req: Request) => {
   const providerError = url.searchParams.get("error");
 
   if (providerError) {
-    return redirectTo(appBaseUrl, "/settings/calendar", { google_calendar_error: "access_denied" });
+    return redirectTo(appBaseUrl, "/settings", { google_calendar_error: "access_denied" });
   }
   if (!code || !state) {
-    return redirectTo(appBaseUrl, "/settings/calendar", { google_calendar_error: "invalid_request" });
+    return redirectTo(appBaseUrl, "/settings", { google_calendar_error: "invalid_request" });
   }
 
   const clientId = Deno.env.get("GOOGLE_CALENDAR_CLIENT_ID");
@@ -56,50 +56,53 @@ Deno.serve(async (req: Request) => {
     if (!tokens.refresh_token) {
       // prompt=consent should always yield one; without it we cannot store a
       // durable connection at all.
-      return redirectTo(appBaseUrl, "/settings/calendar", { google_calendar_error: "no_refresh_token" });
+      return redirectTo(appBaseUrl, "/settings", { google_calendar_error: "no_refresh_token" });
     }
 
     // Best-effort subject identification: the connection only ever needs
     // scopes for calendar.events/calendarlist, never 'openid', so a
-    // guaranteed `sub` claim is not available. Fall back to the eligible
-    // calendar's id (Google secondary-calendar ids are stable, opaque
+    // guaranteed `sub` claim is not available. Fall back to one eligible
+    // calendar id (Google secondary-calendar ids are stable, opaque
     // strings) — this is a display/bookkeeping value only, never a security
     // boundary (household/user binding is enforced by the state row + the
     // household_id composite FK, not by google_subject).
     const calendarItems = await listCalendarList(tokens.access_token);
-    const eligible = pickEligibleCalendar(calendarItems);
-    if (!eligible) {
-      return redirectTo(appBaseUrl, "/settings/calendar", { google_calendar_error: "no_eligible_calendar" });
+    const candidates = listEligibleCalendarCandidates(calendarItems);
+    if (candidates.length === 0) {
+      return redirectTo(appBaseUrl, "/settings", { google_calendar_error: "no_eligible_calendar" });
     }
-    const googleSubject = eligible.id;
+    const googleSubject = candidates[0].id;
 
     const { ciphertext, encryptionVersion } = await encryptRefreshToken(tokens.refresh_token);
 
-    const result = await callGoogleServerTx<{ return_to: string | null; calendar_connection_id: string | null }>(
+    const result = await callGoogleServerTx<{ return_to: string | null }>(
       serviceClient,
-      "server_tx_complete_google_oauth",
+      "server_tx_complete_google_oauth_v2",
       {
         p_state_hash: stateHash,
         p_google_subject: googleSubject,
         p_encrypted_refresh_token: ciphertext,
         p_encryption_version: encryptionVersion,
         p_scopes: tokens.scope ? tokens.scope.split(" ") : [],
-        p_selected_calendar_id: eligible.id,
-        p_selected_calendar_summary: eligible.summary ?? null,
-        p_selected_calendar_timezone: eligible.timeZone ?? null,
+        p_calendar_candidates: candidates.map((calendar) => ({
+          id: calendar.id,
+          summary: calendar.summary ?? null,
+          accessRole: calendar.accessRole,
+          timeZone: calendar.timeZone,
+        })),
       },
     );
 
-    return redirectTo(appBaseUrl, result.return_to ?? "/settings/calendar", { google_calendar_connected: "1" });
+    return redirectTo(appBaseUrl, result.return_to ?? "/settings", { google_calendar_connected: "1" });
   } catch (err) {
     if (err instanceof GoogleInvalidGrantError) {
-      return redirectTo(appBaseUrl, "/settings/calendar", { google_calendar_error: "invalid_grant" });
+      return redirectTo(appBaseUrl, "/settings", { google_calendar_error: "invalid_grant" });
     }
     const code2 = (err as { code?: string })?.code;
     if (typeof code2 === "string" && code2.length > 0) {
-      return redirectTo(appBaseUrl, "/settings/calendar", { google_calendar_error: code2 });
+      return redirectTo(appBaseUrl, "/settings", { google_calendar_error: code2 });
     }
     console.error("google-calendar-oauth-callback failed", err);
-    return redirectTo(appBaseUrl, "/settings/calendar", { google_calendar_error: "internal_error" });
+    return redirectTo(appBaseUrl, "/settings", { google_calendar_error: "internal_error" });
   }
 });

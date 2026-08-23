@@ -43,8 +43,12 @@ begin
     (household_id, provider, external_calendar_id, google_connection_id, active, reauth_required)
   values (v_hh_id, 'google', 'outbox-30@group.calendar.google.com', v_google_conn, true, false)
   returning id into v_calendar_conn;
+  if (select is_family_write_target from public.calendar_connections where id = v_calendar_conn) then
+    raise exception 'FAIL family-google-outbox: a new connection must not become the write target automatically';
+  end if;
+  perform public.server_tx_set_family_calendar_target(v_owner, gen_random_uuid(), v_calendar_conn);
   if not (select is_family_write_target from public.calendar_connections where id = v_calendar_conn) then
-    raise exception 'FAIL family-google-outbox: first active connection must become the household write target';
+    raise exception 'FAIL family-google-outbox: explicit target selection must enable outbound mirrors';
   end if;
 
   -- Connecting a calendar deliberately reconciles the household's existing

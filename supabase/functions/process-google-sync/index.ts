@@ -11,9 +11,11 @@ import {
   callGoogleServerTx,
   getAccessTokenForConnection,
   GoogleInvalidGrantError,
+  isGoogleCalendarForbiddenError,
   listCanonicalEventsPage,
   listProjectionEventsPage,
   projectionWindow,
+  revalidateCalendarEligibilityAfterForbidden,
 } from "../_shared/googleCalendar.ts";
 import { decryptRefreshToken } from "../_shared/cryptoHelper.ts";
 
@@ -132,12 +134,16 @@ Deno.serve(withServiceHandler(async (req: Request) => {
     return new Response(JSON.stringify({ processed: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
+  let accessToken: string | null = null;
+  let externalCalendarId: string | null = null;
   try {
-    const { accessToken, externalCalendarId } = await getAccessTokenForConnection(
+    const connection = await getAccessTokenForConnection(
       serviceClient,
       claimed.calendar_connection_id,
       decryptRefreshToken,
     );
+    accessToken = connection.accessToken;
+    externalCalendarId = connection.externalCalendarId;
 
     const context = await callGoogleServerTx<{ next_sync_token: string | null }>(
       serviceClient,
@@ -184,6 +190,13 @@ Deno.serve(withServiceHandler(async (req: Request) => {
         p_calendar_connection_id: claimed.calendar_connection_id,
         p_reason: "invalid_grant during sync",
       }).catch((e) => console.error("process-google-sync: failed to mark reauth_required", e));
+    } else if (isGoogleCalendarForbiddenError(err) && accessToken && externalCalendarId) {
+      await revalidateCalendarEligibilityAfterForbidden(serviceClient, {
+        calendarConnectionId: claimed.calendar_connection_id,
+        externalCalendarId,
+        accessToken,
+        reason: "403 during Google sync",
+      });
     }
     console.error("process-google-sync: job failed", { jobId: claimed.job_id, err });
     await callGoogleServerTx(serviceClient, "server_tx_complete_google_sync_job", {
