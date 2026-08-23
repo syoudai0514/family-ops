@@ -71,44 +71,10 @@ export function AppShell() {
         <Route path="*" element={<Today />} />
       </Routes>
       <nav className="bottom-nav" aria-label="主要メニュー">
-        <div
-          style={{
-            gridColumn: '1 / -1',
-            display: 'flex',
-            alignItems: 'center',
-            width: '100%',
-          }}
-        >
-          <div
-            style={{
-              flex: '1 1 0',
-              minWidth: 0,
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              alignItems: 'center',
-            }}
-          >
-            {PRIMARY_NAV_ITEMS.slice(0, 2).map((item) => (
-              <BottomNavLink key={item.to} item={item} />
-            ))}
-          </div>
-
-          <QuickAdd className="bottom-nav-add" />
-
-          <div
-            style={{
-              flex: '1 1 0',
-              minWidth: 0,
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-              alignItems: 'center',
-            }}
-          >
-            {PRIMARY_NAV_ITEMS.slice(2).map((item) => (
-              <BottomNavLink key={item.to} item={item} />
-            ))}
-          </div>
-        </div>
+        {PRIMARY_NAV_ITEMS.map((item) => (
+          <BottomNavLink key={item.to} item={item} />
+        ))}
+        <QuickAdd className="bottom-nav-add" />
       </nav>
     </div>
   );
