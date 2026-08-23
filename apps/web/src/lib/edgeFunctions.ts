@@ -30,6 +30,7 @@ export const EDGE_FUNCTIONS = {
   arriveShoppingItem: 'arrive-shopping-item',
   cancelShoppingItem: 'cancel-shopping-item',
   createHandover: 'create-handover',
+  createPreparationHandoff: 'create-preparation-handoff',
   markHandoverRead: 'mark-handover-read',
   markNotificationRead: 'mark-notification-read',
   updateNotificationPreferences: 'update-notification-preferences',
