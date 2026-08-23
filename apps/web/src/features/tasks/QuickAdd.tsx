@@ -53,6 +53,21 @@ export function QuickAdd({
         aria-label={ariaLabel}
         className={className}
         onClick={() => setOpen(true)}
+        style={
+          isBottomNavAdd
+            ? {
+                position: 'relative',
+                display: 'block',
+                width: '44px',
+                height: '44px',
+                minWidth: '44px',
+                minHeight: '44px',
+                padding: 0,
+                boxSizing: 'border-box',
+                lineHeight: 0,
+              }
+            : undefined
+        }
       >
         {isBottomNavAdd ? (
           <svg
@@ -61,6 +76,15 @@ export function QuickAdd({
             viewBox="0 0 24 24"
             width="24"
             height="24"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              display: 'block',
+              margin: 0,
+              pointerEvents: 'none',
+            }}
           >
             <path
               d="M12 5v14M5 12h14"
