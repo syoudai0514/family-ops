@@ -1,6 +1,7 @@
 import { assertEquals } from 'jsr:@std/assert@1';
 import {
   deterministicLineIntent,
+  isLineCreateStarter,
   normalizeGeminiLineIntent,
   toTaskSubtasks,
 } from './lineIntent.ts';
@@ -43,6 +44,14 @@ Deno.test('simple shopping remains structurally parseable', () => {
   const intent = deterministicLineIntent('明日オムツをAmazonで買って', now);
   assertEquals(intent?.kind, 'shopping');
   assertEquals(intent?.scheduledDate, '2026-08-23');
+});
+
+Deno.test('generic add starters are guidance, not placeholder tasks', () => {
+  assertEquals(isLineCreateStarter('明日の夜にタスクを追加したい'), true);
+  assertEquals(isLineCreateStarter('ママに明日の朝のお願いを送りたい'), true);
+  assertEquals(isLineCreateStarter('買い物を追加したい'), true);
+  assertEquals(isLineCreateStarter('明日の夜にゴミ出しをする'), false);
+  assertEquals(isLineCreateStarter('ママに明日の朝、歯医者の予約をお願い'), false);
 });
 
 Deno.test('Gemini response separates a hospital preparation task from its appointment context', () => {
