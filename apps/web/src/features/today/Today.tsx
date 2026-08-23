@@ -7,6 +7,7 @@ import { usePendingActions } from './usePendingActions';
 import { useTodaySchedule } from './useTodaySchedule';
 import { TodayTaskItem } from './TodayTaskItem';
 import { TodaySchedule } from './TodaySchedule';
+import { TomorrowPreparationCard } from './TomorrowPreparationCard';
 import { PendingActionCard } from './PendingActionCard';
 import { PendingActionEditModal } from './PendingActionEditModal';
 import { TaskFormModal } from '../tasks/TaskFormModal';
@@ -113,6 +114,9 @@ export function Today() {
   const nextTask = useMemo(() => selectNextOwnedTask(data.tasks, me?.user_id), [data.tasks, me]);
   const todaySections = useMemo(() => {
     const transport = data.tasks.filter((task) => task.task_kind === 'transport');
+    const handoffPreparation = data.tasks.filter(
+      (task) => task.category === 'handover_preparation',
+    );
     const morningPreparation = data.tasks.filter(
       (task) => task.task_kind === 'morning_preparation',
     );
@@ -121,11 +125,19 @@ export function Today() {
     const special = data.tasks.filter(
       (task) =>
         !transport.includes(task) &&
+        !handoffPreparation.includes(task) &&
         !morningPreparation.includes(task) &&
         !morningChores.includes(task) &&
         !eveningChores.includes(task),
     );
-    return { transport, morningPreparation, morningChores, eveningChores, special };
+    return {
+      transport,
+      handoffPreparation,
+      morningPreparation,
+      morningChores,
+      eveningChores,
+      special,
+    };
   }, [data.tasks]);
   const tomorrowProjection = useMemo(
     () =>
@@ -139,6 +151,17 @@ export function Today() {
   );
   const tomorrowTransport = tomorrowProjection.transportByDate.get(tomorrowDate);
   const tomorrowItems = tomorrowProjection.itemsByDate.get(tomorrowDate) ?? [];
+  const tomorrowMorningAssigneeId = tomorrowTransport?.dropoffAssigneeId ?? null;
+  const tomorrowMorningAssigneeLabel = useMemo(() => {
+    if (!tomorrowMorningAssigneeId) return '';
+    const member = members.find((candidate) => candidate.user_id === tomorrowMorningAssigneeId);
+    if (member?.family_role === 'papa') return 'パパ';
+    if (member?.family_role === 'mama') return 'ママ';
+    return member?.profile?.display_name ?? '担当あり';
+  }, [members, tomorrowMorningAssigneeId]);
+  const genericUnreadHandovers = data.unreadHandovers.filter(
+    (handover) => !handover.categories?.includes('tomorrow_preparation'),
+  );
 
   function renderTaskList(tasks: TaskInstance[]) {
     return (
@@ -252,7 +275,6 @@ export function Today() {
         </section>
       )}
 
-      {/* Priority 2: 今/次の予定 */}
       <TodaySchedule
         loading={schedule.loading}
         error={schedule.error}
@@ -260,9 +282,6 @@ export function Today() {
         members={members}
       />
 
-      {/* Tomorrow deserves an explicit glance on Today.  A family does not
-          plan Sunday morning by opening every date one by one, and this uses
-          the same canonical projection as Week/Month. */}
       {!tomorrowPlanning.loading && (tomorrowTransport || tomorrowItems.length > 0) && (
         <section className="card compact-section" aria-label="明日の予定">
           <div className="section-heading">
@@ -292,17 +311,29 @@ export function Today() {
         data.carryoverTasks,
         '前夜の予定のまま、ここで完了できます。',
       )}
+      {renderOperationalSection(
+        '引き継ぎ・今日だけの準備',
+        todaySections.handoffPreparation,
+        '迎え担当から朝担当へ渡された持ち物です。終わったらその場でチェックしてください。',
+      )}
       {renderOperationalSection('今日の送迎', todaySections.transport)}
       {renderOperationalSection('今日の特別対応', todaySections.special)}
       {renderOperationalSection('朝準備', todaySections.morningPreparation)}
       {renderOperationalSection('朝の定例家事', todaySections.morningChores)}
+
+      <TomorrowPreparationCard
+        tomorrowDate={tomorrowDate}
+        assigneeId={tomorrowMorningAssigneeId}
+        assigneeLabel={tomorrowMorningAssigneeLabel}
+        onChanged={() => void data.refresh()}
+      />
+
       {renderOperationalSection(
         '夜の定例作業',
         todaySections.eveningChores,
         '月・週には表示しません。',
       )}
 
-      {/* 判断待ちは、今日の実行情報を見た後に、あるときだけ表示する。 */}
       {hasPendingDecisions && (
         <section className="card decision-card">
           <div className="section-heading">
@@ -336,12 +367,11 @@ export function Today() {
         </section>
       )}
 
-      {/* Priority 4: 重要な引き継ぎ */}
-      {data.unreadHandovers.length > 0 && (
+      {genericUnreadHandovers.length > 0 && (
         <section className="card compact-section">
           <h2>未読の引き継ぎ</h2>
           <ul className="handover-list">
-            {data.unreadHandovers.map((h) => (
+            {genericUnreadHandovers.map((h) => (
               <li key={h.id} className="handover-item unread">
                 <strong>{h.period}</strong> — {h.shared_text}
               </li>
