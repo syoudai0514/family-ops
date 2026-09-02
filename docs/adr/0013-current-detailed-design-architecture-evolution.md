@@ -20,9 +20,11 @@ Important examples:
 2. One task may have multiple actual performers. v6/current schema has one `actual_completed_by_id`.
 3. `誰でもOK` has an independent claim lifecycle that must not become a permanent assignment.
 4. `大体やった` is group-level reconciliation evidence and must not be a child-task status.
-5. Human-confirmed event values must be protected from silent Google/image/AI overwrite. v6 states the shared Google secondary calendar is the family schedule source of truth.
-6. The new product notification model uses morning/evening anchors plus meaningful exceptions rather than preserving every v6 routine push time as normative product behavior.
-7. One-user simulation must reuse domain state machines while blocking production recipient/Google/outbox side effects.
+5. Requirements has a formal `待ち` behavior with next-check and deadline semantics; this must not be invented ad hoc during implementation.
+6. Human-confirmed event values must be protected from silent Google/image/AI overwrite. v6 states the shared Google secondary calendar is the family schedule source of truth.
+7. The new product notification model uses morning/evening anchors plus meaningful exceptions rather than preserving every v6 routine push time as normative product behavior.
+8. One-user simulation must reuse domain state machines while blocking production recipient/Google/outbox side effects and while persisting simulated actor identity without fake auth/member users.
+9. Additive migration does not imply that legacy current-truth reads are safe after new-only semantic states exist.
 
 The repository should not fork `docs/design/v6/` into an implicit v7 or rewrite vendored v6 files in place. The architecture evolution needs an explicit canonical reviewed location.
 
@@ -43,11 +45,27 @@ If this ADR and the detailed-design PR are accepted:
    ### Task actual performer
    - single `task_instances.actual_completed_by_id` is superseded as the canonical performer model.
    - actual participants are modeled separately and may contain multiple performers.
-   - the legacy column may be mirrored temporarily for compatibility but cannot be used as the long-term truth.
+   - the legacy column may be mirrored temporarily for production real-user compatibility but cannot be used as the long-term truth.
+
+   ### Actor identity / one-user simulation
+   - actor-bearing domain truth uses a common ActorRef model for `real_user`, `simulated_member`, and `system`.
+   - simulated actor is not a fake Supabase Auth user or `household_members` row.
+   - simulated actor must not be persisted as the operator's real user merely to satisfy legacy FKs.
+   - production aggregates cannot reference simulated ActorRefs; test aggregates must be explicitly test-scoped and match the ActorRef test context.
 
    ### Assignment / anyone claim
    - assignment mode (`person`, `unassigned`, `anyone`) and active anyone claim are independent dimensions.
    - claim does not rewrite assignment mode to person.
+   - assignee/claimant identity follows ActorRef semantics for new canonical behavior.
+
+   ### Task waiting / attention
+   - `待ち` is not a sixth task status.
+   - a nonterminal task may have `attention_state=waiting`, optional waiting note and next-check, while original due/deadline remains intact.
+   - waiting suppresses ordinary incomplete nag, resurfaces at next-check, and still exposes hard-deadline risk.
+
+   ### Task skipped outcome
+   - `今回は不要`, `できなかった`, and occurrence expiry may share the small `skipped` operational status but retain a current `outcome_reason` dimension.
+   - new current reads must not reconstruct this reason by replaying audit events.
 
    ### Group reconciliation
    - `大体やった` is stored as group reconciliation evidence.
@@ -63,14 +81,22 @@ If this ADR and the detailed-design PR are accepted:
    - Requirements Baseline morning/evening anchors and immediate meaningful exceptions supersede conflicting v6 user-facing routine-push cadence.
    - existing durable inbox/outbox, retry, quota, dedup, reply-first, and worker security mechanics remain valid and should be reused.
 
-   ### Test simulation
+   ### Test simulation side effects
    - production state machines may be reused under a server-validated test execution context.
    - simulated actors may not create production recipient delivery, production notification outbox, Google writes, or real-user consent effects.
+   - operator-facing synthetic test delivery is a separate test delivery path.
+
+   ### Semantic cutover / rollback
+   - additive schema/backfill before new semantic writes is fully reversible at runtime.
+   - after the first new-only semantic state is produced, legacy current-truth read/write semantics may not be reactivated as a rollback.
+   - feature-off after that point means pause new mutations and render canonical new truth through a compatibility/degraded projection, or forward-fix.
+   - physical legacy cleanup remains separately reviewed and deferred.
 
 4. Public user mutations continue through JWT-authenticated Edge Functions and server-only transactional RPCs. `private.mutation_receipts`/equivalent operation idempotency remains the default mutation pattern.
 5. Migration is additive and compatibility-first. Existing migrations are never rewritten, production reset is not used, and destructive cleanup of legacy columns is deferred to a separately reviewed later migration after cutover.
-6. The canonical current/read truth for each concern is explicitly documented in `01_ARCHITECTURE_AND_DOMAIN_BOUNDARIES.md`; implementation must not choose an alternate truth ad hoc.
-7. If implementation discovers a required product-behavior change, the Requirements Baseline must be updated/reviewed before or with that implementation. If architecture scope changes beyond this ADR, add/amend an ADR rather than silently drifting.
+6. Backfill may only make deterministic claims. Legacy Request/link mismatches, unknown performers, and unknown skipped reasons are reported/classified rather than guessed into new truth.
+7. The canonical current/read truth for each concern is explicitly documented in `01_ARCHITECTURE_AND_DOMAIN_BOUNDARIES.md`; implementation must not choose an alternate truth ad hoc.
+8. If implementation discovers a required product-behavior change, the Requirements Baseline must be updated/reviewed before or with that implementation. If architecture scope changes beyond this ADR, add/amend an ADR rather than silently drifting.
 
 ## Relationship to ADR 0001 and ADR 0012
 
@@ -93,19 +119,23 @@ No implementer may resolve a conflict by selecting whichever document is easier 
 ### Positive
 
 - Request/task/actual/assignment/source truth is explicitly separated.
+- Waiting and skipped outcome semantics are explicit without exploding top-level task status.
+- real/simulated actor identity is explicit across all actor-bearing truth.
 - Existing production architecture is reused rather than fully rewritten.
 - Google security/sync correctness remains protected while product-level Authority semantics evolve.
-- migrations can be staged additively.
+- migrations can be staged additively with a realistic semantic point-of-no-return.
 - detailed design has a stable canonical path without `V7`/`FINAL` copies.
 
 ### Cost / complexity
 
 - schema additions and compatibility backfill are required.
+- ActorRef migration touches several actor-bearing relations.
 - Requests and actual completion require deliberate cutover rather than cosmetic frontend changes.
 - Family Event/candidate layer is new architecture.
-- test simulation requires a hard side-effect adapter boundary.
+- test simulation requires a hard actor/side-effect boundary.
+- incident rollback after semantic P1 becomes forward-fix/degraded projection rather than legacy-semantic fallback.
 
-These costs are accepted because continuing the old single-state assumptions would create multiple competing truths and unsafe silent updates.
+These costs are accepted because continuing the old single-state assumptions would create multiple competing truths, false simulated consent, and unsafe silent updates.
 
 ## Review gate
 
