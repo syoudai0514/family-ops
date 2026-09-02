@@ -2,283 +2,287 @@
 
 ## 1. Purpose and normative scope
 
-This document closes the gap between the conceptual detailed design in `01`–`07` and the **actual CURRENT `main` physical schema/runtime**.
+This document is the binding physical-alignment contract between the accepted Family Ops product/domain design and the actual CURRENT `main` schema/runtime.
 
 - CURRENT `main`: `7729c93ee10db29b145592763886cfa5f9a019e0`
-- PR #41 branch before this remediation: `02fe5d956655cd0fc964c70de5dc4f84832d7d31`
-- Requirements Source of Truth remains `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`.
-- ADR 0012 remains Accepted.
-- ADR 0013 remains Proposed until this detailed-design package receives independent `GO` and is merged.
+- Requirements Source of Truth: `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
+- ADR 0012: Accepted
+- ADR 0013: Proposed until detailed-design independent review returns `GO`
 
-This is **not a new product requirements layer**. It is the normative physical-alignment layer for CURRENT main.
+This document does **not** create a second product-requirements layer. It fixes migration, compatibility, cutover, and CURRENT-runtime details that cannot safely be left to implementer invention.
 
-Where this document explicitly amends a CURRENT-main physical assumption in `02_DATA_MODEL_AND_MIGRATION.md`, `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`, `05_GOOGLE_IMAGE_AI_AUTHORITY_PRIVACY.md`, `06_TEST_MODE_CONCURRENCY_OBSERVABILITY.md`, or `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`, this document governs that physical constraint/cutover detail. Product behavior and Authority/truth ownership remain governed by Requirements + ADR 0013 + `01`–`07`.
+Where this document conflicts with an older physical assumption in `02_DATA_MODEL_AND_MIGRATION.md`, `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`, `05_GOOGLE_IMAGE_AI_AUTHORITY_PRIVACY.md`, `06_TEST_MODE_CONCURRENCY_OBSERVABILITY.md`, or `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`, this document governs the physical/cutover detail. Requirements + ADR 0013 remain authoritative for product/domain meaning.
 
-The reason for a dedicated physical-alignment section is to prevent implementation from silently following an older v6-era table snapshot while keeping the reviewed conceptual design readable.
+No code, migration, Supabase runtime, Edge Function, LINE runtime, Google Calendar runtime, Vercel, or production data is changed by this documentation PR.
 
-No code, migration, Supabase runtime, Edge Function, LINE runtime, Google Calendar runtime, Vercel, or production data is changed by this PR.
+---
 
-## 2. Fresh CURRENT main inventory
+## 2. Fresh CURRENT main physical inventory
 
-Fresh read of `supabase/migrations` at CURRENT main shows **78 migration files**. The resulting application-owned table inventory relevant to this design is **46 tables: public 26 / private 20**.
+Fresh-read CURRENT migrations include the later `20260821` through `20260825` chain and **78 migration files**.
 
-Important source migrations include:
+A prior review/count incorrectly treated only plain `create table` statements as inventory and missed `create table if not exists` statements introduced by `20260822000001_calendar_projection_domain.sql`.
 
-- `20260819000002_core_household.sql`
-- `20260819000003_tasks_recurrence.sql`
-- `20260819000004_notifications_routine.sql`
-- `20260819000005_calendar.sql`
-- `20260819000006_private_queues_tokens.sql`
-- `20260821000001_assignment_change_requests.sql`
-- later migrations through `20260825000001_garbage_routines_and_cold_medicine_cleanup.sql`
+CURRENT application-owned table inventory relevant to this program is therefore:
+
+- **public: 27**
+- **private: 21**
+- **total: 48**
+
+The two tables that must not be omitted are:
+
+- `public.household_task_categories`
+- `private.family_ops_calendar_mirrors`
+
+The latter is active infrastructure: later migrations evolve it into the durable Task → Google projection/outbox path and install triggers/workers around it. It is not dead documentation-era residue.
 
 ### 2.1 Disposition legend
 
-- `KEEP`: current table remains the same domain/transport truth; only ordinary compatible maintenance expected.
-- `EVOLVE`: reuse the table but add columns/constraints/read adapters or narrow old semantics.
-- `SUPERSEDE`: retain rows for history/compatibility, but new canonical semantics move elsewhere; no new independent truth may be created after cutover.
+- `KEEP`: preserve current truth/transport responsibility.
+- `EVOLVE`: reuse the table but extend/narrow semantics or add compatibility fields.
+- `BRIDGE`: preserve as an explicit migration/interoperability path with a bounded ownership role; it must not become a competing canonical truth.
+- `SUPERSEDE`: keep for history/compatibility while canonical semantics move elsewhere; no independent new truth after cutover.
 - `OUT-OF-SCOPE`: retained and not materially changed by this program.
 
-### 2.2 Public tables — 26/26 disposition
+### 2.2 Public tables — 27/27
 
-| # | Current table | Disposition | Detailed-design treatment |
+| # | Current table | Disposition | Binding treatment |
 |---:|---|---|---|
 | 1 | `public.households` | KEEP | Household boundary remains canonical. |
 | 2 | `public.profiles` | KEEP | Display profile only; no simulated identity rows. |
-| 3 | `public.household_members` | KEEP | **Real membership only.** Never create fake simulated spouse/auth membership. |
-| 4 | `public.task_definitions` | EVOLVE | Add/snapshot expectation, carryover, duplicate sensitivity, early-completion defaults as needed. |
-| 5 | `public.task_subtask_definitions` | KEEP | Existing definition relation remains. |
-| 6 | `public.recurrence_rules` | EVOLVE | Preserve effective dating/versioning; extend assignment result semantics including `anyone`. |
-| 7 | `public.task_instances` | EVOLVE | Assignment/claim/attention/waiting/outcome/revision/test context + ActorRef mirrors; existing completion CHECKs must be replaced in Phase 1. |
-| 8 | `public.task_subtask_instances` | EVOLVE | Real-user `completed_by` becomes compatibility mirror; canonical actor reference/test scope added for new writes where needed. |
-| 9 | `public.task_events` | EVOLVE | Continue append-only audit; add ActorRef/test context compatibility so simulated actors are not stored as operator user. |
-| 10 | `public.requests` | EVOLVE | Keep logical request/provenance identity; attempt owns negotiation; linked Task owns accepted execution. Legacy `status` becomes compatibility projection only. |
-| 11 | `public.handovers` | EVOLVE | Extend into share/handover information semantics; add direct test context + canonical author ActorRef. |
-| 12 | `public.handover_reads` | EVOLVE | Keep real-user compatibility receipt; canonical acknowledgement actor semantics must support test context without fake membership. |
-| 13 | `public.shopping_items` | EVOLVE | Remain a separate shopping aggregate; add assignment mode/claim/participant/duplicate sensitivity/revision/test context instead of converting shopping into Task. |
-| 14 | `public.user_notifications` | EVOLVE | Keep in-app record; new notification intent/policy metadata. Production rows only for real recipients. |
-| 15 | `public.notification_preferences` | EVOLVE | Map old per-routine toggles into new morning/evening/exception policy while preserving compatibility. |
-| 16 | `public.household_routine_schedules` | EVOLVE | Add new brief schedule kinds; old nine kinds remain physical compatibility rows and are disabled/superseded per cutover. |
-| 17 | `public.routine_checkin_sessions` | SUPERSEDE | Preserve compatibility/history; group reconciliation becomes canonical new evidence model. |
-| 18 | `public.routine_checkin_session_items` | SUPERSEDE | Preserve compatibility/history; no dual reconciliation truth after cutover. |
-| 19 | `public.evening_routine_preferences` | EVOLVE | Preserve current household routine configuration as input to future rule/read model; do not silently delete. |
-| 20 | `public.calendar_connections` | KEEP | Existing provider connection handle reused. |
-| 21 | `public.calendar_events_cache` | KEEP | Canonical observation of Google provider state, not Family Event household truth. |
-| 22 | `public.calendar_event_occurrences` | KEEP | Provider occurrence projection reused; all-day rows must become visible to DailyBrief display even though conflict logic still excludes them. |
-| 23 | `public.calendar_occurrence_busy_members` | KEEP | Timed conflict attribution continues. |
-| 24 | `public.calendar_busy_classifications` | KEEP | Existing manual busy classification reused. |
-| 25 | `public.calendar_busy_classification_members` | KEEP | Existing normalized classification membership reused. |
-| 26 | `public.assignment_change_request_tasks` | SUPERSEDE | Existing v2 assignment-change scope mapping is migrated to new Request/Attempt/protected-scope provenance; retained read-only for audit/compat until verified cleanup. |
+| 3 | `public.household_members` | KEEP | Real membership only; never create fake simulated spouse/auth membership. |
+| 4 | `public.household_task_categories` | EVOLVE | Reuse the household task/category taxonomy. It classifies Task/household work presentation only; it does not become Event Authority or assignment truth. New task/event UI may map to this taxonomy, but Family Event type/school context remains separate domain data. |
+| 5 | `public.task_definitions` | EVOLVE | Expectation/carryover/duplicate-sensitivity/early-completion defaults. |
+| 6 | `public.task_subtask_definitions` | KEEP | Existing definition relation remains. |
+| 7 | `public.recurrence_rules` | EVOLVE | Preserve effective dating/versioning; extend assignment result including `anyone`. |
+| 8 | `public.task_instances` | EVOLVE | Assignment/claim/waiting/outcome/revision/test context + ActorRef compatibility; existing completion CHECKs replaced in Phase 1. |
+| 9 | `public.task_subtask_instances` | EVOLVE | Canonical actor/test semantics added where needed; real-user `completed_by` becomes compatibility-only. |
+| 10 | `public.task_events` | EVOLVE | Append-only audit retained; ActorRef/test-compatible actor identity. |
+| 11 | `public.requests` | EVOLVE | Logical Request/provenance retained; Request Attempt owns negotiation; linked Task owns accepted execution; legacy lifecycle columns become a strict compatibility projection. |
+| 12 | `public.handovers` | EVOLVE | Extend into share/handover information semantics with direct test context + ActorRef author. |
+| 13 | `public.handover_reads` | EVOLVE | Real-user compatibility receipt; canonical acknowledgement must support ActorRef/test context. |
+| 14 | `public.shopping_items` | EVOLVE | Separate shopping aggregate with assignment/claim/participant/duplicate-safety/revision/test context. |
+| 15 | `public.user_notifications` | EVOLVE | In-app record reused; new notification intent/policy metadata. |
+| 16 | `public.notification_preferences` | EVOLVE | Map legacy routine-specific toggles to morning/evening/exception policy. |
+| 17 | `public.household_routine_schedules` | EVOLVE | Add DailyBrief schedule kinds; legacy nine kinds become compatibility rows disabled/suppressed after cutover. |
+| 18 | `public.routine_checkin_sessions` | SUPERSEDE | Preserve history/compatibility; new reconciliation sessions own group evidence. |
+| 19 | `public.routine_checkin_session_items` | SUPERSEDE | Preserve history/compatibility; no dual reconciliation truth. |
+| 20 | `public.evening_routine_preferences` | EVOLVE | Preserve household routine configuration as rule/materialization input; do not silently delete. |
+| 21 | `public.calendar_connections` | KEEP | Provider connection/write-target handle reused. |
+| 22 | `public.calendar_events_cache` | KEEP | Canonical provider observation only, not household Event truth. |
+| 23 | `public.calendar_event_occurrences` | KEEP | Provider occurrence projection reused; all-day rows included in display but excluded from timed conflict logic. |
+| 24 | `public.calendar_occurrence_busy_members` | KEEP | Timed conflict attribution continues. |
+| 25 | `public.calendar_busy_classifications` | KEEP | Existing manual busy classification reused. |
+| 26 | `public.calendar_busy_classification_members` | KEEP | Existing normalized membership reused. |
+| 27 | `public.assignment_change_request_tasks` | SUPERSEDE | Existing assignment-change scope mapping is migration/audit input only after Request/Attempt cutover; cannot remain an independent assignment-negotiation truth. |
 
-### 2.3 Private tables — 20/20 disposition
+### 2.3 Private tables — 21/21
 
-| # | Current table | Disposition | Detailed-design treatment |
+| # | Current table | Disposition | Binding treatment |
 |---:|---|---|---|
-| 1 | `private.google_connections` | KEEP | Credential binding/encryption mechanics unchanged. |
+| 1 | `private.google_connections` | KEEP | Credential binding/encryption unchanged. |
 | 2 | `private.google_watch_channels` | KEEP | Watch overlap/verification unchanged. |
 | 3 | `private.google_sync_state` | KEEP | Sync token truth unchanged. |
 | 4 | `private.google_sync_jobs` | KEEP | Queue/lease/coalescing unchanged. |
-| 5 | `private.google_event_staging` | KEEP | 410/full-sync staging unchanged. |
-| 6 | `private.google_write_operations` | KEEP | Google create/update idempotency retained; test context hard-blocked before write. |
-| 7 | `private.webhook_inbox` | KEEP | LINE durable inbox/dedup retained. |
-| 8 | `private.line_user_links` | KEEP | Real user LINE identity only; simulated member never receives its own production LINE link. |
-| 9 | `private.pending_actions` | EVOLVE | Reuse preview/confirm queue; add revision/test/ActorRef-aware command context where necessary. |
-| 10 | `private.raw_inputs` | EVOLVE | Reuse for short-lived private raw input; image/source intake gets separate private object/source model. No durable third-party OCR transcript. |
-| 11 | `private.household_invites` | OUT-OF-SCOPE | Existing membership setup retained. |
-| 12 | `private.line_link_tokens` | OUT-OF-SCOPE | Existing one-time link security retained. |
-| 13 | `private.google_oauth_states` | KEEP | Existing replay-safe OAuth state retained. |
-| 14 | `private.notification_outbox` | EVOLVE | Reuse durable delivery/retry/quota; **production only**. Synthetic test delivery must not write here. |
-| 15 | `private.line_quota_state` | KEEP | Existing hard-cap accounting retained. |
-| 16 | `private.line_quota_reservations` | KEEP | Existing atomic quota reservation retained. |
-| 17 | `private.worker_run_receipts` | KEEP | Existing worker idempotency retained. |
-| 18 | `private.jp_holidays` | KEEP | Existing holiday source drives non-workday morning brief. |
-| 19 | `private.mutation_receipts` | EVOLVE | Preserve operation idempotency, but canonical actor identity must support ActorRef; simulated operations may not be forced into an operator user key. |
-| 20 | `private.scheduled_dispatch_receipts` | EVOLVE | Add new brief schedule kinds/dedup keys; legacy routine dispatch receipts remain historical. |
+| 5 | `private.google_event_staging` | KEEP | Full/incremental sync staging unchanged. |
+| 6 | `private.google_write_operations` | KEEP | Provider create/update idempotency retained; test context hard-blocked. |
+| 7 | `private.family_ops_calendar_mirrors` | BRIDGE | Remains the bounded Task/transport → Google projection bridge. It must never become Family Event household truth or a second Family Event writer. Ownership-transfer rules are in §10. |
+| 8 | `private.webhook_inbox` | KEEP | LINE durable inbox/dedup retained. |
+| 9 | `private.line_user_links` | KEEP | Real user LINE identity only. |
+| 10 | `private.pending_actions` | EVOLVE | Reuse preview/confirm queue with revision/test/ActorRef-aware context. |
+| 11 | `private.raw_inputs` | EVOLVE | Reuse for short-lived private raw input only; no durable third-party OCR transcript. |
+| 12 | `private.household_invites` | OUT-OF-SCOPE | Existing membership setup retained. |
+| 13 | `private.line_link_tokens` | OUT-OF-SCOPE | Existing link security retained. |
+| 14 | `private.google_oauth_states` | KEEP | Existing replay-safe OAuth state retained. |
+| 15 | `private.notification_outbox` | EVOLVE | Durable delivery/retry/quota reused; production-only. Synthetic test delivery never writes here. |
+| 16 | `private.line_quota_state` | KEEP | Existing hard-cap accounting retained. |
+| 17 | `private.line_quota_reservations` | KEEP | Existing atomic reservation retained. |
+| 18 | `private.worker_run_receipts` | KEEP | Existing worker idempotency retained. |
+| 19 | `private.jp_holidays` | KEEP | Holiday source drives non-workday morning brief. |
+| 20 | `private.mutation_receipts` | EVOLVE | Preserve idempotency; distinguish authenticated operator from canonical ActorRef/test scope. |
+| 21 | `private.scheduled_dispatch_receipts` | EVOLVE | Add DailyBrief kinds/dedup keys; legacy dispatch receipts remain historical. |
 
-This table is the implementation disposition inventory for all 46 current application tables. No table may be ignored merely because it is absent from older v6 prose.
+No CURRENT table may be omitted because it was created with `IF NOT EXISTS`, introduced after the original v6 snapshot, or considered “internal”.
 
-## 3. BLOCKER closure — existing `task_instances` completion CHECKs
+---
 
-CURRENT `20260819000003_tasks_recurrence.sql` imposes both:
+## 3. Task completion CHECK compatibility — BLOCKER closure
 
-- `completion_mode <> 'subtasks' OR actual_completed_by_id IS NULL`
-- for `completion_mode='whole' AND status='completed'`, `actual_completed_by_id IS NOT NULL`
+CURRENT `task_instances` physical constraints require:
 
-Therefore the old design phrase “participant truth first; mirror legacy column temporarily” is not executable without first changing those CHECKs.
+- subtask-mode parent `actual_completed_by_id IS NULL`;
+- whole + completed `actual_completed_by_id IS NOT NULL`.
 
-### 3.1 Phase 1 mandatory constraint replacement
+The participant-truth design therefore cannot start writing new completion semantics until those CHECKs are replaced by a forward migration.
 
-The **first additive task-completion migration** must replace the two existing completion-mode CHECK constraints with explicit named constraints compatible with the new canonical participant model.
+### 3.1 Phase 1 mandatory replacement
 
-Implementation must first inspect the real production/catalog constraint names and definitions; do not guess auto-generated names from migration order.
+The first task-completion migration must:
 
-Required new semantics:
+1. inspect **actual production catalog constraint names/definitions**;
+2. replace the two completion-mode CHECKs with explicitly named constraints compatible with ActorRef participants/test context;
+3. never rewrite an applied migration;
+4. never drop `actual_completed_by_id` in this program;
+5. retain completed/completed_at integrity.
 
-1. `completion_mode='subtasks'`:
-   - parent `actual_completed_by_id` remains `NULL`.
-   - canonical performer identity is represented by canonical participant/subtask ActorRef data.
-2. `completion_mode='whole' AND status='completed' AND test_context_id IS NULL`:
-   - compatibility `actual_completed_by_id` is required while any old reader still exists.
-   - it mirrors exactly one **compatibility-primary real performer**.
-3. `completion_mode='whole' AND status='completed' AND test_context_id IS NOT NULL`:
-   - `actual_completed_by_id` may be `NULL`; simulated actor cannot be inserted into a real-user FK.
-   - canonical participant ActorRef(s) are required.
-4. completed/completed_at invariant remains enforced.
-5. The migration changes CHECK semantics only; it **does not drop the legacy column** and therefore is not the prohibited destructive cleanup.
+Binding semantics:
 
-### 3.2 Compatibility-primary participant rule
+- `subtasks`: parent legacy mirror stays null; canonical performer truth is subtask/participant ActorRef data.
+- production `whole + completed`: canonical participant(s) required and exactly one technical compatibility-primary real participant mirrored to `actual_completed_by_id` while legacy readers exist.
+- test/simulated `whole + completed`: canonical ActorRef participant(s) required; legacy real-user mirror may be null.
 
-Multiple performers are equal in product semantics. `compatibility_primary` exists only to satisfy old physical readers during migration.
+The phrase “while legacy readers exist” is a rollout condition, not a PostgreSQL CHECK predicate. During the compatibility phase the deployed physical constraint is unconditional for production whole completions; a later separately reviewed cleanup migration may relax/remove that compatibility requirement after all old readers are retired.
 
-Canonical participant rows add:
+### 3.2 Compatibility-primary participant
 
+This field has **zero product meaning**.
+
+Canonical participant representation includes:
+
+- `actor_ref_id`
+- `recorded_by_actor_ref_id`
+- `test_context_id`
 - `compatibility_primary boolean not null default false`
-- direct `test_context_id`
 
 Rules:
 
-- new **production whole-task** completion has exactly one active real participant marked compatibility-primary until all old readers are retired;
-- if the recorder is also an explicitly declared performer, that performer is selected by default;
-- otherwise use the first explicitly declared performer in the confirmed command payload;
-- a later correction may change compatibility-primary only in the same atomic correction that updates canonical participants/audit;
-- no UI/history text may call this participant “primary” or infer greater contribution;
-- test/simulated completion has no legacy compatibility-primary user mirror requirement;
-- `subtasks` never uses parent `actual_completed_by_id` as participant truth.
+- production whole completion: exactly one active real participant is compatibility-primary until old readers retire;
+- choose recorder if recorder is an explicitly declared performer, otherwise first explicitly declared performer in confirmed command payload;
+- correction may change it only atomically with participant/audit correction;
+- no UI/history/analytics may describe it as a primary contributor or infer greater contribution;
+- test/simulated completion has no real-user compatibility-primary mirror requirement;
+- subtask parent never uses legacy parent actor as participant truth.
 
-This closes the prior undefined “which performer is mirrored?” migration hole without changing the household meaning of multiple performers.
+---
 
-## 4. Request attempt → legacy `requests.status` compatibility projection
+## 4. Request Attempt → legacy Request physical projection — HIGH closure
 
-CURRENT `requests.status` is NOT NULL and CHECK-limited to:
+CURRENT `requests` has both:
 
-- `pending`
-- `accepted`
-- `declined`
-- `completed`
-- `cancelled`
+1. `status NOT NULL` with allowed values `pending | accepted | declined | completed | cancelled`;
+2. a second CHECK that requires `status` and `accepted_at / declined_at / completed_at / cancelled_at` to be mutually consistent.
 
-New attempt states cannot be stored directly in that column.
+Therefore **status-only projection is invalid**. The compatibility projection must update the five legacy lifecycle fields atomically.
 
-### 4.1 Projection table
+Canonical Request/Attempt remains the only new truth. Legacy fields exist solely to keep CURRENT physical constraints/readers valid until cutover.
 
-| Canonical current attempt state | Legacy `requests.status` compatibility value | Notes |
-|---|---|---|
-| `pending` | `pending` | Old-compatible only before aggregate cutover. |
-| `checking` | `pending` | Canonical UI must show `確認中`; old UI is prohibited after new-state cutover. |
-| `consulting` | `pending` | Canonical UI must show `相談中`; old response buttons are prohibited after new-state cutover. |
-| `awaiting_confirmation` | `pending` | Canonical UI renders terms confirmation, not old accept/decline. |
-| `accepted` | `accepted` | Linked Task becomes execution truth. |
-| `declined` | `declined` | Terminal attempt. |
-| `expired` | `cancelled` | Compatibility only; canonical history remains `expired`, not “user cancelled”. |
-| `cancelled` | `cancelled` | Terminal attempt. |
+### 4.1 Pre-agreement compatibility projection
 
-New runtime never independently sets `requests.status='completed'` when linked work completes. Existing historical `completed` rows remain untouched and backfill to accepted agreement + linked Task execution truth.
+For a logical Request that has **not yet established an accepted agreement**, project the current canonical attempt as follows:
 
-### 4.2 Current direct readers/writers that must be cut over together
+| Canonical attempt state | legacy `status` | `accepted_at` | `declined_at` | `cancelled_at` | `completed_at` | Meaning |
+|---|---|---|---|---|---|---|
+| `pending` | `pending` | null | null | null | null | old-compatible pending |
+| `checking` | `pending` | null | null | null | null | compatibility only; canonical UI says 確認中 |
+| `consulting` | `pending` | null | null | null | null | compatibility only; canonical UI says 相談中 |
+| `awaiting_confirmation` | `pending` | null | null | null | null | compatibility only; canonical UI shows terms confirmation |
+| `accepted` | `accepted` | canonical acceptance timestamp | null | null | null | agreement established; linked Task becomes execution truth |
+| `declined` | `declined` | null | canonical decline timestamp | null | null | canonical terminal attempt |
+| `expired` | `cancelled` | null | null | canonical expiry timestamp **as compatibility-only cancelled_at** | null | canonical history remains `expired`; legacy field must never be shown as user-cancel truth after cutover |
+| `cancelled` | `cancelled` | null | null | canonical cancel timestamp | null | canonical cancelled attempt |
 
-At minimum the aggregate cutover inventory includes:
+If a pre-agreement reproposal creates a new active attempt after a prior terminal attempt, the legacy lifecycle tuple may be reprojected to the new current compatibility state, including clearing the old legacy terminal timestamp. The canonical prior attempt remains immutable in `request_attempts`; clearing a compatibility timestamp does **not** erase canonical history.
 
-- `apps/web/src/features/requests/Requests.tsx`
-  - direct `.from('requests').select('*')`
-  - `request.status === 'pending'` currently renders `引き受ける / 断る`
-- `apps/web/src/features/today/useTodayData.ts`
-  - current request read used by Today/pending display
-- current request Edge Functions / RPCs:
-  - `accept-request`
-  - `decline-request`
-  - `cancel-request`
-  - `accept-assignment-change-request`
-  - corresponding `server_tx_*` request mutations
-- LINE-native request/postback path introduced by `20260822000009_line_native_requests.sql`
-- assignment-change implementation in `20260821000001_assignment_change_requests.sql`
+### 4.2 Post-agreement multi-attempt composition
 
-No new attempt state may be enabled for a household while any user-visible reader for that same aggregate can still interpret legacy `pending` as unrestricted old accept/decline.
+Once any initial/reproposal attempt has established an accepted agreement, the logical Request has an accepted execution relationship with its linked Task.
 
-## 5. Aggregate-level atomic semantic cutover
+From that point onward:
 
-The phase numbering in `02` must not be interpreted as “enable new writes, then later enable new reads”.
+- legacy `requests.status = 'accepted'`;
+- legacy `accepted_at` remains the timestamp of the established agreement represented by the compatibility row;
+- legacy `declined_at/cancelled_at/completed_at` remain null for **new-runtime** rows;
+- an active or terminal `change` / `cancel` attempt is **not projected into the legacy lifecycle tuple**;
+- the pending change/cancel negotiation exists only in canonical `request_attempts` and canonical readers;
+- accepted change updates Task/assignment atomically but legacy Request remains `accepted`;
+- declined/expired/cancelled change attempt leaves legacy Request `accepted`;
+- accepted cancel attempt closes/cancels the canonical relationship/linked work according to the command contract, but the compatibility legacy Request still remains `accepted` because CURRENT CHECK cannot represent “accepted in the past, later mutually cancelled” without destroying `accepted_at` meaning.
 
-### 5.1 Preparation versus activation
+This is intentional: after semantic cutover no user-visible reader may treat legacy lifecycle fields as current Request truth.
 
-- Phase 1: additive schema/constraint readiness.
-- Phase 2: deterministic backfill + reconciliation.
-- Phase 3: **deploy** new command adapters and new read models behind an inactive aggregate gate.
-- Phase 4: **activate read + write semantics for one aggregate atomically** after both are ready.
-- Phase 5: retire legacy direct writers/readers; physical cleanup later.
+Historical pre-cutover `requests.status='completed'` rows are preserved as-is. Backfill represents them canonically as accepted agreement + linked Task execution result. New runtime does not independently set Request `completed` when the Task completes.
 
-For each aggregate (`request`, `task_actual`, `shopping`, `daily_brief`, `family_event`):
+### 4.3 Existing Request CHECK strategy
 
-1. deploy schema + canonical command + canonical reader;
-2. run pre-cutover reconciliation;
-3. route old public endpoint to the new adapter;
-4. switch canonical read and write gate in the same household/release cutover;
-5. only then permit first new-only semantic state.
+Phase 1 must inspect the real production Request CHECKs as explicitly as it inspects the task completion CHECKs.
 
-There is no supported interval where `checking/consulting/anyone claim/multiple performer/waiting/mostly_done` can be written while the corresponding old current-truth reader remains active.
+Chosen strategy:
 
-## 6. Rollback / feature-off contract after semantic cutover
+- **keep the existing legacy status/timestamp CHECK semantics during compatibility**;
+- implement one server-owned compatibility projection helper/transaction that writes `status + accepted_at + declined_at + cancelled_at + completed_at` as one tuple according to §§4.1–4.2;
+- do not add `checking/consulting/awaiting_confirmation/expired` as legacy `status` values;
+- do not let arbitrary new command code update only one legacy lifecycle field;
+- if actual production constraints differ from CURRENT main at implementation time, stop and re-review before migration.
 
-### R0 — before any new semantic write
+This avoids a second semantic lifecycle while preserving executable physical compatibility.
 
-- full runtime rollback to old read/write is possible;
-- additive schema/backfill may remain.
-
-### R1 — new adapters deployed but no new-only state created
-
-- feature activation can be cancelled;
-- old public endpoints must still route through whichever command contract owns the aggregate at that moment;
-- no parallel independent old/new write.
-
-### P1 — first new-only canonical state exists
-
-Examples: `checking`, `consulting`, `awaiting_confirmation`, `anyone` active claim, multiple performers, `waiting`, `mostly_done` evidence.
-
-After P1:
-
-- **legacy current-truth read rollback is forbidden**;
-- **legacy semantic writer rollback is forbidden**;
-- “rollback” means:
-  - pause affected new mutations if necessary;
-  - keep rendering canonical new truth through canonical or compatibility/degraded read model;
-  - forward-fix the implementation;
-- physical additive schema is not rolled back;
-- legacy columns remain only as compatibility/audit until a separately reviewed cleanup.
-
-Each aggregate cutover must persist/operationally record its P1 activation so an operator cannot accidentally flip a feature flag back to an unsafe legacy reader.
-
-## 7. Simulated actor persistence and direct test scoping
-
-### 7.1 Canonical ActorRef
-
-Use one server-owned `domain_actor_refs` identity model:
-
-- `real_user` -> same-household real `household_members.user_id`
-- `simulated_member` -> `test_context_id + simulated_role`, no auth user/member row
-- `system` -> explicit system actor
-
-The operator user ID is never substituted as the simulated spouse's assignee, claimant, performer, recorder, requester, recipient, confirmer, or audit actor.
-
-### 7.2 Actor-bearing truth that must use ActorRef
+### 4.4 Direct readers/writers that cut over atomically
 
 At minimum:
 
-- task planned assignee
-- anyone claimant
-- task/subtask performer
-- recorder
-- task/audit actor
-- request requester / recipient / attempt creator
-- request terms confirmation
-- reconciliation actor
-- handover/share author and acknowledgement
-- shopping assignee/claimant/participant/recorder
-- Family Event/source/candidate resolver where actor identity is meaningful
+- `apps/web/src/features/requests/Requests.tsx`
+- `apps/web/src/features/today/useTodayData.ts`
+- `accept-request`
+- `decline-request`
+- `cancel-request`
+- assignment-change accept/create paths
+- corresponding `server_tx_*` request functions
+- LINE-native request/postback path from `20260822000009_line_native_requests.sql`
+- assignment-change implementation from `20260821000001_assignment_change_requests.sql`
 
-Legacy real-user UUID columns are compatibility mirrors only for real production actors and may need CHECK/FK/nullability evolution. Simulated rows must not fabricate an operator/second user to satisfy them.
+A canonical `checking/consulting/awaiting_confirmation` state may never exist while an old user-visible reader for that household can still render legacy `pending` as unrestricted `引き受ける / 断る`.
 
-### 7.3 Direct `test_context_id` requirement
+---
 
-The earlier phrase “`test_context_id` **or a test-scoped parent aggregate**” is superseded for the following canonical business rows. They must directly store `test_context_id`:
+## 5. Aggregate-level atomic semantic cutover
+
+The old phrase “Phase 3 write, Phase 4 read” is superseded.
+
+Binding phase meaning:
+
+- **Phase 1:** additive schema + CHECK/FK/index readiness.
+- **Phase 2:** deterministic backfill + reconciliation.
+- **Phase 3:** deploy canonical commands **and canonical readers inactive** behind aggregate gate; no new semantic state yet.
+- **Phase 4:** atomically activate canonical **read + write** for one aggregate after both are ready.
+- **Phase 5:** retire direct legacy reader/writer routes; physical cleanup remains separately reviewed.
+
+For each aggregate (`request`, `task_actual`, `shopping`, `daily_brief`, `family_event`):
+
+1. schema + canonical command + canonical reader deployed;
+2. reconciliation passes;
+3. old public endpoint routes through canonical adapter;
+4. read and write gate flips together for household/release;
+5. only then first new-only state is allowed.
+
+There is no supported interval where checking/consulting/anyone claim/multiple performer/waiting/mostly-done can be written while the corresponding old current-truth reader remains active.
+
+### R0 / R1 / P1
+
+- `R0`: additive/backfill only; old runtime can still be used.
+- `R1`: canonical adapter+reader deployed inactive; activation can be cancelled before new-only state.
+- `P1`: first new-only semantic state exists.
+
+After P1:
+
+- no legacy current-truth read rollback;
+- no legacy semantic writer rollback;
+- incident response = mutation pause if needed + canonical/degraded projection + forward-fix;
+- feature flag is never a truth rollback switch;
+- P1 crossing is operationally recorded per aggregate/household release.
+
+---
+
+## 6. ActorRef and direct test scoping
+
+The common `domain_actor_refs` model remains binding:
+
+- `real_user`
+- `simulated_member`
+- `system`
+
+Operator/auth principal and domain actor are separate concepts. Simulated mama/papa must never be persisted by substituting the authenticated operator's user ID.
+
+Direct `test_context_id` is required on the canonical test-capable business rows, including:
 
 - `task_instances`
 - `task_actual_participants`
@@ -289,351 +293,393 @@ The earlier phrase “`test_context_id` **or a test-scoped parent aggregate**”
 - `request_attempts`
 - `request_attempt_confirmations`
 - `shopping_items`
-- shopping claims/participants
+- shopping claim/participant rows
 - `family_events`
-- change candidates / source documents created inside simulation
+- change candidates / source documents created in simulation
 
-Child rows may additionally validate against parent test context; parent derivation is not a substitute for the direct leakage discriminator on these test-capable rows.
+Parent-derived test scope is additional validation, not a replacement for this leakage discriminator.
 
-### 7.4 Read-path invariant
+Production-default reads must exclude test state for:
 
-Every production read path defaults to `test_context_id IS NULL` or an equivalent server-enforced canonical filter:
-
-- DailyBrief / Today
-- morning/evening scheduled dispatch
-- ordinary notification policy/outbox
+- DailyBrief/Today
+- scheduled dispatch
 - Requests
-- History / analytics
+- History/analytics
 - handover/share
 - shopping
 - event/prep
-- recurrence/materialization inputs that would otherwise materialize real work
+- recurrence/materialization inputs
+- notification policy/outbox
 
-Test-mode read requires the exact active test context and operator authorization.
+Side effects fail closed:
 
-### 7.5 Side-effect invariants
+- production notification outbox cannot consume test business state;
+- Google write rejects test/simulated context;
+- real spouse consent/ack cannot be manufactured by simulation;
+- synthetic LINE uses an operator-only test adapter, not production outbox.
 
-- production `notification_outbox`: only production/non-test business state
-- Google write: reject any simulated actor/test context with `TEST_SIDE_EFFECT_FORBIDDEN`
-- real spouse consent/ack table: test-context rows never promoted to production consent
-- production analytics: test excluded by default
-- synthetic LINE: separate operator-only adapter/dedup; never production outbox
+One-user test cannot begin before ActorRef resolution, direct test scope, server-derived execution context, and side-effect guards exist.
 
-### 7.6 Migration impact on current real-user-FK columns
+---
 
-Where CURRENT NOT NULL/FK/check constraints prevent simulated canonical rows, Phase 1 must explicitly evolve those constraints/columns rather than substituting operator IDs.
+## 7. Shopping remains a first-class aggregate
 
-Particularly inspect:
+Do not convert `shopping_items` into Task merely to reuse task machinery.
 
-- `task_instances.created_by`, `planned_assignee_id`, `actual_completed_by_id`
-- `task_subtask_instances.completed_by`
-- `task_events.actor_id`
-- `requests.requester_id`, `recipient_id`
-- `handovers.author_id`
-- `handover_reads.user_id`
-- `private.pending_actions.actor_id`
-- `private.mutation_receipts.actor_id`
+Canonical shopping adds:
 
-A compatibility real-user field may remain populated for production rows, but canonical simulated identity is ActorRef + direct test context.
-
-## 8. Shopping remains a first-class aggregate
-
-Do **not** convert `shopping_items` into Tasks merely to reuse claim/actual machinery.
-
-CURRENT shopping is already an independent aggregate with procurement lifecycle. Evolve it with the same responsibility/actual principles.
-
-### 8.1 Canonical shopping responsibility
-
-Add conceptually:
-
-- `assignment_mode`: `person | unassigned | anyone`
-- `assignee_actor_ref_id` nullable
-- `active_claimant_actor_ref_id` nullable
+- `assignment_mode = person | unassigned | anyone`
+- `assignee_actor_ref_id`
+- `active_claimant_actor_ref_id`
 - `claimed_at`
-- `duplicate_sensitivity` default `avoid_duplicate` for ordinary one-item acquisition where double purchase matters
 - `revision`
+- `duplicate_sensitivity`
 - direct `test_context_id`
+- `shopping_actual_participants` with performer/recorder ActorRef and action kind
 
-CURRENT `assignee_id` remains production real-user compatibility mirror.
+CURRENT `assignee_id` is production real-user compatibility mirror only. CURRENT `status='assigned'` is normalized as procurement state + responsibility in canonical read; it does not remain an independent second assignment truth.
 
-CURRENT `status='assigned'` is treated as a legacy compatibility representation of “wanted + person assignment”, not a separate new canonical procurement truth. New reads normalize procurement state independently from assignment/claim.
+`牛乳を買う / 誰でもOK` flow:
 
-### 8.2 Shopping actual participants
+1. both see it;
+2. `自分がやる` acquires claim; assignment mode remains anyone;
+3. partner sees claimant;
+4. claim can be released/taken over with revision safety;
+5. order/purchase completion records participant and clears active claim atomically;
+6. duplicate-sensitive neutral `対応済み` can notify partner when behavior must change.
 
-Add a small `shopping_actual_participants` representation rather than hiding shopping completion inside Task participants.
+If completion is undone/corrected to actionable, emit revision-aware neutral correction when partner behavior should change, e.g. `牛乳の買い物は未対応に戻りました` / medication-safe wording `朝の薬は未対応として確認し直してください`.
 
-Minimum semantics:
+No praise/blame wording.
 
-- shopping_item_id
-- actor_ref_id
-- action_kind (`ordered`,`purchased`,`arrived` as applicable)
-- recorded_by_actor_ref_id
-- direct test_context_id
-- created/corrected audit
+---
 
-Ordinary UX remains one tap; multi-person participation is secondary.
+## 8. DailyBrief schedule persistence
 
-### 8.3 `誰でもOK` shopping flow
+CURRENT `household_routine_schedules.schedule_kind` has a fixed nine-kind CHECK.
 
-`牛乳を買う / 誰でもOK`:
+Phase 1 evolves it to include at least:
 
-1. both can see item;
-2. user taps `自分がやる` -> claim only; assignment mode stays `anyone`;
-3. partner sees claimant/current state;
-4. claimant may `手放す`;
-5. rare emergency `引き継ぐ` is revision-checked/audited;
-6. purchase/order completion clears active claim atomically and records participant;
-7. duplicate-sensitive neutral `対応済み` can notify the other adult when behavior must change.
+- `weekday_morning_brief` → default 06:30
+- `nonworkday_morning_brief` → default 09:00
+- `evening_brief` → default 20:30
 
-### 8.4 Undo/correction notification
+The existing `weekday is null` constraint is compatible because the kind itself distinguishes weekday/nonworkday.
 
-If a duplicate-sensitive completion that produced a neutral `対応済み` notice is later undone/corrected back to actionable state, emit a revision-aware neutral correction when the other adult's behavior should change, e.g.:
-
-`牛乳の買い物は未対応に戻りました`
-
-or for medication correction:
-
-`朝の薬は未対応として確認し直してください`
-
-No actor praise/blame. Stale prior buttons remain invalid through revision check.
-
-## 9. DailyBrief schedule persistence
-
-CURRENT `household_routine_schedules.schedule_kind` CHECK contains exactly the v6-era nine kinds and cannot represent the accepted morning/evening anchor model.
-
-### 9.1 Extend existing schedule table
-
-Phase 1 evolves the CHECK to allow at least:
-
-- `weekday_morning_brief`
-- `nonworkday_morning_brief`
-- `evening_brief`
-
-Default rows:
-
-- weekday morning: `06:30`
-- weekend/JP-holiday morning: `09:00`
-- evening: `20:30`
-
-The old nine kinds remain physical rows during compatibility but are disabled/suppressed for a household when that household atomically cuts over to DailyBrief cadence.
-
-### 9.2 Date-specific exception table
-
-Add `household_routine_schedule_overrides` (name may be finalized at DDL review) with:
+Add date-specific override persistence, conceptually `household_routine_schedule_overrides`:
 
 - household_id
 - local_date
-- brief schedule kind
+- brief kind
 - enabled/skip
-- optional override `local_time`
-- updated_by real ActorRef/user provenance
-- revision / updated_at
-- unique per household/date/kind
+- optional local_time
+- revision/update provenance
+- unique household/date/kind
 
-This supports travel/event-day one-off schedule changes without changing the base rule.
+Explicitly evolve together:
 
-### 9.3 Existing UI/RPC disposition
-
-Must explicitly evolve, not ignore:
-
-- `apps/web/src/features/settings/RoutineSchedule.tsx`
-- current `update-routine-schedule` Edge/RPC
+- `RoutineSchedule.tsx`
+- update-routine-schedule Edge/RPC
 - `notification_preferences`
 - `household_routine_schedules`
 - `scheduled_dispatch_receipts`
 - current routine dispatcher
 
-After aggregate cadence cutover, legacy checklist/check-in schedule rows cannot continue producing separate normal-day pushes that violate the two-anchor UX.
+After DailyBrief cadence cutover, legacy checklist/check-in rows may remain physically but cannot continue generating normal-day pushes that violate the two-anchor UX.
 
-## 10. All-day event display versus conflict detection
+---
 
-CURRENT Google projection and multiple current Today/week/conflict readers intentionally contain `all_day_start is null` because v6 conflict detection excludes all-day events.
+## 9. All-day display versus timed conflict
 
-The new design must separate **display inclusion** from **assignment conflict inclusion**.
+Keep these as separate concerns.
 
-### 10.1 Conflict rule — unchanged
+### Display
 
-- all-day Google occurrence remains excluded from person-specific busy/conflict detection unless a future separately reviewed product requirement changes this.
+Relevant all-day Family Events and Google occurrences are visible in DailyBrief/PWA schedule.
 
-### 10.2 DailyBrief display rule — changed
+- use `all_day_events[]` or typed schedule entries;
+- never invent a fake 00:00 time;
+- school events such as 運動会 / 遠足 / 食育 remain visible.
 
-- all-day Family Events and all-day Google occurrences that are relevant to the household **must be visible** in DailyBrief/PWA schedule.
-- DailyBrief gets an explicit `all_day_events[]`/equivalent section or typed entries inside schedule.
-- no fake 00:00 time is invented.
-- school events such as 運動会 / 遠足 / 食育 remain visible even though they do not create a timed calendar conflict.
+### Conflict
 
-### 10.3 Legacy read disposition
+All-day occurrences remain excluded from person-specific timed busy/assignment conflict under current requirements.
 
-Current readers/RPCs that filter `all_day_start is null` may remain for the old timed conflict read, but the new DailyBrief display query must not reuse that predicate for schedule visibility.
+Legacy reads that use `all_day_start is null` may continue serving timed conflict only. The DailyBrief display query must never reuse that predicate for visibility.
+
+Mandatory scenarios:
+
+1. nursery image → all-day Family Event → relevant morning brief visible;
+2. Google all-day event → DailyBrief visible;
+3. same event → no false timed assignment conflict.
+
+---
+
+## 10. CURRENT `family_ops_calendar_mirrors` → new Google Authority boundary
+
+This section closes the previously omitted active Task → Google writer path.
+
+CURRENT `private.family_ops_calendar_mirrors` is a durable projection/outbox with:
+
+- stable projection key;
+- Task/transport ownership inputs;
+- desired upsert/delete;
+- pending/processing/synced/failed/deleted state;
+- provider event ID + ETag;
+- lease/retry worker;
+- Task mutation trigger enqueue;
+- reconciliation when calendar write target changes.
+
+It cannot be ignored when introducing Family Event Authority.
+
+### 10.1 Bounded role after redesign
+
+`family_ops_calendar_mirrors` remains a **BRIDGE for Task-owned calendar projections only**:
+
+- transport daily projection (`送 P ｜ 迎 M`);
+- an explicitly calendar-visible standalone Task where product settings still opt that Task into Google.
+
+It is **not**:
+
+- Family Event household truth;
+- Family Event external-follow state;
+- Family Event field Authority;
+- a writer for a Google event once that provider event is owned by `family_event_external_links`.
+
+Family Events use the new Family Event + external-link/Authority path. Google cache remains provider observation.
+
+### 10.2 Exactly-one-writer invariant
+
+For each `(calendar_connection_id, provider_event_id)` or deterministic not-yet-created provider identity, exactly one Family Ops writer-owner may be active:
+
+- Task mirror bridge, **or**
+- Family Event external-link writer,
+- never both.
+
+The invariant is enforced at command/DB adapter level and audited before cutover. No title/date matching decides ownership.
+
+### 10.3 Existing transport mirrors
+
+Transport mirrors remain in the Task bridge and are not auto-converted to Family Events. They continue to use the stable transport projection key unless a later separately reviewed requirement changes transport presentation.
+
+### 10.4 Existing special Task mirrors
+
+Do **not** infer that every current `special` Task mirror is a Family Event.
+
+Default migration treatment:
+
+- existing Task mirror remains Task-owned bridge;
+- no automatic conversion based on title/date/category;
+- if the user/system later explicitly adopts that provider event into a Family Event, use the ownership-transfer protocol below.
+
+This preserves current Google linkage without inventing Event truth.
+
+### 10.5 Ownership transfer / adoption protocol
+
+When an existing Task-mirrored provider event is explicitly adopted as a Family Event:
+
+1. lock/identify the mirror by stable projection key and provider identity; no title search;
+2. prevent new Task-trigger enqueue for that projection during transfer (guard/ownership state);
+3. if mirror is `processing` with an unexpired lease, wait/retry transfer after lease completion; never race the worker;
+4. reconcile `pending/failed` mirror state to a known provider observation before transfer, or stop with an explicit migration/repair anomaly; never silently discard;
+5. obtain authoritative `provider_event_id`, current ETag and owned-field external snapshot from the mirror/provider cache;
+6. create `family_event_external_links` for the chosen Family Event using that exact provider identity/snapshot;
+7. atomically mark the Task mirror as superseded/bridge-disabled for that provider identity and disable future Task enqueue for the transferred projection;
+8. only after that ownership change may the Family Event writer issue future Google writes;
+9. verify exactly-one-writer invariant after transfer.
+
+The implementation may add a bridge ownership/superseded field/state rather than overloading `sync_state`; exact column naming is DDL-review detail. The state transition itself is mandatory.
+
+### 10.6 Failed/pending queue reconciliation
+
+Before Family Event aggregate P1:
+
+- no ambiguous mirror row may target the same provider event as a Family Event writer;
+- `processing` lease must be resolved/expired and reclaimed safely;
+- `pending` / `failed` rows either complete under Task ownership or are explicitly transferred after provider reconciliation;
+- `deleted` rows with no live provider event are not fabricated into external links;
+- provider ID/ETag/linkage is never guessed;
+- reconciliation report records unresolved rows and blocks affected household/event cutover.
+
+### 10.7 Trigger/worker cutover
+
+Task enqueue trigger remains active for Task-owned projections.
+
+It must be changed/guarded so it does **not** enqueue a projection whose provider ownership has been transferred to a Family Event.
+
+Family Event writer never consumes `family_ops_calendar_mirrors` as its canonical queue. It uses the Family Event external-link + existing Google write/idempotency machinery defined by the Authority design.
+
+This prevents double Google writes while preserving the proven existing transport/task mirror implementation.
+
+---
+
+## 11. Task waiting and outcome mapping
+
+Task waiting remains orthogonal current truth:
+
+- `attention_state = active | waiting`
+- `waiting_note`
+- `next_check_at`
+- original `due_at` preserved
+- revision + audit
+
+Waiting with a future check suppresses normal nag; next-check due resurfaces without auto-resume; hard deadline risk may surface while still waiting.
+
+Outcome mapping:
+
+| User meaning | Canonical current representation |
+|---|---|
+| 未入力 / 結果不明 | no terminal outcome; certainty remains unknown |
+| できなかった | `status=skipped`, `outcome_reason=could_not_do` |
+| 今回不要 | `status=skipped`, `outcome_reason=not_needed_this_occurrence` |
+| occurrence expired | `status=skipped`, `outcome_reason=expired_occurrence` |
+| 中止 | `status=cancelled`, cancellation reason/current field as defined by task schema |
+| 再予定 | remains operationally open; reschedule mutation/audit stores prior schedule; no fake skip |
+
+Legacy skipped reason is never guessed.
+
+---
+
+## 12. Consultation confirmation
+
+For terms revisions:
+
+1. participant explicitly proposing exact terms is atomically confirmed for that revision;
+2. other required participant must confirm same revision;
+3. AI/system summary alone implies **zero** confirmations;
+4. edit increments terms revision and invalidates prior confirmations;
+5. one-sided confirmation never changes formal assignment.
+
+---
+
+## 13. Legacy Request/backfill reconciliation gate
+
+Before Request semantic cutover, repeatable read-only reconciliation must include:
+
+- accepted/completed Request missing linked Task;
+- duplicate/invalid linked Task relation;
+- Request terminal state vs linked Task mismatch;
+- `assignment_change_request_tasks` missing/extra/inconsistent scope rows;
+- deterministically checkable lifecycle timestamp inconsistency;
+- historical completed Request whose linked Task is not completed;
+- accepted Request whose Task is contradictory terminal state;
+- legacy lifecycle tuple failing CURRENT `requests` CHECK expectations;
+- post-backfill canonical Request/Attempt projection not reproducible without guessing.
+
+No inferred Task creation/completion/repair. Unresolved anomaly blocks affected household cutover unless explicitly classified legacy-unknown with reviewed treatment.
+
+---
+
+## 14. Binding implementation acceptance amendments
+
+These requirements are mandatory even if an older `07` work-package line omitted them.
+
+### Request cutover
+
+Acceptance must prove:
+
+- every new-runtime legacy Request tuple satisfies CURRENT status/timestamp CHECK;
+- `checking/consulting/awaiting_confirmation` canonical states do not expose old accept/decline UI;
+- accepted Request + pending change attempt keeps legacy tuple `accepted + accepted_at` while canonical reader shows the pending change;
+- accepted Request + accepted/declined/expired/cancelled change/cancel attempt never causes a legacy CHECK failure;
+- historical `completed` rows remain preserved/backfilled without guessed execution truth.
+
+### Shopping package
+
+A dedicated implementation package/subpackage must cover:
+
+- shopping schema evolution;
+- anyone claim/release/takeover;
+- participants/recorder;
+- revision/concurrency;
+- test isolation;
+- duplicate-sensitive completion + neutral undo correction;
+- atomic read/write cutover.
+
+### DailyBrief schedule package
+
+Acceptance must cover:
+
+- 06:30 / 09:00 / 20:30 persistence;
+- one-day time override;
+- one-day skip/disable override;
+- legacy nine-kind push suppression after cutover;
+- dispatcher receipt/dedup behavior.
+
+### All-day package
+
+Acceptance must include all three §9 scenarios.
+
+### Google Authority package
 
 Acceptance must include:
 
-- nursery image -> all-day Family Event -> next relevant morning brief visible;
-- Google all-day event -> DailyBrief visible;
-- same all-day event -> no timed assignment conflict warning.
+- existing Task mirror inventory/reconciliation;
+- no Task mirror / Family Event double writer;
+- transport mirror remains valid;
+- explicit special-Task → Family Event adoption preserves provider event ID/ETag without title matching;
+- pending/failed/processing mirror state safely reconciled before ownership transfer;
+- transferred mirror cannot be re-enqueued by Task trigger.
 
-## 11. `待ち` current truth — binding physical mapping
+---
 
-The conceptual `attention_state` design is retained and is now a mandatory task physical extension:
+## 15. Mandatory production-read/test leakage audit
 
-- `attention_state`: `active | waiting`
-- `waiting_note`
-- `next_check_at`
-- original `due_at` remains unchanged
-- revision + audit events
+Before one-user test on an actual household, verify zero test leakage into:
 
-Commands:
+- Today/DailyBrief ordinary read;
+- 06:30/09:00/20:30 production dispatch;
+- History/analytics;
+- Requests ordinary view;
+- shopping ordinary view;
+- handover/share ordinary view;
+- recurrence/materialization production work;
+- notification outbox;
+- Google writes.
 
-- `set-task-waiting`
-- `update-task-waiting`
-- `resume-task`
+Any leak is a release blocker.
 
-Read behavior:
+---
 
-- waiting + future next check -> ordinary incomplete nag suppressed
-- next check due -> `waiting_checks`
-- hard deadline risk may surface even while waiting
-- no automatic state flip merely because time elapsed
+## 16. Closure matrix
 
-Event prep uses the same task waiting dimension rather than adding another event-prep waiting status.
-
-## 12. Task outcome/disposition mapping
-
-New current task snapshot includes `outcome_reason` for terminal exception semantics.
-
-| User meaning | Current operational representation |
+| Review finding | Binding closure |
 |---|---|
-| 未入力 / 結果不明 | no terminal outcome; task/reconciliation certainty remains unknown |
-| できなかった | `status=skipped`, `outcome_reason=could_not_do` |
-| 今回不要 | `status=skipped`, `outcome_reason=not_needed_this_occurrence` |
-| occurrence expired by rule | `status=skipped`, `outcome_reason=expired_occurrence` |
-| 中止 | `status=cancelled`, `outcome_reason=cancelled` |
-| 再予定 | remains operationally open; reschedule mutation/audit stores prior schedule + `last_replanned_at`/equivalent, not a fake skip |
+| task completion legacy CHECK blocker | §3 |
+| Request new states lacked physical legacy projection | §4, including timestamps + multi-attempt composition |
+| write/read phase contradiction | §5 |
+| simulated/test state leakage | §6 + §15 |
+| CURRENT table inventory incomplete | §2, corrected to 48 = public 27/private 21 |
+| `household_task_categories` omitted | §2.2 |
+| active `family_ops_calendar_mirrors` omitted | §§2.3,10 |
+| shopping disconnected | §7 |
+| DailyBrief schedule persistence missing | §8 |
+| all-day display hidden by conflict filter | §9 |
+| outcome_reason storage | §11 |
+| compatibility-primary undefined | §3.2 |
+| consulting proposer confirmation undefined | §12 |
+| Request mismatch audit incomplete | §13 |
+| one-user sandbox order/read leak | §§6,15 |
+| duplicate-sensitive undo correction | §7 |
+| work-package gaps for shopping/all-day/override | §14 |
 
-Existing legacy `skipped` rows are not guessed into a reason. They receive a compatibility `legacy_unknown_outcome` classification/report until explicitly corrected if necessary.
+---
 
-## 13. Consultation terms confirmation semantics
+## 17. Review / implementation gate
 
-To close the “who already confirmed a proposed condition?” ambiguity:
-
-1. A household participant who explicitly submits new terms, e.g. `18:30なら可能`, creates a new `terms_revision` and is **atomically recorded as confirmed for that exact revision**.
-2. The other required participant must confirm the same revision before acceptance.
-3. If AI/system merely synthesizes a candidate agreement from conversation without one participant explicitly proposing those exact terms, **zero confirmations are implied**; both participants confirm.
-4. Any edit creates a new revision and invalidates confirmations from prior revisions.
-5. One-sided confirmation never changes the formal assignment.
-
-This keeps normal consultation light without treating an AI summary as consent.
-
-## 14. Legacy request/backfill reconciliation gate
-
-Before any household Request semantic cutover, generate a read-only reconciliation report covering at least:
-
-- accepted/completed Request missing linked task;
-- duplicate or invalid linked task relation;
-- Request terminal state vs linked task state mismatch;
-- `assignment_change_request_tasks` scope rows missing/extra/inconsistent with parent Request;
-- accepted/completed/cancelled timestamps inconsistent with linked task timeline where deterministically checkable;
-- legacy request `completed` whose linked task is not completed;
-- accepted request whose linked task is cancelled/skipped or otherwise terminal in a contradictory way.
-
-Rules:
-
-- no inferred task creation;
-- no inferred completion;
-- no silent selection of one side as “correct”;
-- anomaly blocks household semantic cutover until explicitly classified/resolved;
-- report is repeatable/idempotent and retained as migration evidence.
-
-## 15. Test-mode implementation dependency order
-
-The prior late “test mode” package must be split by dependency.
-
-### Foundation — before any actual-household one-user domain test
-
-Must exist before testing new Requests/claims/actuals in the operator's real household:
-
-- test simulation context
-- canonical ActorRef including simulated member
-- direct test scoping on canonical business rows
-- server-derived execution context
-- DB/adapter fail-closed side-effect guard
-- minimal operator `🧪` synthetic delivery
-
-### Later polish
-
-Can come later:
-
-- richer synthetic rendering UX
-- test history/admin polish
-- real spouse onboarding transition UI
-- test-session cleanup conveniences
-
-No rollout step may say “run one-user test” before the foundation above is complete.
-
-## 16. Mandatory production-read leakage audit
-
-Before enabling one-user test on an actual household, run a read-only audit proving test rows cannot enter ordinary production experience.
-
-At minimum verify:
-
-- Today/DailyBrief ordinary query excludes test
-- 06:30/09:00/20:30 production dispatch excludes test
-- History/analytics excludes test
-- Requests ordinary view excludes test
-- shopping ordinary view excludes test
-- handover/share ordinary view excludes test
-- recurrence materialization does not turn test definitions/state into production tasks
-- notification outbox has no test rows
-- Google write operations have no test rows
-
-Any leakage is a release blocker.
-
-## 17. Review closure matrix
-
-### 17.1 Earlier independent detailed-design NO-GO
-
-| Finding | Closure in current package |
-|---|---|
-| `待ち` truth missing | `02` current attention model + this doc §11 |
-| simulated actor persistence incomplete | `02` ActorRef + this doc §7 |
-| unsafe semantic rollback | `02/07` P1 rules + this doc §§5–6 |
-| outcome reason current storage | `02` + this doc §12 |
-| legacy Request mismatch audit | `02` + this doc §14 |
-| one-user test dependency order | `07` current WP-DD3A + this doc §15 |
-
-### 17.2 CURRENT-main physical alignment review
-
-| Finding | Closure |
-|---|---|
-| BLOCKER: `task_instances` completion CHECK prevents mirror strategy | §§3.1–3.2 |
-| HIGH: Request new states have no legacy status representation | §4 |
-| HIGH: Phase write/read order contradiction | §5 |
-| HIGH: test scope missing on canonical business rows | §§7,16 |
-| HIGH: 46-table physical disposition missing | §2 |
-| HIGH: shopping disconnected from claim/actual/safety | §8 |
-| HIGH: DailyBrief schedule storage missing | §9 |
-| HIGH: all-day events hidden by legacy read predicates | §10 |
-| MEDIUM: outcome_reason storage | §12 |
-| MEDIUM: legacy primary participant undefined | §3.2 |
-| MEDIUM: consultation proposer confirmation undefined | §13 |
-| Final-GO MEDIUM: mostly-done carryover | remains PASS in `04` |
-| Final-GO MEDIUM: duplicate-sensitive neutral notification | §8.4 + `04`; includes undo correction |
-| Final-GO MEDIUM: one-user synthetic delivery | §7 + `06`; domain persistence and read leakage now explicit |
-
-## 18. Implementation/review gate
-
-This design remains **NO IMPLEMENTATION** until fresh independent review of the current PR head returns `GO`.
+This PR remains **NO IMPLEMENTATION** until fresh independent review of the actual current PR head returns `GO`.
 
 Required gate:
 
 - BLOCKER 0
 - HIGH 0
-- Requirements Baseline contradiction 0
-- current physical schema inventory accounted for
-- migration CHECK/compatibility strategy executable
-- aggregate read/write cutover atomic
-- test actor/test scope leakage closed
-- all-day display and schedule persistence closed
-- three Final-GO MEDIUMs judged PASS or safely carried with no HIGH dependency
+- Requirements contradiction 0
+- 48/48 CURRENT table disposition accounted for
+- task and Request physical CHECK compatibility executable
+- Request read/write cutover atomic
+- no hidden Task→Google / Family Event double writer
+- test identity/scope leakage closed
+- schedule/shopping/all-day paths executable without product-truth invention
+- Requirements Final-GO MEDIUM 3 remain PASS
 
-If any BLOCKER/HIGH remains, do not merge PR #41, do not accept ADR 0013, and do not start implementation.
+If any BLOCKER/HIGH remains, do not merge PR #41, do not accept ADR 0013, and do not begin implementation.
