@@ -3,17 +3,10 @@ import { formatTimeJa } from '../../lib/date';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import type { TodaySchedule as TodayScheduleData } from '../../lib/types';
 
-// Sol re-review #3 fix (P1-2, docs/adr/0011): Today Priority 1's "今/次の予定"
-// (docs/design/v6/02_UX_AND_SCREENS.md #3):
-//   `17:30 お迎え（担当: ママ）`
-//   `18:00 ママ予定あり ⚠ お迎えと重複`
-// Every occurrence/assignment here is already filtered and conflict-
-// annotated by server_tx_get_today_schedule — this component performs zero
-// calendar-domain computation of its own, only rendering + merging the two
-// arrays into one chronological list (a task line's own "予定あり" conflict
-// note references the calendar side, but the two are never rendered as
-// duplicate lines for the same logical event since they come from
-// disjoint tables with no natural 1:1 key between them).
+// WP-DD6: server_tx_get_today_schedule now adapts the shared DailyBrief. Timed
+// assignment conflicts are still annotated server-side. Google all-day entries
+// arrive with starts_at=null plus their date range and are rendered as 終日 —
+// never as a fake 00:00 timestamp and never as a timed conflict.
 interface TodayScheduleProps {
   loading: boolean;
   error: string | null;
@@ -40,10 +33,11 @@ export function TodaySchedule({ loading, error, schedule, members }: TodaySchedu
     const occurrenceLines: ScheduleLine[] = schedule.occurrences.map((occ) => {
       const busyNames = occ.busy_user_ids.map((id) => displayNameFor(members, id)).join('・');
       const suffix = busyNames.length > 0 ? `${busyNames}予定あり` : (occ.title ?? '(無題の予定)');
+      const allDay = Boolean(occ.is_all_day) || !occ.starts_at;
       return {
         key: `occurrence:${occ.occurrence_key}`,
-        sortTime: occ.starts_at,
-        text: `${formatTimeJa(occ.starts_at)} ${suffix}`,
+        sortTime: allDay ? '' : (occ.starts_at ?? ''),
+        text: allDay ? `終日 ${suffix}` : `${formatTimeJa(occ.starts_at!)} ${suffix}`,
         conflict: false,
       };
     });
