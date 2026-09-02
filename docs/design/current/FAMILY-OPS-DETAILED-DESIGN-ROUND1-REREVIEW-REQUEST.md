@@ -69,7 +69,7 @@ Previous problem:
 
 The design forbade fake auth/member users, but assignee/claimant/performer/recorder/request/confirmation tables still assumed real `user_id`, making simulated mama impossible to persist without contaminating real identity.
 
-Verify one common actor identity model now exists and is used consistently.
+Verify one common actor identity model now exists and is used consistently. Read `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md` together with 01/02/03/06/07 rather than assuming CURRENT real-user-only FKs remain unchanged.
 
 Required properties:
 
@@ -91,12 +91,14 @@ Required properties:
 - production-scoped aggregate cannot reference simulated actor.
 - test-scoped aggregate can reference simulated actor only from the same household/test context.
 - legacy real-user columns, when temporarily retained, are compatibility mirrors only and stay null/not fabricated for simulated actors.
+- CURRENT real-user-only `NOT NULL`/PK/FK shapes that would prevent a simulated row have an explicit compatibility evolution; the design must not merely say “use ActorRef” while leaving an impossible legacy constraint.
+- Request legacy requester/recipient, `task_events.actor_id`, and handover/ack identity have a concrete migration/compatibility story.
 - mutation/idempotency identity distinguishes operator from simulated actor.
 - real spouse onboarding never rewrites simulated actor into real spouse.
 
 Mandatory identity E2E:
 
-real papa sends request to simulated mama → simulated mama checks/accepts → simulated mama becomes task assignee → claims/performs/records → consultation can persist both real and simulated confirmations.
+real papa sends request to simulated mama → simulated mama checks/accepts → simulated mama becomes task assignee → claims/performs/records → consultation can persist both real and simulated confirmations → audit/history still displays simulated mama, not papa.
 
 If that E2E still needs a fake user or operator-ID substitution, this item is FAIL/HIGH.
 
@@ -187,7 +189,7 @@ Fresh-read at minimum:
 - ADR 0012
 - proposed ADR 0013
 - `docs/design/current/README.md`
-- design 01–07
+- design 01–08
 - original independent review request
 - this re-review request
 - relevant CURRENT main schema/types/Requests/Today/LINE/Google implementation
@@ -195,12 +197,13 @@ Fresh-read at minimum:
 Specifically search for stale contradictions such as:
 
 - simulated actor still represented only as `user_id`
+- existing real-user-only NOT NULL/PK/FK left impossible for simulated test persistence
 - `rollback by old read path` after semantic P1
 - waiting absent from Task/DailyBrief
 - `outcome_reason` only in audit prose
 - actual-household test before sandbox foundation
 
-If an old line is merely a clearly marked legacy compatibility field, do not flag it just for existing. Flag it if it can still be mistaken for canonical truth.
+If an old line is merely a clearly marked legacy compatibility field, do not flag it just for existing. Flag it if it can still be mistaken for canonical truth or makes the new canonical path physically impossible.
 
 ## 10. Required output
 
