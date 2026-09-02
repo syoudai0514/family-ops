@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — becomes Accepted when PR #39 is merged.
+Accepted — PR #39 merged after fresh independent re-review returned `GO` on 2026-09-02.
 
 ## Context
 
@@ -18,7 +18,7 @@ This ADR resolves that conflict explicitly rather than letting a README or imple
 
 ## Decision
 
-When this ADR and PR #39 are merged:
+From the merge of ADR 0012 and PR #39:
 
 1. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` is the **single normative source for product requirements and UX behavior**.
 2. ADR 0001 and `docs/design/v6/` remain normative for **architecture, implementation constraints, security, API/Edge Function contracts, and other design decisions that do not conflict with the current Requirements & UX Baseline**.
@@ -52,4 +52,4 @@ If two items at the top of this hierarchy appear to conflict, the conflict must 
 - The repository does not need a full v7 rewrite merely to adopt the new household-operations requirements.
 - Existing v6-based implementation can be extended where compatible rather than replaced wholesale.
 - Future requirement changes must keep the Baseline current and use ADRs when they change architectural or previously accepted design commitments.
-- PR #39 must not be merged until the independent re-review confirms that its review conditions are adequately reflected.
+- PR #39 passed the independent merge gate with `GO`; the canonical Baseline is now active on `main`.
