@@ -13,6 +13,8 @@ declare
   v_task_completed uuid := gen_random_uuid();
   v_task_unassigned uuid := gen_random_uuid();
   v_test_task uuid := gen_random_uuid();
+  v_shop_assigned uuid := gen_random_uuid();
+  v_shop_unassigned uuid := gen_random_uuid();
   v_test_context uuid;
   v_sim_mama uuid;
   v_real_actor uuid;
@@ -69,10 +71,10 @@ begin
   ) values (v_hh_id, v_owner, 'legacy handover', 'day', current_date);
 
   insert into public.shopping_items (
-    household_id, title, purchase_method, status, assignee_id, created_by
+    id, household_id, title, purchase_method, status, assignee_id, created_by
   ) values
-    (v_hh_id, 'Assigned milk', 'store', 'assigned', v_owner, v_owner),
-    (v_hh_id, 'Unassigned milk', 'store', 'wanted', null, v_owner);
+    (v_shop_assigned, v_hh_id, 'Assigned milk', 'store', 'assigned', v_owner, v_owner),
+    (v_shop_unassigned, v_hh_id, 'Unassigned milk', 'store', 'wanted', null, v_owner);
 
   insert into public.requests (
     id, household_id, requester_id, recipient_id, shared_title, status
@@ -181,12 +183,48 @@ begin
     raise exception 'FAIL canonical-foundation: request ActorRef/kind backfill incomplete';
   end if;
 
-  -- Idempotent rerun: no duplicate identity/Attempt/participant.
+  -- R0 convergence: old runtime remains allowed to mutate legacy assignment
+  -- columns. The reconciliation report must see the temporary drift and the
+  -- helper rerun must converge both Task and Shopping back to unassigned.
+  update public.task_instances
+  set planned_assignee_id = null
+  where id = v_task_assigned;
+
+  update public.shopping_items
+  set assignee_id = null, status = 'wanted'
+  where id = v_shop_assigned;
+
+  if coalesce((select issue_count from private.canonical_foundation_reconciliation_v1()
+               where issue_type = 'task_planned_actor_mismatch'), 0) < 1 then
+    raise exception 'FAIL canonical-foundation: R0 task unassignment drift was not detected';
+  end if;
+  if coalesce((select issue_count from private.canonical_foundation_reconciliation_v1()
+               where issue_type = 'shopping_assignee_actor_mismatch'), 0) < 1 then
+    raise exception 'FAIL canonical-foundation: R0 shopping unassignment drift was not detected';
+  end if;
+
+  v_result := private.backfill_canonical_foundation_v1();
+
+  if (select assignment_mode from public.task_instances where id = v_task_assigned) <> 'unassigned'
+     or (select planned_assignee_actor_ref_id from public.task_instances where id = v_task_assigned) is not null
+     or (select assignment_source from public.task_instances where id = v_task_assigned) <> 'legacy_snapshot' then
+    raise exception 'FAIL canonical-foundation: R0 legacy task unassignment did not converge';
+  end if;
+
+  if (select assignment_mode from public.shopping_items where id = v_shop_assigned) <> 'unassigned'
+     or (select assignee_actor_ref_id from public.shopping_items where id = v_shop_assigned) is not null then
+    raise exception 'FAIL canonical-foundation: R0 legacy shopping unassignment did not converge';
+  end if;
+
+  -- Idempotent rerun after convergence: no duplicate identity/Attempt/participant
+  -- and no compatibility assignment rewrite is needed.
   v_second := private.backfill_canonical_foundation_v1();
   if coalesce((v_second->>'actor_refs_inserted')::int, -1) <> 0
      or coalesce((v_second->>'request_attempts_inserted')::int, -1) <> 0
-     or coalesce((v_second->>'participants_inserted')::int, -1) <> 0 then
-    raise exception 'FAIL canonical-foundation: backfill is not idempotent: %', v_second;
+     or coalesce((v_second->>'participants_inserted')::int, -1) <> 0
+     or coalesce((v_second->>'task_assignment_rows_updated')::int, -1) <> 0
+     or coalesce((v_second->>'shopping_rows_updated')::int, -1) <> 0 then
+    raise exception 'FAIL canonical-foundation: backfill is not idempotent after R0 convergence: %', v_second;
   end if;
 
   select sum(issue_count) into v_issues
@@ -230,6 +268,34 @@ begin
     'whole', 'completed', null, now(), 'test', v_owner,
     'unassigned', v_test_context
   );
+
+  -- A simulated assignee may exist on a test row only with no real-user legacy
+  -- compatibility mirror. In particular the operator ID cannot stand in for
+  -- simulated mama.
+  begin
+    update public.task_instances
+    set assignment_mode = 'person',
+        planned_assignee_actor_ref_id = v_sim_mama,
+        planned_assignee_id = v_owner
+    where id = v_test_task;
+    raise exception 'FAIL canonical-foundation: operator user ID substituted for simulated assignee';
+  exception
+    when others then
+      if sqlerrm <> 'SIMULATED_ACTOR_LEGACY_USER_SUBSTITUTION' then
+        raise exception 'FAIL canonical-foundation: expected SIMULATED_ACTOR_LEGACY_USER_SUBSTITUTION, got %', sqlerrm;
+      end if;
+  end;
+
+  update public.task_instances
+  set assignment_mode = 'person',
+      planned_assignee_actor_ref_id = v_sim_mama,
+      planned_assignee_id = null
+  where id = v_test_task;
+
+  if (select planned_assignee_actor_ref_id from public.task_instances where id = v_test_task) <> v_sim_mama
+     or (select planned_assignee_id from public.task_instances where id = v_test_task) is not null then
+    raise exception 'FAIL canonical-foundation: valid simulated assignee with null legacy mirror was rejected';
+  end if;
 
   -- But production whole completion still requires the CURRENT legacy mirror.
   begin
