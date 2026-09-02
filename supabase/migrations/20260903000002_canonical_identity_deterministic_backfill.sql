@@ -26,7 +26,11 @@ begin
   on conflict (household_id, real_user_id) where actor_kind = 'real_user' do nothing;
   get diagnostics v_actor_inserted = row_count;
 
-  -- Legacy non-null assignee maps losslessly to person + matching real ActorRef.
+  -- During R0/R1, assignment_source=legacy_snapshot means the canonical
+  -- assignment is a compatibility snapshot of CURRENT planned_assignee_id.
+  -- Reruns therefore follow later old-runtime reassign/unassign writes instead
+  -- of reviving an earlier canonical assignee. A future non-legacy canonical
+  -- source is never overwritten by this compatibility helper.
   update public.task_instances t
   set planned_assignee_actor_ref_id = a.id,
       assignment_mode = 'person',
@@ -34,6 +38,7 @@ begin
   from public.domain_actor_refs a
   where t.test_context_id is null
     and t.planned_assignee_id is not null
+    and (t.assignment_source is null or t.assignment_source = 'legacy_snapshot')
     and a.household_id = t.household_id
     and a.actor_kind = 'real_user'
     and a.real_user_id = t.planned_assignee_id
@@ -43,16 +48,16 @@ begin
   get diagnostics v_rows = row_count;
   v_task_assignment_updated := v_task_assignment_updated + v_rows;
 
-  -- Legacy null assignee is represented as unassigned, never guessed as anyone.
-  -- Do not overwrite a future explicit anyone/person canonical value if this
-  -- helper is rerun during the compatibility window.
+  -- Legacy null assignee maps to unassigned, never anyone. In particular this
+  -- must converge after a previously assigned legacy row is unassigned by the
+  -- still-active old runtime during R0/R1.
   update public.task_instances t
   set assignment_mode = 'unassigned',
       assignment_source = 'legacy_snapshot',
       planned_assignee_actor_ref_id = null
   where t.test_context_id is null
     and t.planned_assignee_id is null
-    and (t.assignment_mode is null or t.assignment_mode = 'unassigned')
+    and (t.assignment_source is null or t.assignment_source = 'legacy_snapshot')
     and (t.assignment_mode is distinct from 'unassigned'
          or t.assignment_source is distinct from 'legacy_snapshot'
          or t.planned_assignee_actor_ref_id is not null);
@@ -141,6 +146,9 @@ begin
     and h.author_actor_ref_id is distinct from a.id;
   get diagnostics v_handover_updated = row_count;
 
+  -- Shopping has no canonical assignment writer in Batch 1A. Until its later
+  -- atomic cutover, the legacy assignee_id remains the R0/R1 source and the
+  -- compatibility snapshot must follow both assignment and unassignment.
   update public.shopping_items s
   set assignee_actor_ref_id = a.id,
       assignment_mode = 'person'
@@ -160,7 +168,6 @@ begin
       assignment_mode = 'unassigned'
   where s.test_context_id is null
     and s.assignee_id is null
-    and (s.assignment_mode is null or s.assignment_mode = 'unassigned')
     and (s.assignee_actor_ref_id is not null
          or s.assignment_mode is distinct from 'unassigned');
   get diagnostics v_rows = row_count;
@@ -240,8 +247,36 @@ as $$
   from public.task_instances t
   left join public.domain_actor_refs a
     on a.id = t.planned_assignee_actor_ref_id and a.household_id = t.household_id
-  where t.test_context_id is null and t.planned_assignee_id is not null
-    and (a.id is null or a.real_user_id is distinct from t.planned_assignee_id)
+  where t.test_context_id is null
+    and (
+      (t.planned_assignee_id is null
+       and (t.assignment_mode is distinct from 'unassigned'
+            or t.planned_assignee_actor_ref_id is not null
+            or t.assignment_source is distinct from 'legacy_snapshot'))
+      or
+      (t.planned_assignee_id is not null
+       and (t.assignment_mode is distinct from 'person'
+            or a.id is null
+            or a.real_user_id is distinct from t.planned_assignee_id
+            or t.assignment_source is distinct from 'legacy_snapshot'))
+    )
+
+  union all
+  select 'shopping_assignee_actor_mismatch'::text, count(*)
+  from public.shopping_items s
+  left join public.domain_actor_refs a
+    on a.id = s.assignee_actor_ref_id and a.household_id = s.household_id
+  where s.test_context_id is null
+    and (
+      (s.assignee_id is null
+       and (s.assignment_mode is distinct from 'unassigned'
+            or s.assignee_actor_ref_id is not null))
+      or
+      (s.assignee_id is not null
+       and (s.assignment_mode is distinct from 'person'
+            or a.id is null
+            or a.real_user_id is distinct from s.assignee_id))
+    )
 
   union all
   select 'task_event_actor_mismatch'::text, count(*)
