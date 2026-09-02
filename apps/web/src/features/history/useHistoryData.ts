@@ -3,20 +3,23 @@ import { supabase } from '../../lib/supabaseClient';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type { TaskEvent, TaskInstance } from '../../lib/types';
 
-// WP4 — planned vs actual history. Shows recently-scheduled tasks alongside
-// what actually happened to them (completed on time / late, skipped,
-// reassigned, cancelled, still open past its due time). Deliberately does
-// NOT compare members against each other or compute any score/count —
-// 10_WORK_PACKAGES.md's WP4 entry lists "no score/ranking" as an explicit
-// design constraint, not an oversight.
+// WP-DD5 — planned vs actual history. Shows recently-scheduled tasks alongside
+// what actually happened. Canonical outcome_reason is current snapshot truth,
+// so 「今回は不要」 and 「できなかった」 are distinguishable without replaying
+// audit events. Legacy skipped rows with unknown reason stay explicitly generic
+// rather than being guessed into either semantic bucket.
 const HISTORY_WINDOW_DAYS = 14;
 const HISTORY_REALTIME_TABLES = ['task_instances', 'task_events'];
 
 export type PlannedVsActualOutcome =
   | 'completed_on_time'
   | 'completed_late'
+  | 'not_needed'
+  | 'could_not_do'
+  | 'expired_occurrence'
   | 'skipped'
   | 'cancelled'
+  | 'waiting'
   | 'overdue_open'
   | 'in_progress'
   | 'upcoming';
@@ -49,8 +52,17 @@ export function classifyOutcome(task: TaskInstance, nowIso: string): PlannedVsAc
     }
     return 'completed_on_time';
   }
-  if (task.status === 'skipped') return 'skipped';
+  if (task.status === 'skipped') {
+    if (task.outcome_reason === 'not_needed_this_occurrence') return 'not_needed';
+    if (task.outcome_reason === 'could_not_do') return 'could_not_do';
+    if (task.outcome_reason === 'expired_occurrence') return 'expired_occurrence';
+    return 'skipped';
+  }
   if (task.status === 'cancelled') return 'cancelled';
+  // waiting is an orthogonal attention dimension, not completion/failure.
+  // It must never be rendered as an overdue failure merely because due_at
+  // passed while the household is intentionally waiting on an external event.
+  if (task.attention_state === 'waiting') return 'waiting';
   if (task.status === 'in_progress') return 'in_progress';
   // status === 'todo'
   if (task.due_at && task.due_at < nowIso) return 'overdue_open';
@@ -82,7 +94,10 @@ export function useHistoryData(householdId: string | null, userId: string | null
         .order('due_at', { ascending: false, nullsFirst: false });
       if (taskError) throw taskError;
 
-      const tasks: TaskInstance[] = taskRows ?? [];
+      // RLS on task_instances excludes test_context_id rows from ordinary
+      // production History. Keep the client-side guard too so a future RLS
+      // regression cannot silently blend simulation data into household facts.
+      const tasks: TaskInstance[] = (taskRows ?? []).filter((task) => !task.test_context_id);
       const taskIds = tasks.map((t) => t.id);
 
       let eventsByTaskId = new Map<string, TaskEvent[]>();
