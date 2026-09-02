@@ -90,9 +90,11 @@ Daily UXはfrontendごとに再構成しない。server-side read modelを共有
 | Concern | Canonical current truth | History/provenance | Derived only |
 |---|---|---|---|
 | Task operational status | `task_instances` | `task_events` | UI label |
+| Task attention / `待ち` | task attention snapshot (`active|waiting`, note, next check) | task events | Today urgency / nag suppression |
 | Planned assignment | task instance effective assignment snapshot | assignment audit/event | base rule display |
 | `誰でもOK` active claim | task instance active claim snapshot | claim events | display `対応中` |
-| Actual performers | confirmed participant rows | task events/corrections | support analytics |
+| Domain actor identity | `domain_actor_refs` | audit actor reference | display name/role |
+| Actual performers | confirmed participant rows referencing actor refs | task events/corrections | support analytics |
 | Group `大体やった` | reconciliation session | reconciliation audit | child status must not derive completion |
 | Recurrence rule | current effective rule row/version | supersession chain | future occurrence generation |
 | Individual agreement | accepted request/assignment agreement record | attempt history | current task assignment if applied |
@@ -103,7 +105,7 @@ Daily UXはfrontendごとに再構成しない。server-side read modelを共有
 | Google external state | Google canonical cache | sync audit | candidate vs current comparison |
 | Nursery source fact | confirmed extraction fact/candidate state | source document/extraction | generated prep suggestion |
 | AI inference | candidate only | proposal log | never current truth without confirm |
-| Test simulated consent | test-scoped agreement only | test audit | never real spouse consent |
+| Test simulated consent | test-scoped agreement with simulated actor ref only | test audit | never real spouse consent |
 
 ## 6. Task domain boundary
 
@@ -119,6 +121,8 @@ Task aggregateが責任を持つもの:
 - assignment mode/current effective assignment
 - anyone claim
 - operational status
+- attention state (`active|waiting`)
+- waiting note / next check date
 - linked event/request/source references
 
 Task aggregateが責任を持たないもの:
@@ -155,13 +159,38 @@ UI上のcurrent assigneeは1つに見せるが、内部で`assignment_source`を
 
 future recurrence recalculationは`assignment_source=rule`由来のfuture taskだけを更新対象にする。`agreement/manual/override`はprotected occurrenceとして再計算から外す。
 
+### 6.3 `待ち` / attention state
+
+Requirementsの正式な`待ち`を第6のtask statusにはしない。状態爆発を避けるため、非terminal taskに対する直交dimensionとして扱う。
+
+Canonical current truth:
+
+- `attention_state=active|waiting`
+- `waiting_note` nullable
+- `next_check_at` nullable
+- original `due_at`はそのまま保持
+
+Rules:
+
+- `waiting`は`todo`または`in_progress`の非terminal taskだけに付与できる。
+- `completed/skipped/cancelled`へ遷移する際はattentionを`active`へ戻しwaiting metadataをcurrent snapshotからclearする。historyはeventに残す。
+- waiting中は通常の未完了nagから除外する。
+- `next_check_at <= now`ならDailyBriefの確認対象として再浮上するが、ユーザーがresume/updateするまではwaiting truth自体を勝手に解除しない。
+- hard `due_at`がrisk windowへ入った場合はwaiting中でもdeadline warningを出す。
+- `next_check_at`未指定なら通常nagは抑制し、hard deadline riskだけを優先する。
+- event prep taskも同じTask attention semanticsを使用し、イベント専用の別waiting stateを作らない。
+
+`待ち`は完了/失敗の統計ではない。
+
 ## 7. Actual domain boundary
 
 planned assignmentとactual performerを同じ列/状態で表さない。
 
 - task completion = household workが完了した事実
-- performer = その仕事に実際に関与した人（複数可）
+- performer = その仕事に実際に関与したactor（複数可）
 - recorder = 完了事実を登録したactor
+
+actorはreal user IDを直接domain-wide identityとして使わず、`domain_actor_refs`でreal/simulated/systemを区別する。production通常UIではreal household memberとしてrenderする。
 
 completion correctionでplanned assignmentを書き換えない。
 
@@ -174,6 +203,8 @@ completion correctionでplanned assignmentを書き換えない。
 - planned=mamaのままpapa実施 -> papa support
 - planned=mama、papa+mama実施 -> papa joint support、household completionは1件
 
+Test simulationではsimulated performer/recorderをoperator real userへ偽装しない。
+
 ## 8. Request / negotiation boundary
 
 Requestをexecution taskのstatus containerにしない。
@@ -182,7 +213,7 @@ Requestをexecution taskのstatus containerにしない。
 
 安定した依頼identity/provenance。
 
-- requester / recipient
+- requester / recipient actor refs
 - kind (`light_request` / `assignment_change`)
 - original/shared wording
 - execution target / linked task
@@ -292,6 +323,16 @@ production domain modelを複製しない。
 
 を使うが、`execution_context=test_simulation`を必須伝播し、external adapter boundaryで副作用を変える。
 
+Actor identityはcommand contextだけの一時値ではなく`domain_actor_refs`へ正規化する。
+
+- `real_user`: same-household `household_members.user_id`へ結合
+- `simulated_member`: `test_context_id + simulated_role`へ結合しreal user IDを持たない
+- `system`: system actor
+
+planned assignee、anyone claimant、performer、recorder、request requester/recipient/creator、consultation confirmer、reconciliation actor、audit actorはこの同一ActorRef原則を使う。
+
+Production-scoped aggregateへ`simulated_member` ActorRefを関連付けることをDB/transaction constraintで拒否する。Test aggregateは`test_context_id`を持ち、参照するsimulated ActorRefのcontextと一致しなければならない。
+
 allowed:
 
 - operatorへ`🧪`付きsynthetic rendered message
@@ -327,10 +368,24 @@ mutation requestは:
 - claim/takeover
 - event conflict resolution
 - performer correction
+- waiting/resume
 
 でsilent last-write-winsを禁止する。
 
-## 16. Detailed design non-goals
+## 16. Cutover / rollback boundary
+
+「additive schemaなのでいつでも旧readへ戻せる」とは扱わない。rollback capabilityはsemantic phaseごとに異なる。
+
+- **new write開始前**: old read/write pathへ完全rollback可能。
+- **new command有効化後**: old endpointはnew command adapterへrouteし、同aggregateへlegacy semantic writeを復活させない。
+- **new-only semantic state発生後**（checking/consulting/anyone claim/multiple performer/mostly-done evidence/waiting等）: legacy current-truth readへrollback禁止。
+- 障害時は`new mutation pause + canonical new truthからcompatibility projection/read-only fallback`、またはforward-fixを使う。
+- feature gateは「旧truthを再び正にするスイッチ」ではなく、new mutation停止・UI surface抑制・safe projection選択のために使う。
+- 各work packageはnew-only stateをproduction生成する直前に**point of no return**を明示する。
+
+Physical schema rollbackは要求しない。安全に機能を止め、canonical truthを維持することをrollbackと定義する。
+
+## 17. Detailed design non-goals
 
 今回導入しないもの:
 
