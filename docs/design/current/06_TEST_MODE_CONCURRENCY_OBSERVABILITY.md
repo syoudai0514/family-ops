@@ -19,13 +19,18 @@ Every command is executed with a server-derived context:
 execution_context:
   mode: production | test_simulation
   operator_user_id: UUID
-  actor_kind: real_user | simulated_member | system
-  real_actor_user_id?: UUID
+  actor_ref_id: UUID
   test_context_id?: UUID
-  simulated_role?: papa | mama
 ```
 
-Client body cannot self-assert `mode=test_simulation` without server validating active context owned by the operator/household.
+`actor_ref_id` points to the canonical `domain_actor_refs` model defined in `02_DATA_MODEL_AND_MIGRATION.md`.
+
+Client body cannot self-assert `mode=test_simulation`, arbitrary ActorRef, or test context. Server validates:
+
+- operator authentication
+- household membership
+- active simulation ownership when test
+- ActorRef household/test-scope compatibility
 
 ## 3. Simulated actor identity
 
@@ -37,17 +42,46 @@ Why:
 - later real spouse onboarding could be confused with test consent
 - production analytics/member count becomes contaminated
 
-Instead:
+Instead, every actor-bearing domain fact references `domain_actor_refs`:
 
-- operator is a real authenticated user
-- simulated member is a domain actor reference bound to test context
-- domain audit records actor kind + test context
+### Real user ActorRef
+
+- `actor_kind=real_user`
+- same-household `real_user_id` required
+- no test context
+
+### Simulated member ActorRef
+
+- `actor_kind=simulated_member`
+- `test_context_id + simulated_role` required
+- `real_user_id` must be null
+- no fake auth/member row
+
+### System ActorRef
+
+- `actor_kind=system`
+- used only by server-controlled system actions
+
+The same ActorRef principle applies to:
+
+- planned assignee
+- anyone claimant
+- actual performer
+- recorder
+- request requester/recipient/creator
+- consultation confirmation
+- reconciliation actor
+- task/audit actor
+
+**Never store the operator's real user ID as a substitute for simulated mama/papa.**
+
+Production-scoped aggregate cannot reference a simulated ActorRef. Test-scoped aggregate can reference a simulated ActorRef only if both share the same `test_context_id` and household.
 
 ## 4. Same domain logic, different side-effect adapter
 
 Command core:
 
-1. validate domain state
+1. validate domain state + ActorRef scope
 2. compute mutation result/events/intents
 3. persist test-scoped or production state as designed
 4. route side effects through `ExecutionSideEffects`
@@ -109,6 +143,8 @@ All test-generated mutable business rows either:
 - contain `test_context_id`, or
 - reference an aggregate that is test-scoped
 
+Actor-bearing rows additionally reference ActorRef and enforce test-context equality.
+
 Production default queries include `test_context_id IS NULL` unless explicit Test UI.
 
 Test mode UI clearly indicates active simulation.
@@ -118,6 +154,7 @@ Closing context:
 - stops new simulated commands
 - preserves test audit for debugging until retention
 - does not convert test records into production
+- does not rewrite simulated ActorRef into real-user ActorRef
 
 ## 7. Real spouse onboarding transition
 
@@ -146,9 +183,20 @@ Must simulate at least:
 - assignment change already agreed + `[違う]`
 - anyone claim/takeover
 - group reconciliation
+- task waiting/resume
 - share/handover ack
 - stale postback
 - duplicate webhook
+
+Identity E2E must prove simulated mama can become:
+
+- request recipient/confirmer
+- task assignee
+- anyone claimant
+- performer
+- recorder
+
+without creating or substituting a real auth/member user.
 
 Google/nursery flows can be previewed, but simulated actor must not write Google.
 
@@ -164,11 +212,13 @@ Google channel notifications coalesce sync jobs.
 
 ### 9.2 User operation receipt
 
-`operation_id + actor` canonical mutation receipt.
+Canonical identity is `operation_id + actor_ref_id + execution scope`.
 
 Same operation + same canonical request hash -> replay prior result.
 
 Same operation + different request -> `IDEMPOTENCY_CONFLICT`.
+
+A simulated actor retry must not collide with operator's production operation solely because the operator owns the test context.
 
 ### 9.3 Business identity
 
@@ -197,7 +247,7 @@ Transaction:
 
 Use on:
 
-- task assignment/claim/correction
+- task assignment/claim/correction/waiting
 - request attempt action/terms revision
 - family event edit/candidate resolution
 - info correction
@@ -219,6 +269,7 @@ Never include:
 - OAuth/auth token
 - storage signed URL
 - Google data payload
+- a client-asserted simulated ActorRef
 
 Server re-derives household/actor/current state.
 
@@ -240,6 +291,13 @@ Old `完了`:
 - no duplicate event/performer overwrite
 - return already-completed summary
 - if user claims joint execution, explicit secondary action required
+
+### Waiting changed
+
+Old next-check action after waiting date changed/resumed:
+
+- revision mismatch/latest state
+- no auto resume or old reminder mutation
 
 ### Claim changed
 
@@ -277,19 +335,21 @@ If takeover commits first:
 Recommended rule:
 
 - claim coordinates intent, not legal permission to complete
-- any household adult may report actual completion
+- any valid household actor in the aggregate scope may report actual completion
 - if performer differs from current claimant, transaction completes but records mismatch event and neutral state; no assignment rewrite
 
 This avoids “claim made actual truth impossible”.
 
+In test simulation, “mama” in this scenario is a simulated ActorRef, not operator real user.
+
 ## 14. Completion concurrency
 
-Two adults complete same task concurrently.
+Two actors complete same task concurrently.
 
 First transaction:
 
 - task -> completed
-- performer A
+- performer A ActorRef
 
 Second transaction:
 
@@ -344,7 +404,9 @@ If schedule setting changes after old receipt but before new slot, version disti
 
 Audit must answer:
 
-- who/what actor initiated action?
+- which canonical ActorRef initiated action?
+- for real actor, which real user?
+- for simulated actor, which test context/role?
 - production or test?
 - what aggregate changed?
 - old/new semantic state?
@@ -354,7 +416,7 @@ Audit must answer:
 
 Do not audit secrets/raw provider payload unnecessarily.
 
-Task audit reuses `task_events`.
+Task audit reuses `task_events`, but actor identity is ActorRef-canonical for new semantics. Legacy real user actor IDs can remain compatibility fields where necessary.
 
 Request/event/source may use dedicated append-only event tables or a common safe audit event table. Review should prefer minimum number of parallel histories while retaining query clarity.
 
@@ -362,10 +424,12 @@ Request/event/source may use dedicated append-only event tables or a common safe
 
 History can retain:
 
-- performer(s)
-- recorder
+- performer ActorRef(s)
+- recorder ActorRef
 
-Normal UI shows performer where needed, recorder only in correction/audit detail.
+Normal production UI resolves real ActorRef to household role/display name where needed, recorder only in correction/audit detail.
+
+Test UI resolves simulated ActorRef to `🧪 ママ` etc. and never renders it as operator identity.
 
 Do not turn recorder into “who claims credit”.
 
@@ -382,6 +446,14 @@ Continue v6 security model:
 
 New tables require household composite isolation wherever practical.
 
+ActorRef-specific invariants:
+
+- real ActorRef user must be current same-household member
+- simulated ActorRef is never itself an auth principal
+- production aggregate cannot reference simulated ActorRef
+- test aggregate/context/ActorRef household and test IDs must match
+- server derives ActorRef; browser cannot choose another member/simulated identity by raw ID
+
 ## 21. Source image access security
 
 - private storage bucket
@@ -393,14 +465,17 @@ New tables require household composite isolation wherever practical.
 
 ## 22. Test/production leakage database guards
 
-Detailed DDL should add hard checks where possible:
+Detailed DDL must add hard checks/FKs/triggers or server-transaction invariants where cross-table CHECK alone is insufficient:
 
 - production outbox row `test_context_id IS NULL`
 - family event external Google write job cannot reference test-context event
-- simulated actor ref requires test_context_id
-- production request recipient must be real household member; simulated role is stored in separate test fields/context
+- simulated ActorRef requires valid test_context_id + simulated_role and no real_user_id
+- production task/request/reconciliation/participant/confirmation cannot reference simulated ActorRef
+- test task/request/reconciliation/participant/confirmation may reference simulated ActorRef only from the exact same test context
+- legacy real-user compatibility mirror stays null for simulated actor
+- operator real user must never be written as simulated performer/assignee/confirmer merely to satisfy an old FK
 
-Application if-statements alone are insufficient for high-risk boundary.
+Application if-statements alone are insufficient for this high-risk boundary.
 
 ## 23. Observability
 
@@ -411,6 +486,7 @@ Structured metrics/logging dimensions:
 - mutation success/conflict/idempotent replay
 - request attempt expiry/stale tap
 - claim conflict/takeover
+- waiting next-check/deadline surfacing
 - reconciliation mode counts (no ranking by spouse)
 - candidate accepted/rejected/stale
 
@@ -420,6 +496,12 @@ Structured metrics/logging dimensions:
 - synthetic test deliveries separately
 - stale intent suppressed
 - duplicate-sensitive immediate notice
+
+### Test identity
+
+- simulated ActorRef command count
+- attempted production-scope simulated reference (must alert)
+- legacy mirror attempt for simulated actor (must alert)
 
 ### Google
 
@@ -443,6 +525,7 @@ Production alert conditions:
 - notification outbox dead/lease backlog
 - Google sync dead/reauth spike
 - test-context row attempting production outbox/Google write (security alert)
+- simulated ActorRef referenced from production aggregate or legacy user mirror (security alert)
 - candidate apply revision conflict surge
 - webhook signature failures spike
 - raw storage cleanup failures
@@ -454,6 +537,7 @@ Retain existing v6 operational cleanup rules unless overridden.
 New items:
 
 - test synthetic delivery logs: short operational retention, configurable
+- domain ActorRefs referenced by durable history are not hard-deleted while needed for audit meaning
 - request attempts: product history retention consistent with request history; not aggressively hard-delete while referenced by assignment audit
 - reconciliation sessions: sufficient for history/reconciliation semantics; configurable archival later
 - change candidates: terminal candidates retain provenance for conflict history; sensitive raw payload minimized
@@ -463,7 +547,7 @@ Raw image retention follows product-configured policy and user delete.
 
 ## 26. Backup/restore semantics
 
-Backup must include canonical business state/history.
+Backup must include canonical business state/history and ActorRef/test-scope identity.
 
 For raw image deletion:
 
@@ -471,7 +555,7 @@ For raw image deletion:
 - immutable backup physical expiration follows backup policy
 - restore runbook must reapply logical `raw_deleted_at` state before exposing restored storage
 
-Test data remains test-tagged after restore.
+Test data remains test-tagged after restore. Simulated ActorRefs remain simulated and are never mapped to real spouse during restore.
 
 ## 27. Failure mode examples
 
@@ -512,12 +596,18 @@ Test data remains test-tagged after restore.
 6. takeover/completion race
 7. two concurrent completions -> no performer overwrite
 8. LINE old completion after PWA completion
-9. candidate acceptance after target edit -> stale
-10. Google change after human protection -> candidate only
-11. simulated request -> no production outbox
-12. simulated event -> no Google write
-13. synthetic LINE always targets operator
-14. real spouse onboarding -> no simulated consent migration
-15. source image cross-household access denied
-16. raw-deleted source signed URL cannot be regenerated
-17. logs contain no source raw text/secret
+9. waiting next-check changed while old action arrives -> no auto resume
+10. candidate acceptance after target edit -> stale
+11. Google change after human protection -> candidate only
+12. simulated request recipient/confirmation stored as simulated ActorRef
+13. simulated task assignee/claimant/performer/recorder stored as simulated ActorRef
+14. operator real user ID never substituted for simulated ActorRef
+15. simulated request -> no production outbox
+16. simulated event -> no Google write
+17. synthetic LINE always targets operator
+18. production row -> simulated ActorRef denied
+19. cross-test-context simulated ActorRef denied
+20. real spouse onboarding -> no simulated consent migration
+21. source image cross-household access denied
+22. raw-deleted source signed URL cannot be regenerated
+23. logs contain no source raw text/secret
