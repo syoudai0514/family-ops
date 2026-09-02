@@ -4,154 +4,220 @@
 - **Date:** 2026-09-02
 - **Repository baseline:** `main` @ `7729c93ee10db29b145592763886cfa5f9a019e0`
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
-- **Governance:** ADR 0012 (Accepted), ADR 0013 (Proposed in this change)
+- **Governance:** ADR 0012 Accepted / ADR 0013 Proposed
 
-このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**詳細設計候補**である。独立レビューで `GO` を得てmergeされた時点で、requirements/UXと競合しない範囲のcurrent detailed-design canonical pathとなる。`docs/design/v6/` はADR 0012/0013に従い、非競合な既存architecture/security/provider制約の参照元として維持する。
+このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための詳細設計候補である。
 
-このPRではコード、migration、Supabase、LINE runtime、Google Calendar、Vercel、production dataを変更しない。
+独立レビューで `GO` を得るまでは:
 
-## Normative scope inside `docs/design/current`
+- PR #41をmergeしない
+- ADR 0013をAcceptedにしない
+- implementation planning / implementationを開始しない
 
-- `01`–`07`：truth ownership、commands、UX、Authority、security、rolloutのconceptual current design。
-- `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`：CURRENTのreal-user-only identity列/FKとActorRefの具体的互換境界。
-- `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`：**CURRENT mainのphysical schema、CHECK/FK、46-table disposition、direct-reader compatibility、aggregate cutoverのnormative alignment**。これが`02/04/05/06/07`の古いphysical assumptionを明示的に修正する場合、physical detailはこの文書を優先する。
-- product requirementsの正は引き続きcanonical Requirements Baselineであり、上記08文書は別のrequirements sourceではない。
-- review採用内容はこの固定pathへ更新し、`FINAL` / `V2` / `LATEST` の並行コピーを作らない。
+このPRはdocs-only。migration / Supabase / Edge / LINE / Google / Vercel / production dataは変更しない。
+
+---
+
+## Normative hierarchy
+
+1. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
+2. ADR 0012 / proposed ADR 0013
+3. `docs/design/current/01`–`07`
+4. CURRENT physical/cutover detail:
+   - `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
+   - `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
+
+`08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` が older conceptual document の物理schema/cutover assumptionを明示的に修正する場合、physical detailは08を正とする。ただしproduct meaningを変更する権限はない。
+
+Review採用内容はこのfixed pathへ更新し、`FINAL` / `V2` / `LATEST` の並行設計コピーは作らない。
+
+---
+
+## CURRENT physical baseline
+
+CURRENT main fresh read:
+
+- SHA: `7729c93ee10db29b145592763886cfa5f9a019e0`
+- migration files: 78
+- CURRENT application-owned tables relevant to this program:
+  - public 27
+  - private 21
+  - **total 48**
+
+Earlier `46` count was incomplete because `20260822000001_calendar_projection_domain.sql` creates two tables with `CREATE TABLE IF NOT EXISTS` that were absent from the prior inventory:
+
+- `public.household_task_categories`
+- `private.family_ops_calendar_mirrors`
+
+Both are now explicitly dispositioned in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`.
+
+`private.family_ops_calendar_mirrors` is active Task/transport→Google projection infrastructure and has an explicit boundary/ownership-transfer contract with the new Family Event Authority layer.
+
+---
 
 ## Documents
 
 1. `01_ARCHITECTURE_AND_DOMAIN_BOUNDARIES.md`
-   - Source of Truth hierarchy / command-read model / truth ownership
-   - task `待ち` attention state
-   - common Domain ActorRef
-   - semantic cutover/rollback boundary
+   - truth hierarchy / command-read model / Authority boundary
 2. `02_DATA_MODEL_AND_MIGRATION.md`
-   - schema semantics / ActorRef / waiting/outcome
-   - participant / Request Attempt / reconciliation / Family Event
-   - backfill / mismatch audit / R0-R1-P1 migration strategy
+   - schema semantics
+   - ActorRef / waiting / outcomes / participants
+   - Request Attempt + full legacy status/timestamp compatibility
+   - Family Event + CURRENT Task→Google mirror bridge
+   - corrected atomic migration phases
 3. `03_STATE_MACHINES_AND_COMMANDS.md`
-   - task/assignment/claim/waiting
-   - Request negotiation / actual/reconciliation
+   - Task/assignment/claim/waiting
+   - Request negotiation
+   - actual/reconciliation
    - idempotency/concurrency
 4. `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`
    - shared DailyBrief
    - 06:30 / 09:00 / 20:30 anchors
-   - carryover / duplicate-sensitive neutral notification
+   - carryover / neutral duplicate-sensitive behavior
 5. `05_GOOGLE_IMAGE_AI_AUTHORITY_PRIVACY.md`
-   - unified Authority/candidate model
-   - Google/provider observation vs Family Event truth
-   - nursery/Codmon intake / privacy
+   - Human/Google/source/AI Authority
+   - candidate model
+   - nursery/Codmon privacy
 6. `06_TEST_MODE_CONCURRENCY_OBSERVABILITY.md`
-   - one-user synthetic test
-   - ActorRef/test context / side-effect sandbox
-   - stale/duplicate/concurrency / observability
+   - one-user simulation
+   - test scope / side-effect sandbox
 7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`
-   - acceptance / WP dependency order
-   - R0/R1/P1 cutover / production safety
+   - implementation WPs / acceptance / R0-R1-P1
+   - dedicated shopping package
+   - Request physical CHECK acceptance
+   - all-day + schedule override acceptance
+   - Family Event / Task-mirror exactly-one-writer acceptance
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
-   - exact compatibility for CURRENT `requests`, `task_events`, handover/read receipts, mutation receipts, legacy user-ID columns
+   - CURRENT real-user-only identity/FK compatibility
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
-   - fresh CURRENT migration/table inventory
-   - public 26 / private 20 = 46 table disposition
-   - task completion CHECK replacement + compatibility-primary mirror
-   - Request Attempt → legacy status/direct-reader compatibility
-   - aggregate-level atomic read/write cutover
-   - direct test scoping and production-read leakage gate
-   - shopping claim/actual/duplicate-safety model
-   - DailyBrief schedule persistence + one-day override
-   - all-day display vs timed conflict separation
-10. `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
-11. `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
-12. `FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md`
+   - 48/48 CURRENT table disposition
+   - task completion CHECK replacement
+   - Request status+timestamp compatibility + multi-attempt composition
+   - aggregate atomic cutover
+   - direct test scoping
+   - shopping
+   - DailyBrief schedule persistence
+   - all-day display vs conflict
+   - CURRENT `family_ops_calendar_mirrors` bridge/transfer/reconciliation
+10. review instructions:
+   - `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
+   - `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
+   - `FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md`
+   - `FAMILY-OPS-DETAILED-DESIGN-ROUND3-REREVIEW-REQUEST.md` ← next gate
 
-## Non-negotiable design constraints
+---
 
-- Requestは**合意まで**、了承後のexecutionはlinked ToDoを正とする。
-- `大体やった`はgroup-level evidenceであり、子task statusを増やさない。
-- `待ち`は第6statusにせず、`attention_state=waiting` + note/next-check + original dueをcurrent truthとする。
-- assignment / anyone claim / actual performer / recorderを混同しない。
-- real/simulated/system actorは`domain_actor_refs`へ一元化し、simulated actorをoperator IDやfake auth/memberで代用しない。
-- CURRENT real-user-only legacy identity列はproduction compatibility mirrorに限定する。
-- core test-capable business rowsはdirect `test_context_id`で常時識別可能にし、ordinary production readsから既定で除外する。
-- `今回は不要` / `できなかった` / occurrence expiry / cancel / replanをcurrent semanticsで区別する。
-- human-confirmed値をGoogle/image/AIがsilent overwriteしない。
-- Google all-day eventは**表示から除外しない**。timed conflictからは従来どおり除外する。
-- shoppingは独立aggregateのまま、`誰でもOK` claim / participants / duplicate-safetyを持つ。
-- LINE/PWAは同じserver command/read modelを使う。
-- CURRENT physical CHECK/FK/direct readersを無視したconceptual-only migrationは禁止。
-- aggregate cutoverではcanonical read + writeを同時に切替え、new-only stateをold current-truth UIへ露出させない。
-- P1後はlegacy current-truth read/writeへrollbackしない。feature-offはmutation pause + canonical/degraded projectionまたはforward-fixを意味する。
-- existing migration rewrite、production reset/data deleteは禁止。
+## Non-negotiable constraints
 
-## Requirements Final-GO MEDIUM carryover
+- Request is agreement truth until accepted; linked Task owns execution after acceptance.
+- Request Attempt may represent checking/consulting/change/cancel without forcing legacy Request lifecycle to become canonical.
+- CURRENT `requests` status **and lifecycle timestamps** must remain CHECK-valid via one atomic compatibility projection.
+- After an agreement is accepted, active post-agreement change/cancel Attempt does not reproject the legacy Request back to pending/cancelled; legacy row remains accepted compatibility while canonical reader shows negotiation.
+- `大体やった` is group evidence, not child Task status.
+- `待ち` is orthogonal Task attention state, not a sixth operational status.
+- assignment / anyone claim / actual performer / recorder are separate dimensions.
+- real/simulated/system actor uses one ActorRef model; simulated actor never uses operator ID/fake member.
+- core test-capable rows have direct test_context and ordinary production reads exclude test.
+- shopping remains a separate aggregate with anyone claim/participants/duplicate-safety.
+- Google all-day events are visible but remain excluded from timed assignment conflict.
+- Family Event human-protected/external-follow Authority is not silently overwritten by Google/image/AI.
+- CURRENT Task→Google mirror and new Family Event writer obey **exactly one writer per provider event**.
+- existing special Task mirror is never auto-converted into Family Event by title/date guessing.
+- provider ID/ETag ownership transfer requires queue/lease reconciliation and disables Task re-enqueue before Family Event write ownership starts.
+- LINE/PWA use same server command/read model.
+- aggregate canonical reader+writer activates atomically.
+- after P1, feature-off never restores legacy current truth.
+- no existing migration rewrite / db reset / production data delete.
 
-1. **`大体やった` + carryover UX noise**
-   - weak `結果未確認`、carryover-sensitive subsetのみ最小確認。通常の未達/失敗と混ぜない。
-2. **duplicate-sensitive neutral completion**
-   - 薬・送迎・購入・申込み等はactor praiseでなくneutral `対応済み`。
-   - shopping接続と、undo/correctionで再びactionableになった場合のneutral correctionもcurrent physical alignmentで明記。
-3. **one-user synthetic delivery boundary**
-   - operator向け`🧪` synthetic deliveryは許可。
-   - production recipient/outbox/Google/real consentは禁止。
-   - domain rowsもdirect test scope + ordinary-read exclusionで隔離する。
+---
 
-次回re-reviewでは3件を再度 `PASS / PARTIAL / FAIL` 判定する。
+## Requirements Final-GO MEDIUM 3
 
-## Detailed-design review history
+These remain required as `PASS`:
 
-### Round 1 — conceptual/domain completeness
+1. `大体やった` + carryover noise
+2. duplicate-sensitive neutral completion, including shopping and undo/correction
+3. one-user synthetic delivery + domain/test-state isolation
 
-Verdict: `NO-GO` / BLOCKER 0 / HIGH 3 / MEDIUM 3 / LOW 0。
+---
 
-Remediated on the same fixed path:
+## Review history
 
-- HIGH: formal `待ち` current truth → `attention_state` + waiting note/next-check/deadline behavior across 01/02/03/04/07。
-- HIGH: simulated actor identity → ActorRef + legacy identity compatibility + no fake/member/operator substitution。
-- HIGH: unsafe semantic rollback → R0/R1/P1; P1後old read/write復帰禁止。
-- MEDIUM: current outcome reason。
-- MEDIUM: legacy Request↔Task mismatch audit。
-- MEDIUM: test sandbox WP dependency → `WP-DD3A` before actual-household test。
+### Requirements
 
-### Round 2 input — CURRENT-main physical schema alignment
+Final: `GO`.
 
-External review verdict supplied by the user:
+### Detailed design Round 1
 
-- `NO-GO`
-- `BLOCKER 1`
-- `HIGH 7`
-- `MEDIUM 8`
-- `LOW 4`
+`NO-GO` / BLOCKER 0 / HIGH 3 / MEDIUM 3.
 
-The reviewer explicitly judged **Requirements contradiction = 0** and found the Authority model, truth separation, and ADR 0013 scope directionally valid. Findings concentrated on insufficient cross-check against CURRENT physical schema/runtime.
+Closed:
 
-Fresh read confirmed CURRENT main `7729c93...` has migration files through `20260825000001...` and the physical constraints/subsystems cited by the review.
+- formal Task waiting current truth
+- ActorRef simulated identity
+- safe P1 rollback contract
+- outcome reason
+- broader Request/Task mismatch audit
+- test sandbox dependency order
 
-Remediation is recorded in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`:
+### CURRENT physical-alignment review
 
-- BLOCKER: CURRENT `task_instances` completion CHECKs → Phase 1 new migration must replace those CHECKs before participant-based completion; no old migration rewrite/legacy column drop。
-- HIGH: Request canonical Attempt state → explicit legacy `requests.status` projection + current Requests/Today/Edge/LINE reader cutover inventory。
-- HIGH: Phase ordering → deploy inactive reader+writer, reconcile, then **aggregate atomic canonical read/write activation** before first new-only state。
-- HIGH: test-domain leakage → direct test context on core business rows + production read exclusion + leakage audit。
-- HIGH: all CURRENT tables → 46/46 disposition (`KEEP/EVOLVE/SUPERSEDE/OUT-OF-SCOPE`) including assignment-change scope, schedules, pending actions, preferences, raw inputs, dispatch receipts。
-- HIGH: shopping → independent aggregate evolved with assignment mode/claim/participants/revision/duplicate safety/test scope + neutral undo correction。
-- HIGH: DailyBrief cadence → new schedule kinds + date-specific override + existing settings/RPC/dispatcher/receipts disposition。
-- HIGH: all-day → visible in DailyBrief, still excluded from timed assignment conflict。
-- MEDIUM implementation-defining gaps → compatibility-primary performer rule, outcome/disposition mapping, consultation proposer confirmation, broader legacy reconciliation。
+`NO-GO` / BLOCKER 1 / HIGH 7 / additional MEDIUM/LOW.
 
-## Review gate
+Closed in prior remediation:
 
-Detailed design remains **NO IMPLEMENTATION** until fresh independent review of the actual current PR head returns `GO`.
+- task completion CHECK
+- Request new-state read cutover direction
+- atomic aggregate cutover
+- direct test scope
+- shopping connection
+- DailyBrief cadence storage
+- all-day display separation
+- outcome / compatibility-primary / consultation semantics
 
-Next review instruction:
+### Latest independent re-reviews supplied by user
 
-`docs/design/current/FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md`
+Two reviewers disagreed on CURRENT table count:
 
-The reviewer must fresh-read CURRENT `main`, actual PR head, both 08 alignment documents, relevant migrations/code/readers, and verify no regression in Round 1 findings or Requirements Final-GO MEDIUMs.
+- one found the inventory incomplete because `household_task_categories` and `family_ops_calendar_mirrors` were omitted;
+- one reported 46/46 after mechanical extraction.
 
-If `BLOCKER` or `HIGH` remains:
+Fresh direct read of `20260822000001_calendar_projection_domain.sql` resolves the discrepancy: both omitted tables are physically created with `CREATE TABLE IF NOT EXISTS`; `family_ops_calendar_mirrors` is also actively evolved/used by later migrations. Canonical inventory is now **48/48**.
 
-- do not merge PR #41
-- do not accept ADR 0013
-- do not begin implementation planning/implementation
+The other remaining merge-blocking finding was legacy Request status/timestamp compatibility for multi-attempt Requests. It is now explicitly closed in `02` and `08`:
 
-After eventual `GO`, adopted content remains on this fixed path.
+- full lifecycle tuple projection
+- expired compatibility handling
+- post-accept change/cancel composition
+- Request CHECK catalog verification
+- WP-DD4 acceptance scenarios
+
+Recommended non-blocking cleanup was also adopted:
+
+- `02` migration phases now directly match atomic read/write activation
+- participant direct test_context + compatibility-primary documented in `02`
+- `07` now has dedicated shopping package
+- DailyBrief package now includes date override + all-day scenarios
+- Family Event package includes CURRENT Task-mirror queue/ownership migration
+
+---
+
+## Next review gate
+
+Use:
+
+`docs/design/current/FAMILY-OPS-DETAILED-DESIGN-ROUND3-REREVIEW-REQUEST.md`
+
+Reviewer must fresh-read CURRENT main and actual PR head. Do not trust prior 46-table extraction; verify `CREATE TABLE IF NOT EXISTS` migrations explicitly.
+
+GO condition:
+
+- BLOCKER 0
+- HIGH 0
+- Requirements contradiction 0
+- Request physical compatibility executable
+- 48/48 table inventory accepted
+- Task mirror / Family Event writer boundary executable
+- no regression in earlier PASS items
+
+Until that review returns GO: no merge, no ADR acceptance, no implementation.
