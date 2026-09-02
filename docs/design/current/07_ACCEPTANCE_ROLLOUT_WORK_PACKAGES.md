@@ -18,13 +18,14 @@ CURRENT物理制約は `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`、ActorRef
 - HIGH 0
 - Requirements Baseline contradiction 0
 - ADR 0012/0013 normative scope明確
-- CURRENT 48 tables (public 27/private 21) disposition済み
+- CURRENT **50 tables (public 27/private 23)** disposition済み
 - Request/Task/actual/assignment/shopping/Event/source Authorityのcurrent truthが一意
 - task `待ち` / outcome / carryover semanticsがschema+command+DailyBriefで閉じる
 - Request legacy status+timestamp CHECK互換が実行可能
 - simulated actor persistenceがActorRefで一貫
 - test stateがproduction read/side effectへ漏れない
-- Task→Google mirrorとFamily Event writerのexactly-one-writer boundaryが定義済み
+- Task→Google mirror、old-target deletion queue、Family Event writerのprovider-mutation ownershipが競合しない
+- orphaned provider identityがFamily Eventのwritable linkへsilent昇格しない
 - aggregate read/write atomic cutover + P1後安全契約が定義済み
 - Final-GO MEDIUM 3がacceptanceに入っている
 
@@ -43,6 +44,7 @@ MEDIUM以下をcarryする場合でも、implementerがproduct/domain truth・co
 - new reader + new writerはaggregate単位で同時activation
 - P1後legacy current-truth read/writeへ戻さない
 - test side effectはfail closed
+- provider identityごとに destructive DELETEを含むmutation ownerは1つだけ
 - runtimeがRequirementsを変える場合はcodeより前/同PRでrequirements review
 
 ---
@@ -103,7 +105,8 @@ Scope:
 - Family Event/external link/candidate foundation
 - children/school/source-document foundation
 - DailyBrief schedule kinds + date override table
-- CURRENT Task→Google mirror ownership/guard field/state if required
+- CURRENT Google provider lifecycle guard/state needed for `family_ops_calendar_mirrors` / `family_ops_calendar_target_deletions` ownership transfer
+- preservation/read treatment for `family_ops_calendar_orphaned_mirrors`
 - task completion CHECK replacement
 - Request CHECK catalog verification
 
@@ -115,7 +118,8 @@ Acceptance:
 - production aggregate cannot reference simulated ActorRef
 - test aggregate ActorRef/test-context equality enforced
 - existing app still runs while capability gates inactive
-- `family_ops_calendar_mirrors` remains valid for Task-owned projection; no Family Event ownership activated yet
+- Task-owned mirror/deletion bridges remain valid before Family Event ownership activation
+- orphan audit rows remain preserved and do not become writable links
 - rollback class R0
 
 ### WP-DD2 — Deterministic backfill + compatibility/reconciliation
@@ -129,8 +133,10 @@ Scope:
 - handover defaults
 - task policy snapshots
 - Request/Task/assignment-scope anomaly audit
-- 48-table physical inventory assertion
+- **50-table physical inventory assertion**
 - CURRENT `family_ops_calendar_mirrors` provider identity/queue-state inventory
+- CURRENT `family_ops_calendar_target_deletions` provider identity/delete-job/lease-state inventory
+- CURRENT `family_ops_calendar_orphaned_mirrors` provider identity/reason inventory
 
 Acceptance:
 
@@ -138,10 +144,12 @@ Acceptance:
 - no guessed anyone assignment
 - no guessed performer
 - no guessed skipped reason
-- no guessed Family Event from Task mirror
+- no guessed Family Event from Task mirror or orphan record
 - Request audit includes missing/invalid link, status-vs-task contradiction, timestamp contradiction, assignment scope mismatch
 - every pre-cutover legacy Request tuple validates CURRENT CHECK or is explicit anomaly
 - mirror inventory records projection key/kind/task/connection/provider event/etag/action/sync/lease state
+- target-deletion inventory records connection/projection/provider event/sync/lease/retry/blocked state
+- orphan inventory records exact provider identity/reason/observation and is treated as non-writable evidence
 - unresolved anomaly blocks affected household aggregate cutover
 - rollback class R0
 
@@ -332,7 +340,7 @@ Acceptance:
 - LINE quota protections unchanged
 - Final-GO MEDIUM-2 PASS
 
-### WP-DD8 — Family Event + Google Authority + CURRENT Task-mirror bridge
+### WP-DD8 — Family Event + Google Authority + CURRENT provider lifecycle bridges
 
 Scope:
 
@@ -343,8 +351,11 @@ Scope:
 - Google inbound reconciliation
 - owned/external-follow behavior
 - existing Task→Google mirror bridge boundary
+- old-target deletion bridge boundary
+- permission-loss/orphan observation boundary
 - ownership-transfer/adoption protocol
 - mirror trigger/worker guard
+- target-deletion claim/worker destructive-write guard
 - prep reschedule candidates
 
 Acceptance:
@@ -358,13 +369,18 @@ Acceptance:
 7. transport `family_ops_calendar_mirrors` continues as Task-owned bridge
 8. existing special Task mirror is **not** auto-converted to Family Event
 9. explicit special-Task provider event adoption preserves exact provider_event_id/ETag; no title/date lookup
-10. processing mirror lease cannot be raced during transfer
-11. pending/failed mirror reconciles or blocks transfer; no silent discard
+10. processing Task-mirror lease cannot be raced during transfer
+11. pending/failed/blocked Task mirror reconciles or blocks transfer; no silent discard
 12. Task mirror is marked/guarded as superseded before Family Event writer takes ownership
-13. exactly one writer owns a provider event after transfer
-14. transferred projection cannot be re-enqueued by Task trigger
-15. mirror/Family Event double-write audit = zero before Family Event P1
-16. prep waiting uses Task attention state
+13. transferred projection cannot be re-enqueued by Task trigger
+14. matching `family_ops_calendar_target_deletions` pending/failed/blocked job is reconciled and made terminal non-mutating before Family Event ownership; processing live lease blocks transfer
+15. deletion job already completed means the deleted provider identity is not adopted as a live external link
+16. target-deletion worker revalidates provider ownership before DELETE; superseded ownership produces no provider mutation
+17. matching `family_ops_calendar_orphaned_mirrors` row blocks adoption until provider access + exact event identity/ETag are freshly revalidated, or a different eligible event is intentionally linked
+18. orphan audit row alone never becomes a writable Family Event external link
+19. **provider-mutation overlap audit across Task mirror + target-deletion queue + Family Event writer = zero before Family Event P1**
+20. unresolved mirror/deletion/orphan lifecycle anomaly blocks affected cutover
+21. prep waiting uses Task attention state
 
 ### WP-DD9 — Nursery/Codmon image intake
 
@@ -418,7 +434,7 @@ Scope:
 - production reconciliation
 - monitoring/runbook
 - test leakage audit
-- Google writer ownership audit
+- Google provider mutation ownership audit
 
 Acceptance:
 
@@ -430,7 +446,8 @@ Acceptance:
 - notification duplicate audit clean
 - Today/dispatch/History/Requests/shopping/handover test leakage = zero
 - production outbox/Google test leakage = zero
-- Task mirror vs Family Event provider writer overlap = zero
+- Task mirror vs target-deletion queue vs Family Event provider mutation overlap = zero
+- unresolved Google orphan/provider lifecycle anomaly count = zero for households/events crossing Family Event P1
 - each capability declares R0/R1/P1
 - P1 feature-off never restores legacy current truth
 - forward-fix/mutation-pause runbook exists
@@ -466,7 +483,7 @@ Rules:
 ## 7. Recommended rollout order
 
 1. WP-DD1 schema/constraint readiness, feature off (R0)
-2. WP-DD2 backfill/reconciliation
+2. WP-DD2 backfill/reconciliation, including all 50 CURRENT tables and Google provider-lifecycle inventory
 3. WP-DD3A test safety foundation
 4. WP-DD3 canonical commands under sandbox
 5. one-user internal simulation with external side effects blocked
@@ -475,12 +492,12 @@ Rules:
 8. WP-DD5B shopping atomic cutover
 9. WP-DD6 DailyBrief + schedule consolidation
 10. WP-DD7 notification safety
-11. WP-DD8 Family Event/Google Authority + mirror ownership cutover
+11. WP-DD8 Family Event/Google Authority + provider-lifecycle ownership cutover
 12. WP-DD9 nursery intake
 13. WP-DD10 one-user UX/real-spouse transition
 14. WP-DD11 production audit/operational hardening continuously across releases
 
-Family Event implementation may be developed earlier, but provider writer ownership must not cut over until mirror reconciliation/guard is ready.
+Family Event implementation may be developed earlier, but provider ownership must not cut over until mirror/deletion/orphan reconciliation and destructive-write guards are ready.
 
 ---
 
@@ -496,6 +513,7 @@ Family Event implementation may be developed earlier, but provider writer owners
 - backup/recovery readiness for schema-affecting work
 - Edge Function auth matrix before deploy
 - queue/outbox lease state understood before queue ownership migration
+- provider deletion/orphan state understood before Family Event ownership transfer
 - deployment/cutover operation recorded
 
 ---
@@ -517,9 +535,11 @@ For each capability release retain:
 For Family Event Google ownership also retain:
 
 - Task mirror row counts by sync_state
+- target-deletion row counts by sync_state including blocked
+- orphaned mirror count + disposition/revalidation result
 - transferred provider identities
-- unresolved mirror anomalies
-- exactly-one-writer audit result
+- unresolved provider lifecycle anomalies
+- exactly-one-provider-mutation-owner audit result
 
 ---
 
@@ -529,4 +549,4 @@ Do not begin implementation until independent design review returns GO.
 
 After implementation starts, do not advance a work package to production unless its acceptance and production-safety checks are satisfied.
 
-Any detected product-truth ambiguity, test identity leakage, Request CHECK incompatibility, or Google double-writer ambiguity returns the affected aggregate to design/migration review rather than being decided ad hoc in code.
+Any detected product-truth ambiguity, test identity leakage, Request CHECK incompatibility, unaccounted CURRENT table, or Google provider-mutation ownership ambiguity returns the affected aggregate to design/migration review rather than being decided ad hoc in code.
