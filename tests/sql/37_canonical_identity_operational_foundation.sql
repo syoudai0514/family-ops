@@ -1,14 +1,12 @@
 -- Canonical detailed-design implementation Batch 1A source-review tests.
 \set ON_ERROR_STOP on
 
-insert into auth.users (id) values
-  ('f1000000-0000-0000-0000-000000000001'),
-  ('f1000000-0000-0000-0000-000000000002');
-
 set role service_role;
 
 do $$
 declare
+  v_owner uuid := gen_random_uuid();
+  v_partner uuid := gen_random_uuid();
   v_hh jsonb;
   v_hh_id uuid;
   v_task_assigned uuid := gen_random_uuid();
@@ -27,14 +25,18 @@ declare
   v_request_completed uuid := gen_random_uuid();
   v_issues bigint;
 begin
+  -- Generate auth fixture IDs per run so this test can coexist with the full
+  -- suite and with reruns in the same local database.
+  insert into auth.users (id) values (v_owner), (v_partner);
+
   v_hh := public.server_tx_create_household(
-    'f1000000-0000-0000-0000-000000000001', gen_random_uuid(),
-    'Canonical Foundation HH', 'Owner'
+    v_owner, gen_random_uuid(), 'Canonical Foundation HH ' || v_owner::text,
+    'Owner'
   );
   v_hh_id := (v_hh->>'household_id')::uuid;
 
   insert into public.household_members (household_id, user_id, member_role)
-  values (v_hh_id, 'f1000000-0000-0000-0000-000000000002', 'adult');
+  values (v_hh_id, v_partner, 'adult');
 
   -- Old-runtime-shaped production tasks: canonical columns intentionally null
   -- until the deterministic helper runs.
@@ -43,9 +45,9 @@ begin
     planned_assignee_id, completion_mode, status, source, created_by
   ) values
     (v_task_assigned, v_hh_id, 'manual', 'Assigned legacy task', 'other', 'anytime', current_date,
-      'f1000000-0000-0000-0000-000000000001', 'whole', 'todo', 'test', 'f1000000-0000-0000-0000-000000000001'),
+      v_owner, 'whole', 'todo', 'test', v_owner),
     (v_task_unassigned, v_hh_id, 'manual', 'Unassigned legacy task', 'other', 'anytime', current_date,
-      null, 'whole', 'todo', 'test', 'f1000000-0000-0000-0000-000000000001');
+      null, 'whole', 'todo', 'test', v_owner);
 
   insert into public.task_instances (
     id, household_id, origin, title, category, routine_phase, scheduled_date,
@@ -53,68 +55,57 @@ begin
     completed_at, source, created_by
   ) values (
     v_task_completed, v_hh_id, 'manual', 'Completed legacy task', 'other', 'anytime', current_date,
-    'f1000000-0000-0000-0000-000000000001', 'whole', 'completed',
-    'f1000000-0000-0000-0000-000000000001', now(), 'test',
-    'f1000000-0000-0000-0000-000000000001'
+    v_owner, 'whole', 'completed', v_owner, now(), 'test', v_owner
   );
 
   insert into public.task_events (
     household_id, task_instance_id, actor_id, event_type, payload, source
   ) values (
-    v_hh_id, v_task_assigned, 'f1000000-0000-0000-0000-000000000001',
-    'reassigned_once', '{}'::jsonb, 'test'
+    v_hh_id, v_task_assigned, v_owner, 'reassigned_once', '{}'::jsonb, 'test'
   );
 
   insert into public.handovers (
     household_id, author_id, shared_text, period, occurred_on
-  ) values (
-    v_hh_id, 'f1000000-0000-0000-0000-000000000001',
-    'legacy handover', 'day', current_date
-  );
+  ) values (v_hh_id, v_owner, 'legacy handover', 'day', current_date);
 
   insert into public.shopping_items (
     household_id, title, purchase_method, status, assignee_id, created_by
   ) values
-    (v_hh_id, 'Assigned milk', 'store', 'assigned', 'f1000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000001'),
-    (v_hh_id, 'Unassigned milk', 'store', 'wanted', null, 'f1000000-0000-0000-0000-000000000001');
+    (v_hh_id, 'Assigned milk', 'store', 'assigned', v_owner, v_owner),
+    (v_hh_id, 'Unassigned milk', 'store', 'wanted', null, v_owner);
 
   insert into public.requests (
     id, household_id, requester_id, recipient_id, shared_title, status
   ) values (
-    v_request_pending, v_hh_id,
-    'f1000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000002',
+    v_request_pending, v_hh_id, v_owner, v_partner,
     'pending legacy request', 'pending'
   );
 
   insert into public.requests (
     id, household_id, requester_id, recipient_id, shared_title, status, accepted_at
   ) values (
-    v_request_accepted, v_hh_id,
-    'f1000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000002',
+    v_request_accepted, v_hh_id, v_owner, v_partner,
     'accepted legacy request', 'accepted', now()
   );
 
   insert into public.requests (
     id, household_id, requester_id, recipient_id, shared_title, status, declined_at
   ) values (
-    v_request_declined, v_hh_id,
-    'f1000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000002',
+    v_request_declined, v_hh_id, v_owner, v_partner,
     'declined legacy request', 'declined', now()
   );
 
   insert into public.requests (
     id, household_id, requester_id, recipient_id, shared_title, status, cancelled_at
   ) values (
-    v_request_cancelled, v_hh_id,
-    'f1000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000002',
+    v_request_cancelled, v_hh_id, v_owner, v_partner,
     'cancelled legacy request', 'cancelled', now()
   );
 
   insert into public.requests (
     id, household_id, requester_id, recipient_id, shared_title, status, accepted_at, completed_at
   ) values (
-    v_request_completed, v_hh_id,
-    'f1000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000002',
+    v_request_completed, v_hh_id, v_owner, v_partner,
     'completed legacy request', 'completed', now() - interval '1 minute', now()
   );
 
@@ -126,7 +117,7 @@ begin
   from public.domain_actor_refs
   where household_id = v_hh_id
     and actor_kind = 'real_user'
-    and real_user_id = 'f1000000-0000-0000-0000-000000000001';
+    and real_user_id = v_owner;
 
   if v_real_actor is null then
     raise exception 'FAIL canonical-foundation: real ActorRef missing';
@@ -190,8 +181,7 @@ begin
     raise exception 'FAIL canonical-foundation: request ActorRef/kind backfill incomplete';
   end if;
 
-  -- Idempotent rerun: no duplicate identity/Attempt/participant and no second
-  -- compatibility rewrite is needed for our fixture.
+  -- Idempotent rerun: no duplicate identity/Attempt/participant.
   v_second := private.backfill_canonical_foundation_v1();
   if coalesce((v_second->>'actor_refs_inserted')::int, -1) <> 0
      or coalesce((v_second->>'request_attempts_inserted')::int, -1) <> 0
@@ -209,7 +199,7 @@ begin
   -- Create a test context + simulated mama. This is schema-only; current
   -- production request/event writers are intentionally not relaxed yet.
   insert into public.test_simulation_contexts (household_id, operator_user_id, label)
-  values (v_hh_id, 'f1000000-0000-0000-0000-000000000001', 'source-review-test')
+  values (v_hh_id, v_owner, 'source-review-test')
   returning id into v_test_context;
 
   insert into public.domain_actor_refs (
@@ -237,7 +227,7 @@ begin
     assignment_mode, test_context_id
   ) values (
     v_test_task, v_hh_id, 'manual', 'Simulated completion', 'other', 'anytime', current_date,
-    'whole', 'completed', null, now(), 'test', 'f1000000-0000-0000-0000-000000000001',
+    'whole', 'completed', null, now(), 'test', v_owner,
     'unassigned', v_test_context
   );
 
@@ -249,8 +239,7 @@ begin
       assignment_mode
     ) values (
       v_hh_id, 'manual', 'Invalid production completion', 'other', 'anytime', current_date,
-      'whole', 'completed', null, now(), 'test', 'f1000000-0000-0000-0000-000000000001',
-      'unassigned'
+      'whole', 'completed', null, now(), 'test', v_owner, 'unassigned'
     );
     raise exception 'FAIL canonical-foundation: production whole completion accepted null legacy performer';
   exception
@@ -265,9 +254,8 @@ begin
       source, created_by, assignment_mode, test_context_id
     ) values (
       v_hh_id, 'manual', 'Invalid subtask parent actor', 'other', 'anytime', current_date,
-      'f1000000-0000-0000-0000-000000000001', 'subtasks', 'completed',
-      'f1000000-0000-0000-0000-000000000001', now(), 'test',
-      'f1000000-0000-0000-0000-000000000001', 'unassigned', v_test_context
+      v_owner, 'subtasks', 'completed', v_owner, now(), 'test',
+      v_owner, 'unassigned', v_test_context
     );
     raise exception 'FAIL canonical-foundation: subtask parent accepted legacy actual actor';
   exception
