@@ -132,7 +132,7 @@ GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最
 - 担当調整中
 - 返答期限超過
 - 依頼内容変更
-- 亖承後の取消
+- 了承後の取消
 - 事前調整済み
 
 `確認してみる` は自分側の予定調整、`相談する` は相手との代替案相談です。
@@ -218,4 +218,158 @@ GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最
 
 ### H. LINE ↔ PWA
 
-- deep linkで対象作業をそのまま引き継げる設計になな�
+- deep linkで対象作業をそのまま引き継げる設計になっているか
+- LINEとPWAで同時編集した時のconflict
+- PWA保存後に自分宛LINEを返さない方針
+- 一覧操作でreload/scroll resetを起こさない要件
+
+### I. One-user test mode
+
+妻を実LINEユーザーとして追加する前に、同じLINEでパパ/ママ双方を疑似操作する要件があります。
+
+- test modeが本番モデルを汚さないか
+- operatorとsimulated actorを分離できるか
+- simulated actorから実LINE/Google/production outbox等の外部副作用が発生しないか
+- test dataが本番分析から既定で除外されるか
+- simulated confirmationが実ママ本人の合意へ昇格しないか
+- 実ママ追加時、未解決simulationを自動移行せず必要分だけ再確認できるか
+- 2人本番へ移行時にcore domain modelの再設計が不要か
+
+を確認してください。
+
+==================================================
+3.5 ROUND 1 CONDITION RE-REVIEW
+==================================================
+
+PR #39 Round 1の独立レビューは `GO WITH CONDITIONS` でした。
+再レビュー時は、Baseline v1.1およびADR 0012により以下が十分に解消されたかを最優先で確認してください。
+
+1. ADR 0001 / v6とのnormative source二重化がADR-levelで解消されたか
+2. `確認してみる / 相談する / 返答期限超過 / late action` の状態遷移が閉じたか
+3. Requestとlinked ToDoのtruth ownershipが一本化されたか
+4. `大体やった` が子task statusを増やさず、carryoverと整合したか
+5. one-user testで外部副作用と実ユーザー合意が隔離されたか
+6. human / Google / image fact / AI inferenceのAuthority ruleが一貫したか
+7. claim takeover、future合意bulk確認、口頭調整済み訂正導線が通常UXを重くしていないか
+8. raw園画像のprivacy invariantが要求として十分か
+9. duplicate webhook / stale LINE action / LINE-PWA同時更新で状態が逆戻りしない期待結果が固定されたか
+
+Round 1の条件を満たしていない項目が1つでもBLOCKER/HIGH相当で残る場合、`GO` にしないでください。
+
+==================================================
+4. CURRENT IMPLEMENTATION GAP REVIEW
+==================================================
+
+CURRENT `main` を確認し、review targetのBaselineと現実装が衝突する箇所を特定してください。Baseline自体がopen PR上にある場合は、そのPRのhead版を要求仕様として読み、実装比較はCURRENT `main` に対して行ってください。
+
+特に既存の:
+
+- Today / Daily UI
+- routine tasks
+- requests
+- handovers
+- task completion / history
+- LINE Flex / conversation handling
+- scheduled LINE notifications
+- Google Calendar sync
+- recurrence / assignment model
+- PWA navigation
+
+について、
+
+1. そのまま活かせる
+2. 拡張すればよい
+3. 方針が衝突するため再設計が必要
+
+を分類してください。
+
+ただし今回は**修正しないでください**。
+
+==================================================
+5. REQUIRED REVIEW OUTPUT
+==================================================
+
+最初に結論だけ短く示し、その後根拠を詳細化してください。
+
+各指摘は必ず以下で分類してください。
+
+- `BLOCKER`
+- `HIGH`
+- `MEDIUM`
+- `LOW`
+
+各指摘の形式:
+
+**問題**
+→ **実際に起こる家庭内シナリオ**
+→ **なぜ問題か**
+→ **推奨修正**
+
+単なる好みや抽象的な感想ではなく、具体的な家庭内操作で説明してください。
+
+また、以下を必ず出してください。
+
+### 5.1 Contradiction matrix
+
+仕様内で相互に矛盾・緊張する要件を列挙してください。
+
+例:
+- LINEに全部出す vs 通知/可読性
+- 実績を正確に残す vs 入力を最短にする
+- 自動推定 vs 人の確認回数
+
+### 5.2 Missing scenario list
+
+この仕様でまだ決まっていない、実装前に決めるべき現実的シナリオを重要度順に列挙してください。
+
+ただし「何でも念のため」と無限に増やさず、実運用で起こる可能性・事故影響が高いものを優先してください。
+
+### 5.3 Simplification opportunities
+
+同等の価値を保ちながら、状態・画面・通知・操作を減らせる箇所があれば提案してください。
+
+### 5.4 Data-model pressure points
+
+DB schemaそのものは実装しなくてよいですが、要求を実現する上で特に危険な概念境界を指摘してください。
+
+例:
+- task definition vs occurrence
+- assignment vs claim vs actual performer
+- source fact vs AI inference
+- event vs task group
+- request vs assignment-change negotiation
+
+### 5.5 Final verdict
+
+最後に必ず、
+
+- `GO`
+- `GO WITH CONDITIONS`
+- `NO-GO`
+
+のいずれかで、**このRequirements Baselineを詳細設計フェーズへ進めてよいか**を判定してください。
+
+`GO WITH CONDITIONS` / `NO-GO` の場合、詳細設計開始前に直すべき項目を明示してください。
+
+==================================================
+6. REVIEW POSTURE
+==================================================
+
+この仕様を肯定することが目的ではありません。
+
+- 過剰設計
+- 状態爆発
+- 通知疲れ
+- 家庭内での心理的圧
+- 入力負荷
+- 二重対応
+- silent overwrite
+- AI誤判定
+- image privacy
+- test data contamination
+
+が起きる設計なら、遠慮なく止めてください。
+
+一方、問題がない箇所まで変更案を出す必要はありません。
+
+**実際に夫婦が毎日使い続けられるか**を最優先に独立評価してください。
