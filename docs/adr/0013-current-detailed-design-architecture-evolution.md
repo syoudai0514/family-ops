@@ -2,7 +2,15 @@
 
 ## Status
 
-Proposed — becomes Accepted only if the detailed-design PR passes independent review with `GO` and is merged.
+**Accepted — 2026-09-02.**
+
+Acceptance basis:
+
+- PR #41 merged after independent Round 5 final verification returned `GO`;
+- reviewed head: `5c85bd1468a624b831493e198b0f88b4ef7c574e`;
+- final severity: BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0;
+- Requirements contradiction: 0;
+- Requirements Final-GO MEDIUM 3: 3/3 PASS.
 
 ## Context
 
@@ -30,9 +38,9 @@ The repository should not fork `docs/design/v6/` into an implicit v7 or rewrite 
 
 ## Decision
 
-If this ADR and the detailed-design PR are accepted:
+With this ADR accepted:
 
-1. `docs/design/current/` becomes the **canonical detailed design for behavior governed by the current Requirements Baseline**.
+1. `docs/design/current/` is the **canonical detailed design for behavior governed by the current Requirements Baseline**.
 2. `docs/design/v6/` remains authoritative for architecture/security/provider mechanics that do not conflict with the Requirements Baseline, this ADR, or `docs/design/current/`.
 3. The following v6/current architecture semantics are explicitly superseded for the next implementation:
 
@@ -76,6 +84,7 @@ If this ADR and the detailed-design PR are accepted:
    - Google cache remains the canonical observation of Google provider state, not the unconditional household-domain event truth.
    - linked Google changes auto-apply only when permitted by Authority/follow rules; otherwise they become candidates/diffs.
    - existing Google OAuth, watch, sync-token, occurrence projection, write-idempotency, ETag, credential-binding, and provider-security mechanics remain valid unless a later ADR explicitly changes them.
+   - provider mutation ownership must remain exclusive across the reviewed Task mirror bridge, old-target deletion bridge, and Family Event external-link writer; stale DELETE and unresolved orphan adoption are prohibited by the reviewed detailed design.
 
    ### Notification product behavior
    - Requirements Baseline morning/evening anchors and immediate meaningful exceptions supersede conflicting v6 user-facing routine-push cadence.
@@ -102,7 +111,7 @@ If this ADR and the detailed-design PR are accepted:
 
 - ADR 0001 remains partially superseded by ADR 0012 for requirements/UX scope.
 - ADR 0012 remains the governance authority separating requirements/UX from non-conflicting legacy architecture.
-- ADR 0013, if accepted, explicitly authorizes the architecture/schema/API evolution needed to implement the accepted Requirements Baseline while retaining useful v6 mechanics.
+- ADR 0013 explicitly authorizes the architecture/schema/API evolution needed to implement the accepted Requirements Baseline while retaining useful v6 mechanics.
 
 Resulting practical hierarchy:
 
@@ -137,6 +146,8 @@ No implementer may resolve a conflict by selecting whichever document is easier 
 
 These costs are accepted because continuing the old single-state assumptions would create multiple competing truths, false simulated consent, and unsafe silent updates.
 
-## Review gate
+## Review record
 
-This ADR must not become Accepted merely because it exists on a branch. Independent review must evaluate the entire `docs/design/current/` package and return `GO`. `BLOCKER` or `HIGH` findings must be resolved before merge/implementation.
+Independent review evaluated the complete `docs/design/current/` package through five rounds. Final Round 5 verification returned `GO` on reviewed head `5c85bd1468a624b831493e198b0f88b4ef7c574e` with no BLOCKER/HIGH/MEDIUM/LOW findings and no Requirements contradiction. PR #41 then merged that exact reviewed head.
+
+Future implementation must follow the reviewed work-package ordering and gates. A later product-behavior change requires Requirements review; architecture change beyond this decision requires a new or amended ADR.
