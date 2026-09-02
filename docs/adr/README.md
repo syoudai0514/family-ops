@@ -8,6 +8,10 @@ scope-limits that decision: the current canonical Requirements & UX Baseline
 governs product requirements/UX, while v6 remains normative for non-conflicting
 architecture and implementation design.
 
+ADR 0013 is currently **Proposed** on the detailed-design review branch. It becomes
+Accepted only after the entire `docs/design/current/` package passes independent
+review with `GO` and the review PR is merged.
+
 ## Index
 
 - [0001](0001-v6-baseline-commitment.md) — Original v6 normative-source
@@ -55,6 +59,10 @@ architecture and implementation design.
 - [0012](0012-requirements-ux-canonical-governance.md) — Establish the
   canonical Requirements & UX Baseline as the normative product source while
   retaining v6 for non-conflicting architecture/implementation decisions
+- [0013](0013-current-detailed-design-architecture-evolution.md) — **Proposed:**
+  adopt `docs/design/current/` as the reviewed detailed design and explicitly
+  evolve request/task actual/assignment/Google Authority/notification/test-mode
+  architecture where accepted requirements conflict with v6
 
 ## Format
 
