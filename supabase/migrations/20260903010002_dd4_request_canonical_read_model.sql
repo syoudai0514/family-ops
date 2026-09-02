@@ -96,15 +96,6 @@ begin
   ), shaped as (
     select
       rr.*,
-      case
-        when rr.agreement_attempt_id is not null
-             and rr.latest_attempt_kind in ('change', 'cancel')
-             and rr.latest_attempt_state in ('pending', 'checking', 'consulting', 'awaiting_confirmation')
-          then 'agreement_with_negotiation'
-        when rr.agreement_attempt_id is not null then 'agreed'
-        when rr.latest_attempt_state is not null then rr.latest_attempt_state
-        else rr.status
-      end as canonical_coordination_state,
       jsonb_build_object(
         'request_id', rr.id,
         'request_kind', rr.request_kind,
@@ -158,24 +149,30 @@ begin
     from request_rows rr
   )
   select
-    coalesce(jsonb_agg(item order by coalesce(latest_reply_due_at, due_at) nulls last, created_at desc), '[]'::jsonb)
-      filter (where (
-        (v_actor_ref_id is not null and recipient_actor_ref_id = v_actor_ref_id)
-        or (recipient_actor_ref_id is null and recipient_id = p_actor_id)
-      )),
-    coalesce(jsonb_agg(item order by created_at desc), '[]'::jsonb)
-      filter (where (
-        (v_actor_ref_id is not null and requester_actor_ref_id = v_actor_ref_id)
-        or (requester_actor_ref_id is null and requester_id = p_actor_id)
-      ))
+    coalesce(
+      jsonb_agg(item order by coalesce(latest_reply_due_at, due_at) nulls last, created_at desc)
+        filter (where (
+          (v_actor_ref_id is not null and recipient_actor_ref_id = v_actor_ref_id)
+          or (recipient_actor_ref_id is null and recipient_id = p_actor_id)
+        )),
+      '[]'::jsonb
+    ),
+    coalesce(
+      jsonb_agg(item order by created_at desc)
+        filter (where (
+          (v_actor_ref_id is not null and requester_actor_ref_id = v_actor_ref_id)
+          or (requester_actor_ref_id is null and requester_id = p_actor_id)
+        )),
+      '[]'::jsonb
+    )
   into v_incoming, v_outgoing
   from shaped;
 
   return jsonb_build_object(
     'generated_at', now(),
     'household_id', v_household_id,
-    'incoming', coalesce(v_incoming, '[]'::jsonb),
-    'outgoing', coalesce(v_outgoing, '[]'::jsonb)
+    'incoming', v_incoming,
+    'outgoing', v_outgoing
   );
 end;
 $$;
