@@ -57,9 +57,14 @@
    - implementation work packages
    - semantic R0/R1/P1 rollout/rollback gates
    - production-safety constraints
-8. `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
+8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
+   - exact compatibility with CURRENT real-user-only identity columns/FKs
+   - conditional legacy mirrors/nullability
+   - task_events/request/handover/receipt actor semantics
+   - mandatory simulated-actor E2E
+9. `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
    - original independent review instructions
-9. `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
+10. `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
    - Round 1 NO-GO remediation re-review gate
 
 ## Non-negotiable design constraints
@@ -69,6 +74,7 @@
 - `待ち` は第6statusにせず、`attention_state=waiting` + note/next-check + original dueとしてcurrent truthを持つ。
 - planned assignee / anyone claim / actual performer / recorderを混同しない。
 - real/simulated/system actor identityは`domain_actor_refs`へ一元化し、simulated actorをoperator real userで代用しない。
+- CURRENT real-user-only legacy identity column/FKはproduction compatibility mirrorとしてのみ残し、test simulated actorをfake userで満たさない。
 - recurrence rule変更でindividual agreementや過去実績をsilent rewriteしない。
 - `今回は不要`と`できなかった`を`outcome_reason`で区別し、audit replayをcurrent truthの代替にしない。
 - human-confirmed値をGoogle/image/AIがsilent overwriteしない。
@@ -120,11 +126,13 @@ Closed across 01/02/03/04/07:
 
 ### HIGH-2 simulated actor persistence
 
-Closed across 01/02/03/06/07:
+Closed across 01/02/03/06/07/08:
 
 - common `domain_actor_refs`
 - real_user / simulated_member / system
 - assignee/claimant/performer/recorder/request/confirmation/reconciliation/auditへ一貫適用
+- CURRENT requests/task_events/handover等のreal-user-only legacy IDsはproduction compatibility mirrorへ限定
+- simulated rowsでlegacy NOT NULL/PKが障害になる箇所はActorRef-native representation/conditional nullabilityへ移行
 - no fake auth/member
 - no operator-ID substitution
 - production/test scope hard constraints
