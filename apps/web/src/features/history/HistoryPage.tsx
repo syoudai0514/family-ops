@@ -6,14 +6,18 @@ import { useHistoryData, type HistoryEntry, type PlannedVsActualOutcome } from '
 import type { TaskEvent, TaskEventType } from '../../lib/types';
 import { useMemo, useState } from 'react';
 
-// WP4 — planned vs actual history view. Read-only: no score, ranking, or
-// "who did more" comparison is shown here or ever should be (see
-// docs/design/v6/10_WORK_PACKAGES.md, WP4 "no score/ranking").
+// WP-DD5 — planned vs actual history view. Read-only: no score, ranking, or
+// "who did more" comparison. Explicit occurrence outcome is shown as a fact;
+// unknown legacy skipped evidence remains generic rather than guessed.
 const OUTCOME_LABELS: Record<PlannedVsActualOutcome, string> = {
   completed_on_time: '完了（期限内）',
   completed_late: '完了（期限超過）',
+  not_needed: '今回は不要',
+  could_not_do: 'できなかった',
+  expired_occurrence: '期限終了',
   skipped: 'スキップ',
   cancelled: 'キャンセル',
+  waiting: '待ち',
   overdue_open: '未完了（期限超過）',
   in_progress: '進行中',
   upcoming: '予定',
@@ -22,8 +26,12 @@ const OUTCOME_LABELS: Record<PlannedVsActualOutcome, string> = {
 const OUTCOME_CLASS: Record<PlannedVsActualOutcome, string> = {
   completed_on_time: 'history-outcome ok',
   completed_late: 'history-outcome late',
+  not_needed: 'history-outcome skipped',
+  could_not_do: 'history-outcome late',
+  expired_occurrence: 'history-outcome skipped',
   skipped: 'history-outcome skipped',
   cancelled: 'history-outcome skipped',
+  waiting: 'history-outcome pending',
   overdue_open: 'history-outcome late',
   in_progress: 'history-outcome pending',
   upcoming: 'history-outcome pending',
@@ -94,6 +102,9 @@ function HistoryRow({ entry, members }: { entry: HistoryEntry; members: Househol
       <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
       {task.status === 'completed' && (
         <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {memberLabel(task.actual_completed_by_id, members)}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 翌朝に完了' : ''}</p>
+      )}
+      {task.attention_state === 'waiting' && task.next_check_at && (
+        <p className="task-item-meta">次の確認: {formatDateTimeJa(task.next_check_at)}</p>
       )}
       {reassignment && <p className="task-item-meta">{reassignment}</p>}
       <EventTrail events={events} members={members} />
