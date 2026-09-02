@@ -122,21 +122,18 @@ Two independent fresh reviews both returned `NO-GO / BLOCKER 0 / HIGH 1` and ind
 
 ### Round 4
 
-The current provider-lifecycle design closed that HIGH:
+The provider-lifecycle HIGH was closed in `08` and `07`:
 
-- `08` corrected to 50/50 disposition;
+- 50/50 disposition;
 - target deletions = `BRIDGE`;
 - orphaned mirrors = `KEEP` audit/observation;
 - exactly-one-provider-mutation-owner includes Task mirror + target-deletion queue + Family Event writer;
-- ownership transfer blocks/reconciles deletion job states including live lease and blocked state;
-- completed deletion cannot be adopted as live link;
-- unresolved orphan blocks adoption until provider access + exact identity/ETag are freshly revalidated;
-- target-deletion worker must revalidate current provider ownership before destructive DELETE;
-- `07 WP-DD2/WP-DD8/WP-DD11` inventory, acceptance and audit cover the full provider lifecycle.
+- stale destructive DELETE is guarded;
+- unresolved orphan blocks adoption pending fresh provider identity/ETag revalidation.
 
 Independent Round 4 results supplied by the user:
 
-- reviewer A: **GO WITH CONDITIONS** — BLOCKER 0 / HIGH 0 / MEDIUM 1; only finding was stale Round 3 physical text in `02_DATA_MODEL_AND_MIGRATION.md`.
+- reviewer A: **GO WITH CONDITIONS** — BLOCKER 0 / HIGH 0 / MEDIUM 1 / LOW 0; only finding was stale Round 3 physical text in `02_DATA_MODEL_AND_MIGRATION.md`.
 - reviewer B: **GO** — BLOCKER/HIGH/MEDIUM/LOW all 0.
 
 The single Round 4 condition has now been applied directly to `02`:
