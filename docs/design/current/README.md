@@ -1,35 +1,38 @@
-# Family Ops Detailed Design — Proposed Canonical
+# Family Ops Detailed Design — Canonical
 
-- **Status:** Proposed / Final Independent Verification Required / NO IMPLEMENTATION
-- **Date:** 2026-09-02
-- **Repository baseline:** `main` @ `7729c93ee10db29b145592763886cfa5f9a019e0`
+- **Status:** Accepted / Canonical Detailed Design
+- **Accepted:** 2026-09-02
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
-- **Governance:** ADR 0012 Accepted / ADR 0013 Proposed
+- **Governance:** ADR 0012 Accepted / ADR 0013 Accepted
+- **Review:** Independent Round 5 Final Verification = `GO`
+- **Reviewed head:** `5c85bd1468a624b831493e198b0f88b4ef7c574e`
 
-このディレクトリはaccepted RequirementsをCURRENT implementationへ安全に落とすための詳細設計候補である。actual current PR headに対する独立レビューで `GO` を得るまではPR #41をmergeせず、ADR 0013をAcceptedにせず、implementation planning / implementationを開始しない。
+このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**canonical detailed design**である。PR #41は独立Round 5最終検証で `GO` を得たexact reviewed headをmergeし、ADR 0013のAccepted化により本ディレクトリのarchitecture/schema/API evolutionが正式に承認された。
 
-このPRはdocs-only。migration / Supabase / Edge / LINE / Google / Vercel / production dataは変更しない。
+以後、実装者はこの固定pathを正として使用する。`FINAL` / `V2` / `LATEST` の並行設計コピーは作らない。設計変更はこのpathを更新し、product behavior変更ならRequirements Baseline、architecture scope変更ならADRも同時に更新・レビューする。
 
 ---
 
 ## Normative hierarchy
 
-1. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
-2. ADR 0012 / proposed ADR 0013
-3. `docs/design/current/01`–`07`
-4. CURRENT physical/cutover detail:
-   - `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
-   - `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
+1. accepted ADR governing the exact architecture decision
+2. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
+3. `docs/design/current/`
+4. `docs/design/v6/` for non-conflicting legacy architecture/provider/security mechanics
+5. code/tests
+
+Physical schema/cutover detail:
+
+- `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
+- `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
 
 `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` がolder conceptual documentのphysical schema/cutover assumptionを明示的に修正する場合、physical detailは08を正とする。ただしproduct meaningを変更する権限はない。
 
-Review採用内容はこのfixed pathへ更新し、`FINAL` / `V2` / `LATEST` の並行設計コピーは作らない。
-
 ---
 
-## CURRENT physical baseline
+## Accepted physical baseline at design review
 
-CURRENT main fresh read:
+Reviewed CURRENT main baseline:
 
 - SHA: `7729c93ee10db29b145592763886cfa5f9a019e0`
 - migration files: 78
@@ -37,19 +40,21 @@ CURRENT main fresh read:
 - private tables: **23**
 - total: **50**
 
-Table enumeration must match case-insensitive `CREATE TABLE` with optional `IF NOT EXISTS`.
+Table enumeration includes `CREATE TABLE` and `CREATE TABLE IF NOT EXISTS` case-insensitively.
 
-The Google provider-lifecycle tables that must all remain in scope are:
+Google provider-lifecycle tables that remain explicit implementation scope:
 
 - `private.family_ops_calendar_mirrors`
 - `private.family_ops_calendar_target_deletions`
 - `private.family_ops_calendar_orphaned_mirrors`
 
-The first two can mutate Google provider state; the orphan table records provider identities that became unmanageable after permission/eligibility loss. Their ownership/transfer rules are binding in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` §10 and are synchronized into `02_DATA_MODEL_AND_MIGRATION.md`.
+The first two can mutate Google provider state; the orphan table is observation/audit only. Binding ownership/transfer rules are in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` §10 and are synchronized into `02_DATA_MODEL_AND_MIGRATION.md` and `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`.
+
+Before Phase 1 migration work, implementation must fresh-read the actual production/current schema and stop for review if it differs materially from the accepted physical assumptions.
 
 ---
 
-## Documents
+## Canonical documents
 
 1. `01_ARCHITECTURE_AND_DOMAIN_BOUNDARIES.md`
 2. `02_DATA_MODEL_AND_MIGRATION.md`
@@ -60,12 +65,15 @@ The first two can mutate Google provider state; the orphan table records provide
 7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
-10. `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
-11. `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
-12. `FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md` — historical rubric
-13. `FAMILY-OPS-DETAILED-DESIGN-ROUND3-REREVIEW-REQUEST.md` — historical rubric
-14. `FAMILY-OPS-DETAILED-DESIGN-ROUND4-REREVIEW-REQUEST.md` — historical rubric
-15. `FAMILY-OPS-DETAILED-DESIGN-ROUND5-FINAL-VERIFY-REQUEST.md` — **current final verification entry point**
+
+Review instruction/history documents remain for audit only:
+
+- `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
+- `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
+- `FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md`
+- `FAMILY-OPS-DETAILED-DESIGN-ROUND3-REREVIEW-REQUEST.md`
+- `FAMILY-OPS-DETAILED-DESIGN-ROUND4-REREVIEW-REQUEST.md`
+- `FAMILY-OPS-DETAILED-DESIGN-ROUND5-FINAL-VERIFY-REQUEST.md`
 
 ---
 
@@ -77,96 +85,61 @@ The first two can mutate Google provider state; the orphan table records provide
 - `待ち` is orthogonal Task attention state, not a sixth operational status.
 - assignment / anyone claim / actual performer / recorder are separate dimensions.
 - real/simulated/system actor uses one ActorRef model; simulated actor never uses operator ID/fake member.
-- core test-capable rows have direct test_context and ordinary production reads exclude test.
+- core test-capable rows have direct `test_context_id`; ordinary production reads/analytics exclude test.
 - shopping remains a separate aggregate with anyone claim/participants/duplicate-safety.
 - Google all-day events are visible but remain excluded from timed assignment conflict.
 - Family Event human-protected/external-follow Authority is not silently overwritten by Google/image/AI.
-- provider identityごとにTask mirror / old-target deletion / Family Event writerのmutation ownershipを重複させない。
-- `family_ops_calendar_target_deletions`はDELETEもprovider writerとして扱い、ownership transfer後にstale deleteを実行しない。
-- `family_ops_calendar_orphaned_mirrors`はwritable linkの証拠にせず、fresh provider revalidationなしでFamily Eventへ昇格しない。
+- provider identityごとにTask mirror / old-target deletion / Family Event writerのprovider mutation ownershipを重複させない。
+- `family_ops_calendar_target_deletions`のDELETEもprovider mutationであり、ownership transfer後のstale DELETEは禁止。
+- `family_ops_calendar_orphaned_mirrors`はwritable linkの証拠にならず、fresh provider access/identity/ETag revalidationなしでFamily Eventへ昇格しない。
 - aggregate canonical reader+writer activates atomically.
 - after P1, feature-off never restores legacy current truth.
-- no existing migration rewrite / db reset / production data delete.
+- no existing migration rewrite / `supabase db reset` / production data delete.
 
 ---
 
 ## Requirements Final-GO MEDIUM 3
 
-These remain required as `PASS`:
+The following remain permanent implementation acceptance expectations:
 
-1. `大体やった` + carryover noise
-2. duplicate-sensitive neutral completion, including shopping and undo/correction
-3. one-user synthetic delivery + domain/test-state isolation
+1. `大体やった` + carryover noise — PASS design retained
+2. duplicate-sensitive neutral completion, including shopping and undo/correction — PASS design retained
+3. one-user synthetic delivery + domain/test-state isolation — PASS design retained
 
 ---
 
-## Review history
+## Review record
 
 ### Requirements
 
-Final: `GO`.
+Final verdict: `GO`.
 
-### Detailed design Round 1
+### Detailed design progression
 
-`NO-GO` / BLOCKER 0 / HIGH 3 / MEDIUM 3.
+- Round 1: `NO-GO` — BLOCKER 0 / HIGH 3 / MEDIUM 3
+- CURRENT physical alignment / Round 2: major migration/read-path gaps closed
+- Round 3: `NO-GO` — BLOCKER 0 / HIGH 1
+- Round 4: reviewer A `GO WITH CONDITIONS` with one MEDIUM; reviewer B `GO`; no BLOCKER/HIGH
+- Round 5: **`GO` — BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0 / Requirements contradiction 0**
 
-Closed: formal Task waiting current truth, ActorRef simulated identity, safe P1 rollback contract, outcome reason, Request/Task mismatch audit, test sandbox dependency order。
+Round 5 reviewed head:
 
-### CURRENT physical-alignment / Round 2
+`5c85bd1468a624b831493e198b0f88b4ef7c574e`
 
-Closed: task completion CHECK replacement, Request Attempt model/read cutover, atomic aggregate cutover, direct test scope, shopping connection, DailyBrief cadence storage, all-day display separation, compatibility-primary, consultation semantics, work-package gaps。
-
-### Round 3
-
-Two independent fresh reviews both returned `NO-GO / BLOCKER 0 / HIGH 1` and independently found that CURRENT physical inventory is 50, not 48, because `private.family_ops_calendar_target_deletions` and `private.family_ops_calendar_orphaned_mirrors` were missing from the provider-lifecycle design.
-
-### Round 4
-
-The provider-lifecycle HIGH was closed in `08` and `07`:
-
-- 50/50 disposition;
-- target deletions = `BRIDGE`;
-- orphaned mirrors = `KEEP` audit/observation;
-- exactly-one-provider-mutation-owner includes Task mirror + target-deletion queue + Family Event writer;
-- stale destructive DELETE is guarded;
-- unresolved orphan blocks adoption pending fresh provider identity/ETag revalidation.
-
-Independent Round 4 results supplied by the user:
-
-- reviewer A: **GO WITH CONDITIONS** — BLOCKER 0 / HIGH 0 / MEDIUM 1 / LOW 0; only finding was stale Round 3 physical text in `02_DATA_MODEL_AND_MIGRATION.md`.
-- reviewer B: **GO** — BLOCKER/HIGH/MEDIUM/LOW all 0.
-
-The single Round 4 condition has now been applied directly to `02`:
-
-- 50 tables = public 27 / private 23
-- three provider lifecycle tables explicitly named
-- `§13.2` three provider mutation paths + orphan blocker
-- Phase 2 three-table reconciliation + 50-table audit
-- `§21.6` mirror/deletion/orphan lifecycle inventory
-- constraint/destructive-shortcut language synchronized to `08` / `07`
-
-No product/domain redesign was made in this final synchronization.
+PR #41 merged that exact head as merge commit `c272b0a1e00491c749e8cc2d76b90b20be8196ae`.
 
 ---
 
-## Current final verification gate
+## Implementation gate
 
-Use:
+Detailed-design review is complete. Implementation planning may begin.
 
-`docs/design/current/FAMILY-OPS-DETAILED-DESIGN-ROUND5-FINAL-VERIFY-REQUEST.md`
+Implementation must follow the work-package ordering and gates in `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`. In particular:
 
-This is a focused verification of the single Round 4 condition plus regression checks. Reviewer must fresh-read CURRENT main and the **actual current PR head**; do not reuse the Round 4 head verdict after the `02` synchronization commit.
-
-GO condition:
-
-- BLOCKER 0
-- HIGH 0
-- Requirements contradiction 0
-- `02` is synchronized to 50 tables / three Google provider-lifecycle tables
-- Request physical compatibility remains executable
-- provider mutation ownership across Task mirror / target deletion / Family Event remains executable without invention
-- orphan handling remains safe
-- no regression in earlier PASS items
-- Requirements Final-GO MEDIUM 3 remain PASS
-
-Until the actual current head receives independent `GO`: no merge, no ADR acceptance, no implementation.
+- schema/catalog constraints are freshly measured before migration;
+- additive/backfill phases precede new-only semantic writes;
+- test ActorRef/side-effect sandbox foundation precedes actual-household simulation;
+- each aggregate read+write cutover is atomic;
+- provider lifecycle overlap/orphan audits must pass before Family Event P1;
+- P1 rollback never restores legacy semantic truth;
+- destructive cleanup remains separately reviewed and deferred.
