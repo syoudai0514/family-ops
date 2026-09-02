@@ -20,7 +20,7 @@ DDLの最終SQL名そのものは実装レビューで決めるが、current tru
 - P1後にlegacy current-truth read/writeへ戻さない
 - physical legacy cleanupは別reviewed migration
 
-CURRENT物理テーブルの網羅dispositionは `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` の **48 tables = public 27 / private 21** を正とする。
+CURRENT物理テーブルの網羅dispositionは `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` の **50 tables = public 27 / private 23** を正とする。
 
 ---
 
@@ -33,12 +33,14 @@ CURRENT物理テーブルの網羅dispositionは `08_CURRENT_MAIN_PHYSICAL_SCHEM
 - old routine check-in evidence: SUPERSEDE
 - Google OAuth/watch/sync/cache/occurrence/idempotency: KEEP
 - CURRENT Task→Google mirror: BRIDGE（Task-owned projectionのみ）
+- CURRENT old-target provider deletion queue: BRIDGE（bounded destructive provider mutation path）
+- CURRENT permission-loss orphan record: KEEP（provider identity audit/observation only; not writable ownership）
 - new Family Event Authority: additive canonical domain
 - pending actions/raw input/outbox/receipts: reuse with bounded EVOLVE
 
 `household_task_categories`はCURRENT household task taxonomyとして再利用するが、Event Authority・school context・assignment truthにはしない。
 
-`private.family_ops_calendar_mirrors`は無視しない。Task/transport→Google projection bridgeとして残し、Family Event writerとのexactly-one-writer boundaryは `08` §10 を正とする。
+`private.family_ops_calendar_mirrors` / `private.family_ops_calendar_target_deletions` / `private.family_ops_calendar_orphaned_mirrors` は無視しない。Task/transport→Google projection、旧write target DELETE、permission-loss auditという3つのCURRENT lifecycle責務を維持しつつ、Family Event writerとのprovider mutation ownership / transfer / orphan handlingは `08` §10 を正とする。
 
 ---
 
@@ -241,7 +243,7 @@ Task completion current truth:
 - completed_at
 - canonical participant row(s)
 
-Normal new completion requires at least one known performer. Legacy completed actor unknownは推測せず `legacy_unknown_performer` treatment。
+Normal new completion requires at least one known performer。Legacy completed actor unknownは推測せず `legacy_unknown_performer` treatment。
 
 ### 8.1 Legacy `actual_completed_by_id`
 
@@ -452,7 +454,7 @@ Arbitrary user data is not allowed as uncontrolled EAV.
 
 ---
 
-## 13. Google link / CURRENT mirror boundary
+## 13. Google link / CURRENT provider lifecycle boundary
 
 ### 13.1 `family_event_external_links`
 
@@ -471,20 +473,26 @@ Conceptual:
 
 Google cache remains provider observation.
 
-### 13.2 CURRENT Task→Google bridge
+### 13.2 CURRENT Task→Google bridge / target deletion / orphan boundary
 
-CURRENT `private.family_ops_calendar_mirrors` remains bounded to Task-owned projection:
+CURRENT provider lifecycle has three distinct persisted responsibilities:
+
+1. `private.family_ops_calendar_mirrors` — Task/transport-owned provider projection bridge;
+2. `private.family_ops_calendar_target_deletions` — durable old-target provider DELETE bridge;
+3. `private.family_ops_calendar_orphaned_mirrors` — permission/eligibility-loss audit/observation; never writable ownership by itself.
+
+Task mirror remains bounded to:
 
 - transport
 - explicitly Google-visible standalone Task
 
 It is not Family Event truth.
 
-Exactly one writer may own a provider event: Task mirror bridge or Family Event external link, never both.
+For each provider identity, at most one **provider mutation path** may be active among Task mirror bridge, target-deletion DELETE bridge, and Family Event external-link writer. DELETE counts as a provider mutation for this invariant. An orphan record is not a writer, but an unresolved matching orphan blocks adoption/cutover until provider access and exact identity/ETag are freshly revalidated or another eligible provider event is intentionally linked.
 
-Existing special Task mirror is not automatically converted into Family Event. Explicit adoption uses stable provider ID/ETag, resolves pending/processing/failed queue state, disables Task re-enqueue for transferred ownership, then establishes Family Event external link.
+Existing special Task mirror is not automatically converted into Family Event. Explicit adoption uses stable provider ID/ETag, resolves mirror and target-deletion pending/processing/failed/blocked state, respects live leases, prevents stale DELETE, disables Task re-enqueue for transferred ownership, then establishes Family Event external link.
 
-Full transfer/reconciliation rules: `08` §10.
+Full transfer/reconciliation/destructive-delete/orphan rules: `08` §10. Implementation acceptance: `07` WP-DD8 / WP-DD11.
 
 ---
 
@@ -670,7 +678,8 @@ No runtime change.
 - DailyBrief schedule CHECK extension + override table
 - shopping extension
 - Family Event/link/candidate schema
-- Task→Google mirror ownership guard fields/state as needed
+- Task→Google mirror / target-deletion ownership guard fields/state as needed
+- orphan reconciliation/adoption guard representation as needed
 - RLS/FK/index/checks
 - compatibility helpers
 
@@ -687,10 +696,13 @@ Rollback class R0.
 - handover defaults
 - task policy snapshots
 - legacy Request↔Task/assignment-scope mismatch report
-- CURRENT Task→Google mirror inventory/provider identity/queue-state reconciliation report
-- 48-table physical precondition audit
+- CURRENT Google provider lifecycle reconciliation across:
+  - `family_ops_calendar_mirrors` provider identity/queue/lease state
+  - `family_ops_calendar_target_deletions` provider identity/delete-job/retry/lease/blocked state
+  - `family_ops_calendar_orphaned_mirrors` provider identity/reason/observed state
+- **50-table physical precondition audit**
 
-Idempotent. No guessed performer/anyone/event/provider linkage.
+Idempotent. No guessed performer/anyone/event/provider linkage. Orphan rows never imply a writable provider link.
 
 Rollback class R0.
 
@@ -744,7 +756,8 @@ After P1 legacy current-truth read/write rollback prohibited.
 - legacy actual actor ceases canonical use
 - old routine pushes disabled after DailyBrief cadence cutover
 - old Task→Google path remains only for still Task-owned projections
-- transferred Family Event provider IDs cannot be re-enqueued by Task bridge
+- transferred Family Event provider IDs cannot be re-enqueued by Task bridge or executed by stale target-deletion job
+- unresolved permission-loss orphan remains explicit audit state and cannot be silently adopted
 
 Physical column/table cleanup is separate future review.
 
@@ -796,9 +809,11 @@ Legacy skipped reason is not guessed.
 
 New writes distinguish at least could_not_do / not_needed_this_occurrence / expired_occurrence.
 
-### 21.6 Task→Google mirror
+### 21.6 Google provider lifecycle reconciliation
 
-Inventory every existing `family_ops_calendar_mirrors` row:
+Inventory every existing provider-lifecycle row in all three CURRENT tables.
+
+For `family_ops_calendar_mirrors`, record at least:
 
 - projection key
 - kind
@@ -807,11 +822,29 @@ Inventory every existing `family_ops_calendar_mirrors` row:
 - provider event ID
 - provider ETag
 - desired action
-- sync/lease/retry state
+- sync/lease/retry/blocked state
 
-Do not auto-create Family Events from mirrors.
+For `family_ops_calendar_target_deletions`, record at least:
 
-Explicit adoption to Family Event follows `08` §10 ownership-transfer protocol.
+- calendar connection
+- projection key
+- provider event ID
+- sync state including blocked/deleted
+- attempts / next attempt
+- lease token / lease expiry
+- last error
+
+For `family_ops_calendar_orphaned_mirrors`, record at least:
+
+- calendar connection
+- projection key
+- provider event ID
+- reason
+- observed_at
+
+Do not auto-create Family Events from mirror/deletion/orphan state. A deletion queue row is a provider mutation path until safely terminal/superseded; an orphan row is observation only and never writable ownership.
+
+Explicit adoption to Family Event follows `08` §10 ownership-transfer protocol, including live lease blocking, stale DELETE prevention, orphan revalidation, provider ID/ETag preservation, and three-path provider-mutation overlap audit. Implementation/release gates are `07` WP-DD2 / WP-DD8 / WP-DD11.
 
 ### 21.7 Test data
 
@@ -833,7 +866,8 @@ Detailed DDL review must cover at least:
 - shopping claim/revision consistency
 - source/extraction/fact household isolation
 - Event external link/provider identity uniqueness
-- exactly-one Google writer-owner invariant across Task bridge vs Family Event link
+- exactly-one **provider mutation owner/path** invariant across Task mirror bridge vs target-deletion DELETE bridge vs Family Event external-link writer
+- unresolved matching orphan cannot establish writable ownership without fresh provider access/identity/ETag revalidation
 - candidate source/target indexes
 - RLS household isolation
 - service-role-only sensitive mutation RPCs
@@ -849,7 +883,9 @@ Detailed DDL review must cover at least:
 - recurrence history collapse
 - legacy Request timestampをcanonical historyとして扱う
 - Google provider identityをtitle/dateから再構築
-- Task mirrorとFamily Event writerを同じprovider eventへ同時に残す
+- Task mirror / target-deletion DELETE / Family Event writerを同じprovider identityへ同時に有効化
+- stale target-deletion queue rowの存在だけをDELETE権限として扱う
+- permission-loss orphanをwritable Family Event linkへsilent昇格
 - raw nursery image削除とconfirmed structured data削除を連動
 - Google cacheをFamily Event truthとして直接流用
 - simulated actorをreal spouse/operator IDへupdate
