@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — **superseded in part by ADR 0012** for requirements / UX scope.
 
 ## Context
 
@@ -26,7 +26,8 @@ themselves, and never by drafting a v7.
 
 `docs/design/v6/` is the single normative design source for this
 implementation, for the entirety of WP0/WP1 and all work packages that
-follow. Concretely:
+follow, **subject to the scope limitation introduced by ADR 0012**.
+Concretely:
 
 - Files under `docs/design/v6/` are treated as read-only reference material
   from the implementation's side. When implementation code, migrations,
@@ -39,26 +40,28 @@ follow. Concretely:
   `configure-evening-routines`), the fix corrects the implementation to
   match v6's actual, more carefully-read intent — this is implementation
   bug-fixing, not a design revision, and does not touch `docs/design/v6/`.
-- No v7 design is created. A genuine, deliberate change to product scope or
-  architecture — should one ever be needed — gets its own ADR proposing
-  that change explicitly, not a silent drift into a new vendored design
-  package.
+- No v7 design is created merely through implementation drift. A genuine,
+  deliberate change to product scope or architecture gets its own ADR and
+  canonical requirements/design update rather than a silent fork.
 - CI (`scripts/check-edge-auth-matrix.mjs`) enforces one concrete instance
   of this: every Edge Function actually deployed under `supabase/functions/`
   must match its `verify_jwt` classification from the v6-vendored
   `docs/design/v6/EDGE_FUNCTION_AUTH_MATRIX.md` /
   `docs/design/v6/supabase/config.toml` snapshot exactly.
+- After ADR 0012 is Accepted, product requirements and UX behavior are
+  governed by `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`.
+  v6 remains normative for non-conflicting architecture and implementation
+  design. Any cross-boundary conflict must be resolved explicitly by ADR
+  before implementation.
 
 ## Consequences
 
-- Reviewers can always resolve an implementation-vs-design disagreement by
-  reading `docs/design/v6/` directly; there is never a second, competing
-  "current" design to reconcile against it.
-- A work package that appears to need behavior v6 doesn't describe is a
-  signal to re-read v6 more carefully or ask, not to invent new scope near
-  it.
-- Should a real product-direction change become necessary later, it is
-  recorded as a new, explicit ADR (and, if it changes the normative design
-  itself, as a genuinely new versioned design package with its own
-  vendoring step) — not as an implicit v7 assembled from scattered
-  implementation deviations.
+- Reviewers can resolve requirements/UX questions against the canonical
+  Requirements & UX Baseline once ADR 0012 is Accepted.
+- Reviewers can continue to rely on `docs/design/v6/` for non-conflicting
+  architecture/implementation decisions.
+- A work package that appears to need behavior neither the Baseline nor v6
+  describes is a signal to clarify requirements/design explicitly, not to
+  invent new scope in implementation.
+- A future product-direction or architecture change is recorded explicitly
+  through the Baseline and, where necessary, a new ADR.
