@@ -21,26 +21,32 @@ No code, migration, Supabase runtime, Edge Function, LINE runtime, Google Calend
 
 Fresh-read CURRENT migrations include the later `20260821` through `20260825` chain and **78 migration files**.
 
-A prior review/count incorrectly treated only plain `create table` statements as inventory and missed `create table if not exists` statements introduced by `20260822000001_calendar_projection_domain.sql`.
+The inventory must match case-insensitive `create table` declarations including optional `IF NOT EXISTS`; a pattern that only matches plain `create table public...` is not sufficient. The prior 46- and 48-table counts each missed live `IF NOT EXISTS` tables.
 
-CURRENT application-owned table inventory relevant to this program is therefore:
+The corrected CURRENT application-owned table inventory is:
 
 - **public: 27**
-- **private: 21**
-- **total: 48**
+- **private: 23**
+- **total: 50**
 
-The two tables that must not be omitted are:
+The four late tables that earlier counts missed are:
 
 - `public.household_task_categories`
 - `private.family_ops_calendar_mirrors`
+- `private.family_ops_calendar_target_deletions`
+- `private.family_ops_calendar_orphaned_mirrors`
 
-The latter is active infrastructure: later migrations evolve it into the durable Task → Google projection/outbox path and install triggers/workers around it. It is not dead documentation-era residue.
+The three private `family_ops_calendar_*` tables are one live provider-lifecycle subsystem, not dead residue:
+
+- `family_ops_calendar_mirrors` is the durable Task/transport projection/outbox;
+- `family_ops_calendar_target_deletions` is the durable old-target provider DELETE outbox with claim/lease/retry;
+- `family_ops_calendar_orphaned_mirrors` records stable provider identities that can no longer be safely managed after calendar permission/eligibility loss.
 
 ### 2.1 Disposition legend
 
 - `KEEP`: preserve current truth/transport responsibility.
 - `EVOLVE`: reuse the table but extend/narrow semantics or add compatibility fields.
-- `BRIDGE`: preserve as an explicit migration/interoperability path with a bounded ownership role; it must not become a competing canonical truth.
+- `BRIDGE`: preserve as an explicit migration/interoperability/provider-write path with a bounded ownership role; it must not become a competing canonical household truth.
 - `SUPERSEDE`: keep for history/compatibility while canonical semantics move elsewhere; no independent new truth after cutover.
 - `OUT-OF-SCOPE`: retained and not materially changed by this program.
 
@@ -76,7 +82,7 @@ The latter is active infrastructure: later migrations evolve it into the durable
 | 26 | `public.calendar_busy_classification_members` | KEEP | Existing normalized membership reused. |
 | 27 | `public.assignment_change_request_tasks` | SUPERSEDE | Existing assignment-change scope mapping is migration/audit input only after Request/Attempt cutover; cannot remain an independent assignment-negotiation truth. |
 
-### 2.3 Private tables — 21/21
+### 2.3 Private tables — 23/23
 
 | # | Current table | Disposition | Binding treatment |
 |---:|---|---|---|
@@ -86,23 +92,25 @@ The latter is active infrastructure: later migrations evolve it into the durable
 | 4 | `private.google_sync_jobs` | KEEP | Queue/lease/coalescing unchanged. |
 | 5 | `private.google_event_staging` | KEEP | Full/incremental sync staging unchanged. |
 | 6 | `private.google_write_operations` | KEEP | Provider create/update idempotency retained; test context hard-blocked. |
-| 7 | `private.family_ops_calendar_mirrors` | BRIDGE | Remains the bounded Task/transport → Google projection bridge. It must never become Family Event household truth or a second Family Event writer. Ownership-transfer rules are in §10. |
-| 8 | `private.webhook_inbox` | KEEP | LINE durable inbox/dedup retained. |
-| 9 | `private.line_user_links` | KEEP | Real user LINE identity only. |
-| 10 | `private.pending_actions` | EVOLVE | Reuse preview/confirm queue with revision/test/ActorRef-aware context. |
-| 11 | `private.raw_inputs` | EVOLVE | Reuse for short-lived private raw input only; no durable third-party OCR transcript. |
-| 12 | `private.household_invites` | OUT-OF-SCOPE | Existing membership setup retained. |
-| 13 | `private.line_link_tokens` | OUT-OF-SCOPE | Existing link security retained. |
-| 14 | `private.google_oauth_states` | KEEP | Existing replay-safe OAuth state retained. |
-| 15 | `private.notification_outbox` | EVOLVE | Durable delivery/retry/quota reused; production-only. Synthetic test delivery never writes here. |
-| 16 | `private.line_quota_state` | KEEP | Existing hard-cap accounting retained. |
-| 17 | `private.line_quota_reservations` | KEEP | Existing atomic reservation retained. |
-| 18 | `private.worker_run_receipts` | KEEP | Existing worker idempotency retained. |
-| 19 | `private.jp_holidays` | KEEP | Holiday source drives non-workday morning brief. |
-| 20 | `private.mutation_receipts` | EVOLVE | Preserve idempotency; distinguish authenticated operator from canonical ActorRef/test scope. |
-| 21 | `private.scheduled_dispatch_receipts` | EVOLVE | Add DailyBrief kinds/dedup keys; legacy dispatch receipts remain historical. |
+| 7 | `private.family_ops_calendar_mirrors` | BRIDGE | Bounded Task/transport → Google projection bridge. Never Family Event truth. Provider ownership rules are in §10. |
+| 8 | `private.family_ops_calendar_target_deletions` | BRIDGE | Durable old-write-target provider DELETE queue. It is a provider mutation path and must participate in the exactly-one-provider-writer/transfer guard in §10. |
+| 9 | `private.family_ops_calendar_orphaned_mirrors` | KEEP | Audit/observation of provider identities that became unmanageable after calendar permission/eligibility loss. It is not canonical Family Event truth and never proves a writable provider link by itself. |
+| 10 | `private.webhook_inbox` | KEEP | LINE durable inbox/dedup retained. |
+| 11 | `private.line_user_links` | KEEP | Real user LINE identity only. |
+| 12 | `private.pending_actions` | EVOLVE | Reuse preview/confirm queue with revision/test/ActorRef-aware context. |
+| 13 | `private.raw_inputs` | EVOLVE | Reuse for short-lived private raw input only; no durable third-party OCR transcript. |
+| 14 | `private.household_invites` | OUT-OF-SCOPE | Existing membership setup retained. |
+| 15 | `private.line_link_tokens` | OUT-OF-SCOPE | Existing link security retained. |
+| 16 | `private.google_oauth_states` | KEEP | Existing replay-safe OAuth state retained. |
+| 17 | `private.notification_outbox` | EVOLVE | Durable delivery/retry/quota reused; production-only. Synthetic test delivery never writes here. |
+| 18 | `private.line_quota_state` | KEEP | Existing hard-cap accounting retained. |
+| 19 | `private.line_quota_reservations` | KEEP | Existing atomic reservation retained. |
+| 20 | `private.worker_run_receipts` | KEEP | Existing worker idempotency retained. |
+| 21 | `private.jp_holidays` | KEEP | Holiday source drives non-workday morning brief. |
+| 22 | `private.mutation_receipts` | EVOLVE | Preserve idempotency; distinguish authenticated operator from canonical ActorRef/test scope. |
+| 23 | `private.scheduled_dispatch_receipts` | EVOLVE | Add DailyBrief kinds/dedup keys; legacy dispatch receipts remain historical. |
 
-No CURRENT table may be omitted because it was created with `IF NOT EXISTS`, introduced after the original v6 snapshot, or considered “internal”.
+No CURRENT table may be omitted because it was created with `IF NOT EXISTS`, introduced after the original v6 snapshot, private/internal, or primarily transport-oriented.
 
 ---
 
@@ -415,52 +423,59 @@ Mandatory scenarios:
 
 ---
 
-## 10. CURRENT `family_ops_calendar_mirrors` → new Google Authority boundary
+## 10. CURRENT Google provider lifecycle → new Family Event Authority boundary
 
-This section closes the previously omitted active Task → Google writer path.
+This section closes the active CURRENT provider lifecycle, which consists of:
 
-CURRENT `private.family_ops_calendar_mirrors` is a durable projection/outbox with:
+- `private.family_ops_calendar_mirrors`: Task/transport upsert/delete bridge;
+- `private.family_ops_calendar_target_deletions`: old write-target provider DELETE queue;
+- `private.family_ops_calendar_orphaned_mirrors`: provider identities that became unmanageable after calendar permission/eligibility loss.
 
-- stable projection key;
-- Task/transport ownership inputs;
-- desired upsert/delete;
-- pending/processing/synced/failed/deleted state;
-- provider event ID + ETag;
-- lease/retry worker;
-- Task mutation trigger enqueue;
-- reconciliation when calendar write target changes.
+The first two can cause provider mutations. The orphan table is evidence/observation and does not grant write ownership.
 
-It cannot be ignored when introducing Family Event Authority.
-
-### 10.1 Bounded role after redesign
+### 10.1 Bounded roles after redesign
 
 `family_ops_calendar_mirrors` remains a **BRIDGE for Task-owned calendar projections only**:
 
 - transport daily projection (`送 P ｜ 迎 M`);
-- an explicitly calendar-visible standalone Task where product settings still opt that Task into Google.
+- explicitly calendar-visible standalone Task where product settings opt that Task into Google.
 
-It is **not**:
+`family_ops_calendar_target_deletions` remains a **BRIDGE for deletion of an old Task-mirror write target only**. It may delete an event only while that provider identity remains owned by the Task/provider-transition lifecycle that created the deletion job.
+
+`family_ops_calendar_orphaned_mirrors` remains **KEEP audit state**:
+
+- it records a provider identity that Family Ops could no longer manage safely;
+- it is not Family Event current truth;
+- it is not evidence that the provider event still exists or is writable;
+- it cannot be converted to a Family Event external link without restored provider access and fresh identity/ETag revalidation.
+
+None of these tables is:
 
 - Family Event household truth;
-- Family Event external-follow state;
 - Family Event field Authority;
-- a writer for a Google event once that provider event is owned by `family_event_external_links`.
+- an alternate current-state source for a Family Event.
 
 Family Events use the new Family Event + external-link/Authority path. Google cache remains provider observation.
 
-### 10.2 Exactly-one-writer invariant
+### 10.2 Exactly-one-provider-mutation-owner invariant
 
-For each `(calendar_connection_id, provider_event_id)` or deterministic not-yet-created provider identity, exactly one Family Ops writer-owner may be active:
+For each `(calendar_connection_id, provider_event_id)` or deterministic not-yet-created provider identity, **at most one Family Ops provider-mutation owner/path may be active**.
 
-- Task mirror bridge, **or**
-- Family Event external-link writer,
-- never both.
+The mutually exclusive provider mutation paths are:
 
-The invariant is enforced at command/DB adapter level and audited before cutover. No title/date matching decides ownership.
+1. Task mirror bridge (`family_ops_calendar_mirrors`) for Task-owned upsert/delete;
+2. old-target deletion bridge (`family_ops_calendar_target_deletions`) for provider DELETE;
+3. Family Event external-link writer.
+
+The deletion bridge counts as a writer for this invariant even though its mutation is DELETE rather than PATCH/CREATE.
+
+`family_ops_calendar_orphaned_mirrors` is not a writer, but an unresolved orphan record for the same identity is a transfer/cutover blocker until provider authority/identity is revalidated or the row is explicitly classified as historical-unmanageable.
+
+No title/date matching decides ownership. The invariant is enforced at command/DB adapter level and included in reconciliation before Family Event P1.
 
 ### 10.3 Existing transport mirrors
 
-Transport mirrors remain in the Task bridge and are not auto-converted to Family Events. They continue to use the stable transport projection key unless a later separately reviewed requirement changes transport presentation.
+Transport mirrors remain Task-owned and are not auto-converted to Family Events. They continue to use the stable transport projection key unless a later separately reviewed requirement changes transport presentation.
 
 ### 10.4 Existing special Task mirrors
 
@@ -470,7 +485,7 @@ Default migration treatment:
 
 - existing Task mirror remains Task-owned bridge;
 - no automatic conversion based on title/date/category;
-- if the user/system later explicitly adopts that provider event into a Family Event, use the ownership-transfer protocol below.
+- if the user/system later explicitly adopts that provider event into a Family Event, use §10.5.
 
 This preserves current Google linkage without inventing Event truth.
 
@@ -478,38 +493,67 @@ This preserves current Google linkage without inventing Event truth.
 
 When an existing Task-mirrored provider event is explicitly adopted as a Family Event:
 
-1. lock/identify the mirror by stable projection key and provider identity; no title search;
-2. prevent new Task-trigger enqueue for that projection during transfer (guard/ownership state);
-3. if mirror is `processing` with an unexpired lease, wait/retry transfer after lease completion; never race the worker;
-4. reconcile `pending/failed` mirror state to a known provider observation before transfer, or stop with an explicit migration/repair anomaly; never silently discard;
-5. obtain authoritative `provider_event_id`, current ETag and owned-field external snapshot from the mirror/provider cache;
-6. create `family_event_external_links` for the chosen Family Event using that exact provider identity/snapshot;
-7. atomically mark the Task mirror as superseded/bridge-disabled for that provider identity and disable future Task enqueue for the transferred projection;
-8. only after that ownership change may the Family Event writer issue future Google writes;
-9. verify exactly-one-writer invariant after transfer.
+1. lock/identify the Task mirror by stable projection key and provider identity; no title search;
+2. prevent new Task-trigger enqueue for that projection during transfer using a guard/ownership state;
+3. if the Task mirror itself is `processing` with an unexpired lease, wait/retry after lease completion; never race the worker;
+4. reconcile Task-mirror `pending/failed/blocked` state to a known provider observation or stop with an explicit anomaly; never silently discard it;
+5. inspect `family_ops_calendar_target_deletions` for the same `(calendar_connection_id, projection_key, provider_event_id)`:
+   - `processing` with a live lease blocks transfer until the worker finishes/fails/lease expires and is reconciled;
+   - `pending/failed/blocked` must be explicitly superseded/cancelled by a forward migration/command **without deleting its audit history**, but only after a fresh provider observation proves the event still exists and the selected calendar is writable;
+   - if the deletion already completed, the deleted provider identity cannot be adopted as a live external link; create/link a new valid provider event instead;
+6. inspect `family_ops_calendar_orphaned_mirrors` for the same provider identity:
+   - unresolved orphan state blocks adoption;
+   - adoption is permitted only after Google access is restored and the exact provider event existence/identity/ETag is freshly revalidated, or after the user intentionally links a different eligible provider event;
+   - never treat an orphan record alone as a writable link;
+7. obtain authoritative `provider_event_id`, current ETag and owned-field external snapshot from fresh provider/cache state;
+8. create `family_event_external_links` for the chosen Family Event using that exact provider identity/snapshot;
+9. atomically mark the Task mirror as superseded/bridge-disabled and ensure any matching target-deletion job is terminal non-mutating/superseded before Family Event ownership activates;
+10. only after the preceding ownership change may the Family Event writer issue provider mutations;
+11. verify the exactly-one-provider-mutation-owner invariant after transfer.
 
-The implementation may add a bridge ownership/superseded field/state rather than overloading `sync_state`; exact column naming is DDL-review detail. The state transition itself is mandatory.
+The implementation may add explicit bridge ownership/superseded/cancelled-by-transfer states rather than overloading existing `sync_state`; exact column names are DDL-review detail. The invariant and transition order are mandatory.
 
-### 10.6 Failed/pending queue reconciliation
+### 10.6 Queue, permission-loss, and orphan reconciliation
 
-Before Family Event aggregate P1:
+Before Family Event aggregate P1, the reconciliation report must cover all three CURRENT provider-lifecycle tables.
 
-- no ambiguous mirror row may target the same provider event as a Family Event writer;
-- `processing` lease must be resolved/expired and reclaimed safely;
-- `pending` / `failed` rows either complete under Task ownership or are explicitly transferred after provider reconciliation;
-- `deleted` rows with no live provider event are not fabricated into external links;
-- provider ID/ETag/linkage is never guessed;
-- reconciliation report records unresolved rows and blocks affected household/event cutover.
+For `family_ops_calendar_mirrors`:
 
-### 10.7 Trigger/worker cutover
+- no ambiguous row may target the same provider identity as a Family Event writer;
+- `processing` lease must be resolved/expired/reclaimed safely;
+- `pending` / `failed` / `blocked` either complete under Task ownership or are explicitly superseded/transferred after provider reconciliation;
+- `deleted` rows do not fabricate live external links.
 
-Task enqueue trigger remains active for Task-owned projections.
+For `family_ops_calendar_target_deletions`:
 
-It must be changed/guarded so it does **not** enqueue a projection whose provider ownership has been transferred to a Family Event.
+- inspect `pending / processing / failed / blocked / deleted` for every provider identity proposed for Family Event ownership;
+- no pending/processing/failed deletion may survive transfer as an executable delete against the newly Family-Event-owned provider identity;
+- processing lease is never cancelled underneath an active worker; resolve/reconcile first;
+- blocked deletion caused by lost permission does not prove cleanup occurred and cannot be silently discarded;
+- a deletion completed before transfer means the old provider event must not be adopted as live.
 
-Family Event writer never consumes `family_ops_calendar_mirrors` as its canonical queue. It uses the Family Event external-link + existing Google write/idempotency machinery defined by the Authority design.
+For `family_ops_calendar_orphaned_mirrors`:
 
-This prevents double Google writes while preserving the proven existing transport/task mirror implementation.
+- record is preserved as audit evidence;
+- unresolved orphan for the target provider identity blocks ownership transfer unless access/identity is freshly revalidated;
+- orphan rows are not auto-converted into Family Event links;
+- provider event ID/ETag/existence is never guessed from the orphan row.
+
+The report records unresolved rows and blocks the affected household/event cutover. Provider ID/ETag/linkage is never guessed.
+
+### 10.7 Trigger/worker cutover and destructive-write guard
+
+Task enqueue trigger remains active for Task-owned projections but must not enqueue a projection whose provider ownership has transferred to a Family Event.
+
+The target-deletion claim/worker path must also enforce current ownership before destructive provider DELETE:
+
+- a deletion job that has been superseded by an ownership transfer is not claimable/executable;
+- if ownership changed after a job was queued, the worker/claim adapter revalidates provider ownership before DELETE and returns/records a non-mutating superseded result rather than deleting the event;
+- no worker may rely only on stale queue-row existence as delete authorization.
+
+Family Event writer never consumes either legacy bridge table as its canonical queue. It uses the Family Event external-link + existing Google write/idempotency machinery defined by the Authority design.
+
+This prevents Task PATCH/DELETE, old-target DELETE, and Family Event mutation from racing on one provider identity.
 
 ---
 
@@ -614,12 +658,17 @@ Acceptance must include all three §9 scenarios.
 
 Acceptance must include:
 
-- existing Task mirror inventory/reconciliation;
-- no Task mirror / Family Event double writer;
+- all three CURRENT provider-lifecycle tables inventoried/reconciled;
+- no Task mirror / old-target deletion / Family Event provider-mutation overlap;
 - transport mirror remains valid;
 - explicit special-Task → Family Event adoption preserves provider event ID/ETag without title matching;
-- pending/failed/processing mirror state safely reconciled before ownership transfer;
-- transferred mirror cannot be re-enqueued by Task trigger.
+- pending/failed/processing/blocked Task mirror state reconciled before ownership transfer;
+- pending/failed/processing/blocked target-deletion state reconciled or safely superseded before ownership transfer;
+- completed target deletion cannot be adopted as a live provider link;
+- orphaned provider identity never becomes Family Event ownership without restored access + fresh identity/ETag validation;
+- transferred Task projection cannot be re-enqueued by Task trigger;
+- superseded deletion job cannot later DELETE a Family-Event-owned provider event;
+- exactly-one-provider-mutation-owner audit is zero-conflict before Family Event P1.
 
 ---
 
@@ -649,9 +698,11 @@ Any leak is a release blocker.
 | Request new states lacked physical legacy projection | §4, including timestamps + multi-attempt composition |
 | write/read phase contradiction | §5 |
 | simulated/test state leakage | §6 + §15 |
-| CURRENT table inventory incomplete | §2, corrected to 48 = public 27/private 21 |
+| CURRENT table inventory incomplete | §2, corrected to **50 = public 27/private 23** |
 | `household_task_categories` omitted | §2.2 |
 | active `family_ops_calendar_mirrors` omitted | §§2.3,10 |
+| active `family_ops_calendar_target_deletions` omitted | §§2.3,10 |
+| active `family_ops_calendar_orphaned_mirrors` omitted | §§2.3,10 |
 | shopping disconnected | §7 |
 | DailyBrief schedule persistence missing | §8 |
 | all-day display hidden by conflict filter | §9 |
@@ -662,6 +713,7 @@ Any leak is a release blocker.
 | one-user sandbox order/read leak | §§6,15 |
 | duplicate-sensitive undo correction | §7 |
 | work-package gaps for shopping/all-day/override | §14 |
+| Google provider ownership omitted deletion/orphan lifecycle | §§10,14 |
 
 ---
 
@@ -674,10 +726,11 @@ Required gate:
 - BLOCKER 0
 - HIGH 0
 - Requirements contradiction 0
-- 48/48 CURRENT table disposition accounted for
+- **50/50 CURRENT table disposition accounted for (public 27/private 23)**
 - task and Request physical CHECK compatibility executable
 - Request read/write cutover atomic
-- no hidden Task→Google / Family Event double writer
+- no hidden provider mutation overlap among Task mirror, target deletion queue, and Family Event writer
+- orphaned provider identities cannot silently become writable Family Event links
 - test identity/scope leakage closed
 - schedule/shopping/all-day paths executable without product-truth invention
 - Requirements Final-GO MEDIUM 3 remain PASS
