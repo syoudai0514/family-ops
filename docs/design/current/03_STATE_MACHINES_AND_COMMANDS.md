@@ -7,20 +7,22 @@ Every user mutation command must include:
 - `operation_id`
 - target aggregate identity when applicable
 - `expected_revision` for stale-sensitive transitions
-- actor derived server-side from JWT/LINE binding, never trusted from body
+- actor derived server-side from JWT/LINE binding or validated simulation context, never trusted from body
+- canonical `actor_ref_id` resolved server-side
 - `execution_context` derived server-side (`production` or validated test simulation)
 
 Transaction order:
 
-1. authenticate / membership
-2. claim/replay mutation receipt
-3. lock target aggregate/current attempt where needed
-4. validate expected revision/state
-5. mutate current truth
-6. append audit/provenance
-7. create notification intent(s)
-8. persist mutation receipt result
-9. commit
+1. authenticate / membership or active test simulation ownership
+2. resolve canonical ActorRef
+3. claim/replay mutation receipt
+4. lock target aggregate/current attempt where needed
+5. validate expected revision/state/test scope
+6. mutate current truth
+7. append audit/provenance
+8. create notification intent(s)
+9. persist mutation receipt result
+10. commit
 
 No provider network call inside DB transaction.
 
@@ -40,10 +42,11 @@ Do **not** add:
 - `unknown`
 - `support`
 - `claimed`
+- `waiting`
 
 as task status.
 
-Those are separate dimensions/evidence.
+Those are separate dimensions/evidence. `待ち` is the orthogonal `attention_state=waiting` defined in Section 2.5.
 
 ### 2.1 Completion
 
@@ -52,7 +55,7 @@ Those are separate dimensions/evidence.
 Input:
 
 - task_id
-- performer_user_ids (normally actor only; secondary UI may specify both/partner)
+- `performer_actor_ref_ids` (normally actor only; secondary UI may specify joint/other valid actor)
 - expected_revision
 - operation_id
 
@@ -60,9 +63,11 @@ Rules:
 
 - open task only
 - unknown performer cannot be silently guessed
+- actor refs must belong to same household and same execution/test scope
 - status -> completed
 - participants upsert atomically
 - active anyone claim cleared
+- attention waiting metadata cleared from current snapshot
 - task event appended
 - linked accepted request remains provenance only
 - notification policy evaluated after state change
@@ -70,25 +75,32 @@ Rules:
 If already completed:
 
 - same semantic operation -> idempotent success
-- different performer proposal -> return current participants and require explicit `add_joint_performer` / correction path
+- different performer proposal -> return current participants and require explicit `add-joint-performer` / correction path
 - never replace existing performer automatically
 
 ### 2.2 `今回は不要`
 
-Command maps occurrence only to `skipped` with reason `not_needed_this_occurrence`.
+Command maps occurrence only to:
 
-Recurring definition remains unchanged.
+- `status=skipped`
+- `outcome_reason=not_needed_this_occurrence`
+
+Recurring definition remains unchanged。
 
 ### 2.3 `できなかった`
 
-Requirements distinguishes explicit failure from unknown. Implementation can represent this as a terminal/closed occurrence with audit reason while preserving small task status.
+Requirements distinguishes explicit failure from unknown.
 
-Recommended representation:
+Representation:
 
-- status=`skipped`
-- `outcome_reason='could_not_do'`
+- `status=skipped`
+- `outcome_reason=could_not_do`
 
-`not_needed` / `could_not_do` / `expired_occurrence` are reason dimension, not extra top-level state.
+Other recognized reason:
+
+- `expired_occurrence`
+
+`not_needed_this_occurrence` / `could_not_do` / `expired_occurrence` are current snapshot reason dimension, not audit-only metadata and not extra top-level state. Legacy skipped rows with unknowable reason remain explicit legacy-unknown in compatibility reads; never guess.
 
 ### 2.4 Reschedule
 
@@ -104,14 +116,62 @@ For recurrence occurrence where rescheduling would collide with next generated o
 - stable occurrence identity/history remains
 - do not mutate recurrence rule unless user explicitly changes rule
 
+### 2.5 `待ち` attention state
+
+`待ち` is a nonterminal attention dimension, not a task status.
+
+`set-task-waiting` input:
+
+- task_id
+- waiting_note optional
+- next_check_at optional
+- expected_revision
+- operation_id
+
+Preconditions:
+
+- status in `todo|in_progress`
+- same aggregate/test scope
+
+Result:
+
+- `attention_state=waiting`
+- set/update waiting note and next check
+- keep original `due_at`
+- revision++
+- append `waiting_started` or `waiting_updated`
+- no completion/failure evidence
+
+`resume-task-from-wait`:
+
+- precondition attention_state=waiting
+- set attention_state=active
+- clear current waiting_note/next_check_at
+- preserve history in `task_events`
+- revision++
+
+`update-task-waiting` can change note/next check without active resume.
+
+Scheduled/read behavior:
+
+- waiting task is excluded from ordinary incomplete nag and reconciliation eligibility by default
+- `next_check_at <= now` resurfaces as a **確認対象**, not a failed/overdue task; read does not auto-resume it
+- hard `due_at` risk can surface even while waiting
+- if next_check is moved, old reminder/action becomes stale by revision
+- terminal task transition clears current waiting snapshot
+- event preparation uses these same task commands
+
+No separate event-specific waiting workflow is invented.
+
 ## 3. Assignment state
 
 Task assignment dimensions:
 
 - `assignment_mode=person|unassigned|anyone`
-- `planned_assignee_id`
+- `planned_assignee_actor_ref_id`
+- legacy planned user ID only as production compatibility mirror
 - `assignment_source`
-- `active_claimant_id` only for anyone
+- `active_claimant_actor_ref_id` only for anyone
 
 ### 3.1 Person assignment change
 
@@ -129,6 +189,8 @@ Important tasks: transport, health/medication, deadline-critical appointment/sub
 - create new negotiation attempt
 - do not invent provisional assignment state
 
+All assignee/claim identity uses ActorRef. A production task may not be assigned/claimed by simulated ActorRef.
+
 ### 3.2 Anyone claim
 
 `claim-task`:
@@ -137,11 +199,12 @@ Preconditions:
 
 - assignment_mode=anyone
 - task open
-- active_claimant is null
+- active claimant is null
+- actor ref allowed for aggregate execution scope
 
 Result:
 
-- active_claimant=actor
+- active claimant ActorRef=actor
 - revision++
 - audit `claim_acquired`
 - no “担当外サポート” semantics
@@ -155,10 +218,10 @@ Result:
 
 `takeover-task-claim`:
 
-- allowed to other household adult only through secondary/rare action
+- allowed to another valid household actor only through secondary/rare action
 - require current claimant/revision in precondition
 - replace claimant atomically
-- notify old claimant with neutral state change if production
+- notify old claimant with neutral state change if production real recipient
 - if old claimant simultaneously completed, completion wins and takeover returns latest completed state
 
 No automatic claim expiry at deadline.
@@ -185,7 +248,7 @@ Past occurrences and completed actuals are never recalculated.
 
 ## 5. Request lifecycle
 
-Logical Request contains one or more Attempts.
+Logical Request contains one or more Attempts. Requester/recipient/creator/confirmation identity is ActorRef-based; production requests use real-user ActorRefs, test requests may include simulated ActorRefs only within the same active test context.
 
 ### 5.1 Attempt state machine
 
@@ -220,14 +283,14 @@ Terminal states cannot transition back.
 
 Terms include the concrete outcome necessary to establish agreement, e.g.:
 
-- assignee
+- assignee ActorRef/household role resolution
 - date/time
 - scope
 - swap conditions
 
 Every material terms edit increments `terms_revision` and invalidates prior confirmations.
 
-Accepted only when all required household parties confirm same revision.
+Accepted only when all required ActorRefs confirm same revision.
 
 ### 5.4 Reply deadline expiry
 
@@ -253,7 +316,7 @@ Atomic transaction:
 
 - attempt accepted
 - create/link task exactly once
-- linked task assignment_mode=person, planned_assignee=recipient, assignment_source=agreement
+- linked task assignment_mode=person, planned assignee ActorRef=recipient, assignment_source=agreement
 - request keeps provenance
 
 If a suitable existing task is the explicit target, link/update that task rather than duplicate create.
@@ -315,10 +378,10 @@ Second level:
 Command `reconcile-task-group(response=all_done)`:
 
 1. resolve current group task IDs server-side
-2. eligible = own person-assigned tasks + own active claims, open, expectation required/normal
-3. exclude optional
+2. eligible = own person-assigned tasks + own active claims, open, attention_state=active, expectation required/normal
+3. exclude optional and waiting tasks
 4. complete eligible tasks with actor performer
-5. record reconciliation session + covered item snapshot
+5. record reconciliation session + covered item snapshot with actor ref
 6. return completed IDs and undo token/session ID
 
 `undo` is bounded to actions still safe to revert; if another mutation changed a task after group completion, do not overwrite it. Show item-level conflict.
@@ -327,7 +390,7 @@ Command `reconcile-task-group(response=all_done)`:
 
 `response=mostly_done`:
 
-- snapshot group items
+- snapshot group items (waiting tasks are not implicitly covered)
 - create reconciliation session
 - **no child task status change**
 - suppress “please enter details” reconciliation prompt for those snapshot items
@@ -416,6 +479,8 @@ For incomplete relative prep:
 - if task is purely relative and not protected/manual, candidate can be bulk-confirmed
 - reservations/manual confirmed time stay separate protected value and produce warning/conflict
 
+If an individual prep task is awaiting an external response, use Task `set-task-waiting`; `family_event.status=waiting_reschedule` is only for the event itself lacking a settled date, not a substitute for task waiting.
+
 ## 10. Candidate resolution
 
 `resolve-change-candidate` input:
@@ -465,7 +530,7 @@ Mutation does not directly call LINE.
 
 Intent includes:
 
-- recipient
+- recipient ActorRef / resolved production recipient when allowed
 - semantic type
 - related aggregate/current revision
 - urgency recommendation
@@ -473,6 +538,7 @@ Intent includes:
 - bundle key
 - expiry
 - actor emphasis policy
+- execution/test context
 
 Renderer later reads latest state when practical, preventing stale “未完了” message after task has already completed.
 
@@ -517,6 +583,8 @@ Candidate codes:
 - `TASK_CLAIM_CONFLICT`
 - `TASK_ALREADY_COMPLETED`
 - `TASK_PERFORMER_CONFLICT`
+- `TASK_WAITING_STATE_CONFLICT`
+- `ACTOR_SCOPE_CONFLICT`
 - `CANDIDATE_STALE`
 - `PROTECTED_VALUE_CONFLICT`
 - `TEST_SIDE_EFFECT_FORBIDDEN`
@@ -537,6 +605,8 @@ Error response must contain safe latest-state hints/deep link where useful, neve
 
 - expire request attempts
 - compose morning/evening Daily Brief notifications
+- surface waiting tasks whose next_check_at is due
+- warn waiting tasks near hard due_at without auto-resume
 - source document processing queue
 - retention cleanup
 
@@ -547,12 +617,18 @@ Do not create one cron per household/task. Workers evaluate due rows from DB sch
 Mandatory property/invariant tests:
 
 - terminal request attempt never reopens
-- same terms revision must be confirmed by both for consultation acceptance
+- same terms revision must be confirmed by both required ActorRefs for consultation acceptance
 - accepted Request execution status derives from linked task only
 - `mostly_done` never completes child task
+- waiting never becomes completion/failure and normal nag is suppressed until check/deadline risk
+- next-check surfacing does not auto-resume waiting task
+- skipped new writes always carry recognized outcome_reason
 - rule change never rewrites non-rule assignment source
 - anyone claim never changes assignment_mode
 - takeover and completion race yields one coherent final state
 - duplicate completion never silently replaces performer
+- simulated performer/confirm/assignee is persisted as simulated ActorRef, never operator real ActorRef
+- production aggregate cannot reference simulated ActorRef
 - candidate cannot apply over newer target revision
 - simulated actor cannot create production external side effect
+- after semantic point-of-no-return, feature-off cannot restore legacy current-truth mutation/read semantics
