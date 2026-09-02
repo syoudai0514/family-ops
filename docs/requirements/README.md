@@ -32,14 +32,29 @@
 
 - Verdict: `GO WITH CONDITIONS`
 - Findings: `BLOCKER 1 / HIGH 5 / MEDIUM 4`
-- Resolution: Baseline v1.1 + ADR 0012で採用条件を反映済み
-- Current gate: **independent re-review required before merge / detailed design**
-- Review本文は要求の正ではなく、採用事項はBaseline本文へ統合済み
+- Resolution: Baseline v1.1 + ADR 0012で採用条件を反映
 
 ### PR #39 — Round 2
 
 - Verdict: `NO-GO`
 - BLOCKER: canonical Baseline / review-request Git blobs were physically truncated mid-UTF-8
 - Design/governance evaluation: ADR 0012 / ADR 0001 scope remediation was PASS; Authority rule was PASS where readable
-- Resolution: canonical Baseline and independent review request were restored from verified local UTF-8 sources; Git blob SHA is checked against the source bytes before re-review
-- Current gate: **fresh independent re-review required on the repaired PR head; merge / detailed design remain prohibited until GO**
+- Resolution: canonical Baseline and independent review request were restored from verified local UTF-8 sources; repaired Git blobs were re-read from GitHub before re-review
+
+### PR #39 — Final independent re-review
+
+- Verdict: `GO`
+- Round 1 conditions: `9/9 PASS`
+- Findings: `BLOCKER 0 / HIGH 0 / MEDIUM 3 / LOW 0`
+- Merge: PR #39 merged to `main` as commit `c7e274e6e886e5688f1b2b7675f44fdae26fb1db`
+- Result: `FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` is now the active requirements/UX Source of Truth under ADR 0012
+
+## Detailed-design carryover from final review
+
+The following three `MEDIUM` findings do **not** change the Requirements Baseline and did not block the merge. They must be carried into detailed-design acceptance criteria without adding unnecessary domain states.
+
+1. **`大体やった` + carryover UX** — carryover-sensitive tasks must not make `大体やった` feel punitive. Prefer weak `結果未確認` presentation or a minimal follow-up only for tasks where carryover matters.
+2. **Duplicate-sensitive completion notification** — suppress scorekeeping/actor praise, but for medication, pickup, purchase, submission, etc. where duplicate execution is unsafe or costly, surface a neutral `対応済み` state promptly enough to change behavior.
+3. **One-user test delivery boundary** — operator-facing `🧪 synthetic test delivery` is allowed, while production-recipient LINE delivery, production notification outbox, Google writes, and real-user consent effects remain prohibited for simulated actors.
+
+These are detailed-design obligations, not new child-task statuses or new top-level requirements. If detailed design discovers that satisfying them requires changing product behavior, update the canonical Baseline first through the normal review workflow.
