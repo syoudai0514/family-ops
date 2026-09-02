@@ -6,172 +6,152 @@
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 - **Governance:** ADR 0012 (Accepted), ADR 0013 (Proposed in this change)
 
-このディレクトリは、要求Baselineを実装可能な状態へ落とすための**詳細設計候補**である。独立レビューを通過してmergeされた時点で、requirements/UXと競合しない範囲の次期詳細設計のcanonical pathとして扱う。`docs/design/v6/` はADR 0012に従い、非競合な既存architecture/security/API制約の参照元として維持する。
+このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**詳細設計候補**である。独立レビューで `GO` を得てmergeされた時点で、requirements/UXと競合しない範囲のcurrent detailed-design canonical pathとなる。`docs/design/v6/` はADR 0012/0013に従い、非競合な既存architecture/security/provider制約の参照元として維持する。
 
 このPRではコード、migration、Supabase、LINE runtime、Google Calendar、Vercel、production dataを変更しない。
+
+## Normative scope inside `docs/design/current`
+
+- `01`–`07`：truth ownership、commands、UX、Authority、security、rolloutのconceptual current design。
+- `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`：CURRENTのreal-user-only identity列/FKとActorRefの具体的互換境界。
+- `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`：**CURRENT mainのphysical schema、CHECK/FK、46-table disposition、direct-reader compatibility、aggregate cutoverのnormative alignment**。これが`02/04/05/06/07`の古いphysical assumptionを明示的に修正する場合、physical detailはこの文書を優先する。
+- product requirementsの正は引き続きcanonical Requirements Baselineであり、上記08文書は別のrequirements sourceではない。
+- review採用内容はこの固定pathへ更新し、`FINAL` / `V2` / `LATEST` の並行コピーを作らない。
 
 ## Documents
 
 1. `01_ARCHITECTURE_AND_DOMAIN_BOUNDARIES.md`
-   - Source of Truth hierarchy
-   - current implementation reuse boundary
-   - command/read-model architecture
-   - domain truth ownership
+   - Source of Truth hierarchy / command-read model / truth ownership
    - task `待ち` attention state
    - common Domain ActorRef
    - semantic cutover/rollback boundary
 2. `02_DATA_MODEL_AND_MIGRATION.md`
-   - proposed schema semantics
-   - Domain ActorRef persistence model
-   - waiting/outcome snapshot
-   - existing table evolution
-   - compatibility/backfill/cutover strategy
-   - legacy mismatch audit
+   - schema semantics / ActorRef / waiting/outcome
+   - participant / Request Attempt / reconciliation / Family Event
+   - backfill / mismatch audit / R0-R1-P1 migration strategy
 3. `03_STATE_MACHINES_AND_COMMANDS.md`
    - task/assignment/claim/waiting
-   - request negotiation
-   - actual/reconciliation/outcome reason
-   - share/handover/event commands
+   - Request negotiation / actual/reconciliation
    - idempotency/concurrency
 4. `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`
-   - shared Daily Brief read model
-   - waiting next-check/deadline UX
-   - morning/evening LINE
-   - PWA deep links
-   - notification policy
-   - three Final-GO MEDIUM carryovers
+   - shared DailyBrief
+   - 06:30 / 09:00 / 20:30 anchors
+   - carryover / duplicate-sensitive neutral notification
 5. `05_GOOGLE_IMAGE_AI_AUTHORITY_PRIVACY.md`
    - unified Authority/candidate model
-   - Google synchronization conflict handling
-   - nursery/Codmon image intake
-   - child/school isolation and raw-image privacy
+   - Google/provider observation vs Family Event truth
+   - nursery/Codmon intake / privacy
 6. `06_TEST_MODE_CONCURRENCY_OBSERVABILITY.md`
-   - one-user synthetic test mode
-   - persistent Domain ActorRef identity
-   - external side-effect sandbox
-   - stale/duplicate/concurrent mutations
-   - audit/observability/security invariants
+   - one-user synthetic test
+   - ActorRef/test context / side-effect sandbox
+   - stale/duplicate/concurrency / observability
 7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`
-   - acceptance scenarios
-   - test sandbox dependency ordering
-   - implementation work packages
-   - semantic R0/R1/P1 rollout/rollback gates
-   - production-safety constraints
+   - acceptance / WP dependency order
+   - R0/R1/P1 cutover / production safety
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
-   - exact compatibility with CURRENT real-user-only identity columns/FKs
-   - conditional legacy mirrors/nullability
-   - task_events/request/handover/receipt actor semantics
-   - mandatory simulated-actor E2E
-9. `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
-   - original independent review instructions
-10. `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
-   - Round 1 NO-GO remediation re-review gate
+   - exact compatibility for CURRENT `requests`, `task_events`, handover/read receipts, mutation receipts, legacy user-ID columns
+9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
+   - fresh CURRENT migration/table inventory
+   - public 26 / private 20 = 46 table disposition
+   - task completion CHECK replacement + compatibility-primary mirror
+   - Request Attempt → legacy status/direct-reader compatibility
+   - aggregate-level atomic read/write cutover
+   - direct test scoping and production-read leakage gate
+   - shopping claim/actual/duplicate-safety model
+   - DailyBrief schedule persistence + one-day override
+   - all-day display vs timed conflict separation
+10. `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
+11. `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
+12. `FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md`
 
 ## Non-negotiable design constraints
 
 - Requestは**合意まで**、了承後のexecutionはlinked ToDoを正とする。
-- `大体やった` はgroup-level reconciliation evidenceであり、子task statusを増やさない。
-- `待ち` は第6statusにせず、`attention_state=waiting` + note/next-check + original dueとしてcurrent truthを持つ。
-- planned assignee / anyone claim / actual performer / recorderを混同しない。
-- real/simulated/system actor identityは`domain_actor_refs`へ一元化し、simulated actorをoperator real userで代用しない。
-- CURRENT real-user-only legacy identity column/FKはproduction compatibility mirrorとしてのみ残し、test simulated actorをfake userで満たさない。
-- recurrence rule変更でindividual agreementや過去実績をsilent rewriteしない。
-- `今回は不要`と`できなかった`を`outcome_reason`で区別し、audit replayをcurrent truthの代替にしない。
+- `大体やった`はgroup-level evidenceであり、子task statusを増やさない。
+- `待ち`は第6statusにせず、`attention_state=waiting` + note/next-check + original dueをcurrent truthとする。
+- assignment / anyone claim / actual performer / recorderを混同しない。
+- real/simulated/system actorは`domain_actor_refs`へ一元化し、simulated actorをoperator IDやfake auth/memberで代用しない。
+- CURRENT real-user-only legacy identity列はproduction compatibility mirrorに限定する。
+- core test-capable business rowsはdirect `test_context_id`で常時識別可能にし、ordinary production readsから既定で除外する。
+- `今回は不要` / `できなかった` / occurrence expiry / cancel / replanをcurrent semanticsで区別する。
 - human-confirmed値をGoogle/image/AIがsilent overwriteしない。
-- LINE/PWAは別ロジックを持たず、同じserver-side command/read modelを利用する。
-- duplicate webhook / stale postback / concurrent mutationで状態を逆戻りさせない。
-- one-user testのsimulated actorはproduction recipient delivery、Google write、production outbox、real-user consentを発生させない。
-- 既存production dataを削除せず、additive migration + compatibility phaseで移行する。
-- new-only semantic state発生後はlegacy current-truth read/writeへrollbackしない。feature-offはmutation pause + canonical projection/forward-fixを意味する。
+- Google all-day eventは**表示から除外しない**。timed conflictからは従来どおり除外する。
+- shoppingは独立aggregateのまま、`誰でもOK` claim / participants / duplicate-safetyを持つ。
+- LINE/PWAは同じserver command/read modelを使う。
+- CURRENT physical CHECK/FK/direct readersを無視したconceptual-only migrationは禁止。
+- aggregate cutoverではcanonical read + writeを同時に切替え、new-only stateをold current-truth UIへ露出させない。
+- P1後はlegacy current-truth read/writeへrollbackしない。feature-offはmutation pause + canonical/degraded projectionまたはforward-fixを意味する。
+- existing migration rewrite、production reset/data deleteは禁止。
 
-## Requirements Final GO review carryover
-
-Requirements independent reviewで残った以下3件を、詳細設計acceptance criteriaとして閉じている。
+## Requirements Final-GO MEDIUM carryover
 
 1. **`大体やった` + carryover UX noise**
-   - carryover-sensitive taskだけを弱い`結果未確認`として扱い、通常の未完了警告と混ぜない。
-   - 必要な場合のみ最小確認を行う。
-2. **duplicate-sensitive task completion**
-   - 薬、送り迎え、購入、申込み等はactor praiseではなくneutralな`対応済み` stateを必要な相手へ即時提示できる。
-3. **one-user test delivery boundary**
-   - operator向け`🧪 synthetic test delivery`は許可する。
-   - production recipient LINE/outbox/Google/real-user consentはsimulated actorから禁止する。
+   - weak `結果未確認`、carryover-sensitive subsetのみ最小確認。通常の未達/失敗と混ぜない。
+2. **duplicate-sensitive neutral completion**
+   - 薬・送迎・購入・申込み等はactor praiseでなくneutral `対応済み`。
+   - shopping接続と、undo/correctionで再びactionableになった場合のneutral correctionもcurrent physical alignmentで明記。
+3. **one-user synthetic delivery boundary**
+   - operator向け`🧪` synthetic deliveryは許可。
+   - production recipient/outbox/Google/real consentは禁止。
+   - domain rowsもdirect test scope + ordinary-read exclusionで隔離する。
 
-Round 1 independent reviewではこの3件は**3/3 PASS**判定だった。今回の修正で後退させない。
+次回re-reviewでは3件を再度 `PASS / PARTIAL / FAIL` 判定する。
 
-## Round 1 detailed-design NO-GO remediation
+## Detailed-design review history
 
-Independent review result:
+### Round 1 — conceptual/domain completeness
 
-- `BLOCKER 0`
-- `HIGH 3`
-- `MEDIUM 3`
-- `LOW 0`
-- Verdict: `NO-GO`
+Verdict: `NO-GO` / BLOCKER 0 / HIGH 3 / MEDIUM 3 / LOW 0。
 
-全6件を今回の同じfixed pathへ反映した。
+Remediated on the same fixed path:
 
-### HIGH-1 `待ち` current truth
+- HIGH: formal `待ち` current truth → `attention_state` + waiting note/next-check/deadline behavior across 01/02/03/04/07。
+- HIGH: simulated actor identity → ActorRef + legacy identity compatibility + no fake/member/operator substitution。
+- HIGH: unsafe semantic rollback → R0/R1/P1; P1後old read/write復帰禁止。
+- MEDIUM: current outcome reason。
+- MEDIUM: legacy Request↔Task mismatch audit。
+- MEDIUM: test sandbox WP dependency → `WP-DD3A` before actual-household test。
 
-Closed across 01/02/03/04/07:
+### Round 2 input — CURRENT-main physical schema alignment
 
-- small operational statusは維持
-- orthogonal `attention_state=active|waiting`
-- waiting_note / next_check_at / original due_at
-- set/update/resume commands
-- normal nag suppression
-- next-check DailyBrief resurfacing
-- hard-deadline risk
-- event prep reuse
+External review verdict supplied by the user:
 
-### HIGH-2 simulated actor persistence
+- `NO-GO`
+- `BLOCKER 1`
+- `HIGH 7`
+- `MEDIUM 8`
+- `LOW 4`
 
-Closed across 01/02/03/06/07/08:
+The reviewer explicitly judged **Requirements contradiction = 0** and found the Authority model, truth separation, and ADR 0013 scope directionally valid. Findings concentrated on insufficient cross-check against CURRENT physical schema/runtime.
 
-- common `domain_actor_refs`
-- real_user / simulated_member / system
-- assignee/claimant/performer/recorder/request/confirmation/reconciliation/auditへ一貫適用
-- CURRENT requests/task_events/handover等のreal-user-only legacy IDsはproduction compatibility mirrorへ限定
-- simulated rowsでlegacy NOT NULL/PKが障害になる箇所はActorRef-native representation/conditional nullabilityへ移行
-- no fake auth/member
-- no operator-ID substitution
-- production/test scope hard constraints
+Fresh read confirmed CURRENT main `7729c93...` has migration files through `20260825000001...` and the physical constraints/subsystems cited by the review.
 
-### HIGH-3 semantic rollback
+Remediation is recorded in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`:
 
-Closed across 01/02/03/07:
-
-- R0 / R1 / P1 phase contract
-- P1 = first new-only semantic state
-- P1後のlegacy current-truth read/write rollback禁止
-- incident response = mutation pause + canonical compatibility/degraded projection or forward-fix
-- feature gate is not a truth rollback switch
-
-### MEDIUM-1 outcome reason
-
-- `outcome_reason` is current task snapshot for new skipped writes
-- `not_needed_this_occurrence` / `could_not_do` / `expired_occurrence`
-- legacy reason unknown is not guessed
-
-### MEDIUM-2 legacy Request mismatch audit
-
-Cutover report now covers:
-
-- missing link
-- duplicate/invalid link
-- request terminal vs linked task state mismatch
-- deterministically detectable timestamp inconsistency
-
-No guessed repair; anomalous rows block semantic cutover until explicitly resolved/classified.
-
-### MEDIUM-3 test-mode dependency order
-
-- test ActorRef/execution context/side-effect hard guard split into `WP-DD3A`
-- actual-household one-user test cannot start before DD3A
-- later DD10 is UX/transition polish, not safety foundation
+- BLOCKER: CURRENT `task_instances` completion CHECKs → Phase 1 new migration must replace those CHECKs before participant-based completion; no old migration rewrite/legacy column drop。
+- HIGH: Request canonical Attempt state → explicit legacy `requests.status` projection + current Requests/Today/Edge/LINE reader cutover inventory。
+- HIGH: Phase ordering → deploy inactive reader+writer, reconcile, then **aggregate atomic canonical read/write activation** before first new-only state。
+- HIGH: test-domain leakage → direct test context on core business rows + production read exclusion + leakage audit。
+- HIGH: all CURRENT tables → 46/46 disposition (`KEEP/EVOLVE/SUPERSEDE/OUT-OF-SCOPE`) including assignment-change scope, schedules, pending actions, preferences, raw inputs, dispatch receipts。
+- HIGH: shopping → independent aggregate evolved with assignment mode/claim/participants/revision/duplicate safety/test scope + neutral undo correction。
+- HIGH: DailyBrief cadence → new schedule kinds + date-specific override + existing settings/RPC/dispatcher/receipts disposition。
+- HIGH: all-day → visible in DailyBrief, still excluded from timed assignment conflict。
+- MEDIUM implementation-defining gaps → compatibility-primary performer rule, outcome/disposition mapping, consultation proposer confirmation, broader legacy reconciliation。
 
 ## Review gate
 
-詳細設計はfresh independent re-reviewで `GO` が出るまでcanonical確定しない。`BLOCKER` または `HIGH` が残る場合は実装開始禁止。
+Detailed design remains **NO IMPLEMENTATION** until fresh independent review of the actual current PR head returns `GO`.
 
-レビュー後、採用指摘はこの固定pathへ統合し、`FINAL` / `V2` / `LATEST` の並行コピーを作らない。
+Next review instruction:
+
+`docs/design/current/FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md`
+
+The reviewer must fresh-read CURRENT `main`, actual PR head, both 08 alignment documents, relevant migrations/code/readers, and verify no regression in Round 1 findings or Requirements Final-GO MEDIUMs.
+
+If `BLOCKER` or `HIGH` remains:
+
+- do not merge PR #41
+- do not accept ADR 0013
+- do not begin implementation planning/implementation
+
+After eventual `GO`, adopted content remains on this fixed path.
