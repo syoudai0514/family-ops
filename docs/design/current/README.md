@@ -1,12 +1,12 @@
 # Family Ops Detailed Design — Proposed Canonical
 
-- **Status:** Proposed / Independent Re-Review Required / NO IMPLEMENTATION
+- **Status:** Proposed / Final Independent Verification Required / NO IMPLEMENTATION
 - **Date:** 2026-09-02
 - **Repository baseline:** `main` @ `7729c93ee10db29b145592763886cfa5f9a019e0`
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 - **Governance:** ADR 0012 Accepted / ADR 0013 Proposed
 
-このディレクトリはaccepted RequirementsをCURRENT implementationへ安全に落とすための詳細設計候補である。独立レビューで `GO` を得るまではPR #41をmergeせず、ADR 0013をAcceptedにせず、implementation planning / implementationを開始しない。
+このディレクトリはaccepted RequirementsをCURRENT implementationへ安全に落とすための詳細設計候補である。actual current PR headに対する独立レビューで `GO` を得るまではPR #41をmergeせず、ADR 0013をAcceptedにせず、implementation planning / implementationを開始しない。
 
 このPRはdocs-only。migration / Supabase / Edge / LINE / Google / Vercel / production dataは変更しない。
 
@@ -45,7 +45,7 @@ The Google provider-lifecycle tables that must all remain in scope are:
 - `private.family_ops_calendar_target_deletions`
 - `private.family_ops_calendar_orphaned_mirrors`
 
-The first two can mutate Google provider state; the orphan table records provider identities that became unmanageable after permission/eligibility loss. Their ownership/transfer rules are binding in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` §10.
+The first two can mutate Google provider state; the orphan table records provider identities that became unmanageable after permission/eligibility loss. Their ownership/transfer rules are binding in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` §10 and are now also synchronized into `02_DATA_MODEL_AND_MIGRATION.md`.
 
 ---
 
@@ -64,7 +64,8 @@ The first two can mutate Google provider state; the orphan table records provide
 11. `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
 12. `FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md` — historical rubric
 13. `FAMILY-OPS-DETAILED-DESIGN-ROUND3-REREVIEW-REQUEST.md` — historical rubric
-14. `FAMILY-OPS-DETAILED-DESIGN-ROUND4-REREVIEW-REQUEST.md` — **current review entry point**
+14. `FAMILY-OPS-DETAILED-DESIGN-ROUND4-REREVIEW-REQUEST.md` — historical rubric
+15. `FAMILY-OPS-DETAILED-DESIGN-ROUND5-FINAL-VERIFY-REQUEST.md` — **current final verification entry point**
 
 ---
 
@@ -117,21 +118,11 @@ Closed: task completion CHECK replacement, Request Attempt model/read cutover, a
 
 ### Round 3
 
-Two independent fresh reviews both returned:
+Two independent fresh reviews both returned `NO-GO / BLOCKER 0 / HIGH 1` and independently found that CURRENT physical inventory is 50, not 48, because `private.family_ops_calendar_target_deletions` and `private.family_ops_calendar_orphaned_mirrors` were missing from the provider-lifecycle design.
 
-- `NO-GO`
-- BLOCKER 0
-- HIGH 1
-- Requirements contradiction 0
+### Round 4
 
-Both agreed the Request status+timestamp/multi-attempt compatibility was closed. Both independently found the same remaining physical omission:
-
-- CURRENT physical inventory is **50**, not 48;
-- missing `private.family_ops_calendar_target_deletions`;
-- missing `private.family_ops_calendar_orphaned_mirrors`;
-- exactly-one-writer rule did not include the old-target provider DELETE path and permission-loss orphan state.
-
-Round 4 remediation now in current head:
+The current provider-lifecycle design closed that HIGH:
 
 - `08` corrected to 50/50 disposition;
 - target deletions = `BRIDGE`;
@@ -141,28 +132,44 @@ Round 4 remediation now in current head:
 - completed deletion cannot be adopted as live link;
 - unresolved orphan blocks adoption until provider access + exact identity/ETag are freshly revalidated;
 - target-deletion worker must revalidate current provider ownership before destructive DELETE;
-- `07 WP-DD2/WP-DD8/WP-DD11` inventory, acceptance and audit expanded to the full provider lifecycle.
+- `07 WP-DD2/WP-DD8/WP-DD11` inventory, acceptance and audit cover the full provider lifecycle.
+
+Independent Round 4 results supplied by the user:
+
+- reviewer A: **GO WITH CONDITIONS** — BLOCKER 0 / HIGH 0 / MEDIUM 1; only finding was stale Round 3 physical text in `02_DATA_MODEL_AND_MIGRATION.md`.
+- reviewer B: **GO** — BLOCKER/HIGH/MEDIUM/LOW all 0.
+
+The single Round 4 condition has now been applied directly to `02`:
+
+- 50 tables = public 27 / private 23
+- three provider lifecycle tables explicitly named
+- `§13.2` three provider mutation paths + orphan blocker
+- Phase 2 three-table reconciliation + 50-table audit
+- `§21.6` mirror/deletion/orphan lifecycle inventory
+- constraint/destructive-shortcut language synchronized to `08` / `07`
+
+No product/domain redesign was made in this final synchronization.
 
 ---
 
-## Current review gate
+## Current final verification gate
 
 Use:
 
-`docs/design/current/FAMILY-OPS-DETAILED-DESIGN-ROUND4-REREVIEW-REQUEST.md`
+`docs/design/current/FAMILY-OPS-DETAILED-DESIGN-ROUND5-FINAL-VERIFY-REQUEST.md`
 
-Reviewer must fresh-read CURRENT main and actual PR head and independently verify the 50-table count rather than inheriting it.
+This is a focused verification of the single Round 4 condition plus regression checks. Reviewer must fresh-read CURRENT main and the **actual current PR head**; do not reuse the Round 4 head verdict after the `02` synchronization commit.
 
 GO condition:
 
 - BLOCKER 0
 - HIGH 0
 - Requirements contradiction 0
-- 50/50 table inventory accepted
+- `02` is synchronized to 50 tables / three Google provider-lifecycle tables
 - Request physical compatibility remains executable
-- provider mutation ownership across Task mirror / target deletion / Family Event is executable without invention
-- orphan handling is safe
+- provider mutation ownership across Task mirror / target deletion / Family Event remains executable without invention
+- orphan handling remains safe
 - no regression in earlier PASS items
 - Requirements Final-GO MEDIUM 3 remain PASS
 
-Until that review returns GO: no merge, no ADR acceptance, no implementation.
+Until the actual current head receives independent `GO`: no merge, no ADR acceptance, no implementation.
