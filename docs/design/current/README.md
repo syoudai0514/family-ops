@@ -45,7 +45,7 @@ The Google provider-lifecycle tables that must all remain in scope are:
 - `private.family_ops_calendar_target_deletions`
 - `private.family_ops_calendar_orphaned_mirrors`
 
-The first two can mutate Google provider state; the orphan table records provider identities that became unmanageable after permission/eligibility loss. Their ownership/transfer rules are binding in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` §10 and are now also synchronized into `02_DATA_MODEL_AND_MIGRATION.md`.
+The first two can mutate Google provider state; the orphan table records provider identities that became unmanageable after permission/eligibility loss. Their ownership/transfer rules are binding in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` §10 and are synchronized into `02_DATA_MODEL_AND_MIGRATION.md`.
 
 ---
 
