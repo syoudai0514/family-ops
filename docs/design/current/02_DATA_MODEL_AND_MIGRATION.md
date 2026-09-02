@@ -2,140 +2,163 @@
 
 ## 1. Scope
 
-本書は実装前のschema semanticsを定義する。DDLそのものは作らない。
+本書は、Requirements Baseline と ADR 0013 を CURRENT `main` 上へ安全に実装するための schema semantics / migration strategy を定義する。
+
+DDLの最終SQL名そのものは実装レビューで決めるが、current truth・互換性・cutover順序は本書と `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` で確定する。
 
 原則:
 
 - production data delete禁止
-- `supabase db reset`前提禁止
-- existing migration rewrite禁止
-- additive migration優先
+- `supabase db reset`禁止
+- applied migration rewrite禁止
+- pending/new migrationのみtimestamp順
+- additive/evolution migration優先
 - backfillはidempotent
+- 推測backfill禁止
 - old/new truthを長期間dual-writeしない
-- cutover前にcompatibility readを用意
-- rollbackはphase別に定義し、**new-only semantic state発生後にlegacy current-truth readへ戻さない**
+- aggregate単位でcanonical read/writeを同時cutover
+- P1後にlegacy current-truth read/writeへ戻さない
+- physical legacy cleanupは別reviewed migration
 
-CURRENT v6のhousehold/membership/security/Google credential private modelは原則維持する。
+CURRENT物理テーブルの網羅dispositionは `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` の **48 tables = public 27 / private 21** を正とする。
 
-## 2. Existing tables — keep / evolve / retire semantics
+---
 
-| Current table | Design action | Notes |
-|---|---|---|
-| households/profiles/household_members | KEEP | family_role等のcurrent extensionsを維持 |
-| task_definitions | EVOLVE | expectation/carryover defaults等を追加 |
-| recurrence_rules | EVOLVE | existing effective datingを利用、assignment mode拡張 |
-| task_instances | EVOLVE | assignment mode/source/claim/attention/revisionを追加 |
-| task_subtask_instances | KEEP/EVOLVE | current semantics維持 |
-| task_events | KEEP | append-only auditを拡張 |
-| requests | EVOLVE | logical request/provenanceへ寄せ、execution completion truthを廃止方向 |
-| handovers | EVOLVE or compatibility façade | share/handover共通info semanticsを追加 |
-| user_notifications | KEEP | in-app notification recordとして活用 |
-| notification outbox/private delivery tables | KEEP | policy/intent metadataを拡張 |
-| routine_checkin_sessions/items | KEEP | reconciliation sourceとは分ける |
-| Google connection/cache/projection/private queue | KEEP | transport/sync canonical cacheを維持 |
+## 2. CURRENT table reuse boundary
+
+高レベル分類:
+
+- Household/Auth/RLS: KEEP
+- Task/Recurrence/Request/Handover/Shopping/Routine schedule: EVOLVE
+- old routine check-in evidence: SUPERSEDE
+- Google OAuth/watch/sync/cache/occurrence/idempotency: KEEP
+- CURRENT Task→Google mirror: BRIDGE（Task-owned projectionのみ）
+- new Family Event Authority: additive canonical domain
+- pending actions/raw input/outbox/receipts: reuse with bounded EVOLVE
+
+`household_task_categories`はCURRENT household task taxonomyとして再利用するが、Event Authority・school context・assignment truthにはしない。
+
+`private.family_ops_calendar_mirrors`は無視しない。Task/transport→Google projection bridgeとして残し、Family Event writerとのexactly-one-writer boundaryは `08` §10 を正とする。
+
+---
 
 ## 3. Task definition additions
 
-`task_definitions`へ概念追加候補:
+`task_definitions`へ概念追加:
 
-- `default_expectation` check (`required`,`normal`,`optional`) default `normal`
-- `carryover_policy` check:
+- `default_expectation`: `required | normal | optional`
+- `carryover_policy`:
   - `occurrence_ends`
   - `until_done`
   - `until_deadline`
   - `separate_next_occurrence`
-- `duplicate_sensitivity` check (`normal`,`avoid_duplicate`,`safety_critical`) default `normal`
-- `early_completion_policy` check (`none`,`recommended`,`required_before`) default `none`
+- `duplicate_sensitivity`:
+  - `normal`
+  - `avoid_duplicate`
+  - `safety_critical`
+- `early_completion_policy`:
+  - `none`
+  - `recommended`
+  - `required_before`
 - optional `default_duration_minutes`
 
-理由:
+毎occurrenceで変わり得るため、materialization時にtask instanceへsnapshotする。
 
-これらは毎occurrenceで変わり得るため、materialization時にtask instanceへsnapshotする。
+薬・送迎・購入・提出などをcategory名hard-codeだけで安全判定しない。
 
-薬、迎え、購入、提出等のduplicate-sensitive behaviorをcategory名のhard-codeで判定しない。
+---
 
 ## 4. Recurrence rule evolution
 
-CURRENT `assignee_strategy`を既存互換のまま残しつつ、将来の表現を明確化する。
+CURRENT `recurrence_rules` の effective dating/versioningを維持する。
 
-### 4.1 Rule assignment result
+### 4.1 Materialized assignment result
 
-materialization結果はtask instanceへ:
+Task instanceへsnapshot:
 
-- `assignment_mode`
-  - `person`
-  - `unassigned`
-  - `anyone`
-- `planned_assignee_actor_ref_id` nullable — new canonical assignment identity
+- `assignment_mode`: `person | unassigned | anyone`
+- `planned_assignee_actor_ref_id` nullable
 - legacy `planned_assignee_id` nullable — production real-user compatibility mirror only
-- `assignment_source='rule'`
+- `assignment_source`: `rule | explicit_override | agreement | manual | legacy_snapshot` 等
 
-をsnapshotする。
+既存 `fixed/dropoff_assignee/pickup_assignee/nonpickup_adult/unassigned` はresolution strategyとして維持可能。
 
-既存`fixed/dropoff_assignee/pickup_assignee/nonpickup_adult/unassigned`はruleのresolution strategyとして維持可能。
+`anyone` ruleを追加する場合:
 
-`誰でもOK`用にrule strategy `anyone`を追加する場合:
-
-- planned assignee actor refはnull
-- materialized `assignment_mode=anyone`
+- assignment_mode=`anyone`
+- planned assignee actor ref=null
 
 ### 4.2 Protected future occurrence
 
-future occurrenceにexplicit agreement/manual overrideが入った場合:
+explicit agreement/manual override済みfuture occurrenceはrule再計算でsilent rewriteしない。
 
-- `assignment_source != rule`
-- recurrence recalculation対象から外す
+rule changeが自動更新できるのは、原則 `assignment_source='rule'` のfuture occurrenceのみ。
 
-rule change処理は`task_instance.assignment_source='rule'`のみ更新可能。
+過去actualは一切書き換えない。
+
+---
 
 ## 5. Task instance evolution
 
-`task_instances`へ追加するoperational snapshot:
+`task_instances` canonical operational snapshot:
 
-- `assignment_mode text not null` (`person`,`unassigned`,`anyone`)
+- `assignment_mode text not null`
 - `assignment_source text not null`
 - `planned_assignee_actor_ref_id uuid null`
 - `active_claimant_actor_ref_id uuid null`
-- legacy `planned_assignee_id` / proposed legacy claim user mirrorはproduction compatibility only
+- legacy `planned_assignee_id` compatibility mirror
 - `claimed_at timestamptz null`
 - `expectation text not null`
 - `carryover_policy text not null`
 - `duplicate_sensitivity text not null`
 - `early_completion_policy text not null`
-- `available_from timestamptz/date null`
-- `target_at/due_at` current column reuse
-- `attention_state text not null default 'active'` (`active`,`waiting`)
+- `available_from` nullable
+- current `due_at` reuse
+- `attention_state = active | waiting`
 - `waiting_note text null`
 - `next_check_at timestamptz null`
-- `outcome_reason text null` (`not_needed_this_occurrence`,`could_not_do`,`expired_occurrence` when status=`skipped`)
+- `outcome_reason text null`
 - `revision bigint/int not null default 1`
 - optional `event_id uuid null`
-- `test_context_id uuid null`
-- optional `source_context jsonb` only for non-secret IDs/provenance pointers
+- **direct `test_context_id uuid null`**
+- optional non-secret `source_context jsonb`
 
-Constraints:
+Constraints/invariants:
 
-- `assignment_mode=person` -> planned_assignee_actor_ref_id non-null
-- `assignment_mode in (unassigned,anyone)` -> planned_assignee_actor_ref_id null
-- active claimant allowed only when `assignment_mode=anyone` and status operationally open
-- completed/cancelled task cannot have active claimant
-- `attention_state=waiting` allowed only when status in (`todo`,`in_progress`)
-- terminal transition clears current waiting metadata while audit preserves history
-- `outcome_reason` is null unless status=`skipped`; skipped must have a recognized reason for new writes
-- production row (`test_context_id is null`) cannot reference simulated ActorRef
-- test row may reference simulated ActorRef only from the same `test_context_id`
+- `person` -> planned assignee ActorRef required
+- `unassigned|anyone` -> planned assignee ActorRef null
+- claimant allowed only for open `anyone`
+- terminal task has no active claimant
+- waiting allowed only todo/in_progress
+- terminal transition clears current waiting metadata; audit retains history
+- skipped new writes require recognized outcome reason
+- production row cannot reference simulated ActorRef
+- test row may reference simulated ActorRef only from same household/test context
 
-`actual_completed_by_id`はnew truthとして使用しない。compatibility期間は残す。
+`actual_completed_by_id` is **not** new truth.
 
-## 6. Assignment and claim audit
+### 5.1 CURRENT completion CHECK migration
 
-current assignment/claimはtask instance snapshotを正とし、historyはappend-only。
+CURRENT physical CHECKs make participant-first completion impossible without a forward constraint migration.
 
-`task_assignment_events`を新設するか`task_events`のevent_type/payloadを拡張する。
+Phase 1 must inspect production catalog and replace those CHECKs before new completion writes. Binding physical rule is `08` §3:
 
-推奨は**既存`task_events`拡張**。不要なparallel audit tableを増やさない。
+- subtasks parent legacy actor remains null
+- production whole completed has canonical participant(s) + one technical compatibility-primary real mirror while old reader exists
+- test/simulated whole completed may keep legacy real-user mirror null
+- completed/completed_at integrity remains
 
-新event type例:
+No applied migration rewrite and no physical drop of legacy column.
+
+---
+
+## 6. Task audit / assignment / claim history
+
+Current assignment/claim snapshot is Task current truth; history is append-only.
+
+Prefer extending `task_events` rather than creating a competing assignment-history table.
+
+Event examples:
 
 - `assignment_changed`
 - `assignment_agreed`
@@ -147,100 +170,110 @@ current assignment/claimはtask instance snapshotを正とし、historyはappend
 - `waiting_started`
 - `waiting_updated`
 - `waiting_resumed`
+- `rescheduled`
 
-payload:
+Payload may contain prior/new mode, ActorRefs, source, request/attempt ref, revision, waiting metadata, schedule before/after.
 
-- from/to assignment mode
-- from/to assignee/claimant ActorRef
-- source
-- request/attempt reference
-- attention before/after when applicable
-- revision before/after
+Task event canonical actor is ActorRef. Legacy real-user actor column may remain production compatibility mirror.
+
+---
 
 ## 7. Domain actor identity
 
-One-user testとproductionでdomain state machineを共有しつつidentity truthを汚さないため、新規 `domain_actor_refs` を全actor-bearing semanticsの共通参照点とする。
+新規 `domain_actor_refs` を全actor-bearing semanticsの共通永続identityとする。
 
-### `domain_actor_refs`
+Conceptual fields:
 
-- `id uuid PK`
-- `household_id uuid not null`
-- `actor_kind text not null` (`real_user`,`simulated_member`,`system`)
-- `real_user_id uuid null`
-- `test_context_id uuid null`
-- `simulated_role text null` (`papa`,`mama` initially)
-- `created_at`
+- id
+- household_id
+- actor_kind: `real_user | simulated_member | system`
+- real_user_id nullable
+- test_context_id nullable
+- simulated_role nullable (`papa | mama` initially)
+- created_at
 
 Invariants:
 
-- `real_user` -> same-household `real_user_id` required; test_context/simulated_role null; unique `(household_id,real_user_id)`
-- `simulated_member` -> `test_context_id + simulated_role` required; real_user_id null; unique `(test_context_id,simulated_role)`
-- `system` -> no real/simulated user identity; household-scoped stable row or equivalent server actor
-- simulated ActorRefはreal `household_members` row/auth userを要求しない
-- test contextとActorRefのhousehold一致をFK/transactionで強制する
+- real_user -> same-household real_user_id required; no simulated/test identity
+- simulated_member -> same household + test context + simulated role; real_user_id null
+- system -> explicit system actor; fake household memberを作らない
+- unique household/real user and test-context/simulated-role as appropriate
 
-Canonical actor-bearing fieldsはActorRefを使う。対象:
+Canonical ActorRef対象:
 
 - planned assignee
 - anyone claimant
 - actual performer
 - recorder
-- request requester/recipient/created-by
-- request confirmation
+- request requester/recipient/creator
+- request terms confirmation
 - reconciliation actor
 - task/audit actor
-- source uploader/confirmed-by/resolved-by where actor semantics matter
+- info author/ack
+- shopping assignee/claimant/participant/recorder
+- source uploader/confirmer/resolver
+- Family Event creator/resolver where meaningful
 
-既存user-id FK列はproduction real-user compatibility mirrorとして段階的に残せるが、simulated actorをoperator user IDで代用しない。
+Authenticated operatorとdomain actorは別概念。one-user testでoperator user IDをsimulated mamaとして保存しない。
+
+CURRENT real-user-only FK/NOT NULL compatibilityは `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md` を正とする。
+
+---
 
 ## 8. Multiple actual performers
 
 新規 `task_actual_participants`:
 
-- `household_id`
-- `task_instance_id`
-- `actor_ref_id`
-- `participation_kind` default `performed`
-- `recorded_by_actor_ref_id`
-- `recorded_at`
-- optional `removed_at` for correction history or use append-only correction event
-- unique active `(task_instance_id,actor_ref_id)`
+- household_id
+- task_instance_id
+- actor_ref_id
+- participation_kind default `performed`
+- recorded_by_actor_ref_id
+- recorded_at
+- correction/removal history representation
+- **direct test_context_id**
+- `compatibility_primary boolean not null default false`
+- unique active `(task_instance_id, actor_ref_id)`
 
-Task completionのcurrent truth:
+Task completion current truth:
 
-- `task_instances.status=completed`
-- `task_instances.completed_at`
-- participant rows >= 1 when a known household actor performed
+- task status=`completed`
+- completed_at
+- canonical participant row(s)
 
-「誰がやったか不明だが完了確定」の特殊caseを許すかは要求上必須ではないため、通常completionはperformerを少なくとも1人要求する。system migration/backfillでlegacy completion actorがnullの既存データは`legacy_unknown_performer`としてhistory上識別し、無理に推測しない。
+Normal new completion requires at least one known performer. Legacy completed actor unknownは推測せず `legacy_unknown_performer` treatment。
 
 ### 8.1 Legacy `actual_completed_by_id`
 
-migration path:
+Migration:
 
-1. ActorRef/participant tableをadd。
-2. existing non-null `actual_completed_by_id`のreal-user ActorRefを作成/再利用しparticipantへidempotent backfill。
-3. new completion pathはparticipant ActorRefへ書く。
-4. compatibility期間のみ、production real participantなら`actual_completed_by_id`へprimary real userをmirrorしてold readsを壊さない。
-5. simulated/test participantはlegacy real-user列へmirrorしない。
-6. all reads cutover後にlegacy columnをdeprecated扱い。physical dropは別future migrationでreviewする。
+1. ActorRef + participant table add
+2. real-user ActorRefs backfill
+3. legacy non-null actual actor -> participant backfill
+4. participant-first new command enabled only after CURRENT CHECK replacement
+5. production whole completion mirrors technical compatibility-primary real participant to legacy actor while needed
+6. simulated/test never mirror fake real user
+7. canonical reads cutover
+8. physical cleanup later separate review
 
-mirror期間でもtruthはparticipant table + task statusと明文化する。
+Compatibility-primary selection is deterministic but product-invisible; `08` §3.2 governs.
+
+---
 
 ## 9. Group reconciliation evidence
 
-`大体やった`をtask statusへ入れないため新規:
+`大体やった` is not a child-task status.
 
 ### `task_reconciliation_sessions`
 
 - id
 - household_id
-- `actor_ref_id`
+- actor_ref_id
 - target_local_date
-- group_key (`morning`,`evening`,`bedtime`, custom stable key)
-- response_kind (`all_done`,`mostly_done`,`individual`)
-- source (`line`,`pwa`)
-- `test_context_id` nullable
+- group_key
+- response_kind: `all_done | mostly_done | individual`
+- source: `line | pwa`
+- **direct test_context_id**
 - created_at
 - supersedes_session_id nullable
 
@@ -251,198 +284,235 @@ mirror期間でもtruthはparticipant table + task statusと明文化する。
 - task_instance_id
 - observed_status_at_response
 - display_order
-- primary key/unique `(session_id,task_instance_id)`
+- **direct test_context_id**
 
 Purpose:
 
-- どのtask集合に対して回答したかsnapshotする
-- 後から同groupへtaskが追加されても過去の`大体やった`で勝手にcoveredにしない
-- `mostly_done`はchild statusを変更しない
-- reconciliation prompt抑制にのみ使う
+- exact task-set snapshot
+- later-added tasks are not retroactively covered
+- mostly_done does not alter child statuses
+- session suppresses repeated detail nag
 
-`all_done`ではeligible child tasksをtransaction内でcompleteしたうえでsessionも記録する。
+`all_done` transaction completes eligible own required+normal children and records session atomically. Optional/余力 tasks are excluded unless explicitly completed.
 
-## 10. Request / attempt model
+---
 
-### 10.1 `requests` — logical identity
+## 10. Request / Attempt model
 
-既存tableをevolveする。
+### 10.1 `requests` logical identity
 
-New canonical identity fields:
+EVOLVE existing table.
 
-- id/household_id
-- `requester_actor_ref_id`
-- `recipient_actor_ref_id`
-- legacy requester_id/recipient_id — production real-user compatibility mirror only
-- `request_kind` (`light`,`assignment_change`)
+Canonical fields/concepts:
+
+- id / household_id
+- requester_actor_ref_id
+- recipient_actor_ref_id
+- legacy requester_id/recipient_id — production compatibility only
+- request_kind: `light | assignment_change`
 - shared_title/shared_message
 - linked_task_instance_id nullable
 - assignment_task_instance_id nullable
-- created_at
-- `closed_at` nullable only when whole logical request no longer needs future attempts
-- `test_context_id` nullable
+- closed_at nullable
+- **direct test_context_id**
 
-legacy `status/accepted_at/declined_at/completed_at/cancelled_at`はcompatibility期間保持するが、new runtime truthには使わない。
+Legacy lifecycle tuple:
 
-Production requestはreal-user ActorRefのみ。Test requestはsame test contextのsimulated/real ActorRef combinationを許すがproduction user-id columnsへfake mirrorしない。
+- status
+- accepted_at
+- declined_at
+- completed_at
+- cancelled_at
+
+is compatibility only for new runtime.
 
 ### 10.2 `request_attempts`
 
 - id
 - household_id
 - request_id
-- attempt_kind (`initial`,`reproposal`,`change`,`cancel`)
+- attempt_kind: `initial | reproposal | change | cancel`
 - state:
-  - `pending`
-  - `checking`
-  - `consulting`
-  - `awaiting_confirmation`
-  - `accepted`
-  - `declined`
-  - `expired`
-  - `cancelled`
-- `terms_revision int`
-- `terms jsonb`（期限/担当/scope等、partner-visible confirmed data only）
-- `reply_due_at`
-- `created_by_actor_ref_id`
-- accepted/declined/expired/cancelled timestamps
-- `revision`
-- `test_context_id` nullable inherited from request
+  - pending
+  - checking
+  - consulting
+  - awaiting_confirmation
+  - accepted
+  - declined
+  - expired
+  - cancelled
+- terms_revision
+- terms jsonb (partner-visible confirmed data only)
+- reply_due_at
+- created_by_actor_ref_id
+- terminal timestamps
+- revision
+- **direct test_context_id**
 
-per request:
+Per Request active nonterminal attempt max 1.
 
-- active nonterminal attemptは最大1件
-- accepted initial/reproposal establishes agreement
-- accepted change/cancel updates linked task/assignment atomically
+Accepted initial/reproposal establishes agreement. Accepted change/cancel mutates linked Task/assignment/relationship atomically according to command semantics.
 
 ### 10.3 Consultation confirmation
 
-新規 `request_attempt_confirmations`:
+`request_attempt_confirmations`:
 
 - attempt_id
 - terms_revision
-- `actor_ref_id`
+- actor_ref_id
 - confirmed_at
-- unique(attempt_id,terms_revision,actor_ref_id)
+- **direct test_context_id**
+- unique attempt/revision/actor
 
-consultingのterms変更時にrevision incrementし、旧confirmationは新revisionに効かない。
+Rules:
 
-双方のrequired actor refsが同revisionをconfirmした時だけaccepted。
+- user who explicitly proposes exact terms is confirmed for that revision
+- other required actor must confirm same revision
+- AI/system summary alone implies zero confirmations
+- edit increments revision and old confirmations stop applying
+- one-sided confirmation never changes formal assignment
 
 ### 10.4 Late/stale action
 
-LINE/PWA actionは:
+LINE/PWA action includes request_id + attempt_id + expected revision/terms revision.
 
-- request_id
-- attempt_id
-- terms_revision or expected revision
+Closed/expired/stale action returns latest state and does not resurrect attempt.
 
-を含む。
+### 10.5 Legacy Request physical compatibility
 
-closed/expired attempt actionは`REQUEST_ATTEMPT_STALE`でcurrent attempt/linkを返す。自動復活禁止。
+CURRENT `requests` CHECK constrains both status **and lifecycle timestamps**. Status-only projection is prohibited.
+
+Binding projection is `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` §4.
+
+Key rule:
+
+- before accepted agreement, current attempt projects a full CHECK-valid legacy tuple
+- checking/consulting/awaiting_confirmation -> legacy pending + all terminal timestamps null
+- expired -> legacy cancelled + compatibility-only cancelled_at while canonical history remains expired
+- once accepted agreement exists, post-accept change/cancel attempts do **not** reproject legacy row back to pending/cancelled; new-runtime compatibility row remains `accepted + accepted_at`
+- new runtime never writes Request `completed` from Task completion
+- historical completed rows remain preserved/backfilled
+
+One server-owned helper writes the full lifecycle tuple atomically.
+
+---
 
 ## 11. Share / handover model
 
-既存`handovers`をいきなりrenameしない。
+EVOLVE `handovers`; do not rename destructively.
 
-additive extension案:
+Add concepts:
 
-- `info_kind` (`share`,`handover`) default existing rows=`handover`
-- `visibility` (`household`,`self`)
-- `valid_from`
-- `valid_until`
-- `ack_policy` (`none`,`required`)
-- related_task_id/event_id nullable
-- `status` (`active`,`superseded`,`expired`)
-- `supersedes_handover_id` nullable
-- actor-bearing author/ackはActorRef canonicalへ移行可能
+- info_kind: `share | handover`
+- visibility: `household | self`
+- valid_from / valid_until
+- ack_policy: `none | required`
+- related_task_id/event_id
+- status: `active | superseded | expired`
+- supersedes_handover_id
+- canonical author ActorRef
+- **direct test_context_id**
 
-`handover_reads`はack receiptとしてreuse可能。ただし`ack_policy=none`でもread trackingを必須にはしない。
+Canonical acknowledgement must be ActorRef-capable; legacy `handover_reads` may remain production compatibility projection but cannot encode simulated acknowledgement via operator ID.
 
-## 12. Family event model
+---
 
-新規 `family_events`:
+## 12. Family Event model
+
+New `family_events`:
 
 - id
 - household_id
 - title
-- status (`active`,`waiting_reschedule`,`cancelled`)
+- status: `active | waiting_reschedule | cancelled`
 - starts_at/ends_at or all-day dates
 - location/details nullable
-- `calendar_visibility` / sync preference
-- `revision`
-- `created_by_actor_ref_id`
+- calendar visibility/sync preference
+- revision
+- created_by_actor_ref_id
+- **direct test_context_id**
 - created_at/updated_at
-- `test_context_id` nullable
 
-prep taskは`task_instances.event_id`でlink。prep taskの`待ち`はTask attention stateを使い、event statusへ混ぜない。
+Prep tasks link through task `event_id`. Prep waiting uses Task attention state; no duplicate event-prep task state machine.
 
-### 12.1 Field authority
+### 12.1 Field Authority
 
-過剰なEAVを避けるためeventごとに:
-
-- `field_authority jsonb`
-
-を持つ。許可fieldのみkeyとして使用:
+Event stores schema-validated field authority for protected/followed fields, at least:
 
 - title
-- starts_at/ends_at/all_day
+- start/end/all-day
 - location
 
-value例:
+Example modes:
 
-```json
-{
-  "starts_at": {"mode":"human_protected","source":"manual","revision":3},
-  "title": {"mode":"external_follow","source":"google","revision":1}
-}
-```
+- `human_protected`
+- `external_follow`
 
-arbitrary user dataをkey/valueに入れない。schema validationをserver側で行う。
+Arbitrary user data is not allowed as uncontrolled EAV.
 
-## 13. Google link and sync baseline
+---
 
-新規 `family_event_external_links`:
+## 13. Google link / CURRENT mirror boundary
+
+### 13.1 `family_event_external_links`
+
+Conceptual:
 
 - household_id
 - family_event_id
 - provider=`google`
 - calendar_connection_id
 - google_event_id
-- link_mode (`family_ops_owned`,`external_follow`)
-- `last_external_snapshot jsonb`（owned fields only）
-- `last_external_etag`
-- last reconciled timestamps
-- unique(provider,calendar_connection_id,google_event_id)
+- link_mode: `family_ops_owned | external_follow`
+- last external owned-field snapshot
+- last external etag
+- reconciliation timestamps
+- unique provider/calendar/event identity
 
-Google canonical cacheそのものは既存tableを継続利用する。
+Google cache remains provider observation.
+
+### 13.2 CURRENT Task→Google bridge
+
+CURRENT `private.family_ops_calendar_mirrors` remains bounded to Task-owned projection:
+
+- transport
+- explicitly Google-visible standalone Task
+
+It is not Family Event truth.
+
+Exactly one writer may own a provider event: Task mirror bridge or Family Event external link, never both.
+
+Existing special Task mirror is not automatically converted into Family Event. Explicit adoption uses stable provider ID/ETag, resolves pending/processing/failed queue state, disables Task re-enqueue for transferred ownership, then establishes Family Event external link.
+
+Full transfer/reconciliation rules: `08` §10.
+
+---
 
 ## 14. Generic change candidates
 
-新規 `change_candidates`:
+New `change_candidates`:
 
 - id
 - household_id
-- target_type (`family_event`,`task`,`recurrence`,`info`)
-- target_id nullable for create candidate
-- source_type (`google`,`image_fact`,`ai_inference`,`manual_import`)
+- target_type: family_event/task/recurrence/info
+- target_id nullable for create
+- source_type: google/image_fact/ai_inference/manual_import
 - source_ref
-- `proposed_patch jsonb`
-- `current_snapshot_hash`
-- `status` (`pending`,`accepted`,`rejected`,`superseded`,`stale`)
-- created_at/resolved_at/`resolved_by_actor_ref_id`
-- `revision`
-- `test_context_id` nullable
+- proposed_patch jsonb
+- current_snapshot_hash
+- status: pending/accepted/rejected/superseded/stale
+- created/resolved timestamps
+- resolved_by_actor_ref_id
+- revision
+- **direct test_context_id**
 
-Rules:
+Acceptance rechecks target revision/hash. Stale candidate never blind-applies.
 
-- candidate acceptance時にtarget current revision/hashを再確認。
-- staleならsilent applyせずrebase/review。
-- `ai_inference`はcandidate経由以外でcurrent entityを変更しない。
+AI inference cannot mutate canonical entity outside candidate + human-confirmed command.
+
+---
 
 ## 15. Children / school context
-
-既存に子どもdomainが不足しているため新規:
 
 ### `family_children`
 
@@ -450,7 +520,6 @@ Rules:
 - household_id
 - display_name
 - active
-- created_at
 
 ### `child_school_contexts`
 
@@ -460,262 +529,329 @@ Rules:
 - school_display_name
 - class_display_name
 - effective_from/effective_to
-- recognition_aliases text[]（ユーザー確認済みのみ）
+- user-confirmed recognition_aliases
 - active
 
-マサキ/すだちぐみ、ウタノ/ゆきぐみを**別school context**として登録可能にする。
+マサキ/すだちぐみ and ウタノ/ゆきぐみ are separate school contexts. Different school context IDs prevent accidental cross-merge.
 
-別園であることをschool context IDで分離し、同名classだけでmergeしない。
+---
 
 ## 16. Nursery/Codmon source documents
 
 ### `source_documents`
 
-public browser direct readではなくRLS/private storage metadataを設計。
+Private/RLS-protected source metadata:
 
 - id
 - household_id
-- `uploaded_by_actor_ref_id`
+- uploaded_by_actor_ref_id
 - document_kind
-- storage_object_key
-- captured_at/uploaded_at
-- `raw_deleted_at` nullable
-- `retention_policy`
-- `test_context_id`
+- storage object key
+- captured/uploaded timestamps
+- raw_deleted_at
+- retention_policy
+- **direct test_context_id**
 
 ### `document_extractions`
 
-- id
-- source_document_id
-- extraction_version
-- model/provider metadata (no secret/raw prompt)
-- target school-context candidate
-- status (`processing`,`review`,`confirmed`,`rejected`,`failed`)
-- created_at
+- source document
+- extraction version/provider metadata
+- school-context candidate
+- processing/review/confirmed/rejected/failed state
 
 ### `document_facts`
 
-persistするのは家庭に関係するfactのみ。
+Persist only household-relevant structured facts:
 
-- extraction_id
-- child_school_context_id nullable until confirmed
-- fact_kind (`event`,`required_item`,`deadline`,`recurrence`,`url`,`note`)
-- normalized_value jsonb
+- child_school_context_id
+- fact_kind event/required_item/deadline/recurrence/url/note
+- normalized value
 - confidence band
-- source locator/page/image index
-- `fact_origin='source_explicit'`
+- source locator
+- fact origin=`source_explicit`
 
-他児童名一覧等の全文OCR transcriptをdurable public business tableへ保存しない。
+Do not persist unrelated third-party child OCR transcript as durable household business data.
 
 ### `school_preparation_rules`
 
-- household_id
-- child_school_context_id
-- trigger_kind/value
+Only user-confirmed rules:
+
+- household/school context
+- trigger
 - preparation template
-- `confirmed_by_actor_ref_id`
-- effective_from/effective_to
+- confirmed_by_actor_ref_id
+- effective period
 - active
 
-AI inferenceだけでrow作成しない。user-confirmedのみ。
+AI guess alone does not create confirmed rule.
 
-## 17. Test context
+---
 
-新規 `test_simulation_contexts`:
+## 17. Test simulation context
+
+`test_simulation_contexts`:
 
 - id
 - household_id
 - operator_user_id
-- simulated_role (`mama` initially)
-- status (`active`,`closed`)
-- created_at/closed_at
+- simulated role
+- active/closed status
+- timestamps
 
-business records created by simulated actorには`test_context_id`またはtest-scoped aggregateを必須にする。
+Core test-capable business rows listed in `08` §6 must directly store test_context_id. The older wording “test_context_id or derive from parent” does **not** apply to those rows.
 
-原則production analytics queryは`test_context_id is null`を既定とする。
+Production default read/analytics excludes test.
 
-simulated actor用にfake auth userを作らない。実user/household membershipとの混同を防ぐ。
+No fake auth user.
 
-Actor representationはSection 7の`domain_actor_refs`を唯一の永続identity modelとする。command contextはActorRefを解決するための入力であり、永続化の代替ではない。
+---
 
 ## 18. Notification intent evolution
 
-既存`user_notifications`/outboxを利用しつつ、domain intent情報を追加する。
+Reuse `user_notifications` + private outbox with metadata:
 
-必要metadata:
+- notification_kind
+- urgency: immediate/digest/in_app_only
+- safety_class
+- bundle_key
+- business_expires_at
+- test_context_id
 
-- `notification_kind`
-- `urgency` (`immediate`,`digest`,`in_app_only`)
-- `safety_class` (`normal`,`duplicate_sensitive`,`critical`)
-- `bundle_key`
-- `business_expires_at`
-- `test_context_id`
+Production outbox only consumes non-test business intent.
 
-production outboxへ入れられるのは`test_context_id is null`のみ。
+Synthetic delivery uses separate operator test adapter.
 
-synthetic test deliveryはseparate adapter pathでoperator destinationを強制する。
+---
 
-## 19. Daily Brief read model
+## 19. DailyBrief read model
 
-物理tableとして永続化する必要はない。server RPC/viewがcurrent stateから生成する。
+No persistent DailyBrief table required. Server-side RPC/view composes current truth.
 
-`DailyBrief` minimum shape:
+Minimum shape:
 
-- generated_at/local_date/daypart
-- urgent_actions[]
-- exceptions[]
-- active_infos[]
-- burden_reducing_completed[]
-- own_task_groups[]
+- generated_at / local_date / daypart
+- urgent_actions
+- exceptions
+- active_infos
+- burden_reducing_completed
+- own_task_groups
 - partner_summary
-- carryovers[] with `result_certainty`
-- `waiting_checks[]` with task ID, note summary, next_check_at, deadline risk
-- reconciliation_prompt
-- schedule/calendar status
-- deep_link targets
+- carryovers + result_certainty
+- waiting_checks
+- reconciliation prompt
+- schedule including all-day entries
+- deep links
 
-LINE/PWAはこのshapeをrenderする。
+Waiting:
 
-Waiting behavior:
+- future next-check: suppress ordinary incomplete nag
+- check date due: waiting_checks
+- hard deadline risk can be urgent while still waiting
+- read never auto-resumes task
 
-- future next-check waiting taskはnormal incomplete list/nagから除外
-- next_check_at到来/超過で`waiting_checks`へ再浮上
-- hard due riskはnext_check_atより優先して`urgent_actions`へ出せる
-- read生成がattention_stateを勝手にactiveへ変更しない
+All-day display is included; timed conflict remains separate.
 
-## 20. Migration phases
+---
 
-### Phase 0 — docs/design only
+## 20. Migration phases — corrected binding order
 
-本PR。runtime変更なし。
+This section replaces the older ambiguous “write Phase 3 / read Phase 4” interpretation.
 
-### Phase 1 — additive schema
+### Phase 0 — docs only
 
-- add ActorRef + new columns/tables
-- no existing behavior cutover
-- RLS/FK/check indexes
-- compatibility views/helpers
-- migrations timestamp順、既存migration変更禁止
+No runtime change.
 
-**Rollback class R0:** new writes未開始なのでold runtimeへ完全に戻せる。schema additionsは残ってもよい。
+### Phase 1 — additive/evolution schema readiness
 
-### Phase 2 — deterministic backfill
+- ActorRef + new columns/tables
+- direct test_context columns
+- task completion CHECK replacement
+- Request CHECK catalog verification + CHECK-valid compatibility helper path
+- DailyBrief schedule CHECK extension + override table
+- shopping extension
+- Family Event/link/candidate schema
+- Task→Google mirror ownership guard fields/state as needed
+- RLS/FK/index/checks
+- compatibility helpers
 
-- real household actor refs backfill
-- actual participant backfill
-- request attempt backfill
-- assignment mode/source backfill
-- existing handover defaults
-- existing tasks expectation/carryover defaults
-- legacy request/task mismatch report
+No new semantic state enabled.
 
-backfillは再実行safe。推測禁止。
+Rollback class R0.
 
-**Rollback class R0:** canonical runtime still old; backfill rows can be ignored/forward-fixed。
+### Phase 2 — deterministic backfill/reconciliation
 
-### Phase 3 — new command path behind feature gate
+- real member ActorRefs
+- task assignment snapshots
+- actual participants
+- Request Attempts
+- handover defaults
+- task policy snapshots
+- legacy Request↔Task/assignment-scope mismatch report
+- CURRENT Task→Google mirror inventory/provider identity/queue-state reconciliation report
+- 48-table physical precondition audit
 
-household/user feature flagでnew semanticsへ切替可能にする。
+Idempotent. No guessed performer/anyone/event/provider linkage.
 
-ただし1aggregateについてold/new mutationを同時に自由利用させない。request切替後はold accept/decline pathをnew command adapter経由へ向ける。
+Rollback class R0.
 
-Test ActorRef + execution context + production side-effect hard guardは、actual household one-user testより前にこのphaseで必須。
+### Phase 3 — deploy canonical reader + command adapters inactive
 
-**Point of no return P1:** checking/consulting/anyone claim/multiple performer/waiting/mostly-done等のnew-only semantic stateを最初に生成した時点。P1後はlegacy current-truth readへのrollback禁止。
+For each aggregate deploy:
 
-### Phase 4 — shared read model cutover
+- canonical command path
+- canonical read model
+- compatibility projection/helper
+- old endpoint adapter route readiness
+- no first new-only semantic state yet
 
-- PWA Today -> DailyBrief
-- LINE Today/digest -> DailyBrief
-- Request UI -> new attempt state
-- History -> new participant/evidence semantics
+Test ActorRef/execution-context/side-effect sandbox foundation must exist before actual-household simulation.
 
-P1後の障害時fallbackはcanonical new truthからのcompatibility projection/read-only degraded UIを使う。old semanticsを再びtruthとして読ませない。
+Rollback class R1.
 
-### Phase 5 — legacy write retirement
+### Phase 4 — atomic aggregate activation
 
-- request.completed direct writes停止
-- `actual_completed_by_id` primary truth利用停止
-- legacy endpoints return/route to new commands
+For one aggregate at a time:
 
-physical column removalは別reviewed cleanup migrationまで行わない。
+1. reconciliation passes
+2. old endpoint routes to canonical adapter
+3. canonical reader + writer gate activate together
+4. only then new-only semantic states are permitted
+
+Aggregates include at least:
+
+- Request
+- task actual/reconciliation
+- shopping
+- DailyBrief
+- Family Event/Google Authority
+
+First new-only canonical state crosses P1.
+
+P1 examples:
+
+- checking/consulting/awaiting_confirmation
+- anyone active claim
+- multiple performers
+- waiting
+- mostly-done evidence
+- Family Event authority state that legacy current-truth reader cannot represent
+
+After P1 legacy current-truth read/write rollback prohibited.
+
+### Phase 5 — legacy route retirement
+
+- direct legacy request writer disabled
+- legacy actual actor ceases canonical use
+- old routine pushes disabled after DailyBrief cadence cutover
+- old Task→Google path remains only for still Task-owned projections
+- transferred Family Event provider IDs cannot be re-enqueued by Task bridge
+
+Physical column/table cleanup is separate future review.
+
+---
 
 ## 21. Backfill rules
 
-### 21.1 Actor refs
+### 21.1 ActorRefs
 
-existing household memberごとにreal-user ActorRefをidempotent作成する。
+One real-user ActorRef per current household member, idempotently.
 
-- same household/user -> same actor ref
-- operatorとfuture real spouseを別ActorRefとして保持
-- existing production dataをsimulated actorへ変換しない
+Existing production row is never converted to simulated identity.
 
 ### 21.2 Task assignment
 
-existing planned_assignee_id non-null -> corresponding real-user ActorRef + `assignment_mode=person`, `assignment_source=legacy_snapshot`。
-null -> task kind/ruleから**明確にunassignedと証明できる場合のみ**unassigned。誰でもOKは既存データから推測しない。
+legacy planned assignee non-null -> matching real ActorRef + person assignment + legacy snapshot source.
+
+Null assignment is not guessed into anyone.
 
 ### 21.3 Actual participants
 
-existing actual_completed_by_id -> corresponding real-user ActorRef participant。
-completed but null -> no fake participant。legacy unknown markerをaudit/compatibility fieldで扱う。
+legacy actual actor -> matching participant.
+
+Completed but actor-null -> no fake participant; explicit legacy unknown treatment.
 
 ### 21.4 Requests
 
-Basic deterministic mapping:
+Deterministic initial mapping:
 
-- pending -> active initial attempt pending
-- accepted -> accepted initial attempt; linked taskをexecution truth
-- completed -> accepted attempt + linked task current completionを利用
-- declined -> declined attempt
-- cancelled -> cancelled attempt
+- pending -> initial pending
+- accepted -> accepted agreement
+- completed -> accepted agreement + linked Task execution truth
+- declined -> declined
+- cancelled -> cancelled
 
-**Cutover precondition reconciliation report** must detect at least:
+Pre-cutover report detects:
 
-- missing linked task for accepted/completed request
-- duplicate/invalid linked task relation
-- legacy request terminal state vs linked task state mismatch (e.g. completed request + todo task, accepted request + cancelled task)
-- accepted/completed/cancelled timestamps inconsistent with linked task timeline where deterministically checkable
+- missing/invalid/duplicate linked task
+- status vs linked Task contradiction
+- lifecycle timestamp contradiction
+- assignment_change_request_tasks scope mismatch
+- any current row that cannot be represented without guessing
 
-Anomaly rowはmigration audit issueとして隔離し、推測task作成・推測completion・自動片寄せをしない。対象household/rowが解決またはexplicit legacy-unknown treatmentに分類されるまでsemantic cutover gateを通さない。
+No inferred repair.
 
-### 21.5 Task outcome reason
+### 21.5 Task outcome
 
-Existing `skipped`はlegacy dataだけから`not_needed`/`could_not_do`を推測しない。reason不明なら`legacy_unknown_outcome` compatibility classificationとして扱い、新writeからrecognized `outcome_reason`を必須化する。
+Legacy skipped reason is not guessed.
 
-### 21.6 Test data
+New writes distinguish at least could_not_do / not_needed_this_occurrence / expired_occurrence.
 
-existing production dataをtest扱いへ再分類しない。new test mode開始以降のみexplicit test contextを持つ。
+### 21.6 Task→Google mirror
 
-## 22. Index/constraint expectations
+Inventory every existing `family_ops_calendar_mirrors` row:
 
-詳細DDL時に最低限:
+- projection key
+- kind
+- task instance
+- connection
+- provider event ID
+- provider ETag
+- desired action
+- sync/lease/retry state
 
-- ActorRef kind-specific CHECK/FK/unique
-- production aggregate cannot reference simulated ActorRef
-- test aggregate ActorRef test_context equality
-- active request attempt unique per request
+Do not auto-create Family Events from mirrors.
+
+Explicit adoption to Family Event follows `08` §10 ownership-transfer protocol.
+
+### 21.7 Test data
+
+Existing production data is not reclassified as test. Only explicitly created simulation state gets test context.
+
+---
+
+## 22. Index / constraint expectations
+
+Detailed DDL review must cover at least:
+
+- ActorRef kind/FK/uniqueness
+- production/test ActorRef isolation
+- active request attempt uniqueness
+- Request legacy tuple CHECK-valid projection
 - active anyone claim consistency
-- participant active uniqueness
-- reconciliation session item FK
-- source doc -> extraction -> fact composite household isolation
-- event external link uniqueness
-- candidate target/source indexes
-- test_context leakageを防ぐ FK/check
+- participant uniqueness + compatibility-primary constraint during migration
+- reconciliation item FK + test context
+- shopping claim/revision consistency
+- source/extraction/fact household isolation
+- Event external link/provider identity uniqueness
+- exactly-one Google writer-owner invariant across Task bridge vs Family Event link
+- candidate source/target indexes
 - RLS household isolation
-- service-role-only mutation RPC privileges
+- service-role-only sensitive mutation RPCs
 
-を設計レビューする。
+---
 
 ## 23. No destructive shortcut
 
-実装時に以下を禁止する。
+禁止:
 
-- old request rows一括削除
-- completed historyの書換え
-- recurrence historyのcollapse
-- raw nursery image cleanupと同時にconfirmed structured data削除
-- Google cacheをfamily event truthへ直接流用
-- test simulated recordsをproduction spouse identityへupdate
-- P1後にlegacy readをcurrent truthとして復活
-- simulated actorをoperator real userとして保存
+- old Request rows一括削除
+- completed history書換え
+- recurrence history collapse
+- legacy Request timestampをcanonical historyとして扱う
+- Google provider identityをtitle/dateから再構築
+- Task mirrorとFamily Event writerを同じprovider eventへ同時に残す
+- raw nursery image削除とconfirmed structured data削除を連動
+- Google cacheをFamily Event truthとして直接流用
+- simulated actorをreal spouse/operator IDへupdate
+- P1後legacy current-truth reader/writer復活
+- production dataをtestへ再分類
