@@ -15,12 +15,25 @@
 4. `V2`, `FINAL`, `LATEST` 等の平行コピーを作らず、同じcanonical pathを更新する。履歴はGit historyで追跡する。
 5. 独立レビュー結果は、採用するものをBaselineへ反映して初めて確定とする。レビュー本文そのものは要求の正ではない。
 6. DOCX/PDF等は配布用exportであり、canonical Markdownから生成する。
-7. 旧 `docs/design/v6/*` 等とBaselineが競合する場合、要求・UXについてはBaselineを優先し、詳細設計で差分を解消する。
+7. normative sourceのscopeは `docs/adr/0012-requirements-ux-canonical-governance.md` に従う。Baselineはrequirements/UXの正、`docs/design/v6/*` と既存ADRはBaselineと非競合なarchitecture/implementation判断で引き続き有劻。競合をREADMEだけで黙って上書きしない。
 
 ## Review workflow
 
 1. Baseline更新をdocs PRとして作成する。
 2. `FAMILY-OPS-INDEPENDENT-REVIEW-REQUEST.md` を使い、CURRENT `main` とPR headを比較して独立レビューする。
-3. BLOCKER/HIGH等の採用指摘をBaselineへ反映する。
-4. レビュー条件を満たしたらPRをmergeし、`main` のBaselineを新しい正とする。
-5. 以後の詳細設計・実装はその`main`版を入力として行う。
+3. BLOCKER/HIGH等の採用指摘をBaselineへ反映し、normative governance変更が必要ならADRも同じPRで更新する。
+4. 採用条件を反映後、独立再レビューでmerge gateを確認する。
+5. レビュー条件を満たしたらPRをmergeし、`main` のBaselineを新しい正とする.
+6. 以後の詳細設計・実装はその`main`版を入力として行う。
+
+
+## Review history
+
+### PR #39 — Round 1
+
+- Verdict: `GO WITH CONDITIONS`
+- Findings: `BLOCKER 1 / HIGH 5 / MEDIUM 4`
+- Resolution: Baseline v1.1 + ADR 0012で採用条件を反映済み
+- Current gate: **independent re-review required before merge / detailed design**
+- Review本文は要求の正ではなく、採用事項はBaseline本文へ統合済み
+

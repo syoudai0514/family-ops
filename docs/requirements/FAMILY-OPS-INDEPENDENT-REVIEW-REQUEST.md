@@ -14,6 +14,9 @@ review target:
 source-of-truth policy:
 `docs/requirements/README.md`
 
+governance ADR:
+`docs/adr/0012-requirements-ux-canonical-governance.md`
+
 ==================================================
 0. IMPORTANT
 ==================================================
@@ -34,7 +37,7 @@ source-of-truth policy:
 - 本番データ変更
 
 最初にCURRENT GitHub `main` をfresh readしてください。
-古いPR説明や過去の会話だけを前提にせず、CURRENT実装・CURRENT docsとreview targetを比較してください。
+古いPR説明や過去の会話だけを前提にせず、CURRENT実装・CURRENT docsと添付仕様書を比較してください。
 
 GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最初から最後まで通読**してからレビューを開始してください。添付ファイルや過去のコピーではなく、レビュー対象PRのhead（merge済みならCURRENT `main`）にあるcanonical pathを使用してください。
 
@@ -73,7 +76,10 @@ GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最
 - AIは候補を作るが、重要な担当変更や人が確定した値を勝手に確定/上書きしない
 - 園画像の「明記された事実」と「AI推測」を分離する
 - Google Calendarは予定中心、おうちノートは家庭作業中心
-- 1人LINEテストモードから2人本番運用へ同じ業務モデルで移行する
+- 1人LINEテストモードから2人本番運用へ同じcore domain modelで移行する。ただしsimulated actorの外部副作用・実ユーザー合意は隔離する
+- Requestは合意まで、了承後の実行状態はlinked ToDoを正とする
+- `大体やった` はgroup-level evidenceであり、子taskの第四statusにしない
+- human-confirmed / Google / image fact / AI inferenceは共通Authority原則で競合解消する
 
 ==================================================
 3. REVIEW SCOPE
@@ -106,7 +112,13 @@ GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最
 
 これらが矛盾なく共存できるか確認してください。
 
-特に、**未来の基本ルール変更時に個別合意を守りつつ、双方へ確認する設計**が過剰に複雑ではないか、または逆に不足していないかを評価してください。
+特に `誰でもOK` claimのtakeover救済、口頭調整済み重要変更の `[違う]` 訂正、future個別合意のbulk確認が、状態爆発を増やさず成立しているか確認してください。
+
+特に、
+
+**未来の基本ルール変更時に個別合意を守りつつ、双方へ確認する設計**
+
+が過剰に複雑ではないか、または逆に不足していないかを評価してください。
 
 ### C. Request / assignment negotiation
 
@@ -120,10 +132,11 @@ GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最
 - 担当調整中
 - 返答期限超過
 - 依頼内容変更
-- 了承後の取消
+- 亖承後の取消
 - 事前調整済み
 
 `確認してみる` は自分側の予定調整、`相談する` は相手との代替案相談です。
+
 この違いがユーザーに自然に理解できるかも評価してください。
 
 ### D. Actuals / history
@@ -142,7 +155,11 @@ GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最
 - 誰でもOKをclaimして実施
 - 後日訂正
 
-特に、**入力を楽にするほど実績の正確さが下がる問題**に対して、このBaselineの落とし所が妥当かを厳しく評価してください。
+特に、
+
+**入力を楽にするほど実績の正確さが下がる問題**
+
+に対して、このBaselineの落とし所が妥当かを厳しく評価してください。
 
 ### E. Event / preparation
 
@@ -163,6 +180,8 @@ GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最
 - Google側削除
 - duplicate link
 - human-confirmed valueとのconflict
+- protected valueと競合しないGoogle更新のみ自動反映するAuthority rule
+- Google/image/AIへ共通化したcandidate/diff原則
 
 で、sync loop、重複、silent overwrite、履歴破壊のリスクを指摘してください。
 
@@ -193,141 +212,10 @@ GitHub上の `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を**最
 - 明記情報 vs AI推測の分離
 - 園別の確認済みルール学習
 - 既存予定との重複/変更/競合
-- 元画像保持とprivacy
+- 元画像保持とprivacy invariant（家庭内private / 第三者情報非利用 / いつでもraw削除 / raw削除後も確定家庭情報のみ維持）
 - 大量月間予定表から重要項目を優先する方式
 - QR/URL抽出の安全性
 
 ### H. LINE ↔ PWA
 
-- deep linkで対象作業をそのまま引き継げる設計になっているか
-- LINEとPWAで同時編集した時のconflict
-- PWA保存後に自分宛LINEを返さない方針
-- 一覧操作でreload/scroll resetを起こさない要件
-
-### I. One-user test mode
-
-妻を実LINEユーザーとして追加する前に、同じLINEでパパ/ママ双方を疑似操作する要件があります。
-
-- test modeが本番モデルを汚さないか
-- operatorとsimulated actorを分離できるか
-- analyticsからtest dataを除外できるか
-- 2人本番へ移行時に再設計不要か
-
-を確認してください。
-
-==================================================
-4. CURRENT IMPLEMENTATION GAP REVIEW
-==================================================
-
-CURRENT `main` を確認し、review targetのBaselineと現実装が衝突する箇所を特定してください。Baseline自体がopen PR上にある場合は、そのPRのhead版を要求仕様として読み、実装比較はCURRENT `main` に対して行ってください。
-
-特に既存の:
-
-- Today / Daily UI
-- routine tasks
-- requests
-- handovers
-- task completion / history
-- LINE Flex / conversation handling
-- scheduled LINE notifications
-- Google Calendar sync
-- recurrence / assignment model
-- PWA navigation
-
-について、
-
-1. そのまま活かせる
-2. 拡張すればよい
-3. 方針が衝突するため再設計が必要
-
-を分類してください。
-
-ただし今回は**修正しないでください**。
-
-==================================================
-5. REQUIRED REVIEW OUTPUT
-==================================================
-
-最初に結論だけ短く示し、その後根拠を詳細化してください。
-
-各指摘は必ず以下で分類してください。
-
-- `BLOCKER`
-- `HIGH`
-- `MEDIUM`
-- `LOW`
-
-各指摘の形式:
-
-**問題**
-→ **実際に起こる家庭内シナリオ**
-→ **なぜ問題か**
-→ **推奨修正**
-
-単なる好みや抽象的な感想ではなく、具体的な家庭内操作で説明してください。
-
-また、以下を必ず出してください。
-
-### 5.1 Contradiction matrix
-
-仕様内で相互に矛盾・緊張する要件を列挙してください。
-
-例:
-- LINEに全部出す vs 通知/可読性
-- 実績を正確に残す vs 入力を最短にする
-- 自動推定 vs 人の確認回数
-
-### 5.2 Missing scenario list
-
-この仕様でまだ決まっていない、実装前に決めるべき現実的シナリオを重要度順に列挙してください。
-ただし「何でも念のため」と無限に増やさず、実運用で起こる可能性・事故影響が高いものを優先してください。
-
-### 5.3 Simplification opportunities
-
-同等の価値を保ちながら、状態・画面・通知・操作を減らせる箇所があれば提案してください。
-
-### 5.4 Data-model pressure points
-
-DB schemaそのものは実装しなくてよいですが、要求を実現する上で特に危険な概念境界を指摘してください。
-
-例:
-- task definition vs occurrence
-- assignment vs claim vs actual performer
-- source fact vs AI inference
-- event vs task group
-- request vs assignment-change negotiation
-
-### 5.5 Final verdict
-
-最後に必ず、
-
-- `GO`
-- `GO WITH CONDITIONS`
-- `NO-GO`
-
-のいずれかで、**このRequirements Baselineを詳細設計フェーズへ進めてよいか**を判定してください。
-
-`GO WITH CONDITIONS` / `NO-GO` の場合、詳細設計開始前に直すべき項目を明示してください。
-
-==================================================
-6. REVIEW POSTURE
-==================================================
-
-この仕様を肯定することが目的ではありません。
-
-- 過剰設計
-- 状態爆発
-- 通知疲れ
-- 家庭内での心理的圧
-- 入力負荷
-- 二重対応
-- silent overwrite
-- AI誤判定
-- image privacy
-- test data contamination
-
-が起きる設計なら、遠慮なく止めてください。
-
-一方、問題がない箇所まで変更案を出す必要はありません。
-
-**実際に夫婦が毎日使い続けられるか**を最優先に独立評価してください。
+- deep linkで対象作業をそのまま引き継げる設計になな�

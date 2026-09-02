@@ -1,14 +1,17 @@
 # Architecture Decision Records
 
-Lightweight ADRs for decisions made during implementation that aren't
-themselves part of the vendored v6 design package (`docs/design/v6/`, which
-remains normative and is never edited by an ADR). An ADR here records a
-decision this repository's implementation committed to, and why.
+Lightweight ADRs for explicit implementation and architecture decisions.
+
+Historically, ADR 0001 committed the repository to the vendored
+`docs/design/v6/` package as the sole normative source. ADR 0012 deliberately
+scope-limits that decision: the current canonical Requirements & UX Baseline
+governs product requirements/UX, while v6 remains normative for non-conflicting
+architecture and implementation design.
 
 ## Index
 
-- [0001](0001-v6-baseline-commitment.md) — Commit to the v6 design package as
-  the sole normative source; no v7
+- [0001](0001-v6-baseline-commitment.md) — Original v6 normative-source
+  commitment; **superseded in part by 0012 for requirements/UX scope**
 - [0002](0002-dropoff-pickup-setup-endpoint.md) — A new `configure-dropoff-pickup`
   endpoint fills a real v6 gap (WP2 names the capability, no endpoint is
   named for it)
@@ -49,10 +52,13 @@ decision this repository's implementation committed to, and why.
   surface (Today Priority 2) and the Today calendar/conflict schedule view
   (Today Priority 1), both reusing existing backend RPCs/conflict logic with
   zero re-derivation
+- [0012](0012-requirements-ux-canonical-governance.md) — Establish the
+  canonical Requirements & UX Baseline as the normative product source while
+  retaining v6 for non-conflicting architecture/implementation decisions
 
 ## Format
 
 Each ADR is a short Markdown file: title, status, context, decision,
 consequences. Number sequentially (`0001-`, `0002-`, ...). Superseding an
-earlier decision adds a new ADR and marks the old one's status
-`Superseded by NNNN`, rather than editing history away.
+earlier decision adds a new ADR and marks the old decision's status with the
+superseding ADR rather than editing history away.
