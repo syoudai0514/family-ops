@@ -12,7 +12,8 @@
 create or replace function private.fn_assert_no_simulated_legacy_user_substitution(
   p_household_id uuid,
   p_actor_ref_id uuid,
-  p_legacy_user_id uuid
+  p_legacy_user_id uuid,
+  p_test_context_id uuid
 ) returns void
 language plpgsql
 security invoker
@@ -40,16 +41,22 @@ begin
     raise exception 'SIMULATED_ACTOR_LEGACY_USER_SUBSTITUTION';
   end if;
 
-  -- For test-scoped rows, a real ActorRef may use a legacy mirror only for that
-  -- same real household member. Production R0 real-user drift is intentionally
-  -- handled by the rerunnable compatibility backfill instead of being rejected
-  -- here, so this helper does not reject real-user mismatch by itself.
+  -- On a test-scoped row, a real ActorRef may carry a legacy compatibility UUID
+  -- only for that exact same real household member. Production R0 deliberately
+  -- allows a temporary real-user mismatch because the old runtime writes only
+  -- the legacy column; the rerunnable backfill/reconciliation owns convergence.
+  if p_test_context_id is not null
+     and v_kind = 'real_user'
+     and p_legacy_user_id is not null
+     and p_legacy_user_id is distinct from v_real_user_id then
+    raise exception 'TEST_ROW_LEGACY_USER_ACTOR_REF_MISMATCH';
+  end if;
 end;
 $$;
 
-revoke all on function private.fn_assert_no_simulated_legacy_user_substitution(uuid, uuid, uuid)
+revoke all on function private.fn_assert_no_simulated_legacy_user_substitution(uuid, uuid, uuid, uuid)
   from public, anon, authenticated;
-grant execute on function private.fn_assert_no_simulated_legacy_user_substitution(uuid, uuid, uuid)
+grant execute on function private.fn_assert_no_simulated_legacy_user_substitution(uuid, uuid, uuid, uuid)
   to service_role;
 
 create or replace function private.fn_enforce_task_legacy_actor_compatibility()
@@ -62,7 +69,8 @@ begin
   perform private.fn_assert_no_simulated_legacy_user_substitution(
     new.household_id,
     new.planned_assignee_actor_ref_id,
-    new.planned_assignee_id
+    new.planned_assignee_id,
+    new.test_context_id
   );
   return new;
 end;
@@ -85,7 +93,8 @@ begin
   perform private.fn_assert_no_simulated_legacy_user_substitution(
     new.household_id,
     new.actor_ref_id,
-    new.actor_id
+    new.actor_id,
+    new.test_context_id
   );
   return new;
 end;
@@ -108,12 +117,14 @@ begin
   perform private.fn_assert_no_simulated_legacy_user_substitution(
     new.household_id,
     new.requester_actor_ref_id,
-    new.requester_id
+    new.requester_id,
+    new.test_context_id
   );
   perform private.fn_assert_no_simulated_legacy_user_substitution(
     new.household_id,
     new.recipient_actor_ref_id,
-    new.recipient_id
+    new.recipient_id,
+    new.test_context_id
   );
   return new;
 end;
@@ -136,7 +147,8 @@ begin
   perform private.fn_assert_no_simulated_legacy_user_substitution(
     new.household_id,
     new.author_actor_ref_id,
-    new.author_id
+    new.author_id,
+    new.test_context_id
   );
   return new;
 end;
@@ -159,7 +171,8 @@ begin
   perform private.fn_assert_no_simulated_legacy_user_substitution(
     new.household_id,
     new.assignee_actor_ref_id,
-    new.assignee_id
+    new.assignee_id,
+    new.test_context_id
   );
   return new;
 end;
@@ -228,3 +241,26 @@ create trigger task_actual_participants_compat_primary_identity_guard
   before insert or update of actor_ref_id, task_instance_id, compatibility_primary, test_context_id
   on public.task_actual_participants
   for each row execute function private.fn_enforce_participant_compatibility_primary_identity();
+
+-- Fail closed if the two earlier Batch-1A migrations somehow left a row that
+-- already violates the compatibility identity invariant before these triggers
+-- become active. This is expected to be empty in a normal sequential apply.
+do $$
+begin
+  if exists (
+    select 1
+    from public.task_actual_participants p
+    join public.domain_actor_refs a
+      on a.household_id = p.household_id and a.id = p.actor_ref_id
+    join public.task_instances t
+      on t.household_id = p.household_id and t.id = p.task_instance_id
+    where p.compatibility_primary
+      and p.removed_at is null
+      and (a.actor_kind <> 'real_user'
+           or t.actual_completed_by_id is null
+           or t.actual_completed_by_id is distinct from a.real_user_id)
+  ) then
+    raise exception 'EXISTING_COMPATIBILITY_PRIMARY_IDENTITY_DRIFT';
+  end if;
+end;
+$$;
