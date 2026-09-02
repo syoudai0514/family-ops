@@ -17,9 +17,7 @@ Do not modify code, docs, migrations, Supabase, Edge Functions, LINE, Google, Ve
 
 This is a focused final verification. Round 4 closed all BLOCKER/HIGH findings. One independent reviewer returned `GO`; another returned `GO WITH CONDITIONS` with exactly one MEDIUM: stale physical wording in `02_DATA_MODEL_AND_MIGRATION.md`.
 
-The current PR head contains the requested synchronization. Verify that condition and regression only.
-
----
+The current PR head contains the requested synchronization. Verify that condition and regressions only.
 
 ## 1. Sources to fresh-read
 
@@ -32,12 +30,7 @@ Mandatory:
 5. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 6. proposed ADR 0013
 
-Fresh-read CURRENT migrations and independently verify the established physical baseline:
-
-- 78 migration files
-- public 27
-- private 23
-- total 50
+Fresh-read CURRENT migrations and independently verify the established physical baseline: 78 migration files, public 27, private 23, total 50.
 
 At minimum inspect:
 
@@ -45,8 +38,6 @@ At minimum inspect:
 - `20260822000003_family_ops_google_outbox.sql`
 - `20260822000005_review_fix_p1_domain.sql`
 - `20260824000002_google_calendar_permission_loss.sql`
-
----
 
 ## 2. Single Round 4 condition
 
@@ -65,8 +56,6 @@ Verify current `02_DATA_MODEL_AND_MIGRATION.md` now states:
 8. index/constraint expectations include the three-path mutation-owner invariant and orphan blocker.
 9. destructive-shortcut rules forbid stale deletion authorization and silent orphan promotion.
 
----
-
 ## 3. Regression verification
 
 Confirm no regression in:
@@ -82,8 +71,6 @@ Confirm no regression in:
 - outcome_reason / compatibility-primary / consultation proposer confirmation
 - Google three-path mutation ownership + stale destructive DELETE guard
 
----
-
 ## 4. Requirements Final-GO MEDIUM 3
 
 Report PASS/PARTIAL/FAIL for:
@@ -93,8 +80,6 @@ Report PASS/PARTIAL/FAIL for:
 3. one-user synthetic delivery + direct domain/test isolation
 
 Target: **3/3 PASS**.
-
----
 
 ## 5. Final gate
 
