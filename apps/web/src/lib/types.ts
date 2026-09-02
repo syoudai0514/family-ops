@@ -34,6 +34,12 @@ export interface Profile {
 
 export type RoutinePhase = 'morning' | 'evening' | 'anytime';
 export type CompletionMode = 'whole' | 'subtasks';
+export type AssignmentMode = 'person' | 'unassigned' | 'anyone';
+export type AttentionState = 'active' | 'waiting';
+export type DuplicateSensitivity = 'normal' | 'avoid_duplicate' | 'safety_critical';
+export type CarryoverPolicy = 'occurrence_ends' | 'until_done' | 'until_deadline' | 'separate_next_occurrence';
+export type TaskExpectation = 'required' | 'normal' | 'optional';
+export type EarlyCompletionPolicy = 'none' | 'recommended' | 'required_before';
 
 export interface TaskDefinition {
   id: string;
@@ -47,6 +53,11 @@ export interface TaskDefinition {
   sort_order: number;
   task_kind?: TaskKind;
   include_in_routine_line?: boolean;
+  default_expectation?: TaskExpectation | null;
+  carryover_policy?: CarryoverPolicy | null;
+  duplicate_sensitivity?: DuplicateSensitivity | null;
+  early_completion_policy?: EarlyCompletionPolicy | null;
+  default_duration_minutes?: number | null;
 }
 
 export type TaskKind = 'transport' | 'morning_preparation' | 'morning_chore' | 'evening_chore' | 'special' | 'generic_once';
@@ -81,6 +92,22 @@ export interface TaskInstance {
   status: TaskInstanceStatus;
   actual_completed_by_id: string | null;
   completed_at: string | null;
+  assignment_mode?: AssignmentMode | null;
+  assignment_source?: string | null;
+  planned_assignee_actor_ref_id?: string | null;
+  active_claimant_actor_ref_id?: string | null;
+  claimed_at?: string | null;
+  expectation?: TaskExpectation | null;
+  carryover_policy?: CarryoverPolicy | null;
+  duplicate_sensitivity?: DuplicateSensitivity | null;
+  early_completion_policy?: EarlyCompletionPolicy | null;
+  available_from?: string | null;
+  attention_state?: AttentionState;
+  waiting_note?: string | null;
+  next_check_at?: string | null;
+  outcome_reason?: 'could_not_do' | 'not_needed_this_occurrence' | 'expired_occurrence' | null;
+  revision?: number;
+  test_context_id?: string | null;
 }
 
 export interface TaskSubtaskInstance {
@@ -96,6 +123,7 @@ export interface TaskSubtaskInstance {
 }
 
 export type RequestStatus = 'pending' | 'accepted' | 'declined' | 'completed' | 'cancelled';
+export type RequestAttemptState = 'pending' | 'checking' | 'consulting' | 'awaiting_confirmation' | 'accepted' | 'declined' | 'expired' | 'cancelled';
 
 export interface RequestRow {
   id: string;
@@ -113,6 +141,12 @@ export interface RequestRow {
   cancelled_at: string | null;
   assignment_task_instance_id?: string | null;
   assignment_scope?: 'once' | 'this_week' | null;
+  requester_actor_ref_id?: string | null;
+  recipient_actor_ref_id?: string | null;
+  request_kind?: 'light' | 'assignment_change' | null;
+  closed_at?: string | null;
+  revision?: number;
+  test_context_id?: string | null;
 }
 
 export type HandoverPeriod = 'morning' | 'day' | 'evening' | 'other';
@@ -151,6 +185,13 @@ export interface ShoppingItem {
   ordered_at: string | null;
   purchased_at: string | null;
   arrived_at: string | null;
+  assignment_mode?: AssignmentMode | null;
+  assignee_actor_ref_id?: string | null;
+  active_claimant_actor_ref_id?: string | null;
+  claimed_at?: string | null;
+  duplicate_sensitivity?: DuplicateSensitivity | null;
+  revision?: number;
+  test_context_id?: string | null;
 }
 
 export interface UserNotification {
@@ -164,6 +205,12 @@ export interface UserNotification {
   dedup_key: string | null;
   read_at: string | null;
   created_at: string;
+  notification_kind?: string | null;
+  urgency?: 'immediate' | 'digest' | 'in_app_only' | null;
+  safety_class?: string | null;
+  bundle_key?: string | null;
+  business_expires_at?: string | null;
+  test_context_id?: string | null;
 }
 
 export interface NotificationPreferences {
@@ -192,7 +239,10 @@ export type RoutineScheduleKind =
   | 'nonpickup_evening_checklist'
   | 'nonpickup_evening_checkin'
   | 'nonworkday_morning_digest'
-  | 'nonworkday_checkin';
+  | 'nonworkday_checkin'
+  | 'daily_brief_weekday_morning'
+  | 'daily_brief_nonworkday_morning'
+  | 'daily_brief_evening';
 
 export const ROUTINE_SCHEDULE_KINDS: RoutineScheduleKind[] = [
   'daily_assignment',
@@ -204,6 +254,9 @@ export const ROUTINE_SCHEDULE_KINDS: RoutineScheduleKind[] = [
   'nonpickup_evening_checkin',
   'nonworkday_morning_digest',
   'nonworkday_checkin',
+  'daily_brief_weekday_morning',
+  'daily_brief_nonworkday_morning',
+  'daily_brief_evening',
 ];
 
 export interface HouseholdRoutineSchedule {
@@ -276,16 +329,17 @@ export interface PendingAction {
   created_at: string;
 }
 
-// Sol re-review #3 fix (P1-2, docs/adr/0011) — Today Priority 1's "今/次の予定"
-// (02_UX_AND_SCREENS.md #3). Mirrors server_tx_get_today_schedule's jsonb
-// shape. occurrences/assignments are already filtered/conflict-annotated
-// server-side — the frontend renders this as-is, no calendar-domain
-// computation of its own.
+// Today/LINE schedule adapter. Google all-day occurrences intentionally carry
+// null timestamps plus their original date range; clients render them as
+// "終日" and never manufacture 00:00.
 export interface TodayCalendarOccurrence {
   occurrence_key: string;
   title: string | null;
-  starts_at: string;
+  starts_at: string | null;
   ends_at: string | null;
+  is_all_day?: boolean;
+  all_day_start?: string | null;
+  all_day_end_exclusive?: string | null;
   busy_user_ids: string[];
 }
 
@@ -305,4 +359,45 @@ export interface TodaySchedule {
   calendar_stale: boolean;
   occurrences: TodayCalendarOccurrence[];
   assignments: TodayScheduleAssignment[];
+  brief_generated_at?: string;
+}
+
+export interface DailyBriefActionTarget {
+  kind: string;
+  [key: string]: unknown;
+}
+
+export interface DailyBriefTaskItem {
+  task_id: string;
+  title: string;
+  status?: TaskInstanceStatus;
+  due_at: string | null;
+  revision: number;
+  action_target: DailyBriefActionTarget;
+}
+
+export interface DailyBrief {
+  generated_at: string;
+  household_id: string;
+  local_date: string;
+  daypart: 'morning' | 'daytime' | 'evening';
+  urgent_actions: Array<Record<string, unknown>>;
+  exceptions: Array<Record<string, unknown>>;
+  active_infos: Array<Record<string, unknown>>;
+  already_handled: Array<Record<string, unknown>>;
+  burden_reducing_completed: Array<Record<string, unknown>>;
+  own_task_groups: {
+    morning: DailyBriefTaskItem[];
+    daytime: DailyBriefTaskItem[];
+    evening: DailyBriefTaskItem[];
+  };
+  partner_summary: {
+    open_count: number;
+    household_critical: Array<Record<string, unknown>>;
+  };
+  carryovers: Array<Record<string, unknown>>;
+  waiting_checks: Array<Record<string, unknown>>;
+  reconciliation: Record<string, unknown>;
+  schedule: Array<Record<string, unknown>>;
+  shopping: Array<Record<string, unknown>>;
 }
