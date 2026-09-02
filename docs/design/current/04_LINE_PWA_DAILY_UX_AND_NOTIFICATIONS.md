@@ -24,6 +24,7 @@ Minimum sections:
    - request/assignment response needed
    - unassigned deadline risk
    - stale/conflict requiring human resolution
+   - waiting task hard-deadline risk
 2. `exceptions`
    - today-specific assignment change
    - unusual school/event requirement
@@ -33,34 +34,50 @@ Minimum sections:
 4. `already_handled`
    - only items whose completion materially reduces current user's expected work
 5. `own_task_groups`
-   - morning/evening/other
+   - morning/evening/other; normal active tasks only
 6. `partner_summary`
    - count + household-critical explicit items
 7. `carryovers`
    - separate, with result certainty
-8. `reconciliation`
+8. `waiting_checks`
+   - waiting tasks whose next-check is due/past or hard deadline risk is meaningful
+9. `reconciliation`
    - relevant group input status
-9. `schedule`
+10. `schedule`
    - Family Ops event + Google occurrence status
 
 Every item includes stable `action_target` for LINE postback/PWA deep link.
+
+### 2.1 Waiting visibility rule
+
+`attention_state=waiting`のtaskは通常の`own_task_groups`や「未完了」nagへ出さない。
+
+- next_check_atが未来 -> 原則非表示、詳細では`待ち`として閲覧可能
+- next_check_atが到来/超過 -> `waiting_checks`へ `確認日です` として再浮上
+- due_atがrisk window -> `urgent_actions`へ `待ち中ですが期限が近い` として表示可能
+- next-check到来だけでtaskをactiveへ自動復帰させない
+- `[待ちを続ける] [再開する] [確認日を変更]` から明示操作
+
+`待ち`は未達・失敗・完了のいずれにも集計しない。
 
 ## 3. Daypart ordering
 
 ### Morning
 
 1. 🔴 まず確認
-2. ⚠️ いつもと違うこと
-3. ℹ️ 引き継ぎ・共有
-4. ✅ もう済んでいること（burden reducing only）
-5. 🌅 朝にやること
-6. 🌙 夜にやること
-7. 💡 余力があれば
-8. partner summary
+2. ⏳ 待ちの確認日（該当時のみ）
+3. ⚠️ いつもと違うこと
+4. ℹ️ 引き継ぎ・共有
+5. ✅ もう済んでいること（burden reducing only）
+6. 🌅 朝にやること
+7. 🌙 夜にやること
+8. 💡 余力があれば
+9. partner summary
 
 ### Daytime `今日`
 
 - urgent/current schedule first
+- due waiting check when applicable
 - current-time tasks
 - upcoming today tasks
 - active info
@@ -69,6 +86,7 @@ Every item includes stable `action_target` for LINE postback/PWA deep link.
 ### Evening
 
 - unresolved risk
+- waiting deadline risk / next-check unresolved if relevant
 - remaining tonight tasks
 - tomorrow-impacting prep
 - morning summary (`朝 n/n完了`) rather than replay
@@ -86,6 +104,7 @@ Readability controls:
 - completed normal morning details collapse in evening
 - optional tasks separated under `余力があれば`
 - carried tasks have a separate weak heading
+- waiting tasks are not mixed with ordinary incomplete tasks
 
 Do not solve noise by hiding all own tasks behind PWA.
 
@@ -117,6 +136,7 @@ Benefits:
 - task completed just before 06:30 disappears/reflects done
 - late assignment change is current
 - stale request button not emitted
+- waiting task only appears when next-check/deadline semantics require it
 
 If calendar cache is stale, send household state and clearly mark calendar section stale; do not suppress entire morning brief.
 
@@ -136,6 +156,8 @@ Normal completed morning work -> compact `朝 4/4 完了`.
 
 If no meaningful remaining work and reconciliation already settled, message can be shortened substantially; do not send empty nag sections.
 
+Waiting items do not create a routine evening nag unless their check/deadline is relevant now.
+
 ## 8. Reconciliation UX
 
 ### 8.1 Top level
@@ -144,9 +166,11 @@ If no meaningful remaining work and reconciliation already settled, message can 
 - `[大体やった]`
 - `[個別で答える]`
 
+Waiting tasks are excluded from the default reconciliation eligible set.
+
 ### 8.2 `全部やった`
 
-Server determines eligible own required/normal tasks.
+Server determines eligible own required/normal active tasks.
 
 Response:
 
@@ -191,13 +215,44 @@ Example:
 
 Parser result preview:
 
-- 洗濯: できなかった
+- 洗濯: できなかった (`outcome_reason=could_not_do`)
 - 着替え: ママ実施
 - 食器: 自分完了（残りとして推定）
 
+`今回は不要`は`できなかった`と別で表示/保存し、両方を同じskipped reasonへ潰さない。
+
 `[この内容で登録] [直す]`
 
-## 9. PWA Today
+## 9. Waiting task UX
+
+Task detail / contextual menuで通常操作を汚さないsecondary actionとして:
+
+- `[待ちにする]`
+- waiting中は `[再開する] [確認日を変更]`
+
+`待ちにする` mini form:
+
+- 状況メモ optional
+- 次に確認する日 optional
+- 本来の期限は既存due_atを表示するが上書き必須ではない
+
+Example:
+
+`写真館へ問い合わせ済み。返答待ち`
+`次に確認: 9/10`
+`期限: 9/15`
+
+Next-check day LINE/PWA:
+
+`⏳ 写真館の返答を確認する日です [待ちを続ける] [再開する]`
+
+Hard deadline risk:
+
+`🔴 写真館の件は待ち中ですが、期限が9/15です [確認する]`
+
+Normal waiting dayにはpush/nagしない。
+
+## 10. PWA Today
 
 PWA Today uses same section ordering but can provide richer interactions.
 
@@ -208,9 +263,10 @@ Rules:
 - optimistic UI only where server conflict semantics are safe
 - mutation response reconciles item in place
 - conflict returns current state card inline
+- waiting state updates inline without moving scroll unexpectedly
 - URL supports `date`, `group`, `task`, `request`, `event`, `candidate` context
 
-## 10. Deep links
+## 11. Deep links
 
 Examples:
 
@@ -227,7 +283,7 @@ After auth redirect, original app-relative path is restored.
 
 Stale deep link opens latest state rather than reenacting old operation.
 
-## 11. Fixed LINE menu
+## 12. Fixed LINE menu
 
 Target IA:
 
@@ -270,7 +326,7 @@ share/handover shortcut.
 - settings
 - PWA
 
-## 12. Request LINE UX
+## 13. Request LINE UX
 
 Incoming request first layer:
 
@@ -308,7 +364,7 @@ Old button:
 
 No hidden acceptance.
 
-## 13. Assignment change already agreed
+## 14. Assignment change already agreed
 
 When user says oral agreement done:
 
@@ -323,7 +379,7 @@ This is not an approval request.
 
 Minor chore assignment changes can be in next morning/evening brief lower section.
 
-## 14. Anyone claim UX
+## 15. Anyone claim UX
 
 Task display:
 
@@ -345,13 +401,13 @@ Takeover confirmation must show current claimant to avoid accidental steal.
 
 No push “パパが担当しました” for normal claim; state is visible on Today/shopping.
 
-## 15. Completion notification policy
+## 16. Completion notification policy
 
-### 15.1 Normal chore
+### 16.1 Normal chore
 
 Partner completion updates shared state; no immediate push.
 
-### 15.2 Burden-reducing next-view
+### 16.2 Burden-reducing next-view
 
 If partner completed a task that would otherwise appear in user's next morning/current workflow, DailyBrief may show neutral:
 
@@ -361,7 +417,7 @@ not:
 
 `ママがやってくれました`.
 
-### 15.3 Duplicate-sensitive task — Final GO MEDIUM-2
+### 16.3 Duplicate-sensitive task — Final GO MEDIUM-2
 
 For `duplicate_sensitivity=avoid_duplicate|safety_critical`, completion can create immediate neutral state message when another adult may act before next refresh.
 
@@ -375,7 +431,7 @@ Actor may be available in detail but not headline.
 
 `safety_critical` delivery priority can use critical LINE reserve if immediate behavior change is needed.
 
-## 16. Notification policy engine
+## 17. Notification policy engine
 
 Each intent resolves to:
 
@@ -390,6 +446,7 @@ Policy inputs:
 - reply/action required
 - deadline proximity
 - task duplicate sensitivity
+- waiting next-check/deadline risk
 - whether state changes behavior now
 - recipient preferences
 - line quota state
@@ -400,13 +457,14 @@ Hard rules:
 - new request requiring response -> immediate
 - assignment negotiation response/finalization -> immediate
 - important schedule/transport/medical change -> immediate
+- waiting next-check -> digest/current brief by default; hard-deadline risk may escalate
 - new light household share -> normally immediate once, but may be in-app/digest if explicitly low-impact/non-action and notification preference says so
 - normal task completion -> suppress immediate
 - duplicate-sensitive completion -> immediate neutral when needed
 - minor assignment change -> next digest
 - analysis/history -> never proactive push by default
 
-## 17. Bundling
+## 18. Bundling
 
 Same user action producing multiple partner-visible outcomes should create one semantic bundle.
 
@@ -421,7 +479,7 @@ Do not delay an urgent request waiting for unrelated future bundle.
 
 Scheduled morning/evening uses one message per recipient where quota/layout allows.
 
-## 18. LINE quota compatibility
+## 19. LINE quota compatibility
 
 Existing hard cap/reply-first/retry-key rules remain.
 
@@ -429,9 +487,9 @@ New policy must not bypass current quota system.
 
 Priority mapping suggestion:
 
-- critical: duplicate-sensitive safety / same-day transport unresolved
+- critical: duplicate-sensitive safety / same-day transport unresolved / waiting hard-deadline risk
 - normal: requests, important change
-- reminder: routine scheduled digest/noncritical reminder
+- reminder: routine scheduled digest/noncritical next-check reminder
 
 If push unavailable due quota:
 
@@ -440,7 +498,7 @@ If push unavailable due quota:
 - current interactive reply token may be used when applicable
 - do not fake “sent” status
 
-## 19. Stale message safety
+## 20. Stale message safety
 
 Every postback payload carries opaque resource + revision/attempt reference.
 
@@ -451,9 +509,10 @@ Examples:
 - stale `やる` -> request expired/current attempt message
 - stale `完了` after partner completed -> already completed state, no performer replacement
 - stale claim -> current claimant shown
+- stale waiting reminder after next_check changed/resumed -> latest waiting/current state
 - stale event candidate -> refreshed diff
 
-## 20. Natural-language multi-intent UX
+## 21. Natural-language multi-intent UX
 
 One message:
 
@@ -471,7 +530,7 @@ Partner notifications are sent only after user confirms the relevant partner-vis
 
 No five separate self-confirmation messages.
 
-## 21. Image intake entry UX
+## 22. Image intake entry UX
 
 User sends nursery/Codmon image directly or `追加 -> 画像から取り込む`.
 
@@ -483,7 +542,7 @@ When classifier confidence is high and explicit intake route used, skip redundan
 
 Normal family photo should not trigger task suggestions.
 
-## 22. PWA intake review
+## 23. PWA intake review
 
 Single page sections:
 
@@ -498,7 +557,7 @@ Item-level enable/edit, then one `登録`.
 
 Ambiguous child/school blocks only affected candidate, not unrelated high-confidence items.
 
-## 23. Accessibility and mobile interaction
+## 24. Accessibility and mobile interaction
 
 - minimum touch target appropriate for mobile
 - primary action labels explicit Japanese
@@ -507,17 +566,19 @@ Ambiguous child/school blocks only affected candidate, not unrelated high-confid
 - bottom-sheet/modal must preserve underlying Today position
 - after returning from deep detail, restore list filters/date/scroll where feasible
 
-## 24. Acceptance checks for daily UX
+## 25. Acceptance checks for daily UX
 
 At detailed design review, walkthrough at least:
 
 1. normal Monday: morning summary -> bulk complete -> evening all done
 2. evening `大体やった` with until_done tasks
-3. request checking past deadline + stale accept
-4. consultation one-side confirmation
-5. partner completes medication before user acts
-6. anyone claim + takeover
-7. oral pickup change + `[違う]`
-8. LINE/PWA same task concurrent completion
-9. weekend/holiday 09:00
-10. quota fallback while critical state remains visible
+3. task `待ち` -> next-check date -> Today reappearance -> continue waiting/resume -> hard deadline risk
+4. request checking past deadline + stale accept
+5. consultation one-side confirmation
+6. partner completes medication before user acts
+7. anyone claim + takeover
+8. oral pickup change + `[違う]`
+9. LINE/PWA same task concurrent completion
+10. `今回は不要` vs `できなかった` display/history separation
+11. weekend/holiday 09:00
+12. quota fallback while critical state remains visible
