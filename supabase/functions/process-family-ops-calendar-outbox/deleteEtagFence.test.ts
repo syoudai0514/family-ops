@@ -4,14 +4,18 @@ import {
   getEvent,
   GoogleCalendarApiError,
 } from "../_shared/googleCalendar.ts";
+import { deleteExistingEventWithFence } from "./conditionalDeleteWorkflow.ts";
 
-async function assertMissingEtagGetFailsBeforeMutation(eventId: string) {
+async function assertMissingEtagWorkflowFailsBeforeAuthorizationAndDelete(eventId: string) {
   const originalFetch = globalThis.fetch;
   let fetchCount = 0;
-  let deleteCount = 0;
+  let providerDeleteCount = 0;
+  let authorizeCount = 0;
+  let deleteWorkflowCount = 0;
+
   globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
     fetchCount += 1;
-    if (init?.method === "DELETE") deleteCount += 1;
+    if (init?.method === "DELETE") providerDeleteCount += 1;
     return Promise.resolve(new Response(
       JSON.stringify({ id: eventId }),
       { status: 200, headers: { "Content-Type": "application/json" } },
@@ -20,23 +24,97 @@ async function assertMissingEtagGetFailsBeforeMutation(eventId: string) {
 
   try {
     await assertRejects(
-      () => getEvent({ accessToken: "token", calendarId: "calendar", eventId }),
+      () => deleteExistingEventWithFence({
+        readEvent: () => getEvent({ accessToken: "token", calendarId: "calendar", eventId }),
+        authorize: async () => {
+          authorizeCount += 1;
+          return {
+            authorized: true,
+            request_deadline_at: new Date(Date.now() + 5_000).toISOString(),
+          };
+        },
+        deleteWithEtag: async (etag) => {
+          deleteWorkflowCount += 1;
+          return await deleteEvent({
+            accessToken: "token",
+            calendarId: "calendar",
+            eventId,
+            ifMatchEtag: etag,
+          });
+        },
+      }),
       GoogleCalendarApiError,
       "missing ETag",
     );
     assertEquals(fetchCount, 1);
-    assertEquals(deleteCount, 0);
+    assertEquals(authorizeCount, 0);
+    assertEquals(deleteWorkflowCount, 0);
+    assertEquals(providerDeleteCount, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 }
 
-Deno.test("DD8 Task DELETE fails closed on provider GET 200 without ETag before authorization/delete", async () => {
-  await assertMissingEtagGetFailsBeforeMutation("task-delete-event");
+Deno.test("DD8 Task DELETE fails closed on provider GET 200 without ETag before DB authorization/delete", async () => {
+  await assertMissingEtagWorkflowFailsBeforeAuthorizationAndDelete("task-delete-event");
 });
 
-Deno.test("DD8 target deletion fails closed on provider GET 200 without ETag before authorization/delete", async () => {
-  await assertMissingEtagGetFailsBeforeMutation("target-delete-event");
+Deno.test("DD8 target deletion fails closed on provider GET 200 without ETag before DB authorization/delete", async () => {
+  await assertMissingEtagWorkflowFailsBeforeAuthorizationAndDelete("target-delete-event");
+});
+
+Deno.test("shared DELETE workflow re-reads and re-authorizes a 412 retry", async () => {
+  let readCount = 0;
+  let authorizeCount = 0;
+  let deleteCount = 0;
+  const seenEtags: string[] = [];
+
+  const status = await deleteExistingEventWithFence({
+    readEvent: async () => {
+      readCount += 1;
+      return { status: 200 as const, etag: readCount === 1 ? "etag-v1" : "etag-v2" };
+    },
+    authorize: async () => {
+      authorizeCount += 1;
+      return {
+        authorized: true,
+        request_deadline_at: new Date(Date.now() + 5_000).toISOString(),
+      };
+    },
+    deleteWithEtag: async (etag) => {
+      deleteCount += 1;
+      seenEtags.push(etag);
+      return deleteCount === 1 ? 412 : 204;
+    },
+  });
+
+  assertEquals(status, 204);
+  assertEquals(readCount, 2);
+  assertEquals(authorizeCount, 2);
+  assertEquals(deleteCount, 2);
+  assertEquals(seenEtags, ["etag-v1", "etag-v2"]);
+});
+
+Deno.test("shared DELETE workflow does not authorize or mutate a missing provider event", async () => {
+  let authorizeCount = 0;
+  let deleteCount = 0;
+  const status = await deleteExistingEventWithFence({
+    readEvent: async () => ({ status: 404 as const, etag: null }),
+    authorize: async () => {
+      authorizeCount += 1;
+      return {
+        authorized: true,
+        request_deadline_at: new Date(Date.now() + 5_000).toISOString(),
+      };
+    },
+    deleteWithEtag: async () => {
+      deleteCount += 1;
+      return 204;
+    },
+  });
+  assertEquals(status, 404);
+  assertEquals(authorizeCount, 0);
+  assertEquals(deleteCount, 0);
 });
 
 Deno.test("deleteEvent refuses an empty If-Match without sending a provider request", async () => {
