@@ -22,9 +22,16 @@ begin
   v_hh_id := (v_hh->>'household_id')::uuid;
   insert into public.household_members(household_id,user_id,member_role)
   values(v_hh_id,v_partner,'adult');
-  perform private.backfill_canonical_foundation_v1();
+
+  -- server_tx_create_household already creates the owner's canonical ActorRef.
+  -- Do not re-run the legacy canonical backfill here: other SQL tests intentionally
+  -- leave canonical RequestAttempts in the shared test DB, and a second backfill
+  -- would try to synthesize legacy attempts for those already-canonical requests.
   select id into v_owner_actor from public.domain_actor_refs
   where household_id=v_hh_id and actor_kind='real_user' and real_user_id=v_owner;
+  if v_owner_actor is null then
+    raise exception 'FAIL DD5B/DD6: canonical owner ActorRef missing';
+  end if;
 
   -- Official accepted schedule names only.
   insert into public.household_routine_schedules(
