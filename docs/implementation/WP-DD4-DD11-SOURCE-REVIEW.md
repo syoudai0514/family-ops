@@ -7,14 +7,16 @@ infer that a later head is reviewed and do not reuse a historic CI run as
 current evidence. PR #45 is pre-production and pre-P1.
 
 The prior independent review baseline was PR #45 head
-`26704f2682ebe3362b4e389e192c8cadbdd5b8f8`; it returned **NO-GO** for the DD8
-provider-ownership race plus DD10 archive replay and DD9 privacy-hardening
-follow-ups. That SHA is historical evidence only, not the remediation review
-head.
+`26704f2682ebe3362b4e389e192c8cadbdd5b8f8`; it returned **NO-GO**. That SHA and
+its CI are historical evidence only.
 
-Canonical foundation PR #44 remains
-`6125af780358cd7f8155cc67f8cfe7a4046d0571`; this remediation does not alter its
-canonical DD1/DD2/DD3A/DD3 semantics.
+Canonical foundation PR #44 is now pinned at
+`e2b45cba84bf1e18e92607325823e483ddca8722` with CI run 364 green. Its source
+review remediation is forward-only and includes the corrected canonical RLS,
+assignment/reconciliation coexistence, system ActorRef test scope, actual
+performer-kind enforcement, and linked Task -> Request completion behavior.
+PR #45 must be reviewed against that current foundation, not the older
+`6125af...` or `a77e315...` snapshots.
 
 No production Supabase apply, production data change, production Edge deploy,
 real LINE delivery, Google provider mutation, P1 activation, or main merge is
@@ -24,48 +26,52 @@ authorized by this review.
 
 PR #45 builds on PR #44's canonical DD1/DD2/DD3A/DD3 foundation and covers:
 
-- DD4 Request/assignment canonical adapter, post-agreement follow-up Attempts,
-  linked Task execution separation, idempotency and legacy RPC compatibility.
-- DD5 Task actual/reconciliation/history read semantics.
-- DD5B Shopping ActorRef assignment/claim/action/reopen commands and neutral
-  duplicate-sensitive intent.
-- DD6 shared DailyBrief/Today read semantics, official schedules and all-day
-  date-only preservation.
+- DD4 Request/assignment canonical adapters, post-agreement follow-up Attempts,
+  linked Task execution, compatibility projection, and terminal-state safety.
+- DD5 Task actual/reconciliation/history semantics.
+- DD5B Shopping ActorRef assignment/claim/action/reopen commands and R0 legacy
+  reader fallback.
+- DD6 shared DailyBrief/Today semantics, official schedules and all-day
+  date-only preservation, with canonical reader activation blocked at R0.
 - DD7 semantic notification bridge using the existing quota/lease/retry outbox.
 - DD8 Family Event/Google ownership transfer source: exact provider identity,
-  target-deletion ownership, orphan revalidation, overlap audit, and a fresh
-  provider pre-mutation authorization fence for ordinary Task mirrors.
-- DD9 review-only nursery/Codmon evidence pipeline: private source document,
-  child/school-scoped explicit facts, AI proposals, explicit preparation-rule
-  confirmation, and typed/minimized durable structured-persistence boundaries.
+  target-deletion ownership, orphan revalidation, overlap audit, and fresh
+  provider pre-mutation authorization for ordinary Task mirrors.
+- DD9 review-only nursery/Codmon evidence pipeline with typed/minimized durable
+  structured-persistence boundaries.
 - DD10 operator-owned one-user simulation context/workspace, immutable simulated
-  ActorRef identity, archive semantics, and completed-receipt replay after
-  archival for the same canonical operation.
-- DD11 R0/P1 readiness audit/runbook.
+  ActorRef identity, archive semantics, and completed-receipt replay.
+- DD11 R0/P1 readiness audit/runbook and final all-blockers-zero suite gates.
 
-## Source-review remediation to inspect
+## Remediation to inspect
 
-### H-1 — DD8 provider pre-mutation fencing
+### Foundation carry-forward from PR #44
 
-`public.server_tx_authorize_family_ops_calendar_mirror(...)` now re-checks and
+PR #45 inherits the current PR #44 remediation rather than reimplementing it.
+Review the resulting merge/base relationship together with:
+
+- `supabase/migrations/20260903000018_source_review_foundation_remediation.sql`
+- `tests/sql/44_foundation_source_review_remediation.sql`
+
+Required invariants include household RLS correctness, reconciliation that does
+not overwrite valid canonical assignment state, test-only system ActorRef
+containment, valid actual performer kinds, and Task completion synchronizing the
+linked Request compatibility tuple without erasing Attempt history.
+
+### DD8 — provider pre-mutation fencing
+
+`public.server_tx_authorize_family_ops_calendar_mirror(...)` re-checks and
 row-locks the durable Task mirror immediately before **each** Google mutation.
 Authorization requires the current lease token, a live processing lease,
-non-transferred ownership, the same calendar connection/provider event
-identity, the current active family write target, no validated/active Family
-Event owner, no live target-deletion owner, and no unresolved/blocked orphan
-identity. Failure is fail-closed.
+non-transferred ownership, the exact calendar connection/provider event
+identity, the current active family write target, no active Family Event owner,
+no live target-deletion owner, and no unresolved/blocked orphan identity.
+Failure is fail-closed.
 
 The Edge worker wraps ordinary Task mirror DELETE/INSERT/PATCH calls in
-`withProviderMutationFence(...)`. A Google 412 causes re-GET and then a **new**
-authorization before the retry PATCH/DELETE. Target-deletion DELETE uses the
-same per-attempt rule. `ProviderMutationFencedError` is treated as superseded
-concurrency; the stale worker does not call the provider and does not fail/requeue
-the newer durable owner.
-
-The successful authorization refreshes the processing lease for the short
-provider-call window. Ownership transfer takes the same durable mirror row lock
-and rejects an active processing lease, so transfer cannot interleave between
-the successful fence and the normal immediate provider call.
+`withProviderMutationFence(...)`. A Google 412 re-GET is followed by a **fresh**
+authorization before retry PATCH/DELETE. Target-deletion DELETE uses the same
+per-attempt rule. A rejected authorization must not invoke the provider callback.
 
 Review together:
 
@@ -73,72 +79,108 @@ Review together:
 - `supabase/functions/process-family-ops-calendar-outbox/index.ts`
 - `supabase/functions/process-family-ops-calendar-outbox/providerMutationFence.ts`
 - `supabase/functions/process-family-ops-calendar-outbox/providerMutationFence.test.ts`
+- `tests/sql/46_dd8_google_provider_ownership_transfer.sql`
 - `tests/sql/50_source_review_remediation.sql`
 
-### H-1 adversarial evidence
+`tests/sql/50_source_review_remediation.sql` constructs an exact provider
+identity `(calendar_connection_id, provider_event_id, provider_etag)` and covers
+UPSERT and DELETE races: claim, active-lease transfer denial, lease expiry,
+transfer, stale-lease authorization denial, transferred-mirror re-enqueue denial,
+target-deletion overlap removal, and `active_owner_count <= 1`.
 
-`tests/sql/50_source_review_remediation.sql` exercises both UPSERT and DELETE
-Task-mirror races:
+### DD9 — privacy / structured persistence hardening
 
-1. claim Task mirror;
-2. prove transfer fails while the processing lease is active;
-3. expire the lease;
-4. transfer the exact provider identity to a Family Event;
-5. prove the old lease cannot authorize provider mutation;
-6. prove the transferred Task mirror cannot be re-enqueued;
-7. prove target deletion does not retain overlapping ownership;
-8. require provider-owner audit `active_owner_count <= 1`.
+The DB boundary uses structural allowlists and bounds, not only suspicious-key
+checks. It constrains provider metadata, school-context candidates, source fact
+kinds and value shapes, URL schemes/lengths, AI candidate patch keys/values,
+and generic human-confirmed preparation values. Nested transcript/roster/profile
+/contact-shaped objects are not accepted as durable structured facts.
 
-`providerMutationFence.test.ts` separately proves that a rejected stale/Family
-Event authorization leaves the provider mutation callback invocation count at
-zero, and that a retry performs a second authorization rather than reusing the
-first one.
+Relevant source:
 
-### M-1 — DD10 archive idempotent retry
+- `supabase/migrations/20260903030009_dd9_nursery_intake_canonical_pipeline.sql`
+- `supabase/migrations/20260903030010_dd9_nursery_validator_privilege_hardening.sql`
+- `supabase/migrations/20260903030014_source_review_remediation.sql`
+- `supabase/migrations/20260903030015_source_review_remediation_validation_fix.sql`
+- `tests/sql/47_dd9_nursery_intake_pipeline.sql`
+- `tests/sql/50_source_review_remediation.sql`
 
-Archive now separates completed-receipt replay scope from new-mutation active
-context scope. `private.fn_replay_completed_test_archive_v1(...)` may read an
-archived operator-owned context only to verify/replay a completed exact
-`test_simulation.archive` receipt. It still verifies the real operator ActorRef,
-household, context ownership, operation ID, action, and canonical request hash.
+OCR/AI/Storage/provider adapters and target-application adapters remain disabled.
 
-If no completed exact receipt exists, the normal canonical operation claim path
-still requires an active context. Therefore:
+### DD10 — archive idempotent retry
 
-- first archive: active -> archived -> completed receipt;
-- same operation ID + same canonical request hash: prior result replayed;
-- different operation ID after archive: `TEST_CONTEXT_NOT_ACTIVE`.
+Archive separates completed-receipt replay from new-mutation active-context
+scope. The same operation ID + same canonical request hash may replay the
+completed archive receipt after context archival. A different operation ID
+still enters the active-context guard and fails `TEST_CONTEXT_NOT_ACTIVE`.
 
-The regression is in `tests/sql/50_source_review_remediation.sql`.
+Review:
 
-### M-2 — DD9 privacy / structured persistence hardening
+- `supabase/migrations/20260903030011_dd10_one_user_simulation_workspace.sql`
+- `supabase/migrations/20260903030014_source_review_remediation.sql`
+- `tests/sql/48_dd10_one_user_simulation_workspace.sql`
+- `tests/sql/50_source_review_remediation.sql`
 
-The DB boundary no longer relies only on suspicious-keyword checks. The
-remediation adds structural allowlists and bounds for:
+### Request terminal-state preservation
 
-- provider metadata: fixed metadata key set, scalar strings, per-value and JSON
-  size bounds;
-- school context candidate: only context ID/display/effective-date fields with
-  UUID/date/length validation;
-- source facts: bounded count/bytes, fixed top-level fields, enumerated fact
-  kinds, fact-kind-specific normalized-value keys, scalar-only values;
-- URLs: `http://` or `https://` only with length bound;
-- AI candidates: fixed top-level shape, target-specific patch-key allowlists,
-  scalar/bounded patch values, explanation length bound;
-- generic human-confirmed preparation values: small flat object only; nested
-  transcript/roster/profile/contact structures are not durable structured
-  facts.
+A follow-up Attempt may have been opened before its linked Task completes. If a
+delayed decline/cancel response arrives after Task completion, it must update the
+Attempt history without rolling the Request compatibility tuple backward from
+`completed` or erasing `completed_at`.
 
-`20260903030015_source_review_remediation_validation_fix.sql` is the PostgreSQL
-16 compatibility override for object-cardinality validation; it does not widen
-those boundaries.
+`tests/sql/51_claude_source_review_remediation.sql` reproduces:
 
-OCR/AI/Storage adapters remain disabled and this source unit does not invent or
-activate an external provider contract.
+1. create Request;
+2. accept -> linked Task;
+3. start change follow-up;
+4. complete linked Task;
+5. decline the older follow-up;
+6. require Request and Task remain completed while the follow-up Attempt records
+   the decline.
 
-## Required reviewer focus
+### Handover acknowledgement compatibility
 
-### BLOCKER/HIGH gate
+The existing `server_tx_mark_handover_read(...)` path writes the legacy
+`handover_reads` row and canonical ActorRef `info_acknowledgements` in the same
+DB transaction. The regression then verifies canonical DailyBrief no longer
+returns that handover as unread.
+
+Review the implementation plus `tests/sql/51_claude_source_review_remediation.sql`.
+
+### R0 reader activation fence
+
+R0 must not accidentally activate canonical production readers. Authenticated
+entrypoints for DailyBrief, Request workspace, and Task result history must fail
+closed with the capability-specific reader-disabled error while the gates remain
+R0. Shopping is an explicit compatibility exception: the public wrapper returns
+a `legacy_r0` shaped workspace without invoking the canonical Shopping reader.
+
+Review:
+
+- `supabase/migrations/20260903030016_r0_reader_request_handover_remediation.sql`
+- `supabase/migrations/20260903030017_r0_shopping_reader_fallback.sql`
+- PWA Today/Shopping adapters changed in PR #45
+- `tests/sql/51_claude_source_review_remediation.sql`
+
+### DD11 reconciliation and final zero gates
+
+The reconciliation/readiness logic must understand valid canonical terminal
+states rather than flagging them as legacy anomalies, but it must not suppress
+real P1 blockers.
+
+Review:
+
+- `supabase/migrations/20260903030018_dd11_reconciliation_semantics_remediation.sql`
+- `tests/sql/49_dd11_cutover_readiness_audits.sql`
+- `tests/sql/98_dd11_full_readiness_zero.sql`
+- `tests/sql/99_canonical_reconciliation_zero.sql`
+
+`98` runs after feature/adversarial fixtures and requires the sum of **every**
+`blocks_p1` audit row to be zero. `99` is lexically last and requires all
+canonical foundation reconciliation issue counts to be zero, preventing a later
+test fixture from hiding a blocker after an earlier green audit.
+
+## BLOCKER/HIGH gate
 
 Return **NO-GO** for any BLOCKER or HIGH finding in these areas:
 
@@ -149,35 +191,28 @@ Return **NO-GO** for any BLOCKER or HIGH finding in these areas:
    one exact `(calendar_connection_id, provider_event_id)` identity.
 4. A stale ordinary mirror or deletion job can reach a provider mutation after
    lease expiry/transfer, including a 412 retry path.
-5. Image explicit fact or AI inference silently applies a Task/Event/Google
-   change, crosses child/school scope, or persists arbitrary third-party OCR
-   transcript/profile data as a durable structured fact.
-6. Canonical command retry/revision paths create duplicate actuals/attempts or
-   bypass ActorRef scope.
-7. Same-operation DD10 archive retry fails to replay solely because the context
-   was archived, or a different operation mutates an archived context.
-8. P1/production activation is reachable through a default path.
-
-### Specific review questions
-
-1. Does every legacy public Request RPC preserve only its historic adapter
-   contract while post-agreement change/cancel uses the dedicated canonical
-   follow-up command?
-2. Are DailyBrief/Today/LINE consuming a single read truth and preserving
-   all-day values without fake midnight timestamps?
-3. Is every Task-mirror and target-deletion provider mutation attempt fenced at
-   the last DB boundary, with a fresh fence after a 412 re-GET?
-4. Does DD9 keep raw content private, facts explicit/minimized, AI content
-   candidate-only, and preparation-rule learning human-confirmed?
-5. Does DD10 exact completed archive receipt replay survive context archival
-   while new archive operations remain inactive-context failures?
-6. Are DD11 audits correctly separated from test fixtures yet strict for a real
-   production P1 scope?
+5. DD9 explicit fact or AI inference silently applies a Task/Event/Google change,
+   crosses child/school scope, or durably stores arbitrary third-party transcript
+   /profile/contact data.
+6. Canonical command retry/revision paths create duplicate actuals/attempts,
+   bypass ActorRef scope, or reconciliation overwrites valid canonical state.
+7. A delayed Request follow-up transition can roll a completed Request backward.
+8. Same-operation DD10 archive retry fails solely because the context was
+   archived, or a different operation mutates an archived context.
+9. R0 authenticated product entrypoints can reach canonical production readers
+   before explicit reader enablement.
+10. DD11 can report green while any `blocks_p1` audit or canonical reconciliation
+    issue remains non-zero.
+11. P1/production activation is reachable through a default path.
 
 ## Evidence to inspect
 
+At minimum:
+
 - `tests/sql/39_dd3a_mandatory_actorref_e2e.sql`
+- `tests/sql/41_dd4_dd5_request_task_result_e2e.sql`
 - `tests/sql/41_google_projection_test_scope_isolation.sql`
+- `tests/sql/44_foundation_source_review_remediation.sql`
 - `tests/sql/44_dd4_request_canonical_cutover.sql`
 - `tests/sql/45_dd5b_shopping_canonical_e2e.sql`
 - `tests/sql/46_dd8_google_provider_ownership_transfer.sql`
@@ -185,26 +220,28 @@ Return **NO-GO** for any BLOCKER or HIGH finding in these areas:
 - `tests/sql/48_dd10_one_user_simulation_workspace.sql`
 - `tests/sql/49_dd11_cutover_readiness_audits.sql`
 - `tests/sql/50_source_review_remediation.sql`
+- `tests/sql/51_claude_source_review_remediation.sql`
+- `tests/sql/98_dd11_full_readiness_zero.sql`
+- `tests/sql/99_canonical_reconciliation_zero.sql`
 - `supabase/functions/process-family-ops-calendar-outbox/providerMutationFence.test.ts`
 - `docs/implementation/FAMILY-OPS-WORK-INTEGRATION-STATUS.md`
 - `docs/implementation/FAMILY-OPS-CUTOVER-READINESS-RUNBOOK.md`
 
-For CI, inspect the checks attached to the **exact current PR #45 head**. Required
+For CI, inspect checks attached to the **exact current PR #45 head**. Required
 coverage is Web lint/typecheck/test/build; Edge lint/typecheck/unit/auth matrix;
-DB empty migration chain plus full SQL suite; and real Supabase CLI stack
-integration. A historic green run is not evidence for a later head.
+DB empty migration chain plus the complete SQL suite; and real Supabase CLI
+stack integration. Historic green runs are not evidence for a later head.
 
-## Explicit, fail-closed scope limits
+## Explicit fail-closed scope limits
 
-- DD8 Family Event Google writer remains disabled; transfer does not create,
-  update, or delete a provider event. No real Google mutation is authorized by
-  this review package.
-- DD9 does not enable a Storage deletion worker, OCR/AI provider call, or target
-  Task/Event adapter. These remain unavailable until separately reviewed.
-- DD10 exposes owned context lifecycle/read workspace; it reuses the existing
-  mandatory core ActorRef E2E. Browser/LINE command adapters are not activated
-  by this source unit and simulation never converts to production identity.
+- DD8 Family Event Google writer remains disabled. No real Google mutation is
+  authorized by this review package.
+- DD9 does not enable Storage deletion, OCR/AI provider calls, or target Task /
+  Event adapters.
+- DD10 browser/LINE command adapters are not activated and simulation never
+  converts to production identity.
 - All capability gates remain R0 with mutation paused.
+- No production migration/deploy/cron/main merge is part of source review.
 
 ## Required verdict format
 
