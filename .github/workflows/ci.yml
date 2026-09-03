@@ -15,6 +15,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
+          # Pinned, not a floating major (`22`): jsdom 30.0.1 (the strictest
+          # engines requirement in package-lock.json's dependency tree)
+          # requires Node ^22.22.2 || ^24.15.0 || >=26.0.0 — see
+          # package.json's own "engines" field, which this must satisfy.
           node-version: 22.22.2
           cache: npm
 
@@ -37,12 +41,8 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-key
 
   db:
-    name: db SQL through ${{ matrix.stop_after }}
+    name: db (migrations / RLS / RPC / idempotency / quota)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        stop_after: [36, 37]
     services:
       postgres:
         image: postgres:16
@@ -61,11 +61,10 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: postgres
-      SQL_TEST_STOP_AFTER: ${{ matrix.stop_after }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run migrations + SQL test suite boundary
+      - name: Run migrations + SQL test suite
         run: bash scripts/run_sql_tests.sh
 
   edge-functions:
@@ -98,6 +97,30 @@ jobs:
         run: node scripts/check-edge-auth-matrix.mjs
 
   supabase-integration:
+    # v6 review fix (P1-6): the plain-PostgreSQL suite (job `db`, above)
+    # proves migration/RLS/RPC/grant *logic* precisely but runs against a
+    # hand-built shim of Supabase's auth/anon/authenticated/service_role
+    # contract (tests/sql/00_local_auth_shim.sql), not the real stack. This
+    # job runs the same kind of assertions through the actual Supabase CLI
+    # (real Postgres + GoTrue + PostgREST + Kong + edge-runtime), so the
+    # environment boundary itself — not just the SQL — is under test:
+    #   - private.webhook_inbox/notification_outbox are unreachable through
+    #     the real Data API (PostgREST), for anon/authenticated/service_role
+    #     alike, because `private` is absent from [api] schemas
+    #   - Edge Function verify_jwt is enforced by the real gateway (missing
+    #     JWT -> 401 before the handler runs) and worker-token auth is
+    #     enforced in-handler
+    #   - line-webhook-receiver durably persists a real webhook call end to
+    #     end (HTTP -> Edge Function -> RPC -> Postgres row)
+    #   - RLS blocks a real cross-household Data API read, and never blocks
+    #     a same-household one
+    # NOTE: this job could not be executed end to end inside the sandbox
+    # this branch was developed in (`supabase start`'s docker image pulls
+    # were blocked by that sandbox's network policy — confirmed via
+    # `docker run hello-world` returning 403 Forbidden on the image layer
+    # fetch, even though the Docker *daemon* itself started fine). It runs
+    # here on GitHub Actions' own runners, which have normal registry
+    # access. See docs/RUNBOOK.md.
     name: supabase-integration (real CLI stack)
     runs-on: ubuntu-latest
     steps:
@@ -105,6 +128,11 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
+          # v6 review fix (P1-D): pinned to a version confirmed green on
+          # this job (see the CI run linked from the implementation
+          # report), not `latest` — an unpinned CLI can change `-o json`
+          # field names or container images out from under this job without
+          # any change in this repo.
           version: 2.115.0
 
       - name: Write CI env files (placeholders, never committed)
@@ -118,6 +146,12 @@ jobs:
           LINE_CHANNEL_SECRET=ci-test-line-channel-secret
           CRON_WORKER_TOKEN=ci-test-worker-token-0123456789abcdef
           EOF
+          # v6 review fix (P1-D): supabase/config.toml's env(...)
+          # substitution (GOOGLE_SIGNIN_*) reads the process environment at
+          # `supabase start` time, not any dotenv file it loads on its own
+          # (see .env.example) — the project-root .env above is the source
+          # of truth, exported here into every later step via $GITHUB_ENV
+          # so `supabase start` actually sees it.
           cat .env >> "$GITHUB_ENV"
 
       - name: supabase start
@@ -126,6 +160,9 @@ jobs:
             --exclude realtime,storage-api,imgproxy,studio,mailpit,logflare,vector,supavisor,postgres-meta
 
       - name: Capture local stack connection info
+        # v6 review fix (P1-D): `-o env` wraps every value in double quotes,
+        # which a raw `>> "$GITHUB_ENV"` append would bake into the value
+        # itself. Parse the machine-readable `-o json` output instead.
         run: supabase status -o json | node scripts/write_supabase_status_env.mjs
 
       - name: Reset DB (apply every migration from empty)
