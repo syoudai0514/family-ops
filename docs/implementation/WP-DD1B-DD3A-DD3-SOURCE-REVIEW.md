@@ -2,9 +2,14 @@
 
 ## Status
 
-**SOURCE-REVIEW CANDIDATE / DRAFT PR / NO PRODUCTION APPLY / NO MERGE**
+**SOURCE-REVIEW REMEDIATION CANDIDATE / DRAFT PR / NO PRODUCTION APPLY / NO MERGE**
 
 PR #44 is retargeted directly to CURRENT `main`; the earlier stacked-on-PR-#43 wording is obsolete.
+
+The previous independent review was anchored to historical head
+`6125af780358cd7f8155cc67f8cfe7a4046d0571` and returned NO-GO. That SHA is
+review evidence only; it must not be treated as the CURRENT remediation head.
+Review the exact CURRENT PR head and only the CI attached to that exact head.
 
 Canonical contracts:
 
@@ -31,14 +36,13 @@ One independent source-review unit covering the maximum safe pre-cutover impleme
 - Request Attempt compatibility projection preserving CURRENT status/timestamp CHECK semantics;
 - Task actual participants and reconciliation evidence;
 - deterministic legacy ActorRef/assignment/participant/Request Attempt/subtask backfill;
-- rerunnable backfill coexistence with canonical-created Request Attempts (no
-  guessed legacy Attempt and no active-attempt uniqueness collision);
+- rerunnable backfill coexistence with canonical-created Request Attempts (no guessed legacy Attempt and no active-attempt uniqueness collision);
 - DailyBrief schedule kinds + one-day override foundation;
 - Family Event / field-authority / external-link schema foundation without writer activation;
 - change-candidate foundation;
 - child / school-context / source-document foundation;
 - shopping participant/revision/test prerequisites;
-- CURRENT 50-table assertion (public 27/private 23);
+- CURRENT 50-table declaration remains the pre-#43 physical baseline assertion (27 public / 23 private), not a claim that the repository has only 50 total tables;
 - Request/Task/assignment-scope anomaly reconciliation;
 - Google Task mirror / target-deletion / orphan provider-lifecycle inventory;
 - semantic ActorRef label helper including `🧪 ママ` / `🧪 パパ`.
@@ -78,6 +82,62 @@ One independent source-review unit covering the maximum safe pre-cutover impleme
 - info acknowledgement/superseding correction;
 - candidate reject/stale/fail-closed accept boundary.
 
+## Independent review remediation after historical head 6125af7
+
+Forward-only migration `20260903000018_source_review_foundation_remediation.sql`
+closes the later Claude source-review findings without rewriting accepted migrations.
+
+### HIGH — test subtask RLS isolation
+
+`public.task_subtask_instances` now has the same production-read boundary as the
+other test-scoped public business tables:
+
+- authenticated SELECT requires household membership;
+- `test_context_id IS NULL` is mandatory;
+- regression evidence reads the table as an actual `authenticated` household member and proves the test subtask is invisible.
+
+### HIGH — canonical assignment vs R0 reconciliation
+
+`task_planned_actor_mismatch` no longer assumes every valid production Task must
+remain `assignment_source='legacy_snapshot'` forever.
+
+- canonical `manual` / `agreement` assignments are valid only when assignment mode, ActorRef, and legacy compatibility user agree;
+- legacy rows continue to require the strict `legacy_snapshot` representation;
+- rerunning the R0 maintenance backfill does not overwrite canonical assignment authority;
+- a final lexical test requires the complete foundation reconciliation result to be zero after every earlier fixture.
+
+### MEDIUM — canonical Task completion mirrors Request execution truth
+
+When a linked accepted Task first transitions to `completed`, the compatibility
+Request tuple is synchronised to `completed` with the Task completion time and a
+revision increment. This is one-way execution projection only; declined,
+cancelled, or unrelated Requests are not resurrected.
+
+### MEDIUM — system ActorRef test-scope fail closed
+
+System ActorRefs are production-only:
+
+- DB CHECK rejects `actor_kind='system'` with a test context;
+- execution and row-scope guards reject system actors in any test execution context;
+- simulation continues to use immutable `simulated_member` ActorRefs rather than fake users/members.
+
+### MEDIUM — performer correction kind invariant
+
+The durable `task_actual_participants` boundary now permits only
+`real_user` / `simulated_member` performers. This gives completion, correction,
+backfill, and future adapters the same invariant and closes the subtasks-mode
+system-performer gap.
+
+### Fixture / audit hardening
+
+`38_canonical_r0_request_and_test_actual_guards.sql` now gives its accepted
+legacy Request a valid linked execution Task instead of manufacturing a state
+that the production contract rejects. Reconciliation was not weakened to make
+the fixture pass.
+
+`99_canonical_reconciliation_zero.sql` runs after all foundation SQL tests and
+requires every reconciliation issue count to be zero.
+
 ## Intentional fail-closed boundaries
 
 The following are intentionally not invented here:
@@ -93,7 +153,9 @@ The following are intentionally not invented here:
 
 - `37_canonical_identity_operational_foundation.sql`
   - accepted/completed Request fixtures use valid linked Tasks;
-  - reconciliation remains strict and must be zero for valid fixture state.
+  - reconciliation remains strict for valid fixture state.
+- `38_canonical_r0_request_and_test_actual_guards.sql`
+  - CURRENT-valid accepted Request drift fixture keeps a linked execution Task.
 - `38_test_execution_sandbox_foundation.sql`
   - operator/domain actor separation, receipt identity, archived-context rejection.
 - `39_dd3a_mandatory_actorref_e2e.sql`
@@ -101,33 +163,37 @@ The following are intentionally not invented here:
 - `40_canonical_command_concurrency_reconciliation.sql`
   - replay/conflict, stale revision, claim/takeover, waiting/resume, completion/correction, reconciliation, info/candidate boundaries.
 - `41_google_projection_test_scope_isolation.sql`
-  - test Task INSERT → production Google mirror unchanged;
-  - UPDATE → unchanged;
-  - DELETE → unchanged without deleted-row lookup;
+  - test Task INSERT / UPDATE / DELETE cannot affect production provider projection;
   - reconcile excludes test Tasks;
   - test real-user transport Task cannot alter production P/M payload;
   - stale/hostile special mirror referencing a test Task cannot produce provider upsert.
 - `42_canonical_backfill_command_coexistence.sql`
-  - rerunning the R0 maintenance backfill after a canonical Request command does
-    not add a legacy Attempt, collide with the active-Attempt constraint, or
-    create a false reconciliation anomaly.
+  - rerunning the R0 maintenance backfill after a canonical Request command does not add a legacy Attempt, collide with the active-Attempt constraint, or create a false reconciliation anomaly.
 - `43_member_actor_ref_continuity.sql`
-  - members created after the one-time backfill immediately receive exactly one
-    canonical real-user ActorRef through the normal create/join path.
+  - members created after the one-time backfill immediately receive exactly one canonical real-user ActorRef through the normal create/join path.
+- `44_foundation_source_review_remediation.sql`
+  - authenticated test-subtask RLS isolation;
+  - system/test-scope prohibition;
+  - correction performer-kind rejection with no durable partial mutation;
+  - canonical Task completion -> Request completed compatibility projection;
+  - manual/agreement assignment remains reconciliation-clean and survives R0 backfill.
+- `99_canonical_reconciliation_zero.sql`
+  - final suite-wide canonical reconciliation sum must be zero.
 
 ## Independent review focus
 
 1. simulated ActorRef vs real operator/auth identity separation;
-2. test execution → production LINE/Google/real-consent isolation;
+2. test execution → production LINE/Google/real-consent isolation, including direct subtask RLS;
 3. Google isolation at trigger entry and every production Task scan/materialization path;
 4. receipt replay/hash conflict and lock/revision ordering;
-5. Request Attempt → legacy Request lifecycle tuple projection;
-6. Task assignment/claim/waiting/completion/performer correction atomicity;
-7. group reconciliation eligibility/stale behavior;
-8. exact terms-revision two-party confirmation;
-9. post-migration household-member to ActorRef continuity;
-10. Family Event/Google ownership foundation remaining inactive/non-overlapping;
-11. 50-table and provider/Request anomaly reconciliation.
+5. Request Attempt / Task execution -> legacy Request lifecycle compatibility;
+6. Task assignment/claim/waiting/completion/performer correction atomicity and actor-kind invariants;
+7. canonical manual/agreement authority coexisting with strict legacy reconciliation;
+8. group reconciliation eligibility/stale behavior;
+9. exact terms-revision two-party confirmation;
+10. post-migration household-member to ActorRef continuity;
+11. Family Event/Google ownership foundation remaining inactive/non-overlapping;
+12. CURRENT physical-baseline declaration semantics and final reconciliation zero.
 
 ## Prohibited in this PR
 
@@ -137,4 +203,4 @@ The following are intentionally not invented here:
 - P1 activation;
 - `main` merge.
 
-Anchor the next independent source review to the exact PR head whose full required CI is green. Any head movement requires reviewing that new exact head.
+Anchor the next independent source review to the exact CURRENT PR head whose full required CI is green. Any head movement invalidates the prior exact-head review.
