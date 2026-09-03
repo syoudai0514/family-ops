@@ -42,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        stop_after: [10, 20, 30, 40, 99]
+        stop_after: [31, 33, 35, 37, 38, 39, 40]
     services:
       postgres:
         image: postgres:16
