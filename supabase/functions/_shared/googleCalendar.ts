@@ -363,14 +363,25 @@ export function projectionWindow(now = new Date()): { start: string; end: string
   return { start: start.toISOString(), end: end.toISOString(), startDate: asDate(start), endDate: asDate(end) };
 }
 
-export async function getEvent(opts: { accessToken: string; calendarId: string; eventId: string }): Promise<{ status: number; body: Record<string, unknown> | null; etag: string | null }> {
+export type GoogleEventGetResult =
+  | { status: 404; body: null; etag: null }
+  | { status: 200; body: Record<string, unknown>; etag: string };
+
+export async function getEvent(opts: { accessToken: string; calendarId: string; eventId: string }): Promise<GoogleEventGetResult> {
   const res = await fetch(`${GOOGLE_CALENDAR_API_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events/${encodeURIComponent(opts.eventId)}`, {
     headers: { Authorization: `Bearer ${opts.accessToken}` },
   });
   if (res.status === 404) return { status: 404, body: null, etag: null };
   if (!res.ok) throw new GoogleCalendarApiError("events.get", res.status, await res.text());
-  const body = await res.json();
-  return { status: 200, body, etag: body.etag ?? null };
+  const body = await res.json() as Record<string, unknown>;
+  const rawEtag = body.etag;
+  const etag = typeof rawEtag === "string" ? rawEtag.trim() : "";
+  // DD8 safety: every existing provider identity used by PATCH/DELETE must
+  // carry an ETag. A malformed 200 response is not allowed to degrade a
+  // conditional mutation into an unconditional one. This happens before the
+  // worker establishes a provider-mutation authorization fence.
+  if (!etag) throw new GoogleCalendarApiError("events.get missing ETag", 502);
+  return { status: 200, body, etag };
 }
 
 // #11 create: sendUpdates='none', deterministic id supplied by the caller.
@@ -399,15 +410,18 @@ export async function patchEvent(opts: { accessToken: string; calendarId: string
   return { status: res.status, body };
 }
 
-// A generated mirror is removed only by its stored provider_event_id.  This
+// A generated mirror is removed only by its stored provider_event_id. This
 // intentionally has no search/query variant: titles and dates are display
-// data, never provider identity.
-export async function deleteEvent(opts: { accessToken: string; calendarId: string; eventId: string; ifMatchEtag?: string | null }): Promise<number> {
+// data, never provider identity. If-Match is mandatory: there is no source
+// path that may emit an unconditional DELETE for an existing event.
+export async function deleteEvent(opts: { accessToken: string; calendarId: string; eventId: string; ifMatchEtag: string }): Promise<number> {
+  const etag = opts.ifMatchEtag.trim();
+  if (!etag) throw new GoogleCalendarApiError("events.delete missing If-Match ETag", 409);
   const res = await fetch(`${GOOGLE_CALENDAR_API_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events/${encodeURIComponent(opts.eventId)}?sendUpdates=none`, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${opts.accessToken}`,
-      ...(opts.ifMatchEtag ? { "If-Match": opts.ifMatchEtag } : {}),
+      "If-Match": etag,
     },
   });
   return res.status;
