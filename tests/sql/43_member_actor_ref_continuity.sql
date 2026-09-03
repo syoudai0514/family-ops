@@ -8,8 +8,8 @@ declare
   v_created jsonb;
   v_household uuid;
 begin
-  insert into auth.users (id, aud, role, email, encrypted_password)
-  values (v_owner, 'authenticated', 'authenticated', 'actor-continuity@example.test', '')
+  insert into auth.users (id)
+  values (v_owner)
   on conflict (id) do nothing;
 
   insert into public.profiles (user_id, display_name)
