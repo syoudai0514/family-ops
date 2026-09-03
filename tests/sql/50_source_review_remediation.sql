@@ -93,9 +93,12 @@ begin
     'dd8-race-upsert','etag-upsert',false
   );
 
-  -- A real Task mutation re-enqueues the already-synced provider mirror while
-  -- retaining the provider identity written by the worker completion RPC.
-  update public.task_instances set title='DD8 UPSERT race' where id=v_task_upsert;
+  -- due_at is one of the production projection trigger columns.  Use that
+  -- real path rather than a title-only mutation, which intentionally does not
+  -- enqueue a Google projection.
+  update public.task_instances
+  set due_at='2030-03-01 12:00+09'::timestamptz
+  where id=v_task_upsert;
   update private.family_ops_calendar_mirrors
   set next_attempt_at='1800-01-01'
   where household_id=v_household and projection_key='special:'||v_task_upsert::text;
@@ -154,8 +157,11 @@ begin
     raise exception 'FAIL remediation DD8 A: stale UPSERT worker retained provider authorization';
   end if;
 
-  -- Existing Task enqueue cannot reclaim the transferred row.
-  update public.task_instances set title='DD8 UPSERT race updated' where id=v_task_upsert;
+  -- Exercise the same production enqueue trigger after transfer.  A legacy
+  -- Task mutation must not reclaim a provider identity now owned by FamilyEvent.
+  update public.task_instances
+  set due_at='2030-03-01 13:00+09'::timestamptz
+  where id=v_task_upsert;
   if not exists(
     select 1 from private.family_ops_calendar_mirrors
     where household_id=v_household and projection_key='special:'||v_task_upsert::text
