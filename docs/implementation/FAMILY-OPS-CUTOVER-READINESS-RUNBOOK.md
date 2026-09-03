@@ -44,6 +44,8 @@ submission head.
 3. **DD8 adversarial concurrency evidence**
    - race fixtures carry exact `(calendar_connection_id, provider_event_id,
      provider_etag)` identity;
+   - production-shaped Task fixtures also carry valid canonical real-user
+     `planned_assignee_actor_ref_id`, `assignment_mode` and `assignment_source`;
    - active processing lease blocks transfer;
    - expired lease permits transfer;
    - old lease authorization then fails;
@@ -78,6 +80,11 @@ submission head.
    - Shopping returns only the explicit `legacy_r0` compatibility workspace and
      does not invoke the canonical reader.
 9. **DD11 final zero gates**
+   - canonical Shopping assignment reconciliation accepts the three explicit
+     modes: `person`, `unassigned`, and `anyone`;
+   - `person` requires matching legacy user + real-user ActorRef, while
+     `unassigned` and `anyone` require both assignee columns null; an `anyone`
+     claimant is tracked separately by `active_claimant_actor_ref_id`;
    - after all feature/adversarial fixtures, every `blocks_p1` audit row sums to
      zero (`98_dd11_full_readiness_zero.sql`);
    - lexically last reconciliation gate reports total zero
