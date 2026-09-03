@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { todayIsoDate } from '../../lib/date';
+import { previousTokyoIsoDate, todayIsoDate } from '../../lib/date';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type {
   Handover,
@@ -45,6 +45,15 @@ interface DailyBriefPayload {
   schedule?: DailyBriefScheduleItem[];
 }
 
+const ACTIVE_TASK_STATUSES = ['todo', 'in_progress'];
+const TODAY_TASK_STATUSES = ['todo', 'in_progress', 'completed'];
+const OPEN_SHOPPING_STATUSES = ['wanted', 'assigned', 'ordered'];
+const HANDOVER_LOOKBACK_DAYS = 7;
+
+function capabilityReaderDisabled(error: { message?: string } | null): boolean {
+  return Boolean(error?.message?.includes('CAPABILITY_READER_NOT_ENABLED'));
+}
+
 export function useTodayData(householdId: string | null, userId: string | null): TodayData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,51 +78,133 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const { data: briefData, error: briefError } = await supabase.rpc('get_my_daily_brief', {
         p_local_date: today,
       });
-      if (briefError) throw briefError;
-      const brief = (briefData ?? {}) as DailyBriefPayload;
-      const taskIds = [...new Set([
-        ...(brief.tasks ?? []).map((item) => item.task_id),
-        ...(brief.already_handled ?? []).flatMap((item) => item.task_id ? [item.task_id] : []),
-      ])];
-      const carryoverIds = [...new Set((brief.carryover ?? []).map((item) => item.task_id))];
-      const requestIds = [...new Set((brief.urgent_actions ?? []).map((item) => item.request_id))];
-      const handoverIds = [...new Set((brief.handovers ?? []).map((item) => item.handover_id))];
-      const shoppingIds = [...new Set((brief.shopping ?? []).map((item) => item.shopping_item_id))];
 
-      const [taskRes, carryoverRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
-        taskIds.length > 0
-          ? supabase.from('task_instances').select('*').in('id', taskIds).order('due_at', { ascending: true, nullsFirst: false })
-          : Promise.resolve({ data: [] as TaskInstance[], error: null }),
-        carryoverIds.length > 0
-          ? supabase.from('task_instances').select('*').in('id', carryoverIds).order('due_at', { ascending: true, nullsFirst: false })
-          : Promise.resolve({ data: [] as TaskInstance[], error: null }),
-        requestIds.length > 0
-          ? supabase.from('requests').select('*').in('id', requestIds).order('due_at', { ascending: true, nullsFirst: false })
-          : Promise.resolve({ data: [] as RequestRow[], error: null }),
-        handoverIds.length > 0
-          ? supabase.from('handovers').select('*').in('id', handoverIds).order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] as Handover[], error: null }),
-        shoppingIds.length > 0
-          ? supabase.from('shopping_items').select('*').in('id', shoppingIds).order('due_at', { ascending: true, nullsFirst: false })
-          : Promise.resolve({ data: [] as ShoppingItem[], error: null }),
-      ]);
+      let taskRows: TaskInstance[] = [];
+      let carryoverRows: TaskInstance[] = [];
 
-      if (taskRes.error) throw taskRes.error;
-      if (carryoverRes.error) throw carryoverRes.error;
-      if (requestRes.error) throw requestRes.error;
-      if (handoverRes.error) throw handoverRes.error;
-      if (shoppingRes.error) throw shoppingRes.error;
+      if (briefError && capabilityReaderDisabled(briefError)) {
+        // R0 is intentionally legacy-read-only. The DB gate rejects the
+        // canonical adapter before reading business rows; keep the established
+        // Today contract until the separately reviewed P1 gate is crossed.
+        const lookbackDate = new Date();
+        lookbackDate.setDate(lookbackDate.getDate() - HANDOVER_LOOKBACK_DAYS);
 
-      const taskRows = taskRes.data ?? [];
-      setTasks(taskRows);
-      setCarryoverTasks(carryoverRes.data ?? []);
-      setIncomingRequests(requestRes.data ?? []);
-      setOpenShoppingItems(shoppingRes.data ?? []);
-      setBriefSchedule(brief.schedule ?? []);
+        const [taskRes, carryoverRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
+          supabase
+            .from('task_instances')
+            .select('*')
+            .eq('household_id', householdId)
+            .eq('scheduled_date', today)
+            .in('status', TODAY_TASK_STATUSES)
+            .order('due_at', { ascending: true, nullsFirst: false }),
+          supabase
+            .from('task_instances')
+            .select('*')
+            .eq('household_id', householdId)
+            .eq('task_kind', 'evening_chore')
+            .eq('scheduled_date', previousTokyoIsoDate(today))
+            .in('status', ACTIVE_TASK_STATUSES)
+            .order('scheduled_date', { ascending: false })
+            .order('due_at', { ascending: true, nullsFirst: false }),
+          supabase
+            .from('requests')
+            .select('*')
+            .eq('household_id', householdId)
+            .eq('recipient_id', userId)
+            .eq('status', 'pending')
+            .order('due_at', { ascending: true, nullsFirst: false }),
+          supabase
+            .from('handovers')
+            .select('*')
+            .eq('household_id', householdId)
+            .gte('occurred_on', lookbackDate.toISOString().slice(0, 10))
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('shopping_items')
+            .select('*')
+            .eq('household_id', householdId)
+            .in('status', OPEN_SHOPPING_STATUSES)
+            .order('due_at', { ascending: true, nullsFirst: false }),
+        ]);
 
-      const subtaskModeTaskIds = [...taskRows, ...(carryoverRes.data ?? [])]
-        .filter((t) => t.completion_mode === 'subtasks')
-        .map((t) => t.id);
+        if (taskRes.error) throw taskRes.error;
+        if (carryoverRes.error) throw carryoverRes.error;
+        if (requestRes.error) throw requestRes.error;
+        if (handoverRes.error) throw handoverRes.error;
+        if (shoppingRes.error) throw shoppingRes.error;
+
+        taskRows = taskRes.data ?? [];
+        carryoverRows = (carryoverRes.data ?? []).filter(
+          (task) => task.task_kind === 'evening_chore' && task.scheduled_date === previousTokyoIsoDate(today),
+        );
+        setTasks(taskRows);
+        setCarryoverTasks(carryoverRows);
+        setIncomingRequests(requestRes.data ?? []);
+        setOpenShoppingItems(shoppingRes.data ?? []);
+        setBriefSchedule([]);
+
+        const handovers = handoverRes.data ?? [];
+        if (handovers.length > 0) {
+          const { data: readRows, error: readError } = await supabase
+            .from('handover_reads')
+            .select('handover_id')
+            .eq('user_id', userId)
+            .in('handover_id', handovers.map((handover) => handover.id));
+          if (readError) throw readError;
+          const readIds = new Set((readRows ?? []).map((row) => row.handover_id));
+          setUnreadHandovers(handovers.filter((handover) => !readIds.has(handover.id)));
+        } else {
+          setUnreadHandovers([]);
+        }
+      } else {
+        if (briefError) throw briefError;
+        const brief = (briefData ?? {}) as DailyBriefPayload;
+        const taskIds = [...new Set([
+          ...(brief.tasks ?? []).map((item) => item.task_id),
+          ...(brief.already_handled ?? []).flatMap((item) => item.task_id ? [item.task_id] : []),
+        ])];
+        const carryoverIds = [...new Set((brief.carryover ?? []).map((item) => item.task_id))];
+        const requestIds = [...new Set((brief.urgent_actions ?? []).map((item) => item.request_id))];
+        const handoverIds = [...new Set((brief.handovers ?? []).map((item) => item.handover_id))];
+        const shoppingIds = [...new Set((brief.shopping ?? []).map((item) => item.shopping_item_id))];
+
+        const [taskRes, carryoverRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
+          taskIds.length > 0
+            ? supabase.from('task_instances').select('*').in('id', taskIds).order('due_at', { ascending: true, nullsFirst: false })
+            : Promise.resolve({ data: [] as TaskInstance[], error: null }),
+          carryoverIds.length > 0
+            ? supabase.from('task_instances').select('*').in('id', carryoverIds).order('due_at', { ascending: true, nullsFirst: false })
+            : Promise.resolve({ data: [] as TaskInstance[], error: null }),
+          requestIds.length > 0
+            ? supabase.from('requests').select('*').in('id', requestIds).order('due_at', { ascending: true, nullsFirst: false })
+            : Promise.resolve({ data: [] as RequestRow[], error: null }),
+          handoverIds.length > 0
+            ? supabase.from('handovers').select('*').in('id', handoverIds).order('created_at', { ascending: false })
+            : Promise.resolve({ data: [] as Handover[], error: null }),
+          shoppingIds.length > 0
+            ? supabase.from('shopping_items').select('*').in('id', shoppingIds).order('due_at', { ascending: true, nullsFirst: false })
+            : Promise.resolve({ data: [] as ShoppingItem[], error: null }),
+        ]);
+
+        if (taskRes.error) throw taskRes.error;
+        if (carryoverRes.error) throw carryoverRes.error;
+        if (requestRes.error) throw requestRes.error;
+        if (handoverRes.error) throw handoverRes.error;
+        if (shoppingRes.error) throw shoppingRes.error;
+
+        taskRows = taskRes.data ?? [];
+        carryoverRows = carryoverRes.data ?? [];
+        setTasks(taskRows);
+        setCarryoverTasks(carryoverRows);
+        setIncomingRequests(requestRes.data ?? []);
+        setOpenShoppingItems(shoppingRes.data ?? []);
+        setUnreadHandovers(handoverRes.data ?? []);
+        setBriefSchedule(brief.schedule ?? []);
+      }
+
+      const subtaskModeTaskIds = [...taskRows, ...carryoverRows]
+        .filter((task) => task.completion_mode === 'subtasks')
+        .map((task) => task.id);
       if (subtaskModeTaskIds.length > 0) {
         const { data: subtaskRows, error: subtaskError } = await supabase
           .from('task_subtask_instances')
@@ -131,8 +222,6 @@ export function useTodayData(householdId: string | null, userId: string | null):
       } else {
         setSubtasksByTaskId(new Map());
       }
-
-      setUnreadHandovers(handoverRes.data ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : '読み込みに失敗しました。');
     } finally {
@@ -144,11 +233,6 @@ export function useTodayData(householdId: string | null, userId: string | null):
     load();
   }, [load]);
 
-  // WP4 — Today refresh after partner mutation: whenever the household's
-  // tasks/requests/handovers/shopping change (typically the other member
-  // acting from their own device), re-run the same load() this screen
-  // already uses for its own mutations and initial load. No full-page
-  // reload; React just re-renders with fresher data.
   useRealtimeRefresh({ householdId, userId, onRemoteChange: load });
 
   return {
