@@ -15,7 +15,6 @@ declare
   v_task uuid;
   v_event uuid;
   v_result jsonb;
-  v_claim jsonb;
 begin
   insert into auth.users (id) values (v_owner) on conflict do nothing;
   insert into public.profiles (user_id,display_name) values (v_owner,'DD8 owner') on conflict do nothing;
@@ -89,16 +88,19 @@ begin
   ) then raise exception 'FAIL DD8: target DELETE was not superseded'; end if;
 
   -- Existing Task-trigger enqueue must not reclaim a transferred mirror.
-  update public.task_instances set title='保護者会（更新）' where id=v_task;
+  update public.task_instances
+  set due_at='2030-02-01 10:30:00+09'
+  where id=v_task;
   if not exists (
     select 1 from private.family_ops_calendar_mirrors
     where household_id=v_household and projection_key='special:'||v_task::text
       and ownership_transfer_state='transferred' and sync_state='blocked'
   ) then raise exception 'FAIL DD8: transferred Task mirror was re-enqueued'; end if;
-  v_claim:=public.server_tx_claim_family_ops_calendar_target_deletion('dd8-test',120);
-  if v_claim is not null and v_claim->>'id' = (
-    select id::text from private.family_ops_calendar_target_deletions
+  if exists (
+    select 1 from private.family_ops_calendar_target_deletions
     where household_id=v_household and projection_key='special:'||v_task::text
+      and ownership_transfer_state='delete_owned'
+      and sync_state in ('pending','failed','processing')
   ) then raise exception 'FAIL DD8: superseded target DELETE remained claimable'; end if;
   if exists (
     select 1 from private.canonical_google_provider_owner_audit_v1()
