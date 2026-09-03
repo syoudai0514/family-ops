@@ -264,3 +264,51 @@ export interface TaskEvent {
 // server_tx_list_pending_actions's jsonb shape
 // (20260819000102_pending_action_review_and_today_schedule.sql). Only ever
 // the current actor's own rows — never the partner's.
+export type PendingActionStatus = 'draft' | 'confirmed' | 'queued' | 'executing';
+export type PendingActionType =
+  | 'shopping_item_add'
+  | 'task_create_once'
+  | 'request_create'
+  | 'assignment_change_request'
+  | 'needs_pwa_review';
+
+export interface PendingAction {
+  id: string;
+  action_type: PendingActionType;
+  normalized_payload: Record<string, unknown>;
+  status: PendingActionStatus;
+  source: 'line' | 'pwa';
+  expires_at: string;
+  created_at: string;
+}
+
+// Sol re-review #3 fix (P1-2, docs/adr/0011) — Today Priority 1's "今/次の予定"
+// (02_UX_AND_SCREENS.md #3). Mirrors server_tx_get_today_schedule's jsonb
+// shape. occurrences/assignments are already filtered/conflict-annotated
+// server-side — the frontend renders this as-is, no calendar-domain
+// computation of its own.
+export interface TodayCalendarOccurrence {
+  occurrence_key: string;
+  title: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  busy_user_ids: string[];
+}
+
+export interface TodayScheduleAssignment {
+  task_instance_id: string;
+  title: string;
+  category: string;
+  due_at: string;
+  planned_assignee_id: string;
+  has_conflict: boolean;
+}
+
+export interface TodaySchedule {
+  household_id: string;
+  local_date: string;
+  calendar_connected: boolean;
+  calendar_stale: boolean;
+  occurrences: TodayCalendarOccurrence[];
+  assignments: TodayScheduleAssignment[];
+}
