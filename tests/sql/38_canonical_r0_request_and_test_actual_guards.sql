@@ -16,6 +16,7 @@ declare
   v_req_accept uuid := gen_random_uuid();
   v_req_decline uuid := gen_random_uuid();
   v_req_cancel uuid := gen_random_uuid();
+  v_accept_task uuid := gen_random_uuid();
   v_accept_at timestamptz := clock_timestamp();
   v_decline_at timestamptz := clock_timestamp() + interval '1 millisecond';
   v_cancel_at timestamptz := clock_timestamp() + interval '2 milliseconds';
@@ -60,13 +61,24 @@ begin
   end if;
 
   -- Simulate normal CURRENT old-runtime lifecycle writes after the initial
-  -- backfill. The legacy Request tuple remains authoritative during R0/R1.
+  -- backfill. A CURRENT-valid accepted Request always has its execution Task;
+  -- keeping that invariant in the fixture lets global reconciliation remain
+  -- strict instead of teaching it to tolerate an impossible accepted state.
+  insert into public.task_instances (
+    id, household_id, origin, title, category, routine_phase, scheduled_date,
+    planned_assignee_id, completion_mode, status, source, created_by
+  ) values (
+    v_accept_task, v_hh_id, 'request', 'R0 accepted execution task', 'other',
+    'anytime', current_date, v_partner, 'whole', 'todo', 'request', v_owner
+  );
+
   update public.requests
   set status = 'accepted',
       accepted_at = v_accept_at,
       declined_at = null,
       cancelled_at = null,
-      completed_at = null
+      completed_at = null,
+      linked_task_instance_id = v_accept_task
   where id = v_req_accept;
 
   update public.requests
