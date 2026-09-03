@@ -50,10 +50,10 @@ begin
   ) returning id into v_calendar_connection;
 
   -- -----------------------------------------------------------------------
-  -- DD8 case A: first drive the mirror through the real claim -> provider
-  -- completion lifecycle so it owns an existing provider event + etag. Then
-  -- re-enqueue an UPSERT, claim it, prove the live lease blocks transfer,
-  -- expire the lease, transfer, and prove the stale lease cannot authorize.
+  -- DD8 case A: seed only the durable queue row, then drive provider identity
+  -- through the real claim -> complete lifecycle.  The fixture never invents
+  -- provider_event_id/provider_etag directly.  After completion a real Task
+  -- mutation re-enqueues the existing provider mirror for the race.
   -- -----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
@@ -63,15 +63,29 @@ begin
     v_owner,'whole','todo','test',v_owner,'special'
   ) returning id into v_task_upsert;
 
-  -- Make this fixture deterministic relative to pending rows left by earlier
-  -- tests without fabricating provider identity directly in the private row.
-  update private.family_ops_calendar_mirrors
-  set next_attempt_at='1800-01-01',ownership_transfer_state='task_owned'
-  where household_id=v_household and projection_key='special:'||v_task_upsert::text;
+  insert into private.family_ops_calendar_mirrors(
+    household_id,projection_key,kind,local_date,task_instance_id,
+    calendar_connection_id,desired_action,sync_state,next_attempt_at,
+    ownership_transfer_state
+  ) values (
+    v_household,'special:'||v_task_upsert::text,'special','2030-03-01',v_task_upsert,
+    v_calendar_connection,'upsert','pending','1800-01-01','task_owned'
+  )
+  on conflict (household_id,projection_key) do update
+  set kind=excluded.kind,
+      local_date=excluded.local_date,
+      task_instance_id=excluded.task_instance_id,
+      calendar_connection_id=excluded.calendar_connection_id,
+      desired_action='upsert',sync_state='pending',attempts=0,
+      next_attempt_at='1800-01-01',lease_token=null,lease_until=null,last_error=null,
+      ownership_transfer_state='task_owned',updated_at=now();
+
   v_claim:=public.server_tx_claim_family_ops_calendar_mirror('dd8-race-upsert-seed',30);
-  if v_claim->>'projection_key'<>'special:'||v_task_upsert::text
-     or v_claim->>'action'<>'upsert' then
-    raise exception 'FAIL remediation DD8 A: seed UPSERT mirror was not claimed';
+  if v_claim is null
+     or v_claim->>'projection_key'<>'special:'||v_task_upsert::text
+     or v_claim->>'action'<>'upsert'
+     or nullif(v_claim->>'lease_token','') is null then
+    raise exception 'FAIL remediation DD8 A: seed UPSERT mirror was not claimed: %',v_claim;
   end if;
   v_lease:=(v_claim->>'lease_token')::uuid;
   perform public.server_tx_complete_family_ops_calendar_mirror(
@@ -93,9 +107,11 @@ begin
   ) returning id into v_event_upsert;
 
   v_claim:=public.server_tx_claim_family_ops_calendar_mirror('dd8-race-upsert-worker',30);
-  if v_claim->>'projection_key'<>'special:'||v_task_upsert::text
-     or v_claim->>'action'<>'upsert' then
-    raise exception 'FAIL remediation DD8 A: expected UPSERT mirror was not claimed';
+  if v_claim is null
+     or v_claim->>'projection_key'<>'special:'||v_task_upsert::text
+     or v_claim->>'action'<>'upsert'
+     or nullif(v_claim->>'lease_token','') is null then
+    raise exception 'FAIL remediation DD8 A: expected UPSERT mirror was not claimed: %',v_claim;
   end if;
   v_lease:=(v_claim->>'lease_token')::uuid;
   select calendar_connection_id,provider_event_id,provider_etag
@@ -147,10 +163,9 @@ begin
   ) then raise exception 'FAIL remediation DD8 A: transferred mirror was re-enqueued'; end if;
 
   -- -----------------------------------------------------------------------
-  -- DD8 case B: again create the provider identity through worker completion,
-  -- then cancel the Task so the normal trigger produces a DELETE. Claim that
-  -- DELETE, expire its lease, transfer ownership, and prove stale DELETE auth
-  -- plus target-deletion overlap are both eliminated.
+  -- DD8 case B: same provider-identity lifecycle, then a real Task cancel
+  -- re-enqueues DELETE. Claim DELETE, expire its lease, transfer ownership,
+  -- and prove stale DELETE auth plus target-deletion overlap are eliminated.
   -- -----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
@@ -159,13 +174,30 @@ begin
     v_household,'manual','DD8 DELETE seed','school','anytime','2030-03-02',
     v_owner,'whole','todo','test',v_owner,'special'
   ) returning id into v_task_delete;
-  update private.family_ops_calendar_mirrors
-  set next_attempt_at='1800-01-01',ownership_transfer_state='task_owned'
-  where household_id=v_household and projection_key='special:'||v_task_delete::text;
+
+  insert into private.family_ops_calendar_mirrors(
+    household_id,projection_key,kind,local_date,task_instance_id,
+    calendar_connection_id,desired_action,sync_state,next_attempt_at,
+    ownership_transfer_state
+  ) values (
+    v_household,'special:'||v_task_delete::text,'special','2030-03-02',v_task_delete,
+    v_calendar_connection,'upsert','pending','1800-01-01','task_owned'
+  )
+  on conflict (household_id,projection_key) do update
+  set kind=excluded.kind,
+      local_date=excluded.local_date,
+      task_instance_id=excluded.task_instance_id,
+      calendar_connection_id=excluded.calendar_connection_id,
+      desired_action='upsert',sync_state='pending',attempts=0,
+      next_attempt_at='1800-01-01',lease_token=null,lease_until=null,last_error=null,
+      ownership_transfer_state='task_owned',updated_at=now();
+
   v_claim:=public.server_tx_claim_family_ops_calendar_mirror('dd8-race-delete-seed',30);
-  if v_claim->>'projection_key'<>'special:'||v_task_delete::text
-     or v_claim->>'action'<>'upsert' then
-    raise exception 'FAIL remediation DD8 B: seed UPSERT mirror was not claimed';
+  if v_claim is null
+     or v_claim->>'projection_key'<>'special:'||v_task_delete::text
+     or v_claim->>'action'<>'upsert'
+     or nullif(v_claim->>'lease_token','') is null then
+    raise exception 'FAIL remediation DD8 B: seed UPSERT mirror was not claimed: %',v_claim;
   end if;
   v_lease:=(v_claim->>'lease_token')::uuid;
   perform public.server_tx_complete_family_ops_calendar_mirror(
@@ -185,9 +217,11 @@ begin
   where household_id=v_household and projection_key='special:'||v_task_delete::text;
 
   v_claim:=public.server_tx_claim_family_ops_calendar_mirror('dd8-race-delete-worker',30);
-  if v_claim->>'projection_key'<>'special:'||v_task_delete::text
-     or v_claim->>'action'<>'delete' then
-    raise exception 'FAIL remediation DD8 B: expected DELETE mirror was not claimed';
+  if v_claim is null
+     or v_claim->>'projection_key'<>'special:'||v_task_delete::text
+     or v_claim->>'action'<>'delete'
+     or nullif(v_claim->>'lease_token','') is null then
+    raise exception 'FAIL remediation DD8 B: expected DELETE mirror was not claimed: %',v_claim;
   end if;
   v_lease:=(v_claim->>'lease_token')::uuid;
   select calendar_connection_id,provider_event_id,provider_etag
