@@ -125,10 +125,25 @@ begin
     raise exception 'FAIL dd4-dd5-e2e: actual performer identity missing from history: %', v_item;
   end if;
 
-  -- Request completion is not independently inferred. Execution remains the
-  -- linked Task's state while the accepted agreement remains durable evidence.
-  if (select status from public.requests where id = v_request_id) <> 'accepted' then
-    raise exception 'FAIL dd4-dd5-e2e: Task completion rewrote Request agreement lifecycle';
+  -- The accepted agreement remains canonical Attempt history, while CURRENT
+  -- Request compatibility mirrors the linked execution completion so existing
+  -- lifecycle readers do not stay permanently accepted after work is done.
+  if not exists (
+    select 1 from public.requests
+    where id = v_request_id
+      and status = 'completed'
+      and accepted_at is not null
+      and completed_at is not null
+      and declined_at is null
+      and cancelled_at is null
+  ) then
+    raise exception 'FAIL dd4-dd5-e2e: Task completion did not mirror Request lifecycle';
+  end if;
+  if not exists (
+    select 1 from public.request_attempts
+    where id = v_attempt_id and state = 'accepted' and accepted_at is not null
+  ) then
+    raise exception 'FAIL dd4-dd5-e2e: accepted agreement history was not preserved';
   end if;
 end;
 $$;
