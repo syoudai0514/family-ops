@@ -11,6 +11,9 @@ declare
   v_owner_ref uuid;
   v_google_connection uuid;
   v_calendar_connection uuid;
+  v_claim_calendar_connection uuid;
+  v_provider_event_id text;
+  v_provider_etag text;
   v_task_upsert uuid;
   v_task_delete uuid;
   v_event_upsert uuid;
@@ -75,12 +78,20 @@ begin
     raise exception 'FAIL remediation DD8 A: expected UPSERT mirror was not claimed';
   end if;
   v_lease:=(v_claim->>'lease_token')::uuid;
+  select calendar_connection_id,provider_event_id,provider_etag
+    into v_claim_calendar_connection,v_provider_event_id,v_provider_etag
+  from private.family_ops_calendar_mirrors
+  where household_id=v_household and projection_key='special:'||v_task_upsert::text;
+  if v_claim_calendar_connection is null or nullif(v_provider_event_id,'') is null
+     or nullif(v_provider_etag,'') is null then
+    raise exception 'FAIL remediation DD8 A: claimed provider identity incomplete';
+  end if;
 
   begin
     perform private.fn_transfer_task_mirror_to_family_event_v1(
       v_household,v_owner,v_owner_ref,'20000000-0000-0000-0000-000000000150',
-      v_event_upsert,v_calendar_connection,'special:'||v_task_upsert::text,
-      'dd8-race-upsert','etag-upsert',jsonb_build_object('title','DD8 UPSERT family event'),
+      v_event_upsert,v_claim_calendar_connection,'special:'||v_task_upsert::text,
+      v_provider_event_id,v_provider_etag,jsonb_build_object('title','DD8 UPSERT family event'),
       now(),'family_ops_owned'
     );
     raise exception 'FAIL remediation DD8 A: active processing lease allowed transfer';
@@ -93,15 +104,15 @@ begin
   where household_id=v_household and projection_key='special:'||v_task_upsert::text;
   v_transfer:=private.fn_transfer_task_mirror_to_family_event_v1(
     v_household,v_owner,v_owner_ref,'20000000-0000-0000-0000-000000000151',
-    v_event_upsert,v_calendar_connection,'special:'||v_task_upsert::text,
-    'dd8-race-upsert','etag-upsert',jsonb_build_object('title','DD8 UPSERT family event'),
+    v_event_upsert,v_claim_calendar_connection,'special:'||v_task_upsert::text,
+    v_provider_event_id,v_provider_etag,jsonb_build_object('title','DD8 UPSERT family event'),
     now(),'family_ops_owned'
   );
   if v_transfer->>'ownership_transfer_state'<>'validated' then
     raise exception 'FAIL remediation DD8 A: transfer after expiry did not succeed';
   end if;
   v_auth:=public.server_tx_authorize_family_ops_calendar_mirror(
-    v_household,'special:'||v_task_upsert::text,v_lease,v_calendar_connection,'dd8-race-upsert'
+    v_household,'special:'||v_task_upsert::text,v_lease,v_claim_calendar_connection,v_provider_event_id
   );
   if coalesce((v_auth->>'authorized')::boolean,false) then
     raise exception 'FAIL remediation DD8 A: stale UPSERT worker retained provider authorization';
@@ -131,11 +142,6 @@ begin
       desired_action='delete',sync_state='pending',next_attempt_at='1900-01-01',
       ownership_transfer_state='task_owned'
   where household_id=v_household and projection_key='special:'||v_task_delete::text;
-  insert into private.family_ops_calendar_target_deletions(
-    household_id,calendar_connection_id,projection_key,provider_event_id,sync_state,ownership_transfer_state
-  ) values (
-    v_household,v_calendar_connection,'special:'||v_task_delete::text,'dd8-race-delete','pending','delete_owned'
-  );
   insert into public.family_events(
     household_id,title,all_day,starts_at,ends_at,calendar_sync_preference,created_by_actor_ref_id
   ) values (
@@ -149,24 +155,41 @@ begin
     raise exception 'FAIL remediation DD8 B: expected DELETE mirror was not claimed';
   end if;
   v_lease:=(v_claim->>'lease_token')::uuid;
+  select calendar_connection_id,provider_event_id,provider_etag
+    into v_claim_calendar_connection,v_provider_event_id,v_provider_etag
+  from private.family_ops_calendar_mirrors
+  where household_id=v_household and projection_key='special:'||v_task_delete::text;
+  if v_claim_calendar_connection is null or nullif(v_provider_event_id,'') is null
+     or nullif(v_provider_etag,'') is null then
+    raise exception 'FAIL remediation DD8 B: claimed provider identity incomplete';
+  end if;
+
+  insert into private.family_ops_calendar_target_deletions(
+    household_id,calendar_connection_id,projection_key,provider_event_id,sync_state,ownership_transfer_state
+  ) values (
+    v_household,v_claim_calendar_connection,'special:'||v_task_delete::text,
+    v_provider_event_id,'pending','delete_owned'
+  );
+
   update private.family_ops_calendar_mirrors
   set lease_until=now()-interval '1 second'
   where household_id=v_household and projection_key='special:'||v_task_delete::text;
   v_transfer:=private.fn_transfer_task_mirror_to_family_event_v1(
     v_household,v_owner,v_owner_ref,'20000000-0000-0000-0000-000000000152',
-    v_event_delete,v_calendar_connection,'special:'||v_task_delete::text,
-    'dd8-race-delete','etag-delete',jsonb_build_object('title','DD8 DELETE family event'),
+    v_event_delete,v_claim_calendar_connection,'special:'||v_task_delete::text,
+    v_provider_event_id,v_provider_etag,jsonb_build_object('title','DD8 DELETE family event'),
     now(),'family_ops_owned'
   );
   v_auth:=public.server_tx_authorize_family_ops_calendar_mirror(
-    v_household,'special:'||v_task_delete::text,v_lease,v_calendar_connection,'dd8-race-delete'
+    v_household,'special:'||v_task_delete::text,v_lease,v_claim_calendar_connection,v_provider_event_id
   );
   if coalesce((v_auth->>'authorized')::boolean,false) then
     raise exception 'FAIL remediation DD8 B: stale DELETE worker retained provider authorization';
   end if;
   if exists(
     select 1 from private.family_ops_calendar_target_deletions
-    where household_id=v_household and provider_event_id='dd8-race-delete'
+    where household_id=v_household and calendar_connection_id=v_claim_calendar_connection
+      and provider_event_id=v_provider_event_id
       and ownership_transfer_state='delete_owned'
       and sync_state in ('pending','failed','processing')
   ) then raise exception 'FAIL remediation DD8 B: target deletion ownership overlapped transfer'; end if;
