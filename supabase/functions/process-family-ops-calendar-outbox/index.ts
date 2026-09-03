@@ -113,6 +113,22 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       );
       cleanupAccessToken = accessToken;
       cleanupCalendarId = externalCalendarId;
+      // DELETE is a provider mutation.  The durable queue row is not enough:
+      // ownership is rechecked after the lease and immediately before every
+      // provider read/delete, so a Family Event transfer is fail-closed.
+      const authorization = await callGoogleServerTx<{ authorized: boolean; reason?: string }>(
+        serviceClient,
+        "server_tx_authorize_family_ops_calendar_target_deletion",
+        { p_id: targetDeletion.id, p_lease_token: targetDeletion.lease_token },
+      );
+      if (!authorization.authorized) {
+        return new Response(JSON.stringify({
+          processed: 0,
+          target_cleanup: targetDeletion.projection_key,
+          superseded: true,
+          reason: authorization.reason ?? "ownership_changed",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
       if (existing.status === 200) {
         let status = await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id, ifMatchEtag: existing.etag });

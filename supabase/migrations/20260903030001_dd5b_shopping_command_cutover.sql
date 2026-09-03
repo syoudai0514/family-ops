@@ -127,10 +127,12 @@ begin
   if new.test_context_id is distinct from v_parent_test_context_id then
     raise exception 'TEST_CONTEXT_PARENT_MISMATCH';
   end if;
-  if tg_table_name = 'family_event_external_links' and not exists (
-    select 1 from public.calendar_connections c
-    where c.id = new.calendar_connection_id and c.household_id = new.household_id
-  ) then raise exception 'CALENDAR_CONNECTION_HOUSEHOLD_MISMATCH'; end if;
+  if tg_table_name = 'family_event_external_links' then
+    if not exists (
+      select 1 from public.calendar_connections c
+      where c.id = new.calendar_connection_id and c.household_id = new.household_id
+    ) then raise exception 'CALENDAR_CONNECTION_HOUSEHOLD_MISMATCH'; end if;
+  end if;
   return new;
 end;
 $$;
