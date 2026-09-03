@@ -43,10 +43,14 @@ begin
     v_household,v_owner,'remediation-google-subject','cipher',1,
     array['https://www.googleapis.com/auth/calendar.events'],'active'
   ) returning id into v_google_connection;
+  -- OAuth v2 deliberately removed implicit write-target selection. The race
+  -- fixture models a household that already made the explicit calendar choice.
   insert into public.calendar_connections(
-    household_id,provider,external_calendar_id,google_connection_id,active,reauth_required
+    household_id,provider,external_calendar_id,google_connection_id,
+    active,reauth_required,is_family_write_target
   ) values (
-    v_household,'google','remediation@example.test',v_google_connection,true,false
+    v_household,'google','remediation@example.test',v_google_connection,
+    true,false,true
   ) returning id into v_calendar_connection;
 
   -- -----------------------------------------------------------------------
@@ -93,11 +97,11 @@ begin
     'dd8-race-upsert','etag-upsert',false
   );
 
-  -- due_at is one of the production projection trigger columns.  Use that
-  -- real path rather than a title-only mutation, which intentionally does not
-  -- enqueue a Google projection.
+  -- due_at/calendar_ends_at are production projection trigger columns and the
+  -- pair is a valid timed Google event shape.
   update public.task_instances
-  set due_at='2030-03-01 12:00+09'::timestamptz
+  set due_at='2030-03-01 12:00+09'::timestamptz,
+      calendar_ends_at='2030-03-01 13:00+09'::timestamptz
   where id=v_task_upsert;
   update private.family_ops_calendar_mirrors
   set next_attempt_at='1800-01-01'
@@ -160,7 +164,8 @@ begin
   -- Exercise the same production enqueue trigger after transfer.  A legacy
   -- Task mutation must not reclaim a provider identity now owned by FamilyEvent.
   update public.task_instances
-  set due_at='2030-03-01 13:00+09'::timestamptz
+  set due_at='2030-03-01 14:00+09'::timestamptz,
+      calendar_ends_at='2030-03-01 15:00+09'::timestamptz
   where id=v_task_upsert;
   if not exists(
     select 1 from private.family_ops_calendar_mirrors
