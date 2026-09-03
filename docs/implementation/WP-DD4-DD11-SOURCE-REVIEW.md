@@ -86,7 +86,9 @@ Review together:
 identity `(calendar_connection_id, provider_event_id, provider_etag)` and covers
 UPSERT and DELETE races: claim, active-lease transfer denial, lease expiry,
 transfer, stale-lease authorization denial, transferred-mirror re-enqueue denial,
-target-deletion overlap removal, and `active_owner_count <= 1`.
+target-deletion overlap removal, and `active_owner_count <= 1`. Its Task fixtures
+also carry canonical real-user ActorRef assignment state so final reconciliation
+is exercised without fixture-only assignment anomalies.
 
 ### DD9 — privacy / structured persistence hardening
 
@@ -164,13 +166,21 @@ Review:
 
 ### DD11 reconciliation and final zero gates
 
-The reconciliation/readiness logic must understand valid canonical terminal
-states rather than flagging them as legacy anomalies, but it must not suppress
-real P1 blockers.
+The reconciliation/readiness logic must understand valid canonical terminal and
+assignment states rather than flagging them as legacy anomalies, but it must not
+suppress real P1 blockers.
+
+In particular, DD5B's canonical Shopping `assignment_mode='anyone'` is a valid
+unowned assignment state with both legacy `assignee_id` and canonical
+`assignee_actor_ref_id` null; active claim ownership is tracked separately by
+`active_claimant_actor_ref_id`. The final reconciliation therefore distinguishes
+`person`, `unassigned`, and `anyone` instead of treating every null legacy
+assignee as `unassigned`.
 
 Review:
 
 - `supabase/migrations/20260903030018_dd11_reconciliation_semantics_remediation.sql`
+- `supabase/migrations/20260903030019_dd11_shopping_assignment_reconciliation.sql`
 - `tests/sql/49_dd11_cutover_readiness_audits.sql`
 - `tests/sql/98_dd11_full_readiness_zero.sql`
 - `tests/sql/99_canonical_reconciliation_zero.sql`
@@ -223,6 +233,7 @@ At minimum:
 - `tests/sql/51_claude_source_review_remediation.sql`
 - `tests/sql/98_dd11_full_readiness_zero.sql`
 - `tests/sql/99_canonical_reconciliation_zero.sql`
+- `supabase/migrations/20260903030019_dd11_shopping_assignment_reconciliation.sql`
 - `supabase/functions/process-family-ops-calendar-outbox/providerMutationFence.test.ts`
 - `docs/implementation/FAMILY-OPS-WORK-INTEGRATION-STATUS.md`
 - `docs/implementation/FAMILY-OPS-CUTOVER-READINESS-RUNBOOK.md`
