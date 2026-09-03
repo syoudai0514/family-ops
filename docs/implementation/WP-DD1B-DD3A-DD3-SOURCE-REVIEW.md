@@ -111,6 +111,9 @@ The following are intentionally not invented here:
   - rerunning the R0 maintenance backfill after a canonical Request command does
     not add a legacy Attempt, collide with the active-Attempt constraint, or
     create a false reconciliation anomaly.
+- `43_member_actor_ref_continuity.sql`
+  - members created after the one-time backfill immediately receive exactly one
+    canonical real-user ActorRef through the normal create/join path.
 
 ## Independent review focus
 
@@ -122,8 +125,9 @@ The following are intentionally not invented here:
 6. Task assignment/claim/waiting/completion/performer correction atomicity;
 7. group reconciliation eligibility/stale behavior;
 8. exact terms-revision two-party confirmation;
-9. Family Event/Google ownership foundation remaining inactive/non-overlapping;
-10. 50-table and provider/Request anomaly reconciliation.
+9. post-migration household-member to ActorRef continuity;
+10. Family Event/Google ownership foundation remaining inactive/non-overlapping;
+11. 50-table and provider/Request anomaly reconciliation.
 
 ## Prohibited in this PR
 
