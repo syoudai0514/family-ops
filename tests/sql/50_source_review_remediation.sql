@@ -65,10 +65,11 @@ begin
   -- -----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
-    planned_assignee_id,completion_mode,status,source,created_by,calendar_visibility
+    planned_assignee_id,planned_assignee_actor_ref_id,assignment_mode,assignment_source,
+    completion_mode,status,source,created_by,calendar_visibility
   ) values (
     v_household,'manual','DD8 UPSERT seed','school','anytime','2030-03-01',
-    v_owner,'whole','todo','test',v_owner,'special'
+    v_owner,v_owner_ref,'person','manual','whole','todo','test',v_owner,'special'
   ) returning id into v_task_upsert;
 
   insert into private.family_ops_calendar_mirrors(
@@ -177,10 +178,11 @@ begin
   -- -----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
-    planned_assignee_id,completion_mode,status,source,created_by,calendar_visibility
+    planned_assignee_id,planned_assignee_actor_ref_id,assignment_mode,assignment_source,
+    completion_mode,status,source,created_by,calendar_visibility
   ) values (
     v_household,'manual','DD8 DELETE seed','school','anytime','2030-03-02',
-    v_owner,'whole','todo','test',v_owner,'special'
+    v_owner,v_owner_ref,'person','manual','whole','todo','test',v_owner,'special'
   ) returning id into v_task_delete;
 
   insert into private.family_ops_calendar_mirrors(
