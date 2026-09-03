@@ -224,24 +224,26 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       item.calendar_connection_id,
       decryptRefreshToken,
     );
-    accessToken = connection.accessToken;
-    externalCalendarId = connection.externalCalendarId;
+    const providerAccessToken = connection.accessToken;
+    const providerCalendarId = connection.externalCalendarId;
+    accessToken = providerAccessToken;
+    externalCalendarId = providerCalendarId;
 
     if (item.action === "delete") {
       const targetId = item.provider_event_id;
       if (targetId) {
-        const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
+        const existing = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
         if (existing.status === 200) {
           let status = await withProviderMutationFence(
             () => authorizeMirrorMutation(serviceClient, item, targetId),
-            () => deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId, ifMatchEtag: existing.etag }),
+            () => deleteEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId, ifMatchEtag: existing.etag }),
           );
           if (status === 412) {
-            const latest = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
+            const latest = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
             status = latest.status === 200
               ? await withProviderMutationFence(
                 () => authorizeMirrorMutation(serviceClient, item, targetId),
-                () => deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId, ifMatchEtag: latest.etag }),
+                () => deleteEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId, ifMatchEtag: latest.etag }),
               )
               : latest.status;
           }
@@ -253,18 +255,18 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       if (!item.event) throw new Error("claimed mirror omitted event payload");
       const targetId = item.provider_event_id ?? item.deterministic_event_id;
       const desired = eventPayloadWithStableIdentity({ ...(await addCanonicalSpecialAssignee(serviceClient, item, item.event)), id: targetId });
-      const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
+      const existing = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
       let etag: string | null = null;
 
       if (existing.status === 404) {
         const inserted = await withProviderMutationFence(
           () => authorizeMirrorMutation(serviceClient, item, targetId),
-          () => insertEvent({ accessToken, calendarId: externalCalendarId, body: desired }),
+          () => insertEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, body: desired }),
         );
         if (inserted.status === 409) {
           // A response may have been lost after create. Verify the durable
           // projection marker on the deterministic id; never search by title.
-          const reconciled = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
+          const reconciled = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
           if (reconciled.status !== 200 || mirrorProperties(reconciled.body ?? {}).familyOpsProjectionKey !== item.projection_key) {
             throw new Error("provider id collision for Family Ops mirror");
           }
@@ -290,21 +292,22 @@ Deno.serve(withServiceHandler(async (req: Request) => {
         const patched = await withProviderMutationFence(
           () => authorizeMirrorMutation(serviceClient, item, targetId),
           () => patchEvent({
-            accessToken,
-            calendarId: externalCalendarId,
+            accessToken: providerAccessToken,
+            calendarId: providerCalendarId,
             eventId: targetId,
             body: desiredForPatch,
             ifMatchEtag: existing.etag ?? "",
           }),
         );
         if (patched.status === 412) {
-          const latest = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
-          if (latest.status !== 200 || !latest.etag) throw new Error("calendar event changed and could not be reread");
+          const latest = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
+          const latestEtag = latest.etag;
+          if (latest.status !== 200 || !latestEtag) throw new Error("calendar event changed and could not be reread");
           const retry = await withProviderMutationFence(
             () => authorizeMirrorMutation(serviceClient, item, targetId),
             () => patchEvent({
-              accessToken,
-              calendarId: externalCalendarId,
+              accessToken: providerAccessToken,
+              calendarId: providerCalendarId,
               eventId: targetId,
               body: {
                 ...desiredForPatch,
@@ -312,11 +315,11 @@ Deno.serve(withServiceHandler(async (req: Request) => {
                   private: mergePrivateExtendedProperties(mirrorProperties(latest.body ?? {}), mirrorProperties(desired)),
                 },
               },
-              ifMatchEtag: latest.etag,
+              ifMatchEtag: latestEtag,
             }),
           );
           requireExpectedGoogleStatus("patchEvent retry", retry.status, [200]);
-          etag = typeof retry.body?.etag === "string" ? retry.body.etag : latest.etag;
+          etag = typeof retry.body?.etag === "string" ? retry.body.etag : latestEtag;
         } else if (patched.status === 200) {
           etag = typeof patched.body?.etag === "string" ? patched.body.etag : existing.etag;
         } else {
