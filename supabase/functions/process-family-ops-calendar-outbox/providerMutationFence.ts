@@ -59,7 +59,7 @@ export async function withProviderMutationFence<T>(
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) throw new ProviderMutationDeadlineError();
 
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new ProviderMutationDeadlineError()), remainingMs);
   });
