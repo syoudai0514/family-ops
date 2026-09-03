@@ -78,6 +78,18 @@ vi.mock('./lib/supabaseClient', () => {
         signOut: vi.fn(() => Promise.resolve({ error: null })),
       },
       from: vi.fn((table: string) => queryFor(table)),
+      rpc: vi.fn((name: string) => {
+        if (name === 'get_my_daily_brief') {
+          return Promise.resolve({
+            data: {
+              tasks: [], carryover: [], already_handled: [], urgent_actions: [],
+              handovers: [], shopping: [], schedule: [],
+            },
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: null, error: null });
+      }),
       channel: vi.fn(() => channel),
       removeChannel: vi.fn(),
     },

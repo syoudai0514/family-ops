@@ -157,6 +157,12 @@ export interface ShoppingItem {
   ordered_at: string | null;
   purchased_at: string | null;
   arrived_at: string | null;
+  assignment_mode?: 'person' | 'unassigned' | 'anyone' | null;
+  assignee_actor_ref_id?: string | null;
+  active_claimant_actor_ref_id?: string | null;
+  claimed_at?: string | null;
+  duplicate_sensitivity?: 'normal' | 'avoid_duplicate' | 'safety_critical' | null;
+  revision?: number;
 }
 
 export interface UserNotification {

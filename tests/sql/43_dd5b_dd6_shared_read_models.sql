@@ -1,4 +1,4 @@
--- WP-DD5B partial reader + WP-DD6 shared DailyBrief invariants.
+-- WP-DD5B canonical reader + WP-DD6 shared DailyBrief invariants.
 \set ON_ERROR_STOP on
 
 set role service_role;
@@ -23,14 +23,21 @@ begin
   insert into public.household_members(household_id,user_id,member_role)
   values(v_hh_id,v_partner,'adult');
 
-  -- server_tx_create_household already creates the owner's canonical ActorRef.
-  -- Do not re-run the legacy canonical backfill here: other SQL tests intentionally
-  -- leave canonical RequestAttempts in the shared test DB, and a second backfill
-  -- would try to synthesize legacy attempts for those already-canonical requests.
+  -- This suite shares one database across SQL files. Re-running the global legacy
+  -- backfill here would inspect fixtures owned by earlier tests, while the legacy
+  -- household creator predates ActorRef and therefore does not create one itself.
+  -- Seed only this fixture's exact, deterministic production ActorRefs.
+  insert into public.domain_actor_refs(household_id,actor_kind,real_user_id)
+  values
+    (v_hh_id,'real_user',v_owner),
+    (v_hh_id,'real_user',v_partner)
+  on conflict (household_id,real_user_id) where actor_kind='real_user'
+  do nothing;
+
   select id into v_owner_actor from public.domain_actor_refs
   where household_id=v_hh_id and actor_kind='real_user' and real_user_id=v_owner;
   if v_owner_actor is null then
-    raise exception 'FAIL DD5B/DD6: canonical owner ActorRef missing';
+    raise exception 'FAIL DD5B/DD6: canonical owner ActorRef fixture setup failed';
   end if;
 
   -- Official accepted schedule names only.
@@ -83,8 +90,8 @@ begin
     raise exception 'FAIL DD6: disabled evening slot emitted';
   end if;
 
-  -- DD5B remains reader-first. Use the existing operational Shopping writer as
-  -- fixture input, then attach canonical actual evidence already owned by #44.
+  -- The legacy public signature now delegates to the canonical Shopping
+  -- command and defaults ordinary Shopping to duplicate-safe handling.
   v_item_id := (public.server_tx_add_shopping_item(
     v_owner,gen_random_uuid(),'Milk','either',null,null,null
   )->>'shopping_item_id')::uuid;
@@ -93,8 +100,8 @@ begin
   ) values(v_hh_id,v_item_id,v_owner_actor,v_owner_actor);
 
   v_shop := public.server_read_shopping_workspace(v_owner);
-  if v_shop->>'writer_state' <> 'dependency_gap' then
-    raise exception 'FAIL DD5B: partial writer dependency not explicit';
+  if v_shop->>'writer_state' <> 'canonical_v1' then
+    raise exception 'FAIL DD5B: canonical writer state not exposed';
   end if;
   if not exists (
     select 1 from jsonb_array_elements(v_shop->'active') e

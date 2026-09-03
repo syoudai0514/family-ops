@@ -1,64 +1,140 @@
-# Family Ops — WP-DD1B / DD2 remainder / DD3A / DD3 Parallel Implementation
+# Family Ops — WP-DD1 / DD2 remainder / DD3A / DD3 Source Review Handoff
 
 ## Status
 
-**IMPLEMENTATION IN PROGRESS / STACKED ON PR #43 FIXED HEAD / DO NOT REVIEW OR MERGE YET**
+**SOURCE-REVIEW CANDIDATE / DRAFT PR / NO PRODUCTION APPLY / NO MERGE**
 
-This branch is intentionally stacked on the fixed PR #43 source-review head:
+PR #44 is retargeted directly to CURRENT `main`; the earlier stacked-on-PR-#43 wording is obsolete.
 
-`0061928ca55d5e5a0cb9492e8bf87820d9dd7a83`
+Canonical contracts:
 
-PR #43 remains frozen while independent source re-review runs. This branch may advance in parallel, but it must not be merged to `main` until its dependency is resolved and the branch is rebased/retargeted onto the accepted main lineage.
+- `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
+- `docs/design/current/`
+- ADR 0013 Accepted
 
-## Consolidated scope goal
+This unit remains pre-P1. No production canonical reader cutover, real LINE delivery, Google Family Event writer activation, production migration apply, or merge is authorized.
 
-To reduce repeated review overhead, the next review unit aims to finish as much as can safely be reviewed together from:
+## Consolidated review scope
 
-- remainder of WP-DD1 schema foundation;
-- remainder of WP-DD2 compatibility/reconciliation prerequisites needed by the command layer;
-- WP-DD3A test identity + side-effect sandbox foundation;
-- WP-DD3 canonical transaction / concurrency foundation.
+One independent source-review unit covering the maximum safe pre-cutover implementation for:
 
-It remains before user-facing aggregate cutover. No P1, production migration apply, Google Authority activation, or normal LINE/PWA canonical reader cutover is authorized by this branch.
+- remaining WP-DD1 additive/evolution domain foundation;
+- remaining WP-DD2 deterministic compatibility/reconciliation;
+- WP-DD3A test identity + side-effect sandbox;
+- WP-DD3 canonical transaction/concurrency command foundation.
 
-## Implemented so far on this parallel branch
+## Implemented
 
-### Test execution / side-effect sandbox foundation
+### WP-DD1 / WP-DD2 remainder
 
-- `private.fn_validate_execution_context_v1` validates server-supplied operator/household/ActorRef/test-context combination;
-- production execution rejects simulated ActorRef;
-- test execution requires active context owned by the authenticated real operator identity supplied by the server;
-- dedicated `private.test_delivery_outbox` physically separates synthetic operator delivery from production `notification_outbox`;
-- synthetic delivery stores operator provenance and semantic ActorRef separately;
-- archived test context cannot authorize a new synthetic delivery;
-- `private.canonical_operation_receipts` gives operation idempotency a canonical identity of semantic actor + execution scope rather than overloading legacy operator `actor_id`;
-- `private.pending_actions` test ActorRef/test-context is now DB-validated while legacy `actor_id` remains operator provenance;
-- `private.mutation_receipts.actor_id` remains operator provenance while its optional canonical ActorRef/test-context is independently DB-validated.
+- ActorRef-capable Request/Task-event/handover compatibility;
+- Request Attempt compatibility projection preserving CURRENT status/timestamp CHECK semantics;
+- Task actual participants and reconciliation evidence;
+- deterministic legacy ActorRef/assignment/participant/Request Attempt/subtask backfill;
+- rerunnable backfill coexistence with canonical-created Request Attempts (no
+  guessed legacy Attempt and no active-attempt uniqueness collision);
+- DailyBrief schedule kinds + one-day override foundation;
+- Family Event / field-authority / external-link schema foundation without writer activation;
+- change-candidate foundation;
+- child / school-context / source-document foundation;
+- shopping participant/revision/test prerequisites;
+- CURRENT 50-table assertion (public 27/private 23);
+- Request/Task/assignment-scope anomaly reconciliation;
+- Google Task mirror / target-deletion / orphan provider-lifecycle inventory;
+- semantic ActorRef label helper including `🧪 ママ` / `🧪 パパ`.
 
-### SQL coverage
+### WP-DD3A sandbox
 
-`tests/sql/38_test_execution_sandbox_foundation.sql` covers:
+- server-derived execution context validation;
+- authenticated operator provenance separated from semantic ActorRef;
+- no fake auth/member for simulated spouse;
+- dedicated `private.test_delivery_outbox`, physically separate from production notification outbox;
+- canonical operation receipt identity = semantic actor + operation + test scope;
+- pending-action / mutation-receipt ActorRef/test validation;
+- production reads exclude test business rows;
+- production notification/Google/real-consent side-effect guards;
+- immutable Task test context;
+- Google projection defense in depth:
+  - INSERT/UPDATE/DELETE trigger checks `NEW/OLD.test_context_id` directly;
+  - transport existence scans exclude test Tasks;
+  - dropoff/pickup provider materialization excludes test Tasks;
+  - special lookup excludes test Tasks;
+  - calendar reconciliation enumerates production Tasks only;
+  - worker re-read is production-only.
 
-- simulated actor resolves only in test mode;
-- operator mismatch is rejected;
-- production execution with simulated actor is rejected;
-- dedicated synthetic delivery is test-only and preserves operator vs semantic actor separation;
-- same operation ID can exist for production papa and simulated mama without receipt collision;
-- pending action / legacy mutation receipt preserve operator provenance and simulated domain actor separately;
-- archived test context rejects new delivery.
+### WP-DD3 commands
 
-## Still to implement before this branch becomes a source-review candidate
+- receipt claim/replay/hash-conflict semantics;
+- aggregate row locking + expected revision checks;
+- Task waiting/resume;
+- assignment change foundation;
+- anyone claim/release/takeover;
+- Task completion with participant/audit/intent;
+- performer correction preserving history;
+- deterministic skipped outcome;
+- group reconciliation;
+- Request create/checking/consultation/terms confirmation/accept;
+- Request legacy lifecycle projection;
+- info acknowledgement/superseding correction;
+- candidate reject/stale/fail-closed accept boundary.
 
-- remaining direct test-scope/read leakage guards identified by canonical design;
-- fail-closed adapter boundary proving test execution cannot enqueue production LINE/Google/real-consent effects;
-- canonical command receipt helper/replay semantics;
-- optimistic revision guard shared by mutable aggregate commands;
-- Task waiting/resume, assignment/claim/takeover, completion/correction command contracts;
-- group reconciliation command contract;
-- Request Attempt transition command contract;
-- canonical notification intent transaction hook foundation;
-- tests for stale revision, replay/conflict, terminal-attempt no-reopen, performer preservation, and transaction atomicity.
+## Intentional fail-closed boundaries
 
-## Dependency rule
+The following are intentionally not invented here:
 
-If PR #43 receives another required fix, apply the same fix to this stacked branch before any review request. If PR #43 is accepted and merged, retarget/rebase this branch onto the resulting `main` before final source review.
+- `CANONICAL_ASSIGNMENT_CHANGE_ACCEPT_NOT_ENABLED` — multi-Task assignment-change accept awaits a fully revision-safe atomic scope;
+- `CANDIDATE_ACCEPT_TARGET_ADAPTER_NOT_ENABLED` — accept awaits target-specific lock/revision/authority adapters;
+- Family Event Google writer/ownership transfer is inactive;
+- Task-mirror transfer, stale target-deletion supersession and orphan adoption remain later work;
+- no P1 semantic activation;
+- no production LINE/PWA canonical cutover.
+
+## Required SQL evidence
+
+- `37_canonical_identity_operational_foundation.sql`
+  - accepted/completed Request fixtures use valid linked Tasks;
+  - reconciliation remains strict and must be zero for valid fixture state.
+- `38_test_execution_sandbox_foundation.sql`
+  - operator/domain actor separation, receipt identity, archived-context rejection.
+- `39_dd3a_mandatory_actorref_e2e.sql`
+  - one real papa/operator drives papa + simulated-mama Request/consultation/Task E2E without fake membership.
+- `40_canonical_command_concurrency_reconciliation.sql`
+  - replay/conflict, stale revision, claim/takeover, waiting/resume, completion/correction, reconciliation, info/candidate boundaries.
+- `41_google_projection_test_scope_isolation.sql`
+  - test Task INSERT → production Google mirror unchanged;
+  - UPDATE → unchanged;
+  - DELETE → unchanged without deleted-row lookup;
+  - reconcile excludes test Tasks;
+  - test real-user transport Task cannot alter production P/M payload;
+  - stale/hostile special mirror referencing a test Task cannot produce provider upsert.
+- `42_canonical_backfill_command_coexistence.sql`
+  - rerunning the R0 maintenance backfill after a canonical Request command does
+    not add a legacy Attempt, collide with the active-Attempt constraint, or
+    create a false reconciliation anomaly.
+- `43_member_actor_ref_continuity.sql`
+  - members created after the one-time backfill immediately receive exactly one
+    canonical real-user ActorRef through the normal create/join path.
+
+## Independent review focus
+
+1. simulated ActorRef vs real operator/auth identity separation;
+2. test execution → production LINE/Google/real-consent isolation;
+3. Google isolation at trigger entry and every production Task scan/materialization path;
+4. receipt replay/hash conflict and lock/revision ordering;
+5. Request Attempt → legacy Request lifecycle tuple projection;
+6. Task assignment/claim/waiting/completion/performer correction atomicity;
+7. group reconciliation eligibility/stale behavior;
+8. exact terms-revision two-party confirmation;
+9. post-migration household-member to ActorRef continuity;
+10. Family Event/Google ownership foundation remaining inactive/non-overlapping;
+11. 50-table and provider/Request anomaly reconciliation.
+
+## Prohibited in this PR
+
+- production Supabase apply;
+- real LINE delivery;
+- Google provider mutation;
+- P1 activation;
+- `main` merge.
+
+Anchor the next independent source review to the exact PR head whose full required CI is green. Any head movement requires reviewing that new exact head.
