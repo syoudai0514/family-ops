@@ -83,6 +83,15 @@ begin
     raise exception 'FAIL google-test-isolation: test INSERT enqueued production mirror';
   end if;
 
+  -- Defense in depth: even an accidental direct helper call cannot turn an
+  -- existing test Task into a production Google projection.
+  perform private.enqueue_family_ops_calendar_projection(
+    v_hh_id, v_pickup_def, v_date, v_test_task
+  );
+  if (select count(*) from private.family_ops_calendar_mirrors where household_id = v_hh_id) <> v_before then
+    raise exception 'FAIL google-test-isolation: helper directly enqueued test Task';
+  end if;
+
   -- UPDATE must exercise a Google-trigger watched field while preserving the
   -- valid real-user ActorRef/legacy mirror pairing on the test Task.
   update public.task_instances
