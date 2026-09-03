@@ -38,6 +38,8 @@ begin
 
   -- ----------------------------------------------------------------------
   -- DD8 A: Task mirror provider call remains fenced after worker lease expiry.
+  -- Keep the Task hidden so the production enqueue trigger does not create the
+  -- mirror for this fixture; the test then constructs the exact provider state.
   -- ----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
@@ -45,7 +47,7 @@ begin
     completion_mode,status,source,created_by,calendar_visibility
   ) values (
     v_household,'manual','DD8 inflight task','school','anytime','2030-04-01',
-    v_owner,v_owner_ref,'person','manual','whole','todo','test',v_owner,'special'
+    v_owner,v_owner_ref,'person','manual','whole','todo','test',v_owner,'hidden'
   ) returning id into v_task;
   insert into private.family_ops_calendar_mirrors(
     household_id,projection_key,kind,local_date,task_instance_id,calendar_connection_id,
@@ -140,7 +142,7 @@ begin
     completion_mode,status,source,created_by,calendar_visibility
   ) values (
     v_household,'manual','DD8 deletion inflight','school','anytime','2030-04-02',
-    v_owner,v_owner_ref,'person','manual','whole','todo','test',v_owner,'special'
+    v_owner,v_owner_ref,'person','manual','whole','todo','test',v_owner,'hidden'
   ) returning id into v_task2;
   insert into private.family_ops_calendar_mirrors(
     household_id,projection_key,kind,local_date,task_instance_id,calendar_connection_id,
