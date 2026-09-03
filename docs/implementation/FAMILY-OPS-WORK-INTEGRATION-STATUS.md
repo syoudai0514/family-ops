@@ -5,7 +5,7 @@
 - `main`: `19c1115393b9d100a8bd35c8e9ad9d76f6f0e41b`
 - PR #43: merged; intentionally unchanged.
 - PR #44: `6125af780358cd7f8155cc67f8cfe7a4046d0571`, full CI green; independent source review still required before merge.
-- PR #45: downstream integration work is in progress. It is not yet an independent-review candidate; its exact head and CI verdict must be refreshed after DD11.
+- PR #45: downstream integration source-review package is assembled. Its exact head and full CI verdict are frozen only after the final CI run completes.
 - Production migration apply, P1 activation, real LINE delivery, Google provider mutation, and main merge: **not performed**.
 
 ## Work-package status
