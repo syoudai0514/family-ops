@@ -26,12 +26,12 @@ async function assertMissingEtagWorkflowFailsBeforeAuthorizationAndDelete(eventI
     await assertRejects(
       () => deleteExistingEventWithFence({
         readEvent: () => getEvent({ accessToken: "token", calendarId: "calendar", eventId }),
-        authorize: async () => {
+        authorize: () => {
           authorizeCount += 1;
-          return {
+          return Promise.resolve({
             authorized: true,
             request_deadline_at: new Date(Date.now() + 5_000).toISOString(),
-          };
+          });
         },
         deleteWithEtag: async (etag) => {
           deleteWorkflowCount += 1;
@@ -70,21 +70,21 @@ Deno.test("shared DELETE workflow re-reads and re-authorizes a 412 retry", async
   const seenEtags: string[] = [];
 
   const status = await deleteExistingEventWithFence({
-    readEvent: async () => {
+    readEvent: () => {
       readCount += 1;
-      return { status: 200 as const, etag: readCount === 1 ? "etag-v1" : "etag-v2" };
+      return Promise.resolve({ status: 200 as const, etag: readCount === 1 ? "etag-v1" : "etag-v2" });
     },
-    authorize: async () => {
+    authorize: () => {
       authorizeCount += 1;
-      return {
+      return Promise.resolve({
         authorized: true,
         request_deadline_at: new Date(Date.now() + 5_000).toISOString(),
-      };
+      });
     },
-    deleteWithEtag: async (etag) => {
+    deleteWithEtag: (etag) => {
       deleteCount += 1;
       seenEtags.push(etag);
-      return deleteCount === 1 ? 412 : 204;
+      return Promise.resolve(deleteCount === 1 ? 412 : 204);
     },
   });
 
@@ -99,17 +99,17 @@ Deno.test("shared DELETE workflow does not authorize or mutate a missing provide
   let authorizeCount = 0;
   let deleteCount = 0;
   const status = await deleteExistingEventWithFence({
-    readEvent: async () => ({ status: 404 as const, etag: null }),
-    authorize: async () => {
+    readEvent: () => Promise.resolve({ status: 404 as const, etag: null }),
+    authorize: () => {
       authorizeCount += 1;
-      return {
+      return Promise.resolve({
         authorized: true,
         request_deadline_at: new Date(Date.now() + 5_000).toISOString(),
-      };
+      });
     },
-    deleteWithEtag: async () => {
+    deleteWithEtag: () => {
       deleteCount += 1;
-      return 204;
+      return Promise.resolve(204);
     },
   });
   assertEquals(status, 404);
