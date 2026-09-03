@@ -61,7 +61,8 @@ begin
     v_owner,'whole','todo','test',v_owner,'special'
   ) returning id into v_task_upsert;
   update private.family_ops_calendar_mirrors
-  set provider_event_id='dd8-race-upsert',provider_etag='etag-upsert',
+  set calendar_connection_id=v_calendar_connection,
+      provider_event_id='dd8-race-upsert',provider_etag='etag-upsert',
       desired_action='upsert',sync_state='pending',next_attempt_at='1900-01-01',
       ownership_transfer_state='task_owned'
   where household_id=v_household and projection_key='special:'||v_task_upsert::text;
@@ -138,7 +139,8 @@ begin
     v_owner,'whole','todo','test',v_owner,'special'
   ) returning id into v_task_delete;
   update private.family_ops_calendar_mirrors
-  set provider_event_id='dd8-race-delete',provider_etag='etag-delete',
+  set calendar_connection_id=v_calendar_connection,
+      provider_event_id='dd8-race-delete',provider_etag='etag-delete',
       desired_action='delete',sync_state='pending',next_attempt_at='1900-01-01',
       ownership_transfer_state='task_owned'
   where household_id=v_household and projection_key='special:'||v_task_delete::text;
