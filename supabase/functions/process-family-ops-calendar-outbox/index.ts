@@ -23,6 +23,7 @@ import {
   type ProviderMutationAuthorization,
   withProviderMutationFence,
 } from "./providerMutationFence.ts";
+import { deleteExistingEventWithFence } from "./conditionalDeleteWorkflow.ts";
 
 const WORKER_ID = `process-family-ops-calendar-outbox:${crypto.randomUUID()}`;
 
@@ -147,35 +148,21 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       );
       cleanupAccessToken = accessToken;
       cleanupCalendarId = externalCalendarId;
-      const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
-      if (existing.status === 200) {
-        // A claimed queue row is not provider authorization. Every DELETE,
-        // including a 412 retry after a re-GET, gets a fresh DB ownership fence.
-        let status = await withProviderMutationFence(
-          () => authorizeTargetDeletionMutation(serviceClient, targetDeletion),
-          () => deleteEvent({
-            accessToken,
-            calendarId: externalCalendarId,
-            eventId: targetDeletion.provider_event_id,
-            ifMatchEtag: existing.etag,
-          }),
-        );
-        if (status === 412) {
-          const latest = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
-          status = latest.status === 200
-            ? await withProviderMutationFence(
-              () => authorizeTargetDeletionMutation(serviceClient, targetDeletion),
-              () => deleteEvent({
-                accessToken,
-                calendarId: externalCalendarId,
-                eventId: targetDeletion.provider_event_id,
-                ifMatchEtag: latest.etag,
-              }),
-            )
-            : latest.status;
-        }
-        requireExpectedGoogleStatus("target deletion", status, [200, 204, 404, 410]);
-      }
+      const status = await deleteExistingEventWithFence({
+        readEvent: () => getEvent({
+          accessToken,
+          calendarId: externalCalendarId,
+          eventId: targetDeletion.provider_event_id,
+        }),
+        authorize: () => authorizeTargetDeletionMutation(serviceClient, targetDeletion),
+        deleteWithEtag: (etag) => deleteEvent({
+          accessToken,
+          calendarId: externalCalendarId,
+          eventId: targetDeletion.provider_event_id,
+          ifMatchEtag: etag,
+        }),
+      });
+      requireExpectedGoogleStatus("target deletion", status, [200, 204, 404, 410]);
       await callGoogleServerTx(serviceClient, "server_tx_complete_family_ops_calendar_target_deletion", {
         p_id: targetDeletion.id, p_lease_token: targetDeletion.lease_token,
       });
@@ -232,23 +219,21 @@ Deno.serve(withServiceHandler(async (req: Request) => {
     if (item.action === "delete") {
       const targetId = item.provider_event_id;
       if (targetId) {
-        const existing = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
-        if (existing.status === 200) {
-          let status = await withProviderMutationFence(
-            () => authorizeMirrorMutation(serviceClient, item, targetId),
-            () => deleteEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId, ifMatchEtag: existing.etag }),
-          );
-          if (status === 412) {
-            const latest = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
-            status = latest.status === 200
-              ? await withProviderMutationFence(
-                () => authorizeMirrorMutation(serviceClient, item, targetId),
-                () => deleteEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId, ifMatchEtag: latest.etag }),
-              )
-              : latest.status;
-          }
-          requireExpectedGoogleStatus("deleteEvent", status, [200, 204, 404, 410]);
-        }
+        const status = await deleteExistingEventWithFence({
+          readEvent: () => getEvent({
+            accessToken: providerAccessToken,
+            calendarId: providerCalendarId,
+            eventId: targetId,
+          }),
+          authorize: () => authorizeMirrorMutation(serviceClient, item, targetId),
+          deleteWithEtag: (etag) => deleteEvent({
+            accessToken: providerAccessToken,
+            calendarId: providerCalendarId,
+            eventId: targetId,
+            ifMatchEtag: etag,
+          }),
+        });
+        requireExpectedGoogleStatus("deleteEvent", status, [200, 204, 404, 410]);
       }
       await complete(serviceClient, item, targetId, null, true);
     } else {
