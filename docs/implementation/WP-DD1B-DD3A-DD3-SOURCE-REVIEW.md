@@ -31,6 +31,8 @@ One independent source-review unit covering the maximum safe pre-cutover impleme
 - Request Attempt compatibility projection preserving CURRENT status/timestamp CHECK semantics;
 - Task actual participants and reconciliation evidence;
 - deterministic legacy ActorRef/assignment/participant/Request Attempt/subtask backfill;
+- rerunnable backfill coexistence with canonical-created Request Attempts (no
+  guessed legacy Attempt and no active-attempt uniqueness collision);
 - DailyBrief schedule kinds + one-day override foundation;
 - Family Event / field-authority / external-link schema foundation without writer activation;
 - change-candidate foundation;
@@ -105,6 +107,10 @@ The following are intentionally not invented here:
   - reconcile excludes test Tasks;
   - test real-user transport Task cannot alter production P/M payload;
   - stale/hostile special mirror referencing a test Task cannot produce provider upsert.
+- `42_canonical_backfill_command_coexistence.sql`
+  - rerunning the R0 maintenance backfill after a canonical Request command does
+    not add a legacy Attempt, collide with the active-Attempt constraint, or
+    create a false reconciliation anomaly.
 
 ## Independent review focus
 
