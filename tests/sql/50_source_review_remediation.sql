@@ -50,21 +50,40 @@ begin
   ) returning id into v_calendar_connection;
 
   -- -----------------------------------------------------------------------
-  -- DD8 case A: UPSERT claim -> active lease blocks transfer -> expiry ->
-  -- transfer -> stale worker authorization fails before provider mutation.
+  -- DD8 case A: first drive the mirror through the real claim -> provider
+  -- completion lifecycle so it owns an existing provider event + etag. Then
+  -- re-enqueue an UPSERT, claim it, prove the live lease blocks transfer,
+  -- expire the lease, transfer, and prove the stale lease cannot authorize.
   -- -----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
     planned_assignee_id,completion_mode,status,source,created_by,calendar_visibility
   ) values (
-    v_household,'manual','DD8 UPSERT race','school','anytime','2030-03-01',
+    v_household,'manual','DD8 UPSERT seed','school','anytime','2030-03-01',
     v_owner,'whole','todo','test',v_owner,'special'
   ) returning id into v_task_upsert;
+
+  -- Make this fixture deterministic relative to pending rows left by earlier
+  -- tests without fabricating provider identity directly in the private row.
   update private.family_ops_calendar_mirrors
-  set calendar_connection_id=v_calendar_connection,
-      provider_event_id='dd8-race-upsert',provider_etag='etag-upsert',
-      desired_action='upsert',sync_state='pending',next_attempt_at='1900-01-01',
-      ownership_transfer_state='task_owned'
+  set next_attempt_at='1800-01-01',ownership_transfer_state='task_owned'
+  where household_id=v_household and projection_key='special:'||v_task_upsert::text;
+  v_claim:=public.server_tx_claim_family_ops_calendar_mirror('dd8-race-upsert-seed',30);
+  if v_claim->>'projection_key'<>'special:'||v_task_upsert::text
+     or v_claim->>'action'<>'upsert' then
+    raise exception 'FAIL remediation DD8 A: seed UPSERT mirror was not claimed';
+  end if;
+  v_lease:=(v_claim->>'lease_token')::uuid;
+  perform public.server_tx_complete_family_ops_calendar_mirror(
+    v_household,'special:'||v_task_upsert::text,v_lease,
+    'dd8-race-upsert','etag-upsert',false
+  );
+
+  -- A real Task mutation re-enqueues the already-synced provider mirror while
+  -- retaining the provider identity written by the worker completion RPC.
+  update public.task_instances set title='DD8 UPSERT race' where id=v_task_upsert;
+  update private.family_ops_calendar_mirrors
+  set next_attempt_at='1800-01-01'
   where household_id=v_household and projection_key='special:'||v_task_upsert::text;
   insert into public.family_events(
     household_id,title,all_day,starts_at,ends_at,calendar_sync_preference,created_by_actor_ref_id
@@ -85,7 +104,7 @@ begin
   where household_id=v_household and projection_key='special:'||v_task_upsert::text;
   if v_claim_calendar_connection is null or nullif(v_provider_event_id,'') is null
      or nullif(v_provider_etag,'') is null then
-    raise exception 'FAIL remediation DD8 A: claimed provider identity incomplete';
+    raise exception 'FAIL remediation DD8 A: completed provider identity was not retained';
   end if;
 
   begin
@@ -128,28 +147,42 @@ begin
   ) then raise exception 'FAIL remediation DD8 A: transferred mirror was re-enqueued'; end if;
 
   -- -----------------------------------------------------------------------
-  -- DD8 case B: DELETE claim -> lease expiry -> Family Event transfer ->
-  -- stale worker authorization fails before provider DELETE.
+  -- DD8 case B: again create the provider identity through worker completion,
+  -- then cancel the Task so the normal trigger produces a DELETE. Claim that
+  -- DELETE, expire its lease, transfer ownership, and prove stale DELETE auth
+  -- plus target-deletion overlap are both eliminated.
   -- -----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
     planned_assignee_id,completion_mode,status,source,created_by,calendar_visibility
   ) values (
-    v_household,'manual','DD8 DELETE race','school','anytime','2030-03-02',
+    v_household,'manual','DD8 DELETE seed','school','anytime','2030-03-02',
     v_owner,'whole','todo','test',v_owner,'special'
   ) returning id into v_task_delete;
   update private.family_ops_calendar_mirrors
-  set calendar_connection_id=v_calendar_connection,
-      provider_event_id='dd8-race-delete',provider_etag='etag-delete',
-      desired_action='delete',sync_state='pending',next_attempt_at='1900-01-01',
-      ownership_transfer_state='task_owned'
+  set next_attempt_at='1800-01-01',ownership_transfer_state='task_owned'
   where household_id=v_household and projection_key='special:'||v_task_delete::text;
+  v_claim:=public.server_tx_claim_family_ops_calendar_mirror('dd8-race-delete-seed',30);
+  if v_claim->>'projection_key'<>'special:'||v_task_delete::text
+     or v_claim->>'action'<>'upsert' then
+    raise exception 'FAIL remediation DD8 B: seed UPSERT mirror was not claimed';
+  end if;
+  v_lease:=(v_claim->>'lease_token')::uuid;
+  perform public.server_tx_complete_family_ops_calendar_mirror(
+    v_household,'special:'||v_task_delete::text,v_lease,
+    'dd8-race-delete','etag-delete',false
+  );
+
   insert into public.family_events(
     household_id,title,all_day,starts_at,ends_at,calendar_sync_preference,created_by_actor_ref_id
   ) values (
     v_household,'DD8 DELETE family event',false,'2030-03-02 09:00+09','2030-03-02 10:00+09',
     'family_ops_owned',v_owner_ref
   ) returning id into v_event_delete;
+  update public.task_instances set status='cancelled' where id=v_task_delete;
+  update private.family_ops_calendar_mirrors
+  set next_attempt_at='1800-01-01'
+  where household_id=v_household and projection_key='special:'||v_task_delete::text;
 
   v_claim:=public.server_tx_claim_family_ops_calendar_mirror('dd8-race-delete-worker',30);
   if v_claim->>'projection_key'<>'special:'||v_task_delete::text
@@ -163,7 +196,7 @@ begin
   where household_id=v_household and projection_key='special:'||v_task_delete::text;
   if v_claim_calendar_connection is null or nullif(v_provider_event_id,'') is null
      or nullif(v_provider_etag,'') is null then
-    raise exception 'FAIL remediation DD8 B: claimed provider identity incomplete';
+    raise exception 'FAIL remediation DD8 B: completed provider identity was not retained';
   end if;
 
   insert into private.family_ops_calendar_target_deletions(
