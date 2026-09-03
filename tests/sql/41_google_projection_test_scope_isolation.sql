@@ -83,8 +83,10 @@ begin
     raise exception 'FAIL google-test-isolation: test INSERT enqueued production mirror';
   end if;
 
+  -- UPDATE must exercise a Google-trigger watched field while preserving the
+  -- valid real-user ActorRef/legacy mirror pairing on the test Task.
   update public.task_instances
-  set planned_assignee_id = v_partner
+  set scheduled_date = v_date + 1
   where id = v_test_task;
 
   if (select count(*) from private.family_ops_calendar_mirrors where household_id = v_hh_id) <> v_before then
@@ -143,8 +145,8 @@ begin
     raise exception 'FAIL google-test-isolation: test transport influenced production payload: %', v_claim;
   end if;
 
-  -- Special production lookup is also fail-closed: a test special Task must not
-  -- be materialized even if a stale/hostile mirror row somehow references it.
+  -- Special production lookup is also fail-closed: a test-scoped Task must not
+  -- be materialized even if a stale/hostile special mirror somehow references it.
   insert into private.family_ops_calendar_mirrors (
     household_id, projection_key, kind, local_date, task_instance_id,
     calendar_connection_id, desired_action, sync_state, next_attempt_at
@@ -166,7 +168,7 @@ begin
 
   v_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-41-special', 120);
   if v_claim->>'action' <> 'delete' then
-    raise exception 'FAIL google-test-isolation: test special Task materialized into production payload: %', v_claim;
+    raise exception 'FAIL google-test-isolation: test scoped Task materialized into production payload: %', v_claim;
   end if;
 end;
 $$;
