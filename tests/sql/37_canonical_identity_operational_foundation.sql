@@ -2,7 +2,6 @@
 \set ON_ERROR_STOP on
 
 set role service_role;
-
 do $$
 declare
   v_owner uuid := gen_random_uuid();
@@ -26,6 +25,7 @@ declare
   v_request_cancelled uuid := gen_random_uuid();
   v_request_completed uuid := gen_random_uuid();
   v_issues bigint;
+  v_expected_legacy_request_task_gaps bigint;
 begin
   -- Generate auth fixture IDs per run so this test can coexist with the full
   -- suite and with reruns in the same local database.
@@ -227,11 +227,27 @@ begin
     raise exception 'FAIL canonical-foundation: backfill is not idempotent after R0 convergence: %', v_second;
   end if;
 
+  -- DD1/DD2 inventory reconciliation deliberately reports historical accepted
+  -- and completed legacy Requests that still lack an executable linked Task.
+  -- R0 backfill must not invent those Tasks: the gap is a pre-P1 migration
+  -- prerequisite and is resolved only by an explicitly reviewed later adapter.
+  select issue_count into v_expected_legacy_request_task_gaps
+  from private.canonical_foundation_reconciliation_v1()
+  where issue_type = 'request_accepted_or_completed_missing_linked_task';
+
+  if coalesce(v_expected_legacy_request_task_gaps, 0) <> 2 then
+    raise exception 'FAIL canonical-foundation: expected exactly 2 legacy Request→Task pre-P1 gaps, got %',
+      coalesce(v_expected_legacy_request_task_gaps, 0);
+  end if;
+
   select sum(issue_count) into v_issues
-  from private.canonical_foundation_reconciliation_v1();
+  from private.canonical_foundation_reconciliation_v1()
+  where issue_type <> 'request_accepted_or_completed_missing_linked_task';
   if coalesce(v_issues, 0) <> 0 then
-    raise exception 'FAIL canonical-foundation: reconciliation issues remain: %',
-      (select jsonb_object_agg(issue_type, issue_count) from private.canonical_foundation_reconciliation_v1());
+    raise exception 'FAIL canonical-foundation: unexpected reconciliation issues remain: %',
+      (select jsonb_object_agg(issue_type, issue_count)
+       from private.canonical_foundation_reconciliation_v1()
+       where issue_type <> 'request_accepted_or_completed_missing_linked_task');
   end if;
 
   -- Create a test context + simulated mama. This is schema-only; current
