@@ -39,11 +39,7 @@ begin
     v_household,'google','rereview@example.test',v_google_connection,true,false,true
   ) returning id into v_calendar_connection;
 
-  -- ----------------------------------------------------------------------
   -- DD8 A: Task mirror provider call remains fenced after worker lease expiry.
-  -- Keep the Task hidden so the production enqueue trigger does not create the
-  -- mirror for this fixture; the test constructs the exact provider state.
-  -- ----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
     planned_assignee_id,planned_assignee_actor_ref_id,assignment_mode,assignment_source,
@@ -108,7 +104,6 @@ begin
     raise exception 'FAIL rereview DD8: expired provider call was not marked uncertain';
   end if;
 
-  -- A later GET or elapsed quarantine alone is not sufficient anymore.
   begin
     perform private.fn_transfer_task_mirror_to_family_event_v1(
       v_household,v_owner,v_owner_ref,'52000000-0000-0000-0000-000000000102',
@@ -156,14 +151,12 @@ begin
      or not exists(select 1 from private.google_provider_mutation_fences
        where id=(v_auth->>'mutation_fence_id')::uuid and state='reconciled'
          and revalidated_at is not null and revalidated_etag='etag-task-fenced')
-     or not exists(select 1 from private.google_provider_handoff_fences
-       where handoff_token=v_handoff_token and state='consumed' and consumed_at is not null) then
+     or exists(select 1 from private.canonical_cutover_readiness_audit_v1()
+       where audit_name='provider_handoff_fence_unconsumed' and issue_count<>0) then
     raise exception 'FAIL rereview DD8: Task provider-side handoff fence was not consumed correctly';
   end if;
 
-  -- ----------------------------------------------------------------------
   -- DD8 B: same durable/provider-side fence applies to target deletion.
-  -- ----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
     planned_assignee_id,planned_assignee_actor_ref_id,assignment_mode,assignment_source,
@@ -268,22 +261,21 @@ begin
      or not exists(select 1 from private.google_provider_mutation_fences
        where id=(v_auth->>'mutation_fence_id')::uuid and state='reconciled'
          and revalidated_at is not null and revalidated_etag='etag-delete-fenced')
-     or not exists(select 1 from private.google_provider_handoff_fences
-       where handoff_token=v_handoff_token and state='consumed' and consumed_at is not null) then
+     or exists(select 1 from private.canonical_cutover_readiness_audit_v1()
+       where audit_name='provider_handoff_fence_unconsumed' and issue_count<>0) then
     raise exception 'FAIL rereview DD8: deletion provider-side handoff fence was not consumed correctly';
   end if;
 
   if exists(select 1 from private.google_provider_mutation_fences where state in ('inflight','uncertain')) then
     raise exception 'FAIL rereview DD8: unresolved provider mutation fence leaked from regression';
   end if;
-  if exists(select 1 from private.google_provider_handoff_fences where state in ('prepared','provider_fenced')) then
+  if exists(select 1 from private.canonical_cutover_readiness_audit_v1()
+    where audit_name='provider_handoff_fence_unconsumed' and issue_count<>0) then
     raise exception 'FAIL rereview DD8: unconsumed provider handoff fence leaked from regression';
   end if;
 
-  -- ----------------------------------------------------------------------
   -- DD9: free text may be submitted to the review pipeline, but it must not
   -- become durable structured data before a human confirms a target command.
-  -- ----------------------------------------------------------------------
   insert into public.family_children(household_id,display_name)
   values(v_household,'DD9 target child') returning id into v_child;
   insert into public.child_school_contexts(
