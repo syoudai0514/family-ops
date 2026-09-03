@@ -1,7 +1,9 @@
 -- Independent re-review HIGH remediation regression.
 -- DD8: an authorized provider call remains a durable owner/fence after the
--- ordinary worker lease expires; transfer requires drain + post-quarantine
--- provider revalidation.  Cover both Task mirror and target-deletion paths.
+-- ordinary worker lease expires. If its result becomes uncertain, logical
+-- ownership transfer is forbidden until a provider-side conditional PATCH
+-- writes a unique handoff token and advances the Google ETag. Cover both Task
+-- mirror and target-deletion paths.
 -- DD9: allowed input free text is minimized before durable structured storage,
 -- including a 64-fact split attempt.
 \set ON_ERROR_STOP on
@@ -13,8 +15,9 @@ declare
   v_household uuid; v_owner_ref uuid; v_google_connection uuid; v_calendar_connection uuid;
   v_task uuid; v_event uuid; v_claim jsonb; v_auth jsonb; v_lease uuid; v_transfer jsonb;
   v_task2 uuid; v_event2 uuid; v_delete_id uuid; v_delete_claim jsonb; v_delete_lease uuid;
+  v_handoff jsonb; v_confirm jsonb; v_handoff_token uuid; v_provider_snapshot jsonb;
   v_child uuid; v_context uuid; v_intake jsonb; v_extraction uuid; v_review jsonb; v_facts jsonb;
-  v_error text; v_provider_event text; v_provider_etag text;
+  v_error text;
 begin
   insert into auth.users(id) values(v_owner) on conflict do nothing;
   insert into public.profiles(user_id,display_name) values(v_owner,'Rereview owner') on conflict do nothing;
@@ -39,7 +42,7 @@ begin
   -- ----------------------------------------------------------------------
   -- DD8 A: Task mirror provider call remains fenced after worker lease expiry.
   -- Keep the Task hidden so the production enqueue trigger does not create the
-  -- mirror for this fixture; the test then constructs the exact provider state.
+  -- mirror for this fixture; the test constructs the exact provider state.
   -- ----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
@@ -97,44 +100,69 @@ begin
   end;
 
   update private.google_provider_mutation_fences
-  set request_deadline_at=now()-interval '1 second',
-      uncertainty_quarantine_until=now()+interval '2 minutes'
+  set request_deadline_at=now()-interval '1 second'
   where id=(v_auth->>'mutation_fence_id')::uuid;
   perform private.fn_mark_provider_mutation_fence_expired_v1(v_calendar_connection,'rereview-inflight-task');
   if not exists(select 1 from private.google_provider_mutation_fences
     where id=(v_auth->>'mutation_fence_id')::uuid and state='uncertain') then
     raise exception 'FAIL rereview DD8: expired provider call was not marked uncertain';
   end if;
+
+  -- A later GET or elapsed quarantine alone is not sufficient anymore.
   begin
     perform private.fn_transfer_task_mirror_to_family_event_v1(
       v_household,v_owner,v_owner_ref,'52000000-0000-0000-0000-000000000102',
       v_event,v_calendar_connection,'special:'||v_task::text,'rereview-inflight-task','etag-task',
-      jsonb_build_object('title','DD8 inflight family event'),now(),'family_ops_owned'
+      jsonb_build_object('id','rereview-inflight-task'),now(),'family_ops_owned'
     );
-    raise exception 'FAIL rereview DD8: uncertain provider call transferred before drain/revalidation';
+    raise exception 'FAIL rereview DD8: uncertain provider call transferred without provider handoff fence';
   exception when others then
     v_error:=sqlerrm;
     if v_error like 'FAIL rereview%' then raise; end if;
-    if v_error not like '%PROVIDER_MUTATION_DRAIN_REVALIDATION_REQUIRED%' then raise; end if;
+    if v_error not like '%PROVIDER_HANDOFF_FENCE_REQUIRED%' then raise; end if;
   end;
 
-  update private.google_provider_mutation_fences
-  set uncertainty_quarantine_until=now()-interval '1 second'
-  where id=(v_auth->>'mutation_fence_id')::uuid;
+  v_handoff:=public.server_tx_prepare_google_provider_handoff_fence(
+    v_household,v_calendar_connection,'special:'||v_task::text,'rereview-inflight-task'
+  );
+  if coalesce((v_handoff->>'required')::boolean,false) is not true
+     or v_handoff->>'state'<>'prepared'
+     or nullif(v_handoff->>'handoff_token','') is null then
+    raise exception 'FAIL rereview DD8: Task handoff fence was not prepared: %',v_handoff;
+  end if;
+  v_handoff_token:=(v_handoff->>'handoff_token')::uuid;
+  v_provider_snapshot:=jsonb_build_object(
+    'id','rereview-inflight-task',
+    'extendedProperties',jsonb_build_object(
+      'private',jsonb_build_object('familyOpsOwnershipFenceToken',v_handoff_token::text)
+    )
+  );
+  v_confirm:=public.server_tx_confirm_google_provider_handoff_fence(
+    v_handoff_token,'etag-task','etag-task-fenced',v_provider_snapshot
+  );
+  if coalesce((v_confirm->>'confirmed')::boolean,false) is not true
+     or v_confirm->>'state'<>'provider_fenced'
+     or v_confirm->>'provider_etag'<>'etag-task-fenced' then
+    raise exception 'FAIL rereview DD8: Task provider handoff confirmation failed: %',v_confirm;
+  end if;
+
   v_transfer:=private.fn_transfer_task_mirror_to_family_event_v1(
     v_household,v_owner,v_owner_ref,'52000000-0000-0000-0000-000000000103',
-    v_event,v_calendar_connection,'special:'||v_task::text,'rereview-inflight-task','etag-task',
-    jsonb_build_object('title','DD8 inflight family event'),now(),'family_ops_owned'
+    v_event,v_calendar_connection,'special:'||v_task::text,'rereview-inflight-task','etag-task-fenced',
+    v_provider_snapshot,now(),'family_ops_owned'
   );
   if v_transfer->>'ownership_transfer_state'<>'validated'
+     or v_transfer->>'provider_handoff_fenced'<>'true'
      or not exists(select 1 from private.google_provider_mutation_fences
        where id=(v_auth->>'mutation_fence_id')::uuid and state='reconciled'
-         and revalidated_at is not null and revalidated_etag='etag-task') then
-    raise exception 'FAIL rereview DD8: Task fence did not require/recode post-drain revalidation';
+         and revalidated_at is not null and revalidated_etag='etag-task-fenced')
+     or not exists(select 1 from private.google_provider_handoff_fences
+       where handoff_token=v_handoff_token and state='consumed' and consumed_at is not null) then
+    raise exception 'FAIL rereview DD8: Task provider-side handoff fence was not consumed correctly';
   end if;
 
   -- ----------------------------------------------------------------------
-  -- DD8 B: same durable fence applies to target-deletion provider calls.
+  -- DD8 B: same durable/provider-side fence applies to target deletion.
   -- ----------------------------------------------------------------------
   insert into public.task_instances(
     household_id,origin,title,category,routine_phase,scheduled_date,
@@ -175,11 +203,12 @@ begin
   ) returning id into v_event2;
   update private.family_ops_calendar_target_deletions set lease_until=now()-interval '1 second'
   where id=v_delete_id;
+
   begin
     perform private.fn_transfer_task_mirror_to_family_event_v1(
       v_household,v_owner,v_owner_ref,'52000000-0000-0000-0000-000000000104',
       v_event2,v_calendar_connection,'special:'||v_task2::text,'rereview-inflight-delete','etag-delete',
-      jsonb_build_object('title','DD8 deletion family event'),now(),'family_ops_owned'
+      jsonb_build_object('id','rereview-inflight-delete'),now(),'family_ops_owned'
     );
     raise exception 'FAIL rereview DD8: target deletion inflight call did not block transfer';
   exception when others then
@@ -187,22 +216,68 @@ begin
     if v_error like 'FAIL rereview%' then raise; end if;
     if v_error not like '%PROVIDER_MUTATION_INFLIGHT%' then raise; end if;
   end;
+
   update private.google_provider_mutation_fences
-  set request_deadline_at=now()-interval '2 minutes',
-      uncertainty_quarantine_until=now()-interval '1 second'
+  set request_deadline_at=now()-interval '2 minutes'
   where id=(v_auth->>'mutation_fence_id')::uuid;
   perform private.fn_mark_provider_mutation_fence_expired_v1(v_calendar_connection,'rereview-inflight-delete');
-  v_transfer:=private.fn_transfer_task_mirror_to_family_event_v1(
-    v_household,v_owner,v_owner_ref,'52000000-0000-0000-0000-000000000105',
-    v_event2,v_calendar_connection,'special:'||v_task2::text,'rereview-inflight-delete','etag-delete',
-    jsonb_build_object('title','DD8 deletion family event'),now(),'family_ops_owned'
+  begin
+    perform private.fn_transfer_task_mirror_to_family_event_v1(
+      v_household,v_owner,v_owner_ref,'52000000-0000-0000-0000-000000000105',
+      v_event2,v_calendar_connection,'special:'||v_task2::text,'rereview-inflight-delete','etag-delete',
+      jsonb_build_object('id','rereview-inflight-delete'),now(),'family_ops_owned'
+    );
+    raise exception 'FAIL rereview DD8: uncertain target deletion transferred without provider handoff fence';
+  exception when others then
+    v_error:=sqlerrm;
+    if v_error like 'FAIL rereview%' then raise; end if;
+    if v_error not like '%PROVIDER_HANDOFF_FENCE_REQUIRED%' then raise; end if;
+  end;
+
+  v_handoff:=public.server_tx_prepare_google_provider_handoff_fence(
+    v_household,v_calendar_connection,'special:'||v_task2::text,'rereview-inflight-delete'
   );
-  if v_transfer->>'ownership_transfer_state'<>'validated' then
-    raise exception 'FAIL rereview DD8: target-deletion drain/revalidation transfer failed';
+  if coalesce((v_handoff->>'required')::boolean,false) is not true
+     or v_handoff->>'state'<>'prepared'
+     or nullif(v_handoff->>'handoff_token','') is null then
+    raise exception 'FAIL rereview DD8: deletion handoff fence was not prepared: %',v_handoff;
+  end if;
+  v_handoff_token:=(v_handoff->>'handoff_token')::uuid;
+  v_provider_snapshot:=jsonb_build_object(
+    'id','rereview-inflight-delete',
+    'extendedProperties',jsonb_build_object(
+      'private',jsonb_build_object('familyOpsOwnershipFenceToken',v_handoff_token::text)
+    )
+  );
+  v_confirm:=public.server_tx_confirm_google_provider_handoff_fence(
+    v_handoff_token,'etag-delete','etag-delete-fenced',v_provider_snapshot
+  );
+  if coalesce((v_confirm->>'confirmed')::boolean,false) is not true
+     or v_confirm->>'state'<>'provider_fenced'
+     or v_confirm->>'provider_etag'<>'etag-delete-fenced' then
+    raise exception 'FAIL rereview DD8: deletion provider handoff confirmation failed: %',v_confirm;
+  end if;
+
+  v_transfer:=private.fn_transfer_task_mirror_to_family_event_v1(
+    v_household,v_owner,v_owner_ref,'52000000-0000-0000-0000-000000000106',
+    v_event2,v_calendar_connection,'special:'||v_task2::text,'rereview-inflight-delete','etag-delete-fenced',
+    v_provider_snapshot,now(),'family_ops_owned'
+  );
+  if v_transfer->>'ownership_transfer_state'<>'validated'
+     or v_transfer->>'provider_handoff_fenced'<>'true'
+     or not exists(select 1 from private.google_provider_mutation_fences
+       where id=(v_auth->>'mutation_fence_id')::uuid and state='reconciled'
+         and revalidated_at is not null and revalidated_etag='etag-delete-fenced')
+     or not exists(select 1 from private.google_provider_handoff_fences
+       where handoff_token=v_handoff_token and state='consumed' and consumed_at is not null) then
+    raise exception 'FAIL rereview DD8: deletion provider-side handoff fence was not consumed correctly';
   end if;
 
   if exists(select 1 from private.google_provider_mutation_fences where state in ('inflight','uncertain')) then
     raise exception 'FAIL rereview DD8: unresolved provider mutation fence leaked from regression';
+  end if;
+  if exists(select 1 from private.google_provider_handoff_fences where state in ('prepared','provider_fenced')) then
+    raise exception 'FAIL rereview DD8: unconsumed provider handoff fence leaked from regression';
   end if;
 
   -- ----------------------------------------------------------------------
