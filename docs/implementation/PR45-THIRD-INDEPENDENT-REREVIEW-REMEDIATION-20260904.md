@@ -86,15 +86,44 @@ The invariant is semantic, not field-name-based: model-controlled strings, bytes
 
 ## LOW — DD8 missing-ETag test precision
 
-The third review also returned a LOW noting that the existing missing-ETag tests directly prove provider DELETE is not sent, but do not run the complete worker with an injected DB authorization callback and explicitly assert `authorize_count = 0`.
+The third review also returned a LOW because the previous missing-ETag tests proved provider DELETE was not sent, but did not directly assert that the DB authorization callback was never invoked.
 
-No functional DD8 defect was identified. CURRENT worker source order for both Task DELETE and target deletion remains:
+### Current remediation
 
-`GET -> require HTTP-200 non-empty ETag -> authorize/fence -> conditional DELETE`
+Production source:
 
-`getEvent()` rejects a 200 response with missing/empty ETag before returning to the worker, and `deleteEvent()` independently rejects an empty `If-Match` before provider fetch. The previous provider mutation fence, provider-side handoff token, 412 re-GET/retry, ETag advancement, and DD11 blocker coverage remain required regression checks.
+- `supabase/functions/process-family-ops-calendar-outbox/conditionalDeleteWorkflow.ts`
+- `supabase/functions/process-family-ops-calendar-outbox/index.ts`
 
-This LOW is retained transparently as test-precision feedback unless a later review requires handler-level dependency injection. It is not being represented as independently eliminated by unrelated test code.
+Tests:
+
+- `supabase/functions/process-family-ops-calendar-outbox/deleteEtagFence.test.ts`
+
+Both Task mirror DELETE and stale target deletion now call the same production `deleteExistingEventWithFence` workflow. Its ordering is explicit and dependency-injected:
+
+`read provider event -> require usable 200 ETag -> fresh DB authorize/fence -> conditional DELETE`
+
+If the provider read is 404, it returns without authorization or mutation. If DELETE returns 412, the workflow performs another provider read and then a separate fresh DB authorization before the retry DELETE.
+
+Because production `readEvent` is `getEvent()`, an HTTP 200 response with missing/null/empty/whitespace ETag throws before `authorize` can run.
+
+The tests now directly assert for both Task DELETE and target deletion:
+
+- provider GET count = 1;
+- DB authorization callback count = 0;
+- delete-workflow callback count = 0;
+- provider DELETE count = 0;
+
+They additionally verify:
+
+- a 412 retry performs exactly two reads, two authorizations, and two DELETE attempts using `etag-v1` then `etag-v2`;
+- a provider 404 performs zero authorization and zero DELETE;
+- direct `deleteEvent()` rejects empty `If-Match` before fetch;
+- a valid DELETE emits the exact `If-Match` value.
+
+This closes the LOW using the exact helper that the production worker calls; it is not a test-only surrogate.
+
+The earlier DD8 durable provider mutation fence, provider-side handoff token, 412 re-GET/retry, ETag advancement, and DD11 blocker coverage remain required regression checks.
 
 ## Regression areas required in the next independent review
 
