@@ -1,6 +1,10 @@
 \set ON_ERROR_STOP on
 set role service_role;
 
+select audit_name,issue_count
+from private.canonical_cutover_readiness_audit_v1()
+where audit_name in ('production_notification_test_leakage','production_outbox_test_leakage','google_write_test_leakage','google_projection_test_leakage');
+
 do $$
 begin
   if exists(select 1 from private.canonical_cutover_readiness_audit_v1()
