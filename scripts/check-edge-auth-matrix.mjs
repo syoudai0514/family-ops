@@ -91,6 +91,10 @@ const GAP_FILL_FUNCTIONS = new Set([
   'start-request-followup',
   'claim-shopping-item',
   'reopen-shopping-item',
+  // DD10 one-user interactive test adapter is a PWA-only bridge over the
+  // accepted canonical test-context workspace; it remains JWT-authenticated
+  // and is absent from the frozen v6 endpoint inventory.
+  'test-simulation',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

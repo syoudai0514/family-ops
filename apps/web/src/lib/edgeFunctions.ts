@@ -62,6 +62,7 @@ export const EDGE_FUNCTIONS = {
   replaceRoutineSubtasks: 'replace-routine-subtasks',
   setFamilyCalendarTarget: 'set-family-calendar-target',
   setFamilyRole: 'set-family-role',
+  testSimulation: 'test-simulation',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

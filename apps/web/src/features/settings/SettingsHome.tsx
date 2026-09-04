@@ -30,6 +30,7 @@ export function SettingsHome() {
         <Link to="/settings/categories" className="settings-link"><strong>カテゴリ</strong><span>予定追加で選ぶ項目と色</span></Link>
         <Link to="/notifications" className="settings-link"><strong>通知</strong><span>LINEとアプリ内のお知らせ</span></Link>
         <Link to="/handovers" className="settings-link"><strong>引き継ぎ</strong><span>朝・夜の共有メモ</span></Link>
+        <Link to="/settings/test-simulation" className="settings-link"><strong>🧪 1人テストモード</strong><span>1アカウントでお願い→返事→完了まで安全に試す</span></Link>
       </section>
       <CalendarIntegrationSettings />
       <section className="card settings-invite"><h2>家族</h2><p className="empty-hint">P/M表示と担当色は家庭で固定します。</p>{members.map(member=><label key={member.user_id}>{member.profile?.display_name??member.user_id}<select value={member.family_role??''} onChange={async e=>{if(e.target.value) {await callEdgeFunction(EDGE_FUNCTIONS.setFamilyRole,{operation_id:newOperationId(),user_id:member.user_id,family_role:e.target.value});await refresh();}}}><option value="">未設定</option><option value="papa">パパ（P・緑）</option><option value="mama">ママ（M・橙）</option></select></label>)}<InviteSection /></section>

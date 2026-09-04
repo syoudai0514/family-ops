@@ -304,6 +304,12 @@ verify_jwt = true
 [functions.set-family-role]
 verify_jwt = true
 
+# DD10 interactive one-user simulation. This is a PWA-only authenticated
+# adapter over canonical test_context commands; it never exposes ActorRef ids
+# or converts simulated state into production state.
+[functions.test-simulation]
+verify_jwt = true
+
 # External provider — verify_jwt = false (signature validated in-handler
 # before any DB access)
 
