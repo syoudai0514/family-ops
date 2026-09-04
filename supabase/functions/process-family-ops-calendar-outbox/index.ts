@@ -12,12 +12,18 @@ import {
   GoogleCalendarApiError,
   GoogleInvalidGrantError,
   insertEvent,
+  isGoogleCalendarForbiddenError,
   mergePrivateExtendedProperties,
   patchEvent,
-  isGoogleCalendarForbiddenError,
   revalidateCalendarEligibilityAfterForbidden,
 } from "../_shared/googleCalendar.ts";
 import { decryptRefreshToken } from "../_shared/cryptoHelper.ts";
+import {
+  ProviderMutationFencedError,
+  type ProviderMutationAuthorization,
+  withProviderMutationFence,
+} from "./providerMutationFence.ts";
+import { deleteExistingEventWithFence } from "./conditionalDeleteWorkflow.ts";
 
 const WORKER_ID = `process-family-ops-calendar-outbox:${crypto.randomUUID()}`;
 
@@ -78,6 +84,35 @@ async function addCanonicalSpecialAssignee(
   return { ...event, summary: `${String(event.summary ?? '')} [${token}]` };
 }
 
+async function authorizeMirrorMutation(
+  client: ReturnType<typeof createServiceRoleClient>,
+  item: ClaimedMirror,
+  providerEventId: string,
+): Promise<ProviderMutationAuthorization> {
+  return await callGoogleServerTx<ProviderMutationAuthorization>(
+    client,
+    "server_tx_authorize_family_ops_calendar_mirror",
+    {
+      p_household_id: item.household_id,
+      p_projection_key: item.projection_key,
+      p_lease_token: item.lease_token,
+      p_calendar_connection_id: item.calendar_connection_id,
+      p_provider_event_id: providerEventId,
+    },
+  );
+}
+
+async function authorizeTargetDeletionMutation(
+  client: ReturnType<typeof createServiceRoleClient>,
+  item: ClaimedTargetDeletion,
+): Promise<ProviderMutationAuthorization> {
+  return await callGoogleServerTx<ProviderMutationAuthorization>(
+    client,
+    "server_tx_authorize_family_ops_calendar_target_deletion",
+    { p_id: item.id, p_lease_token: item.lease_token },
+  );
+}
+
 async function complete(
   client: ReturnType<typeof createServiceRoleClient>,
   item: ClaimedMirror,
@@ -98,7 +133,7 @@ async function complete(
 Deno.serve(withServiceHandler(async (req: Request) => {
   requireWorkerToken(req);
   const serviceClient = createServiceRoleClient();
-  // Calendar target changes are also outbox work.  Delete the old mirror via
+  // Calendar target changes are also outbox work. Delete the old mirror via
   // its stable provider id before handling ordinary upserts on the new target.
   const targetDeletion = await callGoogleServerTx<ClaimedTargetDeletion | null>(serviceClient, "server_tx_claim_family_ops_calendar_target_deletion", {
     p_worker_id: WORKER_ID,
@@ -113,20 +148,36 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       );
       cleanupAccessToken = accessToken;
       cleanupCalendarId = externalCalendarId;
-      const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
-      if (existing.status === 200) {
-        let status = await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id, ifMatchEtag: existing.etag });
-        if (status === 412) {
-          const latest = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id });
-          status = latest.status === 200 ? await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetDeletion.provider_event_id, ifMatchEtag: latest.etag }) : latest.status;
-        }
-        requireExpectedGoogleStatus("target deletion", status, [200, 204, 404, 410]);
-      }
+      const status = await deleteExistingEventWithFence({
+        readEvent: () => getEvent({
+          accessToken,
+          calendarId: externalCalendarId,
+          eventId: targetDeletion.provider_event_id,
+        }),
+        authorize: () => authorizeTargetDeletionMutation(serviceClient, targetDeletion),
+        deleteWithEtag: (etag) => deleteEvent({
+          accessToken,
+          calendarId: externalCalendarId,
+          eventId: targetDeletion.provider_event_id,
+          ifMatchEtag: etag,
+        }),
+      });
+      requireExpectedGoogleStatus("target deletion", status, [200, 204, 404, 410]);
       await callGoogleServerTx(serviceClient, "server_tx_complete_family_ops_calendar_target_deletion", {
         p_id: targetDeletion.id, p_lease_token: targetDeletion.lease_token,
       });
       return new Response(JSON.stringify({ processed: 1, target_cleanup: targetDeletion.projection_key }), { status: 200, headers: { "Content-Type": "application/json" } });
     } catch (error) {
+      if (error instanceof ProviderMutationFencedError) {
+        // Stale/superseded work is expected concurrency, not a provider error.
+        // Most importantly, withProviderMutationFence did not invoke DELETE.
+        return new Response(JSON.stringify({
+          processed: 0,
+          target_cleanup: targetDeletion.projection_key,
+          superseded: true,
+          reason: error.reason,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (isGoogleCalendarForbiddenError(error) && cleanupAccessToken && cleanupCalendarId) {
         await revalidateCalendarEligibilityAfterForbidden(serviceClient, {
           calendarConnectionId: targetDeletion.calendar_connection_id,
@@ -143,6 +194,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       return new Response(JSON.stringify({ processed: 0, target_cleanup: targetDeletion.projection_key, error: "mirror_failed" }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
   }
+
   const item = await callGoogleServerTx<ClaimedMirror | null>(serviceClient, "server_tx_claim_family_ops_calendar_mirror", {
     p_worker_id: WORKER_ID,
     p_lease_seconds: 120,
@@ -159,40 +211,47 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       item.calendar_connection_id,
       decryptRefreshToken,
     );
-    accessToken = connection.accessToken;
-    externalCalendarId = connection.externalCalendarId;
+    const providerAccessToken = connection.accessToken;
+    const providerCalendarId = connection.externalCalendarId;
+    accessToken = providerAccessToken;
+    externalCalendarId = providerCalendarId;
 
     if (item.action === "delete") {
       const targetId = item.provider_event_id;
       if (targetId) {
-        const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
-        if (existing.status === 200) {
-          let status = await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId, ifMatchEtag: existing.etag });
-          if (status === 412) {
-            const latest = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
-            status = latest.status === 200
-              ? await deleteEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId, ifMatchEtag: latest.etag })
-              : latest.status;
-          }
-          if (![200, 204, 404, 410].includes(status)) {
-            requireExpectedGoogleStatus("deleteEvent", status, [200, 204, 404, 410]);
-          }
-        }
+        const status = await deleteExistingEventWithFence({
+          readEvent: () => getEvent({
+            accessToken: providerAccessToken,
+            calendarId: providerCalendarId,
+            eventId: targetId,
+          }),
+          authorize: () => authorizeMirrorMutation(serviceClient, item, targetId),
+          deleteWithEtag: (etag) => deleteEvent({
+            accessToken: providerAccessToken,
+            calendarId: providerCalendarId,
+            eventId: targetId,
+            ifMatchEtag: etag,
+          }),
+        });
+        requireExpectedGoogleStatus("deleteEvent", status, [200, 204, 404, 410]);
       }
       await complete(serviceClient, item, targetId, null, true);
     } else {
       if (!item.event) throw new Error("claimed mirror omitted event payload");
       const targetId = item.provider_event_id ?? item.deterministic_event_id;
       const desired = eventPayloadWithStableIdentity({ ...(await addCanonicalSpecialAssignee(serviceClient, item, item.event)), id: targetId });
-      const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
+      const existing = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
       let etag: string | null = null;
 
       if (existing.status === 404) {
-        const inserted = await insertEvent({ accessToken, calendarId: externalCalendarId, body: desired });
+        const inserted = await withProviderMutationFence(
+          () => authorizeMirrorMutation(serviceClient, item, targetId),
+          () => insertEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, body: desired }),
+        );
         if (inserted.status === 409) {
           // A response may have been lost after create. Verify the durable
           // projection marker on the deterministic id; never search by title.
-          const reconciled = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
+          const reconciled = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
           if (reconciled.status !== 200 || mirrorProperties(reconciled.body ?? {}).familyOpsProjectionKey !== item.projection_key) {
             throw new Error("provider id collision for Family Ops mirror");
           }
@@ -215,28 +274,37 @@ Deno.serve(withServiceHandler(async (req: Request) => {
             ),
           },
         };
-        const patched = await patchEvent({
-          accessToken,
-          calendarId: externalCalendarId,
-          eventId: targetId,
-          body: desiredForPatch,
-          ifMatchEtag: existing.etag ?? "",
-        });
+        const patched = await withProviderMutationFence(
+          () => authorizeMirrorMutation(serviceClient, item, targetId),
+          () => patchEvent({
+            accessToken: providerAccessToken,
+            calendarId: providerCalendarId,
+            eventId: targetId,
+            body: desiredForPatch,
+            ifMatchEtag: existing.etag ?? "",
+          }),
+        );
         if (patched.status === 412) {
-          const latest = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: targetId });
-          if (latest.status !== 200 || !latest.etag) throw new Error("calendar event changed and could not be reread");
-          const retry = await patchEvent({
-            accessToken, calendarId: externalCalendarId, eventId: targetId,
-            body: {
-              ...desiredForPatch,
-              extendedProperties: {
-                private: mergePrivateExtendedProperties(mirrorProperties(latest.body ?? {}), mirrorProperties(desired)),
+          const latest = await getEvent({ accessToken: providerAccessToken, calendarId: providerCalendarId, eventId: targetId });
+          const latestEtag = latest.etag;
+          if (latest.status !== 200 || !latestEtag) throw new Error("calendar event changed and could not be reread");
+          const retry = await withProviderMutationFence(
+            () => authorizeMirrorMutation(serviceClient, item, targetId),
+            () => patchEvent({
+              accessToken: providerAccessToken,
+              calendarId: providerCalendarId,
+              eventId: targetId,
+              body: {
+                ...desiredForPatch,
+                extendedProperties: {
+                  private: mergePrivateExtendedProperties(mirrorProperties(latest.body ?? {}), mirrorProperties(desired)),
+                },
               },
-            },
-            ifMatchEtag: latest.etag,
-          });
+              ifMatchEtag: latestEtag,
+            }),
+          );
           requireExpectedGoogleStatus("patchEvent retry", retry.status, [200]);
-          etag = typeof retry.body?.etag === "string" ? retry.body.etag : latest.etag;
+          etag = typeof retry.body?.etag === "string" ? retry.body.etag : latestEtag;
         } else if (patched.status === 200) {
           etag = typeof patched.body?.etag === "string" ? patched.body.etag : existing.etag;
         } else {
@@ -256,6 +324,16 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       status: 200, headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
+    if (error instanceof ProviderMutationFencedError) {
+      // Another lease owner or a Family Event transfer won the race. Do not
+      // fail/requeue the row from this stale worker and never call the provider.
+      return new Response(JSON.stringify({
+        processed: 0,
+        projection_key: item.projection_key,
+        superseded: true,
+        reason: error.reason,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     if (error instanceof GoogleInvalidGrantError) {
       await callGoogleServerTx(serviceClient, "server_tx_mark_google_reauth_required", {
         p_calendar_connection_id: item.calendar_connection_id,

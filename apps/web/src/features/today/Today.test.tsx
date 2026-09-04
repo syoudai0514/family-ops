@@ -35,6 +35,23 @@ vi.mock('../../lib/supabaseClient', () => ({
       handover_reads: [],
       shopping_items: [],
     }),
+    rpc: vi.fn((name: string) => {
+      if (name === 'get_my_daily_brief') {
+        return Promise.resolve({
+          data: {
+            tasks: [{ task_id: 'task-1' }],
+            carryover: [],
+            already_handled: [],
+            urgent_actions: [],
+            handovers: [],
+            shopping: [],
+            schedule: [],
+          },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    }),
     channel: vi.fn(() => {
       const channelObj = {
         on: () => channelObj,

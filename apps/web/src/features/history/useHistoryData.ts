@@ -3,19 +3,16 @@ import { supabase } from '../../lib/supabaseClient';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type { TaskEvent, TaskInstance } from '../../lib/types';
 
-// WP4 — planned vs actual history. Shows recently-scheduled tasks alongside
-// what actually happened to them (completed on time / late, skipped,
-// reassigned, cancelled, still open past its due time). Deliberately does
-// NOT compare members against each other or compute any score/count —
-// 10_WORK_PACKAGES.md's WP4 entry lists "no score/ranking" as an explicit
-// design constraint, not an oversight.
 const HISTORY_WINDOW_DAYS = 14;
 const HISTORY_REALTIME_TABLES = ['task_instances', 'task_events'];
 
 export type PlannedVsActualOutcome =
   | 'completed_on_time'
   | 'completed_late'
-  | 'skipped'
+  | 'not_needed'
+  | 'could_not_do'
+  | 'expired_occurrence'
+  | 'waiting'
   | 'cancelled'
   | 'overdue_open'
   | 'in_progress'
@@ -25,7 +22,6 @@ export interface HistoryEntry {
   task: TaskInstance;
   outcome: PlannedVsActualOutcome;
   events: TaskEvent[];
-  /** True if a `reassigned_once` event exists for this task. */
   wasReassigned: boolean;
 }
 
@@ -44,15 +40,18 @@ function windowStartDate(): string {
 
 export function classifyOutcome(task: TaskInstance, nowIso: string): PlannedVsActualOutcome {
   if (task.status === 'completed') {
-    if (task.due_at && task.completed_at && task.completed_at > task.due_at) {
-      return 'completed_late';
-    }
+    if (task.due_at && task.completed_at && task.completed_at > task.due_at) return 'completed_late';
     return 'completed_on_time';
   }
-  if (task.status === 'skipped') return 'skipped';
+  if (task.status === 'skipped') {
+    if (task.outcome_reason === 'not_needed_this_occurrence') return 'not_needed';
+    if (task.outcome_reason === 'could_not_do') return 'could_not_do';
+    if (task.outcome_reason === 'expired_occurrence') return 'expired_occurrence';
+    return 'could_not_do';
+  }
   if (task.status === 'cancelled') return 'cancelled';
+  if (task.attention_state === 'waiting') return 'waiting';
   if (task.status === 'in_progress') return 'in_progress';
-  // status === 'todo'
   if (task.due_at && task.due_at < nowIso) return 'overdue_open';
   return 'upcoming';
 }
@@ -72,7 +71,6 @@ export function useHistoryData(householdId: string | null, userId: string | null
     try {
       const startDate = windowStartDate();
       const nowIso = new Date().toISOString();
-
       const { data: taskRows, error: taskError } = await supabase
         .from('task_instances')
         .select('*')
@@ -84,7 +82,6 @@ export function useHistoryData(householdId: string | null, userId: string | null
 
       const tasks: TaskInstance[] = taskRows ?? [];
       const taskIds = tasks.map((t) => t.id);
-
       let eventsByTaskId = new Map<string, TaskEvent[]>();
       if (taskIds.length > 0) {
         const { data: eventRows, error: eventError } = await supabase
@@ -103,7 +100,7 @@ export function useHistoryData(householdId: string | null, userId: string | null
         eventsByTaskId = grouped;
       }
 
-      const nextEntries: HistoryEntry[] = tasks.map((task) => {
+      setEntries(tasks.map((task) => {
         const events = eventsByTaskId.get(task.id) ?? [];
         return {
           task,
@@ -111,8 +108,7 @@ export function useHistoryData(householdId: string | null, userId: string | null
           events,
           wasReassigned: events.some((e) => e.event_type === 'reassigned_once'),
         };
-      });
-      setEntries(nextEntries);
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '読み込みに失敗しました。');
     } finally {
@@ -120,11 +116,7 @@ export function useHistoryData(householdId: string | null, userId: string | null
     }
   }, [householdId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
+  useEffect(() => { load(); }, [load]);
   useRealtimeRefresh({ householdId, userId, onRemoteChange: load, tables: HISTORY_REALTIME_TABLES });
-
   return { loading, error, entries, refresh: load };
 }

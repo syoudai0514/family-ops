@@ -16,7 +16,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
 
   const serviceClient = createServiceRoleClient();
 
-  const { data, error } = await serviceClient.rpc("server_tx_dispatch_routine_automation", {
+  const { data, error } = await serviceClient.rpc("server_tx_dispatch_family_ops_automation_v2", {
     p_now_utc: new Date().toISOString(),
   });
 
