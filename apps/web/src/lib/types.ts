@@ -61,6 +61,8 @@ export interface TaskSubtaskDefinition {
 }
 
 export type TaskInstanceStatus = 'todo' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
+export type TaskOutcomeReason = 'could_not_do' | 'not_needed_this_occurrence' | 'expired_occurrence' | null;
+export type TaskAttentionState = 'active' | 'waiting';
 
 export interface TaskInstance {
   id: string;
@@ -81,6 +83,10 @@ export interface TaskInstance {
   status: TaskInstanceStatus;
   actual_completed_by_id: string | null;
   completed_at: string | null;
+  outcome_reason?: TaskOutcomeReason;
+  attention_state?: TaskAttentionState;
+  waiting_note?: string | null;
+  next_check_at?: string | null;
 }
 
 export interface TaskSubtaskInstance {
@@ -151,6 +157,12 @@ export interface ShoppingItem {
   ordered_at: string | null;
   purchased_at: string | null;
   arrived_at: string | null;
+  assignment_mode?: 'person' | 'unassigned' | 'anyone' | null;
+  assignee_actor_ref_id?: string | null;
+  active_claimant_actor_ref_id?: string | null;
+  claimed_at?: string | null;
+  duplicate_sensitivity?: 'normal' | 'avoid_duplicate' | 'safety_critical' | null;
+  revision?: number;
 }
 
 export interface UserNotification {

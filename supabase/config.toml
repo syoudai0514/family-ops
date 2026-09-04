@@ -152,6 +152,9 @@ verify_jwt = true
 [functions.cancel-request]
 verify_jwt = true
 
+[functions.start-request-followup]
+verify_jwt = true
+
 [functions.add-shopping-item]
 verify_jwt = true
 
@@ -168,6 +171,12 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.cancel-shopping-item]
+verify_jwt = true
+
+[functions.claim-shopping-item]
+verify_jwt = true
+
+[functions.reopen-shopping-item]
 verify_jwt = true
 
 [functions.create-handover]

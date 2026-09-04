@@ -27,6 +27,7 @@ function useShoppingItems(householdId: string | null) {
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actorRefId, setActorRefId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!householdId) {
@@ -34,13 +35,17 @@ function useShoppingItems(householdId: string | null) {
       return;
     }
     setLoading(true);
-    const { data, error: fetchError } = await supabase
-      .from('shopping_items')
-      .select('*')
-      .eq('household_id', householdId)
-      .order('due_at', { ascending: true, nullsFirst: false });
+    const { data, error: fetchError } = await supabase.rpc('get_my_shopping_workspace');
     if (fetchError) setError(fetchError.message);
-    else setItems(data ?? []);
+    else {
+      const workspace = (data ?? {}) as { actor_ref_id?: string; active?: Array<Record<string, unknown>>; history?: Array<Record<string, unknown>> };
+      const rows = [...(workspace.active ?? []), ...(workspace.history ?? [])].map((row) => ({
+        ...row,
+        id: String(row.shopping_item_id),
+      })) as unknown as ShoppingItem[];
+      setItems(rows);
+      setActorRefId(workspace.actor_ref_id ?? null);
+    }
     setLoading(false);
   }, [householdId]);
 
@@ -48,12 +53,12 @@ function useShoppingItems(householdId: string | null) {
     load();
   }, [load]);
 
-  return { items, loading, error, refresh: load };
+  return { items, actorRefId, loading, error, refresh: load };
 }
 
 export function Shopping() {
   const { household, members } = useHousehold();
-  const { items, loading, error, refresh } = useShoppingItems(household?.id ?? null);
+  const { items, actorRefId, loading, error, refresh } = useShoppingItems(household?.id ?? null);
   const [showForm, setShowForm] = useState(false);
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
@@ -93,7 +98,7 @@ export function Shopping() {
           </h2>
           <ul className="shopping-list">
             {statusItems.map((item) => (
-              <ShoppingItemRow key={item.id} item={item} members={members} onChanged={refresh} />
+              <ShoppingItemRow key={item.id} item={item} members={members} currentActorRefId={actorRefId} onChanged={refresh} />
             ))}
           </ul>
         </section>
@@ -105,13 +110,16 @@ export function Shopping() {
 function ShoppingItemRow({
   item,
   members,
+  currentActorRefId,
   onChanged,
 }: {
   item: ShoppingItem;
   members: { user_id: string; profile: { display_name: string } | null }[];
+  currentActorRefId: string | null;
   onChanged: () => void;
 }) {
   const actions = getShoppingItemActions(item.status, item.purchase_method);
+  const revision = item.revision ?? 1;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,6 +141,7 @@ function ShoppingItemRow({
   }
 
   const assignee = members.find((m) => m.user_id === item.assignee_id);
+  const assignmentMode = item.assignment_mode ?? (item.assignee_id ? 'person' : 'unassigned');
 
   return (
     <li className="shopping-item">
@@ -142,6 +151,7 @@ function ShoppingItemRow({
           {' '}
           — {PURCHASE_METHOD_LABELS[item.purchase_method]}
           {assignee ? ` · 担当: ${assignee.profile?.display_name ?? assignee.user_id}` : ''}
+          {assignmentMode === 'anyone' ? (item.active_claimant_actor_ref_id ? ' · 誰かが対応中' : ' · 誰でもOK') : ''}
         </span>
         {item.url && (
           <div>
@@ -164,6 +174,8 @@ function ShoppingItemRow({
                   operation_id: newOperationId(),
                   shopping_item_id: item.id,
                   assignee_user_id: e.target.value,
+                  assignment_mode: 'person',
+                  expected_revision: revision,
                 }),
               );
             }}
@@ -186,11 +198,50 @@ function ShoppingItemRow({
                   operation_id: newOperationId(),
                   shopping_item_id: item.id,
                   assignee_user_id: null,
+                  assignment_mode: 'unassigned',
+                  expected_revision: revision,
                 }),
               )
             }
           >
             担当解除
+          </button>
+        )}
+        {actions.canAssign && assignmentMode !== 'anyone' && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.assignShoppingItem, {
+              operation_id: newOperationId(), shopping_item_id: item.id,
+              assignment_mode: 'anyone', assignee_user_id: null, expected_revision: revision,
+            }))}
+          >
+            誰でもOK
+          </button>
+        )}
+        {assignmentMode === 'anyone' && item.status === 'wanted' && !item.active_claimant_actor_ref_id && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, {
+              operation_id: newOperationId(), shopping_item_id: item.id,
+              action: 'claim', expected_revision: revision,
+            }))}
+          >
+            自分がやる
+          </button>
+        )}
+        {assignmentMode === 'anyone' && item.status === 'wanted' && item.active_claimant_actor_ref_id && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, {
+              operation_id: newOperationId(), shopping_item_id: item.id,
+              action: item.active_claimant_actor_ref_id === currentActorRefId ? 'release' : 'takeover',
+              expected_revision: revision,
+            }))}
+          >
+            {item.active_claimant_actor_ref_id === currentActorRefId ? '担当を戻す' : '引き継ぐ'}
           </button>
         )}
         {actions.canOrder && (
@@ -202,6 +253,7 @@ function ShoppingItemRow({
                 callEdgeFunction(EDGE_FUNCTIONS.orderShoppingItem, {
                   operation_id: newOperationId(),
                   shopping_item_id: item.id,
+                  expected_revision: revision,
                 }),
               )
             }
@@ -218,6 +270,7 @@ function ShoppingItemRow({
                 callEdgeFunction(EDGE_FUNCTIONS.purchaseShoppingItem, {
                   operation_id: newOperationId(),
                   shopping_item_id: item.id,
+                  expected_revision: revision,
                 }),
               )
             }
@@ -234,6 +287,7 @@ function ShoppingItemRow({
                 callEdgeFunction(EDGE_FUNCTIONS.arriveShoppingItem, {
                   operation_id: newOperationId(),
                   shopping_item_id: item.id,
+                  expected_revision: revision,
                 }),
               )
             }
@@ -250,6 +304,7 @@ function ShoppingItemRow({
                 callEdgeFunction(EDGE_FUNCTIONS.cancelShoppingItem, {
                   operation_id: newOperationId(),
                   shopping_item_id: item.id,
+                  expected_revision: revision,
                 }),
               )
             }
@@ -258,6 +313,20 @@ function ShoppingItemRow({
           </button>
         )}
       </div>
+      {['ordered', 'purchased', 'arrived'].includes(item.status) && (
+        <div className="task-item-actions">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.reopenShoppingItem, {
+              operation_id: newOperationId(), shopping_item_id: item.id,
+              expected_revision: revision, reason: '操作を取り消して未対応に戻す',
+            }))}
+          >
+            未対応に戻す
+          </button>
+        </div>
+      )}
       {error && (
         <p role="alert" className="error-text">
           {error}
@@ -272,6 +341,7 @@ function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
   const [title, setTitle] = useState('');
   const [purchaseMethod, setPurchaseMethod] = useState<PurchaseMethod>('undecided');
   const [assigneeId, setAssigneeId] = useState('');
+  const [assignmentMode, setAssignmentMode] = useState<'person' | 'unassigned' | 'anyone'>('unassigned');
   const [url, setUrl] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -287,6 +357,8 @@ function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
         title: title.trim(),
         purchase_method: purchaseMethod,
         assignee_user_id: assigneeId || undefined,
+        assignment_mode: assignmentMode,
+        duplicate_sensitivity: 'avoid_duplicate',
         url: url.trim() || undefined,
         due_at: dueDate ? new Date(dueDate).toISOString() : undefined,
       });
@@ -315,16 +387,28 @@ function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
         </select>
       </label>
       <label>
+        担当
+        <select value={assignmentMode} onChange={(e) => {
+          const mode = e.target.value as 'person' | 'unassigned' | 'anyone';
+          setAssignmentMode(mode);
+          if (mode !== 'person') setAssigneeId('');
+        }}>
+          <option value="unassigned">未定</option>
+          <option value="anyone">誰でもOK</option>
+          <option value="person">担当者を指定</option>
+        </select>
+      </label>
+      {assignmentMode === 'person' && <label>
         担当者（任意）
-        <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-          <option value="">未定</option>
+        <select required value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+          <option value="">選択してください</option>
           {members.map((m) => (
             <option key={m.user_id} value={m.user_id}>
               {m.profile?.display_name ?? m.user_id}
             </option>
           ))}
         </select>
-      </label>
+      </label>}
       <label>
         URL（任意）
         <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} />

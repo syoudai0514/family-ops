@@ -110,6 +110,7 @@ export function Today() {
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
   const [editingPendingAction, setEditingPendingAction] = useState<PendingAction | null>(null);
   const [shoppingCollapsed, setShoppingCollapsed] = useState(true);
+  const allDaySchedule = data.briefSchedule.filter((item) => item.is_all_day);
 
   const nextTask = useMemo(() => selectNextOwnedTask(data.tasks, me?.user_id), [data.tasks, me]);
   const todaySections = useMemo(() => {
@@ -281,6 +282,24 @@ export function Today() {
         schedule={schedule.schedule}
         members={members}
       />
+
+      {allDaySchedule.length > 0 && (
+        <section className="card compact-section" aria-label="終日の予定">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">いつもと違うこと</p>
+              <h2>終日の予定</h2>
+            </div>
+          </div>
+          <ul className="today-schedule-list">
+            {allDaySchedule.map((item) => (
+              <li key={item.family_event_id ?? item.occurrence_key}>
+                {item.title ?? '名称未設定'} <small>終日</small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {!tomorrowPlanning.loading && (tomorrowTransport || tomorrowItems.length > 0) && (
         <section className="card compact-section" aria-label="明日の予定">

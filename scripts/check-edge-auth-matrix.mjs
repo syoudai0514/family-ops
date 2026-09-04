@@ -86,6 +86,11 @@ const GAP_FILL_FUNCTIONS = new Set([
   'replace-routine-subtasks',
   'set-family-calendar-target',
   'set-family-role',
+  // Accepted current design adds post-accept Attempt and canonical Shopping
+  // claim/correction commands after the frozen v6 endpoint inventory.
+  'start-request-followup',
+  'claim-shopping-item',
+  'reopen-shopping-item',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');
