@@ -82,7 +82,9 @@ begin
   end if;
 
   -- Simulated -> operator proves the operator can safely exercise the recipient
-  -- side without creating a second auth user/member.
+  -- side without creating a second auth user/member. The simulated requester
+  -- has no legacy user id; the real operator recipient deliberately retains
+  -- their compatibility user id. test_context_id is the isolation boundary.
   v_sent := public.server_tx_test_simulation_send_request_v1(
     v_owner,
     v_context,
@@ -100,7 +102,7 @@ begin
     where r.id=v_request_id
       and r.test_context_id=v_context
       and r.requester_id is null
-      and r.recipient_id is null
+      and r.recipient_id=v_owner
   ) then
     raise exception 'FAIL DD10 interactive: request escaped canonical test scope';
   end if;
