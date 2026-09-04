@@ -12,7 +12,7 @@ declare
   v_intake jsonb; v_extraction uuid; v_review jsonb; v_replay jsonb;
   v_school jsonb; v_facts jsonb; v_ai jsonb;
   v_operation uuid:='59000000-0000-0000-0000-000000000102';
-  v_receipt uuid; v_direct_receipt uuid; v_error text; v_payload jsonb;
+  v_receipt uuid; v_error text; v_payload jsonb;
 begin
   insert into auth.users(id) values(v_owner) on conflict do nothing;
   insert into public.profiles(user_id,display_name)
@@ -109,35 +109,33 @@ begin
     if v_error not like '%NURSERY_OPERATION_RECEIPT_PROVENANCE_IMMUTABLE%' then raise; end if;
   end;
 
-  -- A direct privileged INSERT cannot arrive pre-completed with arbitrary
-  -- structured content.  The nursery receipt trigger converts it to a clean
-  -- incomplete claim; completion is then canonicalized from the extraction.
-  insert into private.canonical_operation_receipts(
-    household_id,operator_user_id,actor_ref_id,test_context_id,operation_id,
-    action_type,request_hash,result_type,result_id,result_payload,completed_at
-  ) select household_id,operator_user_id,actor_ref_id,test_context_id,
-           '59000000-0000-0000-0000-000000000199'::uuid,
-           action_type,request_hash,'document_extraction',v_extraction,
-           jsonb_build_object('secret','YAMADA','source_fact_count',64),now()
-    from private.canonical_operation_receipts where id=v_receipt
-  returning id into v_direct_receipt;
-  if not exists(
-    select 1 from private.canonical_operation_receipts r
-    where r.id=v_direct_receipt and r.completed_at is null
-      and r.result_type is null and r.result_id is null
-      and coalesce(r.result_payload,'{}'::jsonb)='{}'::jsonb
-  ) then raise exception 'FAIL DD9 receipt: direct INSERT retained result data'; end if;
+  -- A direct privileged nursery receipt INSERT is no longer a supported claim
+  -- path at all.  Even when it copies a valid server-derived request_hash, it
+  -- must not be able to mint a second nursery receipt with hostile pre-completed
+  -- result fields.  The canonical SECURITY DEFINER command/helper path is the
+  -- only nursery receipt creator.
+  begin
+    insert into private.canonical_operation_receipts(
+      household_id,operator_user_id,actor_ref_id,test_context_id,operation_id,
+      action_type,request_hash,result_type,result_id,result_payload,completed_at
+    ) select household_id,operator_user_id,actor_ref_id,test_context_id,
+             '59000000-0000-0000-0000-000000000199'::uuid,
+             action_type,request_hash,'document_extraction',v_extraction,
+             jsonb_build_object('secret','YAMADA','source_fact_count',64),now()
+      from private.canonical_operation_receipts where id=v_receipt;
+    raise exception 'FAIL DD9 receipt: direct nursery receipt INSERT accepted';
+  exception when others then
+    v_error:=sqlerrm;
+    if v_error like 'FAIL DD9 receipt:%' then raise; end if;
+    if v_error not like '%NURSERY_OPERATION_RECEIPT_DIRECT_INSERT_FORBIDDEN%' then raise; end if;
+  end;
 
-  update private.canonical_operation_receipts
-  set result_type='document_extraction',result_id=v_extraction,
-      result_payload=jsonb_build_object('secret','YAMADA','ai_candidate_count',32),
-      completed_at=now()
-  where id=v_direct_receipt;
-  select result_payload into v_payload
-  from private.canonical_operation_receipts where id=v_direct_receipt;
-  if v_payload ? 'secret' or v_payload ? 'source_fact_count' or v_payload ? 'ai_candidate_count'
-     or v_payload->>'structured_persistence'<>'withheld_untrusted_r0' then
-    raise exception 'FAIL DD9 receipt: direct completion was not canonicalized: %',v_payload;
+  if exists(
+    select 1 from private.canonical_operation_receipts
+    where actor_ref_id=v_actor
+      and operation_id='59000000-0000-0000-0000-000000000199'::uuid
+  ) then
+    raise exception 'FAIL DD9 receipt: rejected direct INSERT left durable receipt';
   end if;
 end;
 $$;
