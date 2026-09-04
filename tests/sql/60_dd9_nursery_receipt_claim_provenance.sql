@@ -8,7 +8,7 @@ set role service_role;
 
 do $$
 declare
-  v_owner uuid := '60000000-0000-0000-0000-000000000001';
+  v_owner uuid := '6d900000-0000-0000-0000-000000000001';
   v_household uuid;
   v_actor uuid;
   v_child uuid;
@@ -18,10 +18,10 @@ declare
   v_school jsonb;
   v_review jsonb;
   v_replay jsonb;
-  v_operation uuid := '60000000-0000-0000-0000-000000000102';
-  v_direct_operation uuid := '60000000-0000-0000-0000-000000000190';
-  v_relabel_operation uuid := '60000000-0000-0000-0000-000000000191';
-  v_helper_operation uuid := '60000000-0000-0000-0000-000000000192';
+  v_operation uuid := '6d900000-0000-0000-0000-000000000102';
+  v_direct_operation uuid := '6d900000-0000-0000-0000-000000000190';
+  v_relabel_operation uuid := '6d900000-0000-0000-0000-000000000191';
+  v_helper_operation uuid := '6d900000-0000-0000-0000-000000000192';
   v_relabel_receipt uuid;
   v_error text;
   v_hash text;
@@ -34,7 +34,7 @@ begin
 
   v_household := (public.server_tx_create_household(
     v_owner,
-    '60000000-0000-0000-0000-000000000010',
+    '6d900000-0000-0000-0000-000000000010',
     'DD9 claim provenance household',
     'Asia/Tokyo'
   )->>'household_id')::uuid;
@@ -57,7 +57,7 @@ begin
 
   v_intake := private.fn_command_create_nursery_intake_v1(
     v_household,v_owner,v_actor,null,
-    '60000000-0000-0000-0000-000000000101',
+    '6d900000-0000-0000-0000-000000000101',
     'codmon_notice','caller-key','2179-01-01 01:02+09',
     'claim-provenance-test',jsonb_build_object('provider','test'),'pwa'
   );
