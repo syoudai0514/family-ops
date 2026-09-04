@@ -12,6 +12,7 @@ import { MonthView } from '../features/planning/MonthView';
 import { SettingsHome } from '../features/settings/SettingsHome';
 import { CategorySettings } from '../features/settings/CategorySettings';
 import { QuickAdd } from '../features/tasks/QuickAdd';
+import { TestSimulation } from '../features/testSimulation/TestSimulation';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -82,6 +83,7 @@ export function AppShell() {
         <Route path="/settings" element={<SettingsHome />} />
         <Route path="/settings/routines" element={<RoutineSchedule />} />
         <Route path="/settings/categories" element={<CategorySettings />} />
+        <Route path="/settings/test-simulation" element={<TestSimulation />} />
         <Route path="/checkin/:sessionId" element={<CheckinPage />} />
         <Route path="*" element={<Today />} />
       </Routes>
