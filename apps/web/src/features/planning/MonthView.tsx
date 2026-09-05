@@ -10,6 +10,7 @@ import {
 } from './calendarProjection';
 import { localIsoDate } from './dateHelpers';
 import { DayAgendaSheet } from './DayAgendaSheet';
+import { TransportOccurrenceOverrideModal } from './TransportOccurrenceOverrideModal';
 import { usePlanningData } from './usePlanningData';
 import './MonthView.css';
 
@@ -58,6 +59,7 @@ export function MonthView() {
   const [selected, setSelected] = useState(localIsoDate(new Date()));
   const [sheetDate, setSheetDate] = useState<string | null>(null);
   const [taskFormDate, setTaskFormDate] = useState<string | null>(null);
+  const [transportOverrideDate, setTransportOverrideDate] = useState<string | null>(null);
   const primaryUserId = papaUserId(members);
   const partnerUserId = mamaUserId(members);
   const projection = useMemo(
@@ -93,48 +95,27 @@ export function MonthView() {
     setSelected(localIsoDate(next));
     setSheetDate(null);
     setTaskFormDate(null);
+    setTransportOverrideDate(null);
   };
 
   return (
     <main className="app-shell planning-page month-page">
       <div className="month-toolbar" aria-label="月の移動">
-        <button
-          type="button"
-          className="month-nav-button"
-          aria-label="前月"
-          onClick={() => changeMonth(-1)}
-        >
-          ‹
-        </button>
+        <button type="button" className="month-nav-button" aria-label="前月" onClick={() => changeMonth(-1)}>‹</button>
         <div className="month-title-wrap">
           <p className="eyebrow">全体を把握</p>
-          <h1>
-            {anchor.getFullYear()}年{anchor.getMonth() + 1}月
-          </h1>
+          <h1>{anchor.getFullYear()}年{anchor.getMonth() + 1}月</h1>
         </div>
-        <button
-          type="button"
-          className="month-nav-button"
-          aria-label="次月"
-          onClick={() => changeMonth(1)}
-        >
-          ›
-        </button>
+        <button type="button" className="month-nav-button" aria-label="次月" onClick={() => changeMonth(1)}>›</button>
       </div>
-      {error && (
-        <p role="alert" className="error-text">
-          {error}
-        </p>
-      )}
+      {error && <p role="alert" className="error-text">{error}</p>}
       {loading ? (
         <p role="status">読み込み中…</p>
       ) : (
         <>
           <p className="month-contract-hint">日を選ぶと、予定・送迎・やることをカレンダーの下で確認できます。</p>
           <div className="month-grid month-weekdays" aria-hidden="true">
-            {['月', '火', '水', '木', '金', '土', '日'].map((day) => (
-              <span key={day}>{day}</span>
-            ))}
+            {['月', '火', '水', '木', '金', '土', '日'].map((day) => <span key={day}>{day}</span>)}
           </div>
           <div className="month-grid month-calendar" aria-label="月間カレンダー">
             {Array.from({ length: totalCells }, (_, index) => {
@@ -149,7 +130,6 @@ export function MonthView() {
               const visibleItems = dayItems.slice(0, visibleItemLimit);
               const hiddenCount = Math.max(0, dayItems.length - visibleItems.length);
               const dayOfWeek = day.getDay();
-
               return (
                 <button
                   key={date}
@@ -157,38 +137,20 @@ export function MonthView() {
                   onClick={() => setSelected(date)}
                   aria-pressed={selected === date}
                   aria-label={`${date}を選択`}
-                  className={[
-                    'month-day',
-                    selected === date ? 'selected' : '',
-                    date === today ? 'today' : '',
-                    dayOfWeek === 6 ? 'saturday' : '',
-                    dayOfWeek === 0 ? 'sunday' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
+                  className={['month-day', selected === date ? 'selected' : '', date === today ? 'today' : '', dayOfWeek === 6 ? 'saturday' : '', dayOfWeek === 0 ? 'sunday' : ''].filter(Boolean).join(' ')}
                 >
                   <span className="month-date-number">{day.getDate()}</span>
                   <span className="month-events">
                     {visibleItems.map((item) => {
-                      const clock = compactClock(item.startsAt);
+                      const eventClock = compactClock(item.startsAt);
                       return (
-                        <small
-                          key={item.id}
-                          title={item.shortTitle}
-                          className={`projection-row ${item.source} owner-${item.ownerKind} ${
-                            item.allDay ? 'all-day' : 'timed'
-                          }`}
-                        >
-                          {clock && <span className="event-time">{clock}</span>}
+                        <small key={item.id} title={item.shortTitle} className={`projection-row ${item.source} owner-${item.ownerKind} ${item.allDay ? 'all-day' : 'timed'}`}>
+                          {eventClock && <span className="event-time">{eventClock}</span>}
                           <span className="event-title">{compactEventTitle(item)}</span>
                         </small>
                       );
                     })}
-                    {hasTransport && (
-                      <small className="transport-compact" aria-label={`送迎 ${compactTransport}`}>
-                        {compactTransport}
-                      </small>
-                    )}
+                    {hasTransport && <small className="transport-compact" aria-label={`送迎 ${compactTransport}`}>{compactTransport}</small>}
                     {hiddenCount > 0 && <small className="month-more">+{hiddenCount}</small>}
                   </span>
                 </button>
@@ -198,76 +160,51 @@ export function MonthView() {
 
           <section className="card month-inline-agenda" aria-live="polite" data-selected-date={selected}>
             <div className="month-inline-heading">
-              <div>
-                <p className="eyebrow">選択中</p>
-                <h2>{monthDateHeading(selected)}</h2>
-              </div>
+              <div><p className="eyebrow">選択中</p><h2>{monthDateHeading(selected)}</h2></div>
               {transportCompactToken(selectedTransport, primaryUserId, partnerUserId) && (
-                <strong className="month-inline-transport-token">
-                  {transportCompactToken(selectedTransport, primaryUserId, partnerUserId)}
-                </strong>
+                <strong className="month-inline-transport-token">{transportCompactToken(selectedTransport, primaryUserId, partnerUserId)}</strong>
               )}
             </div>
             <div className="month-inline-groups">
               <div>
                 <h3>予定</h3>
-                {selectedItems.length > 0 ? (
-                  <ul className="month-inline-list">
-                    {selectedItems.slice(0, 4).map((item) => (
-                      <li key={item.id}>{item.fullTitle}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="empty-hint">予定はありません。</p>
-                )}
+                {selectedItems.length > 0 ? <ul className="month-inline-list">{selectedItems.slice(0, 4).map((item) => <li key={item.id}>{item.fullTitle}</li>)}</ul> : <p className="empty-hint">予定はありません。</p>}
               </div>
               <div>
                 <h3>送迎</h3>
-                <p className="month-inline-detail">
-                  {transportLabel(selectedTransport, primaryUserId, partnerUserId) ?? '送迎はありません。'}
-                </p>
+                <p className="month-inline-detail">{transportLabel(selectedTransport, primaryUserId, partnerUserId) ?? '送迎はありません。'}</p>
+                <button type="button" className="text-button" onClick={() => setTransportOverrideDate(selected)}>この日だけ変更</button>
               </div>
               <div>
                 <h3>主なToDo・準備</h3>
-                {selectedMainTasks.length > 0 ? (
-                  <ul className="month-inline-list">
-                    {selectedMainTasks.slice(0, 4).map((task) => (
-                      <li key={task.id}>{task.title}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="empty-hint">やることはありません。</p>
-                )}
+                {selectedMainTasks.length > 0 ? <ul className="month-inline-list">{selectedMainTasks.slice(0, 4).map((task) => <li key={task.id}>{task.title}</li>)}</ul> : <p className="empty-hint">やることはありません。</p>}
               </div>
             </div>
             <div className="month-inline-actions">
-              <button type="button" className="secondary-button" onClick={() => setSheetDate(selected)}>
-                詳しく見る・編集
-              </button>
-              <button type="button" onClick={() => setTaskFormDate(selected)}>
-                この日に追加
-              </button>
+              <button type="button" className="secondary-button" onClick={() => setSheetDate(selected)}>詳しく見る・編集</button>
+              <button type="button" onClick={() => setTaskFormDate(selected)}>この日に追加</button>
             </div>
           </section>
         </>
       )}
 
-      {sheetDate && (
-        <DayAgendaSheet
-          date={sheetDate}
-          onClose={() => setSheetDate(null)}
-          onChanged={refresh}
-        />
-      )}
+      {sheetDate && <DayAgendaSheet date={sheetDate} onClose={() => setSheetDate(null)} onChanged={refresh} />}
       {taskFormDate && (
         <TaskFormModal
           mode="create"
           initialScheduledDate={taskFormDate}
           onClose={() => setTaskFormDate(null)}
-          onSaved={() => {
-            setTaskFormDate(null);
-            void refresh();
-          }}
+          onSaved={() => { setTaskFormDate(null); void refresh(); }}
+        />
+      )}
+      {transportOverrideDate && (
+        <TransportOccurrenceOverrideModal
+          date={transportOverrideDate}
+          members={members}
+          baseDropoffUserId={projection.transportByDate.get(transportOverrideDate)?.dropoffAssigneeId ?? null}
+          basePickupUserId={projection.transportByDate.get(transportOverrideDate)?.pickupAssigneeId ?? null}
+          onClose={() => setTransportOverrideDate(null)}
+          onChanged={refresh}
         />
       )}
     </main>
