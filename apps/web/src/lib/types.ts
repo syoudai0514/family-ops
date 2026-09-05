@@ -87,6 +87,7 @@ export interface TaskInstance {
   attention_state?: TaskAttentionState;
   waiting_note?: string | null;
   next_check_at?: string | null;
+  revision?: number;
 }
 
 export interface TaskSubtaskInstance {
@@ -119,6 +120,10 @@ export interface RequestRow {
   cancelled_at: string | null;
   assignment_task_instance_id?: string | null;
   assignment_scope?: 'once' | 'this_week' | null;
+  revision?: number;
+  linked_task_revision?: number | null;
+  linked_task_title?: string | null;
+  linked_task_due_at?: string | null;
 }
 
 export type HandoverPeriod = 'morning' | 'day' | 'evening' | 'other';
@@ -132,6 +137,11 @@ export interface Handover {
   categories: string[];
   occurred_on: string;
   created_at: string;
+  info_kind?: 'share' | 'handover';
+  valid_from?: string;
+  valid_until?: string | null;
+  ack_policy?: 'none' | 'required';
+  status?: 'active' | 'superseded' | 'expired';
 }
 
 export interface HandoverRead {

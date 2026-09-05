@@ -23,6 +23,7 @@ export interface HistoryEntry {
   outcome: PlannedVsActualOutcome;
   events: TaskEvent[];
   wasReassigned: boolean;
+  actualParticipantUserIds: string[];
 }
 
 export interface HistoryData {
@@ -100,6 +101,30 @@ export function useHistoryData(householdId: string | null, userId: string | null
         eventsByTaskId = grouped;
       }
 
+      const participantUserIdsByTask = new Map<string, string[]>();
+      if (taskIds.length > 0) {
+        const { data: participantRows, error: participantError } = await supabase
+          .from('task_actual_participants')
+          .select('task_instance_id, actor_ref_id, removed_at')
+          .in('task_instance_id', taskIds)
+          .is('removed_at', null);
+        if (participantError) throw participantError;
+        const actorRefIds = [...new Set((participantRows ?? []).map((row) => row.actor_ref_id))];
+        if (actorRefIds.length > 0) {
+          const { data: actorRows, error: actorError } = await supabase
+            .from('domain_actor_refs').select('id, real_user_id').in('id', actorRefIds);
+          if (actorError) throw actorError;
+          const userIdByActorRef = new Map((actorRows ?? []).map((row) => [row.id, row.real_user_id]));
+          for (const participant of participantRows ?? []) {
+            const userId = userIdByActorRef.get(participant.actor_ref_id);
+            if (!userId) continue;
+            const ids = participantUserIdsByTask.get(participant.task_instance_id) ?? [];
+            ids.push(userId);
+            participantUserIdsByTask.set(participant.task_instance_id, ids);
+          }
+        }
+      }
+
       setEntries(tasks.map((task) => {
         const events = eventsByTaskId.get(task.id) ?? [];
         return {
@@ -107,6 +132,7 @@ export function useHistoryData(householdId: string | null, userId: string | null
           outcome: classifyOutcome(task, nowIso),
           events,
           wasReassigned: events.some((e) => e.event_type === 'reassigned_once'),
+          actualParticipantUserIds: participantUserIdsByTask.get(task.id) ?? (task.actual_completed_by_id ? [task.actual_completed_by_id] : []),
         };
       }));
     } catch (err) {

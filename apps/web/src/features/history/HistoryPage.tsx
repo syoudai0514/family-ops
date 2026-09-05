@@ -4,7 +4,10 @@ import { formatDateTimeJa } from '../../lib/date';
 import { tokyoIsoDate } from '../planning/dateHelpers';
 import { useHistoryData, type HistoryEntry, type PlannedVsActualOutcome } from './useHistoryData';
 import type { TaskEvent, TaskEventType } from '../../lib/types';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
+import { newOperationId } from '../../lib/id';
 
 const OUTCOME_LABELS: Record<PlannedVsActualOutcome, string> = {
   completed_on_time: '完了（期限内）',
@@ -63,15 +66,58 @@ export function completedNextTokyoMorning(scheduledDate: string, completedAt: st
   return Boolean(completedAt && tokyoIsoDate(completedAt) > scheduledDate);
 }
 
-function HistoryRow({ entry, members }: { entry: HistoryEntry; members: HouseholdMemberWithProfile[] }) {
-  const { task, outcome, events, wasReassigned } = entry;
+function HistoryRow({ entry, members, onChanged }: { entry: HistoryEntry; members: HouseholdMemberWithProfile[]; onChanged: () => Promise<void> }) {
+  const { task, outcome, events, wasReassigned, actualParticipantUserIds } = entry;
   const reassignment = wasReassigned ? reassignmentSummary(events, members) : null;
+  const [editingActual, setEditingActual] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>(actualParticipantUserIds);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (!editingActual) setSelectedUserIds(actualParticipantUserIds); }, [actualParticipantUserIds, editingActual]);
+
+  async function saveActualCorrection() {
+    if (selectedUserIds.length === 0) {
+      setError('実施した人を一人以上選んでください。');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await callEdgeFunction(EDGE_FUNCTIONS.correctTaskActual, {
+        operation_id: newOperationId(), task_id: task.id,
+        participant_user_ids: selectedUserIds, expected_revision: task.revision ?? 1,
+      });
+      setEditingActual(false);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '訂正に失敗しました。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <li className="history-item card">
     <div className="history-item-header"><strong>{task.title}</strong><span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span></div>
     <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
-    {task.status === 'completed' && <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {memberLabel(task.actual_completed_by_id, members)}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 翌朝に完了' : ''}</p>}
+    {task.status === 'completed' && <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {actualParticipantUserIds.map((id) => memberLabel(id, members)).join('・') || '未記録'}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 翌朝に完了' : ''}</p>}
     {outcome === 'waiting' && <p className="task-item-meta">{task.waiting_note ? `待ち理由: ${task.waiting_note}` : '確認待ち'}{task.next_check_at ? ` · 次回確認 ${formatDateTimeJa(task.next_check_at)}` : ''}</p>}
     {reassignment && <p className="task-item-meta">{reassignment}</p>}
+    {task.status === 'completed' && (
+      <div className="history-correction">
+        {!editingActual ? <button type="button" className="text-button" onClick={() => setEditingActual(true)}>実績を訂正</button> : (
+          <fieldset>
+            <legend>実際にやった人</legend>
+            {members.map((member) => {
+              const checked = selectedUserIds.includes(member.user_id);
+              return <label key={member.user_id} className="inline-check"><input type="checkbox" checked={checked} disabled={busy} onChange={() => setSelectedUserIds((ids) => checked ? ids.filter((id) => id !== member.user_id) : [...ids, member.user_id])} />{memberLabel(member.user_id, members)}</label>;
+            })}
+            <p className="task-item-meta">訂正前の記録は履歴に残ります。</p>
+            <div className="task-item-actions"><button type="button" disabled={busy} onClick={saveActualCorrection}>訂正を保存</button><button type="button" className="text-button" disabled={busy} onClick={() => setEditingActual(false)}>やめる</button></div>
+          </fieldset>
+        )}
+        {error && <p role="alert" className="error-text">{error}</p>}
+      </div>
+    )}
     <EventTrail events={events} members={members} />
   </li>;
 }
@@ -79,7 +125,7 @@ function HistoryRow({ entry, members }: { entry: HistoryEntry; members: Househol
 export function HistoryPage() {
   const { user } = useAuth();
   const { household, members } = useHousehold();
-  const { loading, error, entries } = useHistoryData(household?.id ?? null, user?.id ?? null);
+  const { loading, error, entries, refresh } = useHistoryData(household?.id ?? null, user?.id ?? null);
   const [filter, setFilter] = useState<'all' | 'routine' | 'planned' | 'request'>('all');
   const visibleEntries = useMemo(() => entries.filter((entry) => {
     if (filter === 'all') return true;
@@ -97,6 +143,6 @@ export function HistoryPage() {
       {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{label}</button>)}
     </div>
     {error && <p role="alert" className="error-text">{error}</p>}
-    <ul className="history-list">{visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}{visibleEntries.map((entry) => <HistoryRow key={entry.task.id} entry={entry} members={members} />)}</ul>
+    <ul className="history-list">{visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}{visibleEntries.map((entry) => <HistoryRow key={entry.task.id} entry={entry} members={members} onChanged={refresh} />)}</ul>
   </div>;
 }

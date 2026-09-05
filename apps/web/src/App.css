@@ -141,6 +141,38 @@ body {
   background: var(--color-surface);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
 }
+
+.shopping-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.shopping-primary-action {
+  flex: 1;
+  min-height: 44px;
+}
+
+.shopping-overflow > div {
+  min-width: min(280px, calc(100vw - 48px));
+}
+
+.preparation-added-list {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: var(--surface-muted, #f4f6f7);
+  border-radius: 10px;
+}
+
+.preparation-added-list p,
+.preparation-added-list ul {
+  margin: 0;
+}
+
+.preparation-added-list ul {
+  padding-left: 1.2em;
+}
 .task-overflow label {
   display: grid;
   gap: 0.2rem;
@@ -950,6 +982,82 @@ fieldset {
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
+.today-shortcuts {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.today-shortcuts button {
+  flex: 1 0 auto;
+  min-height: 48px;
+  background: #eff4ff;
+  color: #174eab;
+  font-weight: 750;
+}
+.today-shortcuts .today-shortcut-primary {
+  background: #0b59ee;
+  color: #fff;
+}
+.current-input-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-color: #bbcdfd;
+  background: linear-gradient(135deg, #f5f8ff, #fff);
+}
+.current-input-card h2 { margin: 0.1rem 0; }
+.current-input-card p:not(.eyebrow) { margin: 0; color: var(--color-text-muted); font-size: .9rem; }
+.checkin-reconciliation-actions,
+.checkin-item-actions,
+.request-other-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.checkin-reconciliation-actions > button { min-height: 48px; }
+.checkin-reconciliation-actions .hero-primary,
+.checkin-item-actions .hero-primary { flex: 1 1 10rem; }
+.checkin-item-actions .task-overflow > div { right: 0; }
+.checkin-subtask-list { margin-top: 0.55rem; }
+.subtask-check-row {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.65rem;
+  color: var(--color-text);
+  text-align: left;
+  background: #f7f9fd;
+  border: 1px solid var(--color-border);
+}
+.subtask-checkbox {
+  display: inline-grid;
+  flex: 0 0 1.2rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  place-items: center;
+  border: 2px solid #8ca0bd;
+  border-radius: .35rem;
+  color: #fff;
+}
+.subtask-checkbox.checked { background: var(--color-accent); border-color: var(--color-accent); }
+.task-waiting-editor {
+  display: grid;
+  gap: .6rem;
+  margin-top: .7rem;
+  padding: .75rem;
+  border-radius: .7rem;
+  background: #f7f9fd;
+}
+.task-waiting-editor label { display: grid; gap: .25rem; color: var(--color-text-muted); font-size: .85rem; }
+.success-text { color: #13794c; font-weight: 650; }
+.checkin-back-link { display: inline-flex; margin-top: 1rem; }
+.history-correction { margin-top: .45rem; }
 .composer-steps {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

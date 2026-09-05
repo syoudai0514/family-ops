@@ -19,6 +19,7 @@ import { newOperationId } from '../../lib/id';
 type SessionType = 'dropoff' | 'pickup' | 'nonpickup_evening';
 type SessionStatus = 'open' | 'submitted' | 'auto_closed' | 'superseded';
 type ItemAction = 'complete' | 'partner_handled' | 'skip';
+type ReconciliationResponse = 'all_done' | 'mostly_done' | 'individual';
 
 interface SubtaskRow {
   id: string;
@@ -73,6 +74,10 @@ const ITEM_STATUS_LABELS: Record<SessionItem['status'], string> = {
   cancelled: '取消',
 };
 
+function inputLabel(sessionType: SessionType): string {
+  return sessionType === 'dropoff' ? '🌅 朝の入力' : sessionType === 'pickup' ? '🌆 お迎えの入力' : '🌙 今夜の入力';
+}
+
 function isItemActive(item: SessionItem): boolean {
   return item.status === 'todo' || item.status === 'in_progress';
 }
@@ -114,7 +119,8 @@ export function CheckinPage() {
   const { session, loading, error, refresh } = useRoutineSession(sessionId);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const [busyAll, setBusyAll] = useState(false);
-  const [confirmSkip, setConfirmSkip] = useState(false);
+  const [individualMode, setIndividualMode] = useState(false);
+  const [reconciliationMessage, setReconciliationMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   if (!sessionId) {
@@ -157,33 +163,41 @@ export function CheckinPage() {
     }
   }
 
-  async function runCompleteAll() {
+  async function runSubtaskAction(subtask: SubtaskRow) {
     setActionError(null);
-    setBusyAll(true);
+    setBusyItemId(subtask.id);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.completeRoutineSession, {
+      await callEdgeFunction(EDGE_FUNCTIONS.setSubtaskCompletion, {
         operation_id: newOperationId(),
-        session_id: sessionId,
-        disposition: 'complete_all',
+        subtask_instance_id: subtask.id,
+        completed: !subtask.is_completed,
+        completion_actor: 'self',
       });
       await refresh();
     } catch (err) {
       setActionError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。');
     } finally {
-      setBusyAll(false);
+      setBusyItemId(null);
     }
   }
 
-  async function runSkipIncomplete() {
+  async function runReconciliation(responseKind: ReconciliationResponse) {
     setActionError(null);
     setBusyAll(true);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.completeRoutineSession, {
+      await callEdgeFunction(EDGE_FUNCTIONS.reconcileRoutineSession, {
         operation_id: newOperationId(),
         session_id: sessionId,
-        disposition: 'skip_incomplete',
+        response_kind: responseKind,
       });
-      setConfirmSkip(false);
+      setReconciliationMessage(
+        responseKind === 'all_done'
+          ? '完了として記録しました。気になる項目は履歴から訂正できます。'
+          : responseKind === 'mostly_done'
+            ? '「大体やった」と記録しました。項目は勝手に完了にしていません。'
+            : '個別で答える入力に切り替えました。',
+      );
+      if (responseKind === 'individual') setIndividualMode(true);
       await refresh();
     } catch (err) {
       setActionError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。');
@@ -220,6 +234,30 @@ export function CheckinPage() {
           {actionError}
         </p>
       )}
+      {reconciliationMessage && <p role="status" className="success-text">{reconciliationMessage}</p>}
+
+      {canAct && activeItems.length > 0 && !individualMode && (
+        <section className="card checkin-reconciliation" aria-labelledby="checkin-reconciliation-title">
+          <p className="eyebrow">{inputLabel(session.session_type)}</p>
+          <h2 id="checkin-reconciliation-title">今日はどうでしたか？</h2>
+          <p className="empty-hint">細かな入力は例外があるときだけで大丈夫です。</p>
+          <div className="checkin-reconciliation-actions">
+            <button type="button" className="hero-primary" disabled={busyAll} onClick={() => runReconciliation('all_done')}>
+              全部やった
+            </button>
+            <button type="button" className="secondary-button" disabled={busyAll} onClick={() => runReconciliation('mostly_done')}>
+              大体やった
+            </button>
+            <button type="button" className="text-button" disabled={busyAll} onClick={() => runReconciliation('individual')}>
+              個別で答える
+            </button>
+          </div>
+        </section>
+      )}
+
+      {canAct && individualMode && (
+        <p className="task-item-meta">個別入力中です。通常の完了を先に、例外は「その他」から選べます。</p>
+      )}
 
       <ul className="handover-list">
         {session.items.map((item) => (
@@ -228,39 +266,58 @@ export function CheckinPage() {
               <p>{item.title}</p>
               <span className="task-item-meta">{ITEM_STATUS_LABELS[item.status]}</span>
               {item.completion_mode === 'subtasks' && item.subtasks.length > 0 && (
-                <ul>
+                <ul className="subtask-list subtask-checklist checkin-subtask-list">
                   {item.subtasks.map((st) => (
-                    <li key={st.id} className="task-item-meta">
-                      {st.is_completed ? '☑' : '☐'} {st.title}
-                      {!st.required && '（任意）'}
+                    <li key={st.id}>
+                      <button
+                        type="button"
+                        className="subtask-check-row"
+                        disabled={!canAct || busyAll || busyItemId === st.id}
+                        onClick={() => runSubtaskAction(st)}
+                        aria-pressed={st.is_completed}
+                      >
+                        <span className={st.is_completed ? 'subtask-checkbox checked' : 'subtask-checkbox'} aria-hidden="true">
+                          {st.is_completed ? '✓' : ''}
+                        </span>
+                        <span className={st.is_completed ? 'checked' : ''}>
+                          {st.title}{!st.required && <small>（任意）</small>}
+                        </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
             {canAct && isItemActive(item) && (
-              <div className="stack-form">
+              <div className="checkin-item-actions">
                 <button
                   type="button"
+                  className="hero-primary"
                   disabled={busyItemId === item.task_instance_id || busyAll}
                   onClick={() => runItemAction(item.task_instance_id, 'complete')}
                 >
                   完了
                 </button>
-                <button
-                  type="button"
-                  disabled={busyItemId === item.task_instance_id || busyAll}
-                  onClick={() => runItemAction(item.task_instance_id, 'partner_handled')}
-                >
-                  相手が対応
-                </button>
-                <button
-                  type="button"
-                  disabled={busyItemId === item.task_instance_id || busyAll}
-                  onClick={() => runItemAction(item.task_instance_id, 'skip')}
-                >
-                  今回は不要
-                </button>
+                <details className="task-overflow">
+                  <summary aria-label={`${item.title}のその他の結果`}>その他</summary>
+                  <div>
+                    <button
+                      type="button"
+                      disabled={busyItemId === item.task_instance_id || busyAll}
+                      onClick={() => runItemAction(item.task_instance_id, 'partner_handled')}
+                    >
+                      相手が対応
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-button"
+                      disabled={busyItemId === item.task_instance_id || busyAll}
+                      onClick={() => runItemAction(item.task_instance_id, 'skip')}
+                    >
+                      今回は不要
+                    </button>
+                  </div>
+                </details>
               </div>
             )}
           </li>
@@ -268,28 +325,7 @@ export function CheckinPage() {
         {session.items.length === 0 && <li className="empty-hint">項目はありません。</li>}
       </ul>
 
-      {canAct && activeItems.length > 0 && (
-        <div className="stack-form">
-          <button type="button" disabled={busyAll} onClick={runCompleteAll}>
-            全て確認して完了
-          </button>
-          {!confirmSkip ? (
-            <button type="button" disabled={busyAll} onClick={() => setConfirmSkip(true)}>
-              今回は不要（まとめて）
-            </button>
-          ) : (
-            <div className="stack-form card">
-              <p>未完了の項目を「今回は不要」にしますか？</p>
-              <button type="button" disabled={busyAll} onClick={runSkipIncomplete}>
-                はい、今回は不要にする
-              </button>
-              <button type="button" disabled={busyAll} onClick={() => setConfirmSkip(false)}>
-                キャンセル
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      <Link className="text-button checkin-back-link" to="/">今日に戻る</Link>
       {!user && <p className="task-item-meta">ログイン情報を確認できません。</p>}
     </div>
   );

@@ -25,17 +25,22 @@ Deno.test("vague creation starters enter clarification instead of help or fake t
   assertEquals(lineCreationStarterKind("明日の夜にゴミ出しをする"), null);
 });
 
-Deno.test("menu quick replies expose lookups and creation entry points", () => {
+Deno.test("menu quick replies expose the literal six Q73 LINE entry points", () => {
   assertEquals(menuQuickReplies().map((item) => item.label), [
-    "今日の予定",
-    "明日の予定",
-    "今週の予定",
-    "予定を追加",
-    "タスク追加",
+    "今日",
+    "入力",
+    "追加",
     "お願い",
-    "買い物",
-    "PWAを開く",
+    "共有",
+    "その他",
   ]);
+});
+
+Deno.test("literal LINE entries route to their concrete surface", () => {
+  assertEquals(readOnlyLineIntent("入力"), "input");
+  assertEquals(readOnlyLineIntent("追加したい"), "add");
+  assertEquals(readOnlyLineIntent("共有"), "share");
+  assertEquals(readOnlyLineIntent("その他"), "other");
 });
 
 Deno.test("schedule reply remains compact", () => {

@@ -4,15 +4,18 @@ import { Requests } from '../features/requests/Requests';
 import { Shopping } from '../features/shopping/Shopping';
 import { Handovers } from '../features/handovers/Handovers';
 import { Notifications } from '../features/notifications/Notifications';
-import { RoutineSchedule } from '../features/settings/RoutineSchedule';
+import { RoutineSettingsPage } from '../features/settings/RoutineSettingsPage';
 import { CheckinPage } from '../features/checkin/CheckinPage';
 import { HistoryPage } from '../features/history/HistoryPage';
 import { WeekView } from '../features/planning/WeekView';
 import { MonthView } from '../features/planning/MonthView';
 import { SettingsHome } from '../features/settings/SettingsHome';
 import { CategorySettings } from '../features/settings/CategorySettings';
+import { HouseholdTerminology } from '../features/settings/HouseholdTerminology';
 import { QuickAdd } from '../features/tasks/QuickAdd';
 import { TestSimulation } from '../features/testSimulation/TestSimulation';
+import { EventPlanPage } from '../features/events/EventPlanPage';
+import { NurseryReviewPage } from '../features/nursery/NurseryReviewPage';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -32,9 +35,6 @@ function BottomNavLink({ item }: { item: (typeof PRIMARY_NAV_ITEMS)[number] }) {
       to={item.to}
       className={({ isActive }) => (isActive ? 'bottom-nav-link active' : 'bottom-nav-link')}
       onClick={(event) => {
-        // LINE's iOS in-app browser occasionally swallows SPA history navigation
-        // after a deep link. Fall back to a native page navigation there so the
-        // bottom tabs always remain operable.
         if (isLineInAppBrowser()) {
           event.preventDefault();
           window.location.assign(item.to);
@@ -75,14 +75,18 @@ export function AppShell() {
         <Route path="/today" element={<Today />} />
         <Route path="/week" element={<WeekView />} />
         <Route path="/month" element={<MonthView />} />
+        <Route path="/events/new" element={<EventPlanPage />} />
+        <Route path="/nursery/reviews" element={<NurseryReviewPage />} />
+        <Route path="/nursery/reviews/:intakeId" element={<NurseryReviewPage />} />
         <Route path="/requests" element={<Requests />} />
         <Route path="/shopping" element={<Shopping />} />
         <Route path="/handovers" element={<Handovers />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/settings" element={<SettingsHome />} />
-        <Route path="/settings/routines" element={<RoutineSchedule />} />
+        <Route path="/settings/routines" element={<RoutineSettingsPage />} />
         <Route path="/settings/categories" element={<CategorySettings />} />
+        <Route path="/settings/terminology" element={<HouseholdTerminology />} />
         <Route path="/settings/test-simulation" element={<TestSimulation />} />
         <Route path="/checkin/:sessionId" element={<CheckinPage />} />
         <Route path="*" element={<Today />} />

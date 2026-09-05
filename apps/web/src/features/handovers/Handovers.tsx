@@ -189,10 +189,12 @@ function HandoverRow({ handover, isRead, onChanged }: { handover: Handover; isRe
           {handover.categories.length > 0 ? ` · ${handover.categories.join(', ')}` : ''}
         </span>
         <p>{handover.shared_text}</p>
+        {handover.valid_until && <p className="task-item-meta">有効期限: {new Date(handover.valid_until).toLocaleString('ja-JP')} {new Date(handover.valid_until).getTime() < Date.now() ? '（期限切れ）' : ''}</p>}
+        {handover.ack_policy === 'required' && <p className="task-item-meta">重要: 確認の返答が必要です。</p>}
       </div>
       {!isRead && (
         <button type="button" disabled={busy} onClick={markRead}>
-          既読にする
+          {handover.ack_policy === 'required' ? '確認した' : '既読にする'}
         </button>
       )}
       {error && (
@@ -209,6 +211,8 @@ function ComposeHandoverForm({ onCreated }: { onCreated: () => void }) {
   const [period, setPeriod] = useState<HandoverPeriod>('day');
   const [categoriesInput, setCategoriesInput] = useState('');
   const [occurredOn, setOccurredOn] = useState(todayIsoDate());
+  const [important, setImportant] = useState(false);
+  const [validUntil, setValidUntil] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -227,6 +231,8 @@ function ComposeHandoverForm({ onCreated }: { onCreated: () => void }) {
         period,
         categories,
         occurred_on: occurredOn,
+        ack_policy: important ? 'required' : 'none',
+        valid_until: validUntil ? new Date(validUntil).toISOString() : undefined,
       });
       onCreated();
     } catch (err) {
@@ -264,6 +270,8 @@ function ComposeHandoverForm({ onCreated }: { onCreated: () => void }) {
         日付
         <input type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} required />
       </label>
+      <label className="checkbox-row"><input type="checkbox" checked={important} onChange={(e) => setImportant(e.target.checked)} />重要：相手の確認が必要</label>
+      <label>有効期限（任意）<input type="datetime-local" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></label>
       {error && (
         <p role="alert" className="error-text">
           {error}

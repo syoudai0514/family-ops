@@ -30,7 +30,7 @@ describe('TestSimulation', () => {
 
     expect(await screen.findByText('🧪 TEST MODE')).toBeInTheDocument();
     expect(screen.getByText(/家族・LINE・Googleには送られません/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '1人テストモード' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '🧪 1人LINEテスト' })).toBeInTheDocument();
     expect(screen.getByLabelText('相手役')).toHaveValue('mama');
     expect(screen.getByRole('button', { name: 'テストを開始' })).toBeInTheDocument();
 
@@ -53,7 +53,7 @@ describe('TestSimulation', () => {
         test_context_id: '11111111-1111-4111-8111-111111111111',
         status: 'active',
         revision: 1,
-        label: 'PWA 1人E2Eテスト',
+        label: '🧪 1人LINE会話テスト',
         simulated_role: 'mama',
         operator_display_label: '本人',
         simulated_display_label: 'テストママ',
@@ -103,8 +103,8 @@ describe('TestSimulation', () => {
 
     expect(await screen.findByText('お迎えお願い')).toBeInTheDocument();
     expect(screen.getByText(/本人（本人） → 相手役（テストママ）/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '引き受ける' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '断る' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'やる' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '難しい' })).toBeInTheDocument();
     expect(screen.getByText(/実LINEには送らず/)).toBeInTheDocument();
     expect(screen.getByText('お願い — テスト通知')).toBeInTheDocument();
     expect(screen.getByText(/本番副作用: なし/)).toBeInTheDocument();

@@ -9,8 +9,18 @@ import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
 import type { PendingAction, RequestRow } from '../../lib/types';
 
+interface RequestAttempt {
+  id: string;
+  request_id: string;
+  state: 'pending' | 'checking' | 'consulting' | 'awaiting_confirmation' | 'accepted' | 'declined';
+  revision: number;
+  terms_revision: number;
+  terms: Record<string, unknown> | null;
+}
+
 function useRequests(householdId: string | null) {
   const [requests, setRequests] = useState<RequestRow[]>([]);
+  const [attempts, setAttempts] = useState<Map<string, RequestAttempt>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +36,35 @@ function useRequests(householdId: string | null) {
       .eq('household_id', householdId)
       .order('due_at', { ascending: true, nullsFirst: false });
     if (fetchError) setError(fetchError.message);
-    else setRequests(data ?? []);
+    else {
+      const rows = (data ?? []) as RequestRow[];
+      const taskIds = rows.map((row) => row.linked_task_instance_id).filter((id): id is string => Boolean(id));
+      const requestIds = rows.map((row) => row.id);
+      if (requestIds.length > 0) {
+        const { data: attemptRows, error: attemptError } = await supabase
+          .from('request_attempts').select('id, request_id, state, revision, terms_revision, terms')
+          .in('request_id', requestIds).is('test_context_id', null)
+          .order('created_at', { ascending: false });
+        if (attemptError) setError(attemptError.message);
+        else {
+          const latest = new Map<string, RequestAttempt>();
+          for (const attempt of (attemptRows ?? []) as RequestAttempt[]) {
+            if (!latest.has(attempt.request_id)) latest.set(attempt.request_id, attempt);
+          }
+          setAttempts(latest);
+        }
+      } else setAttempts(new Map());
+      if (taskIds.length > 0) {
+        const { data: tasks, error: taskError } = await supabase
+          .from('task_instances').select('id, revision, title, due_at').in('id', taskIds);
+        if (taskError) setError(taskError.message);
+        const byId = new Map((tasks ?? []).map((task) => [task.id, task]));
+        setRequests(rows.map((row) => {
+          const task = row.linked_task_instance_id ? byId.get(row.linked_task_instance_id) : undefined;
+          return task ? { ...row, linked_task_revision: task.revision, linked_task_title: task.title, linked_task_due_at: task.due_at } : row;
+        }));
+      } else setRequests(rows);
+    }
     setLoading(false);
   }, [householdId]);
 
@@ -34,19 +72,21 @@ function useRequests(householdId: string | null) {
     load();
   }, [load]);
 
-  return { requests, loading, error, refresh: load };
+  return { requests, attempts, loading, error, refresh: load };
 }
 
 export function Requests() {
   const { user } = useAuth();
   const { household, partner } = useHousehold();
-  const { requests, loading, error, refresh } = useRequests(household?.id ?? null);
+  const { requests, attempts, loading, error, refresh } = useRequests(household?.id ?? null);
   const location = useLocation();
   const navigate = useNavigate();
   const pendingActionRawText = typeof (location.state as { pendingActionRawText?: unknown } | null)?.pendingActionRawText === 'string'
     ? (location.state as { pendingActionRawText: string }).pendingActionRawText
     : '';
   const pendingId = new URLSearchParams(location.search).get('pending');
+  const otherResponseRequestId = new URLSearchParams(location.search).get('response') === 'other'
+    ? new URLSearchParams(location.search).get('request') : null;
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [pendingLoadError, setPendingLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(() => Boolean(pendingId) || new URLSearchParams(location.search).has('date') || Boolean(pendingActionRawText));
@@ -126,7 +166,7 @@ export function Requests() {
         ) : (
           <ul className="request-list">
             {incoming.map((r) => (
-              <IncomingRequestRow key={r.id} request={r} onChanged={refresh} />
+              <IncomingRequestRow key={r.id} request={r} attempt={attempts.get(r.id)} onChanged={refresh} initialShowOther={r.id === otherResponseRequestId} />
             ))}
           </ul>
         )}
@@ -165,20 +205,24 @@ function statusLabel(status: RequestRow['status']): string {
   }
 }
 
-function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onChanged: () => void }) {
+function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => void; initialShowOther?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showOther, setShowOther] = useState(initialShowOther);
 
-  async function respond(kind: 'accept' | 'decline') {
+  async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     setBusy(true);
     setError(null);
     try {
-      const functionName = kind === 'accept' && request.assignment_task_instance_id
+      const functionName = kind === 'checking' || kind === 'consult'
+        ? EDGE_FUNCTIONS.respondRequest
+        : kind === 'accept' && request.assignment_task_instance_id
         ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest
         : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
       await callEdgeFunction(functionName, {
         operation_id: newOperationId(),
         request_id: request.id,
+        ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}),
       });
       onChanged();
     } catch (err) {
@@ -188,22 +232,49 @@ function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onCha
     }
   }
 
+  async function negotiate(action: 'checking' | 'consult' | 'edit_terms' | 'confirm_terms' | 'decline', terms?: Record<string, unknown>) {
+    if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
+    setBusy(true); setError(null);
+    try {
+      await callEdgeFunction(EDGE_FUNCTIONS.negotiateRequest, {
+        operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id, action, terms,
+        expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision,
+      });
+      onChanged();
+    } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。'); }
+    finally { setBusy(false); }
+  }
+
   return (
     <li className="request-item">
       <div>
         <strong>{request.shared_title}</strong> — {request.assignment_task_instance_id ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}
         {request.shared_message && <p>{request.shared_message}</p>}
-        {request.due_at && <span className="task-item-meta">期限: {formatDateTimeJa(request.due_at)}</span>}
+        {request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}
       </div>
-      {request.status === 'pending' && (
+      {request.status === 'pending' && attempt?.state !== 'consulting' && attempt?.state !== 'awaiting_confirmation' && (
         <div className="task-item-actions">
           <button type="button" disabled={busy} onClick={() => respond('accept')}>
-            引き受ける
+            やる
           </button>
           <button type="button" disabled={busy} onClick={() => respond('decline')}>
-            断る
+            難しい
+          </button>
+          <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>
+            その他の返答
           </button>
         </div>
+      )}
+      {request.status === 'pending' && showOther && (
+        <div className="request-other-actions">
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button>
+          <CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} />
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button>
+          <p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p>
+        </div>
+      )}
+      {attempt && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && (
+        <ConsultationTerms attempt={attempt} busy={busy} onAction={negotiate} />
       )}
       {error && (
         <p role="alert" className="error-text">
@@ -212,6 +283,25 @@ function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onCha
       )}
     </li>
   );
+}
+
+function CommentedDecline({ busy, onSubmit }: { busy: boolean; onSubmit: (comment: string) => void }) {
+  const [comment, setComment] = useState('');
+  return <div className="request-comment-row">
+    <input aria-label="難しい理由（任意）" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="コメント付きで難しい" />
+    <button type="button" className="secondary-button" disabled={busy} onClick={() => onSubmit(comment)}>コメント付きで難しい</button>
+  </div>;
+}
+
+function ConsultationTerms({ attempt, busy, onAction }: { attempt: RequestAttempt; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) {
+  const [candidate, setCandidate] = useState(typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : '');
+  return <div className="request-other-actions" aria-label="相談の条件">
+    <p><strong>相談中</strong> — 担当はまだ変わりません。二人が同じ条件を確認してから確定します。</p>
+    <input aria-label="合意する条件" value={candidate} onChange={(event) => setCandidate(event.target.value)} placeholder="例：明日は私、金曜は交代" />
+    <button type="button" className="secondary-button" disabled={busy || !candidate.trim()} onClick={() => onAction('edit_terms', { candidate: candidate.trim() })}>この条件を提案</button>
+    <button type="button" disabled={busy} onClick={() => onAction('confirm_terms')}>この条件で確認する</button>
+    <p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? '相手の確認待ち' : '条件の入力待ち'}（条件版 {attempt.terms_revision}）</p>
+  </div>;
 }
 
 function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onChanged: () => void }) {
@@ -243,7 +333,7 @@ function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onCha
       <div>
         <strong>{request.shared_title}</strong> — {statusLabel(request.status)}
         {request.shared_message && <p>{request.shared_message}</p>}
-        {request.due_at && <span className="task-item-meta">期限: {formatDateTimeJa(request.due_at)}</span>}
+        {request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}
       </div>
       {request.status === 'pending' && (
         <div className="task-item-actions">
@@ -252,12 +342,67 @@ function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onCha
           </button>
         </div>
       )}
+      {request.status === 'accepted' && (
+        <AcceptedRequestFollowup request={request} onChanged={onChanged} />
+      )}
       {error && (
         <p role="alert" className="error-text">
           {error}
         </p>
       )}
     </li>
+  );
+}
+
+function AcceptedRequestFollowup({ request, onChanged }: { request: RequestRow; onChanged: () => void }) {
+  const [mode, setMode] = useState<'change' | 'cancel' | null>(null);
+  const [title, setTitle] = useState(request.linked_task_title ?? request.shared_title);
+  const [replyDueAt, setReplyDueAt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canPropose = typeof request.revision === 'number' && typeof request.linked_task_revision === 'number';
+
+  async function submit() {
+    if (!mode || !canPropose) return;
+    if (mode === 'change' && !title.trim()) { setError('変更後の内容を入力してください。'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      await callEdgeFunction(EDGE_FUNCTIONS.startRequestFollowup, {
+        operation_id: newOperationId(), request_id: request.id, attempt_kind: mode,
+        task_patch: mode === 'change' ? { title: title.trim() } : undefined,
+        reply_due_at: replyDueAt ? new Date(replyDueAt).toISOString() : undefined,
+        expected_request_revision: request.revision,
+        expected_task_revision: request.linked_task_revision,
+      });
+      setMode(null);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '提案を送れませんでした。最新の状態を確認してください。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!request.linked_task_instance_id) return null;
+  return (
+    <div className="request-followup">
+      {!mode ? (
+        <div className="task-item-actions">
+          <button type="button" className="secondary-button" disabled={!canPropose} onClick={() => setMode('change')}>変更を相談</button>
+          <button type="button" className="text-button" disabled={!canPropose} onClick={() => setMode('cancel')}>取消を相談</button>
+        </div>
+      ) : (
+        <div className="stack-form request-followup-form">
+          <p className="task-item-meta">{mode === 'change' ? '変更案を二人で確認してから反映します。' : '取消は相手の確認後にだけ反映します。'}</p>
+          {mode === 'change' && <label>変更後の内容<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>}
+          <label>返事がほしい期限（任意）<input type="datetime-local" value={replyDueAt} onChange={(event) => setReplyDueAt(event.target.value)} /></label>
+          <div className="task-item-actions"><button type="button" disabled={busy} onClick={() => void submit()}>{busy ? '送信中…' : '確認をお願いする'}</button><button type="button" className="text-button" disabled={busy} onClick={() => setMode(null)}>やめる</button></div>
+        </div>
+      )}
+      {!canPropose && <p className="task-item-meta">このお願いは最新情報を読み直してから変更・取消できます。</p>}
+      {error && <p role="alert" className="error-text">{error}</p>}
+    </div>
   );
 }
 
@@ -356,7 +501,7 @@ function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage =
         <textarea value={message} onChange={(e) => setMessage(e.target.value)} required placeholder="AIで言い換えるか、直接入力してください" />
       </label>
       <label>
-        期限（任意）
+        作業期限（任意）
         <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
       </label>
       <p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>
@@ -370,7 +515,7 @@ function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage =
           <p className="line-preview-kicker">LINE · 送る側の確認</p>
           <h3>この内容で送りますか？</h3>
           <p className="line-preview-message">{message}</p>
-          <p className="line-preview-meta">{dueDate ? new Date(dueDate).toLocaleString('ja-JP') : '期限なし'} / 今回だけ</p>
+          <p className="line-preview-meta">{dueDate ? `作業期限: ${new Date(dueDate).toLocaleString('ja-JP')}` : '作業期限なし'} / 今回だけ</p>
           <p className="empty-hint">送るまでは、相手に通知されません。</p>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '送信中…' : 'LINEで送る'}</button></div>
         </section>

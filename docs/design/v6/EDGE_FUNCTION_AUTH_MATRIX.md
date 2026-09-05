@@ -34,6 +34,8 @@
 - send-request
 - accept-request
 - decline-request
+- respond-request
+- negotiate-request
 - cancel-request
 - add-shopping-item
 - assign-shopping-item

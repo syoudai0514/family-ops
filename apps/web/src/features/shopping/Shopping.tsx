@@ -142,6 +142,15 @@ function ShoppingItemRow({
 
   const assignee = members.find((m) => m.user_id === item.assignee_id);
   const assignmentMode = item.assignment_mode ?? (item.assignee_id ? 'person' : 'unassigned');
+  const primaryAction = actions.canOrder
+    ? { label: '注文した', run: () => callEdgeFunction(EDGE_FUNCTIONS.orderShoppingItem, { operation_id: newOperationId(), shopping_item_id: item.id, expected_revision: revision }) }
+    : actions.canPurchase
+      ? { label: '購入した', run: () => callEdgeFunction(EDGE_FUNCTIONS.purchaseShoppingItem, { operation_id: newOperationId(), shopping_item_id: item.id, expected_revision: revision }) }
+      : actions.canArrive
+        ? { label: '到着した', run: () => callEdgeFunction(EDGE_FUNCTIONS.arriveShoppingItem, { operation_id: newOperationId(), shopping_item_id: item.id, expected_revision: revision }) }
+        : assignmentMode === 'anyone' && item.status === 'wanted' && !item.active_claimant_actor_ref_id
+          ? { label: '自分がやる', run: () => callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, { operation_id: newOperationId(), shopping_item_id: item.id, action: 'claim', expected_revision: revision }) }
+          : null;
 
   return (
     <li className="shopping-item">
@@ -161,7 +170,15 @@ function ShoppingItemRow({
           </div>
         )}
       </div>
-      <div className="task-item-actions">
+      <div className="shopping-item-actions">
+        {primaryAction && (
+          <button type="button" className="shopping-primary-action" disabled={busy} onClick={() => run(primaryAction.run)}>
+            {primaryAction.label}
+          </button>
+        )}
+        <details className="task-overflow shopping-overflow">
+          <summary aria-label={`${item.title}のその他の操作`}>その他</summary>
+          <div className="task-item-actions">
         {actions.canAssign && (
           <select
             aria-label="担当者を割り当て"
@@ -219,17 +236,10 @@ function ShoppingItemRow({
             誰でもOK
           </button>
         )}
-        {assignmentMode === 'anyone' && item.status === 'wanted' && !item.active_claimant_actor_ref_id && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, {
-              operation_id: newOperationId(), shopping_item_id: item.id,
-              action: 'claim', expected_revision: revision,
-            }))}
-          >
-            自分がやる
-          </button>
+        {assignmentMode === 'anyone' && item.status === 'wanted' && !item.active_claimant_actor_ref_id && !primaryAction && (
+          <button type="button" disabled={busy} onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, {
+            operation_id: newOperationId(), shopping_item_id: item.id, action: 'claim', expected_revision: revision,
+          }))}>自分がやる</button>
         )}
         {assignmentMode === 'anyone' && item.status === 'wanted' && item.active_claimant_actor_ref_id && (
           <button
@@ -244,7 +254,7 @@ function ShoppingItemRow({
             {item.active_claimant_actor_ref_id === currentActorRefId ? '担当を戻す' : '引き継ぐ'}
           </button>
         )}
-        {actions.canOrder && (
+        {actions.canOrder && primaryAction?.label !== '注文した' && (
           <button
             type="button"
             disabled={busy}
@@ -261,7 +271,7 @@ function ShoppingItemRow({
             注文した
           </button>
         )}
-        {actions.canPurchase && (
+        {actions.canPurchase && primaryAction?.label !== '購入した' && (
           <button
             type="button"
             disabled={busy}
@@ -278,7 +288,7 @@ function ShoppingItemRow({
             購入した
           </button>
         )}
-        {actions.canArrive && (
+        {actions.canArrive && primaryAction?.label !== '到着した' && (
           <button
             type="button"
             disabled={busy}
@@ -312,9 +322,7 @@ function ShoppingItemRow({
             キャンセル
           </button>
         )}
-      </div>
-      {['ordered', 'purchased', 'arrived'].includes(item.status) && (
-        <div className="task-item-actions">
+        {['ordered', 'purchased', 'arrived'].includes(item.status) && (
           <button
             type="button"
             disabled={busy}
@@ -325,8 +333,10 @@ function ShoppingItemRow({
           >
             未対応に戻す
           </button>
-        </div>
-      )}
+        )}
+          </div>
+        </details>
+      </div>
       {error && (
         <p role="alert" className="error-text">
           {error}

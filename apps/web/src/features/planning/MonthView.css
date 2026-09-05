@@ -5,388 +5,98 @@
   gap: 0.5rem;
   margin-bottom: 0.45rem;
 }
-
-.month-page .month-title-wrap {
-  min-width: 0;
-  text-align: center;
-}
-
+.month-page .month-title-wrap { min-width: 0; text-align: center; }
 .month-page .month-nav-button {
-  display: grid;
-  place-items: center;
-  width: 2.4rem;
-  min-height: 2.4rem;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-accent);
-  font-size: 1.8rem;
-  font-weight: 500;
-  line-height: 1;
+  display: grid; place-items: center; width: 2.4rem; min-height: 2.4rem; padding: 0;
+  border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface);
+  color: var(--color-accent); font-size: 1.8rem; font-weight: 500; line-height: 1;
 }
-
-.month-page .month-nav-button:last-child {
-  justify-self: end;
-}
-
-.month-page .month-weekdays {
-  gap: 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.month-page .month-weekdays span {
-  padding: 0.32rem 0 0.28rem;
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-align: center;
-}
-
-.month-page .month-weekdays span:nth-child(6) {
-  color: #1769aa;
-}
-
-.month-page .month-weekdays span:nth-child(7) {
-  color: #c43a3a;
-}
-
+.month-page .month-nav-button:last-child { justify-self: end; }
+.month-page .month-contract-hint { margin: 0.2rem 0.25rem 0.55rem; color: var(--color-text-muted); font-size: 0.8rem; }
+.month-page .month-weekdays { gap: 0; border-bottom: 1px solid var(--color-border); }
+.month-page .month-weekdays span { padding: 0.32rem 0 0.28rem; color: var(--color-text-muted); font-size: 0.75rem; font-weight: 700; text-align: center; }
+.month-page .month-weekdays span:nth-child(6) { color: #1769aa; }
+.month-page .month-weekdays span:nth-child(7) { color: #c43a3a; }
 .month-page .month-calendar {
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0;
-  overflow: hidden;
-  border-top: 1px solid var(--color-border);
-  border-left: 1px solid var(--color-border);
-  background: var(--color-border);
+  grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; overflow: hidden;
+  border-top: 1px solid var(--color-border); border-left: 1px solid var(--color-border); background: var(--color-border);
 }
-
 .month-page .month-day {
-  position: relative;
-  min-width: 0;
-  min-height: 6rem;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.14rem;
-  padding: 0.18rem 0.1rem 0.22rem;
-  overflow: hidden;
-  border: 0;
-  border-right: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-  border-radius: 0;
-  background: var(--color-surface);
-  color: var(--color-text);
-  text-align: left;
+  position: relative; min-width: 0; min-height: 6rem; display: flex; flex-direction: column;
+  align-items: stretch; gap: 0.14rem; padding: 0.18rem 0.1rem 0.22rem; overflow: hidden;
+  border: 0; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);
+  border-radius: 0; background: var(--color-surface); color: var(--color-text); text-align: left;
 }
-
-.month-page .month-day.empty {
-  background: var(--color-bg);
-}
-
-.month-page .month-day.selected {
-  z-index: 1;
-  outline: 0;
-  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));
-  box-shadow: inset 0 0 0 1.5px var(--color-accent);
-}
-
-.month-page .month-date-number {
-  align-self: flex-start;
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.3rem;
-  height: 1.3rem;
-  padding: 0 0.12rem;
-  border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.month-page .month-day.saturday:not(.today) .month-date-number {
-  color: #1769aa;
-}
-
-.month-page .month-day.sunday:not(.today) .month-date-number {
-  color: #c43a3a;
-}
-
-.month-page .month-day.today .month-date-number {
-  background: var(--color-accent);
-  color: var(--color-accent-text);
-  font-weight: 800;
-}
-
-.month-page .month-events {
-  display: grid;
-  gap: 0.12rem;
-  min-width: 0;
-  width: 100%;
-}
-
-.month-page .month-day small {
-  min-width: 0;
-  width: 100%;
-  overflow: hidden;
-  border-radius: 0.2rem;
-  font-size: 0.61rem;
-  font-weight: 650;
-  line-height: 1.22;
-}
-
-.month-page .projection-row {
-  display: flex;
-  align-items: center;
-  gap: 0.12rem;
-  padding: 0.09rem 0.1rem;
-  border-left: 0.16rem solid transparent;
-  white-space: nowrap;
-}
-
-.month-page .projection-row.google {
-  background: #edf2ff;
-  color: #304f93;
-}
-
-.month-page .projection-row.family_ops {
-  background: #e9f6f1;
-  color: #075d48;
-}
-
-.month-page .projection-row.owner-primary {
-  border-left-color: #19866b;
-}
-
-.month-page .projection-row.owner-partner {
-  border-left-color: #dc7b25;
-}
-
-.month-page .projection-row.owner-family,
-.month-page .projection-row.owner-unknown {
-  border-left-color: #87918d;
-}
-
-.month-page .projection-row.timed {
-  font-weight: 750;
-}
-
-.month-page .event-time {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-}
-
-.month-page .event-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
+.month-page .month-day.empty { background: var(--color-bg); }
+.month-page .month-day.selected { z-index: 1; outline: 0; background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface)); box-shadow: inset 0 0 0 1.5px var(--color-accent); }
+.month-page .month-date-number { align-self: flex-start; display: inline-grid; place-items: center; min-width: 1.3rem; height: 1.3rem; padding: 0 0.12rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700; line-height: 1; }
+.month-page .month-day.saturday:not(.today) .month-date-number { color: #1769aa; }
+.month-page .month-day.sunday:not(.today) .month-date-number { color: #c43a3a; }
+.month-page .month-day.today .month-date-number { background: var(--color-accent); color: var(--color-accent-text); font-weight: 800; }
+.month-page .month-events { display: grid; gap: 0.12rem; min-width: 0; width: 100%; }
+.month-page .month-day small { min-width: 0; width: 100%; overflow: hidden; border-radius: 0.2rem; font-size: 0.61rem; font-weight: 650; line-height: 1.22; }
+.month-page .projection-row { display: flex; align-items: center; gap: 0.12rem; padding: 0.09rem 0.1rem; border-left: 0.16rem solid transparent; white-space: nowrap; }
+.month-page .projection-row.google { background: #edf2ff; color: #304f93; }
+.month-page .projection-row.family_ops { background: #e9f6f1; color: #075d48; }
+.month-page .projection-row.owner-primary { border-left-color: #19866b; }
+.month-page .projection-row.owner-partner { border-left-color: #dc7b25; }
+.month-page .projection-row.owner-family, .month-page .projection-row.owner-unknown { border-left-color: #87918d; }
+.month-page .projection-row.timed { font-weight: 750; }
+.month-page .event-time { flex: 0 0 auto; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+.month-page .event-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .month-page .transport-compact {
-  display: flex;
-  align-items: center;
-  gap: 0.22rem;
-  padding: 0.08rem 0.12rem;
-  background: #f1f5f3;
-  color: #4f5d58;
-  white-space: nowrap;
+  display: block; width: max-content; max-width: 100%; padding: 0.08rem 0.12rem;
+  overflow: hidden; background: #f1f5f3; color: #344b42; white-space: nowrap;
+  text-overflow: clip; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; font-weight: 850;
+  letter-spacing: -0.02em;
 }
-
-.month-page .transport-part {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.04rem;
-  min-width: 0;
-}
-
-.month-page .transport-owner {
-  display: inline-grid;
-  place-items: center;
-  min-width: 0.88rem;
-  height: 0.88rem;
-  padding: 0 0.08rem;
-  border-radius: 999px;
-  font-size: 0.56rem;
-  line-height: 1;
-}
-
-.month-page .transport-owner.primary {
-  background: #dff4eb;
-  color: #075d48;
-}
-
-.month-page .transport-owner.partner {
-  background: #fff0df;
-  color: #98500f;
-}
-
-.month-page .transport-owner.family,
-.month-page .transport-owner.unknown,
-.month-page .transport-owner.none {
-  background: #e7ece9;
-  color: #52605a;
-}
-
-.month-page .month-day small.month-more {
-  width: auto;
-  justify-self: end;
-  padding-inline: 0.15rem;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-weight: 800;
-  text-align: right;
-}
-
-.month-page .day-detail {
-  margin-top: 0.7rem;
-}
-
-.month-page .day-detail h2 {
-  margin-top: 0;
-  margin-bottom: 0.55rem;
-  font-size: 1rem;
-}
-
-.month-page .day-transport-summary {
-  display: flex;
-  gap: 0.65rem;
-  align-items: center;
-  color: var(--color-text-muted);
-}
-
-.month-page .day-transport-summary > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.12rem;
-}
+.month-page .month-day small.month-more { width: auto; justify-self: end; padding-inline: 0.15rem; background: transparent; color: var(--color-text-muted); font-weight: 800; text-align: right; }
+.month-page .month-inline-agenda { margin-top: 0.75rem; scroll-margin-top: 5rem; }
+.month-page .month-inline-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
+.month-page .month-inline-heading h2 { margin: 0.12rem 0 0; font-size: 1.05rem; }
+.month-page .month-inline-transport-token { flex: 0 0 auto; padding: 0.35rem 0.55rem; border-radius: 999px; background: #f1f5f3; white-space: nowrap; font-size: 0.82rem; letter-spacing: -0.02em; }
+.month-page .month-inline-groups { display: grid; gap: 0.75rem; margin-top: 0.75rem; }
+.month-page .month-inline-groups > div { padding-top: 0.65rem; border-top: 1px solid var(--color-border); }
+.month-page .month-inline-groups h3 { margin: 0 0 0.3rem; font-size: 0.88rem; }
+.month-page .month-inline-list { margin: 0; padding-left: 1.15rem; font-size: 0.9rem; line-height: 1.55; }
+.month-page .month-inline-detail, .month-page .month-inline-groups .empty-hint { margin: 0; font-size: 0.88rem; color: var(--color-text-muted); }
+.month-page .month-inline-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.55rem; margin-top: 0.85rem; }
+.month-page .day-detail { margin-top: 0.7rem; }
+.month-page .day-detail h2 { margin-top: 0; margin-bottom: 0.55rem; font-size: 1rem; }
+.month-page .day-transport-summary { display: flex; gap: 0.65rem; align-items: center; color: var(--color-text-muted); }
+.month-page .day-transport-summary > span { display: inline-flex; align-items: center; gap: 0.12rem; }
 
 @media (prefers-color-scheme: dark) {
-  .month-page .projection-row.family_ops {
-    background: #163d33;
-    color: #bdebdc;
-  }
-
-  .month-page .projection-row.google {
-    background: #26334f;
-    color: #cbd8ff;
-  }
-
-  .month-page .transport-compact {
-    background: #292f2c;
-    color: #c7ceca;
-  }
-
-  .month-page .transport-owner.primary {
-    background: #163d33;
-    color: #bdebdc;
-  }
-
-  .month-page .transport-owner.partner {
-    background: #49301c;
-    color: #ffd6ad;
-  }
-
-  .month-page .transport-owner.family,
-  .month-page .transport-owner.unknown,
-  .month-page .transport-owner.none {
-    background: #303633;
-    color: #d3d9d6;
-  }
+  .month-page .projection-row.family_ops { background: #163d33; color: #bdebdc; }
+  .month-page .projection-row.google { background: #26334f; color: #cbd8ff; }
+  .month-page .transport-compact, .month-page .month-inline-transport-token { background: #292f2c; color: #d8dfdb; }
 }
 
 @media (max-width: 899px) {
-  .app-shell.month-page {
-    padding-top: 0.55rem;
-    padding-left: max(0.16rem, env(safe-area-inset-left));
-    padding-right: max(0.16rem, env(safe-area-inset-right));
-  }
-
-  .month-page .month-toolbar {
-    margin-inline: 0.24rem;
-    margin-bottom: 0.28rem;
-  }
-
-  .month-page .month-title-wrap .eyebrow {
-    display: none;
-  }
-
-  .month-page .month-title-wrap h1 {
-    font-size: 1.4rem;
-    line-height: 1.1;
-  }
-
-  .month-page .month-nav-button {
-    width: 2.18rem;
-    min-height: 2.18rem;
-    font-size: 1.58rem;
-  }
-
-  .month-page .month-weekdays span {
-    padding-block: 0.25rem;
-    font-size: 0.69rem;
-  }
-
-  .month-page .month-day {
-    min-height: 5.85rem;
-    font-size: 0.8rem;
-  }
-
-  .month-page .month-day small {
-    font-size: 0.6rem;
-  }
-
-  .month-page .day-detail,
-  .month-page .calendar-detail,
-  .month-page > .error-text,
-  .month-page > [role='status'] {
-    margin-inline: 0.42rem;
-  }
+  .app-shell.month-page { padding-top: 0.55rem; padding-left: max(0.16rem, env(safe-area-inset-left)); padding-right: max(0.16rem, env(safe-area-inset-right)); }
+  .month-page .month-toolbar { margin-inline: 0.24rem; margin-bottom: 0.28rem; }
+  .month-page .month-title-wrap .eyebrow { display: none; }
+  .month-page .month-title-wrap h1 { font-size: 1.4rem; line-height: 1.1; }
+  .month-page .month-nav-button { width: 2.18rem; min-height: 2.18rem; font-size: 1.58rem; }
+  .month-page .month-weekdays span { padding-block: 0.25rem; font-size: 0.69rem; }
+  .month-page .month-day { min-height: 5.85rem; font-size: 0.8rem; }
+  .month-page .month-day small { font-size: 0.6rem; }
+  .month-page .month-inline-agenda, .month-page > .error-text, .month-page > [role='status'] { margin-inline: 0.42rem; }
 }
 
 @media (max-width: 390px) {
-  .month-page .month-day {
-    min-height: 5.65rem;
-  }
-
-  .month-page .month-day small {
-    font-size: 0.57rem;
-  }
-
-  .month-page .projection-row {
-    gap: 0.08rem;
-    padding-inline: 0.07rem;
-  }
-
-  .month-page .transport-compact {
-    gap: 0.15rem;
-    padding-inline: 0.08rem;
-  }
-
-  .month-page .month-date-number {
-    min-width: 1.22rem;
-    height: 1.22rem;
-    font-size: 0.73rem;
-  }
+  .month-page .month-day { min-height: 5.65rem; }
+  .month-page .month-day small { font-size: 0.57rem; }
+  .month-page .projection-row { gap: 0.08rem; padding-inline: 0.07rem; }
+  .month-page .transport-compact { padding-inline: 0.07rem; font-size: 0.56rem; }
+  .month-page .month-date-number { min-width: 1.22rem; height: 1.22rem; font-size: 0.73rem; }
+  .month-page .month-inline-actions { grid-template-columns: 1fr; }
 }
 
 @media (min-width: 900px) {
-  .month-page .month-toolbar {
-    max-width: 36rem;
-    margin-inline: auto;
-  }
-
-  .month-page .month-day {
-    min-height: 7.5rem;
-    padding: 0.35rem;
-  }
-
-  .month-page .month-day small {
-    font-size: 0.72rem;
-  }
-
-  .month-page .transport-owner {
-    min-width: 1.05rem;
-    height: 1.05rem;
-    font-size: 0.65rem;
-  }
+  .month-page .month-toolbar { max-width: 36rem; margin-inline: auto; }
+  .month-page .month-day { min-height: 7.5rem; padding: 0.35rem; }
+  .month-page .month-day small { font-size: 0.72rem; }
+  .month-page .month-inline-agenda { max-width: 42rem; margin-inline: auto; }
+  .month-page .month-inline-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
