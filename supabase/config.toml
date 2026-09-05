@@ -196,6 +196,12 @@ verify_jwt = true
 [functions.delete-nursery-source-image]
 verify_jwt = true
 
+# Q110-Q112 authenticated Google inbound diff/duplicate review surfaces.
+[functions.list-google-event-reviews]
+verify_jwt = true
+[functions.resolve-google-event-review]
+verify_jwt = true
+
 # External provider callbacks. Authentication is verified in-handler.
 [functions.line-webhook-receiver]
 verify_jwt = false
