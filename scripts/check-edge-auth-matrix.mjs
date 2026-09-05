@@ -20,7 +20,7 @@ const GAP_FILL_FUNCTIONS = new Set([
   'process-family-ops-calendar-outbox','set-routine-definition-options','replace-routine-subtasks',
   'set-family-calendar-target','set-family-role','start-request-followup','claim-shopping-item','reopen-shopping-item',
   'test-simulation','get-current-routine-sessions','reconcile-routine-session','respond-request','negotiate-request',
-  'set-task-waiting','correct-task-actual','change-task-assignment',
+  'set-task-waiting','correct-task-actual','change-task-assignment','add-task-completion-evidence',
   // Q89-Q106: JWT-authenticated review/list/resolve/confirm/delete and worker-token image processor.
   'get-nursery-review','list-nursery-reviews','resolve-nursery-ambiguity','confirm-nursery-review',
   'delete-nursery-source-image','process-nursery-image-intake',
