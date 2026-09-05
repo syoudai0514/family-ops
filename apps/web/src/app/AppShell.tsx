@@ -4,7 +4,7 @@ import { Requests } from '../features/requests/Requests';
 import { Shopping } from '../features/shopping/Shopping';
 import { Handovers } from '../features/handovers/Handovers';
 import { Notifications } from '../features/notifications/Notifications';
-import { RoutineSchedule } from '../features/settings/RoutineSchedule';
+import { RoutineSettingsPage } from '../features/settings/RoutineSettingsPage';
 import { CheckinPage } from '../features/checkin/CheckinPage';
 import { HistoryPage } from '../features/history/HistoryPage';
 import { WeekView } from '../features/planning/WeekView';
@@ -84,7 +84,7 @@ export function AppShell() {
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/settings" element={<SettingsHome />} />
-        <Route path="/settings/routines" element={<RoutineSchedule />} />
+        <Route path="/settings/routines" element={<RoutineSettingsPage />} />
         <Route path="/settings/categories" element={<CategorySettings />} />
         <Route path="/settings/terminology" element={<HouseholdTerminology />} />
         <Route path="/settings/test-simulation" element={<TestSimulation />} />
