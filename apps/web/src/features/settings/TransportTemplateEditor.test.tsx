@@ -47,10 +47,14 @@ describe('TransportTemplateEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'この日から新しい生活パターンとして保存' }));
 
     await waitFor(() => {
-      const saveCall = api.mock.calls.find(([, body]) => body?.action === 'save_template');
-      expect(saveCall).toBeTruthy();
-      expect(saveCall?.[1]).toMatchObject({ valid_from: '2026-10-01' });
-      expect((saveCall?.[1] as { days: unknown[] }).days).toHaveLength(7);
+      const saveCall = api.mock.calls.find(([, body]) =>
+        (body as Record<string, unknown>).action === 'save_template',
+      );
+      expect(saveCall).toBeDefined();
+      if (!saveCall) throw new Error('save_template call missing');
+      const saveBody = saveCall[1] as { valid_from: string; days: unknown[] };
+      expect(saveBody.valid_from).toBe('2026-10-01');
+      expect(saveBody.days).toHaveLength(7);
     });
   });
 
