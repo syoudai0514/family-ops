@@ -293,6 +293,14 @@ verify_jwt = true
 [functions.confirm-handover-draft]
 verify_jwt = true
 
+# Q17 literal Event flow: proposal and confirmation are distinct so AI/template
+# candidates cannot create canonical Event/Todo rows without human review.
+[functions.propose-event-plan]
+verify_jwt = true
+
+[functions.confirm-event-plan]
+verify_jwt = true
+
 # Sol re-review #3 fix (P1-1/P1-2, docs/adr/0011): the vendored 52-function
 # matrix has no endpoint for reading/confirming/cancelling a LINE-created
 # pending_action from the PWA, nor for reading Today's calendar/conflict
