@@ -69,6 +69,7 @@ export const EDGE_FUNCTIONS = {
   setFamilyCalendarTarget: 'set-family-calendar-target',
   setFamilyRole: 'set-family-role',
   testSimulation: 'test-simulation',
+  transportSchedule: 'transport-schedule',
   getNurseryReview: 'get-nursery-review',
   listNurseryReviews: 'list-nursery-reviews',
   resolveNurseryAmbiguity: 'resolve-nursery-ambiguity',
