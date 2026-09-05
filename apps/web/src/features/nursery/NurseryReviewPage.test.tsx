@@ -111,6 +111,41 @@ describe('NurseryReviewPage', () => {
     expect(confirmCall?.[1].selected_items.some((item: { review_item_id: string }) => item.review_item_id === 'item-other')).toBe(false);
   });
 
+  it('keeps submission Calendar off by default and sends only a human opt-in', async () => {
+    callEdgeFunction.mockImplementation((name: string) => {
+      if (name === 'get-nursery-review') return Promise.resolve({
+        ...REVIEW,
+        items: [{
+          id: 'item-submission', candidate_key: 'submission', origin: 'source_explicit', item_kind: 'submission', classification: null,
+          source_document_id: 'doc-1', source_page: 1, source_locator: '提出欄',
+          proposed_value: { title: '遠足同意書を提出', due_date: '2026-09-22' }, confidence_band: 'high', previous_confirmed_item_id: null,
+        }],
+      });
+      if (name === 'confirm-nursery-review') return Promise.resolve({ confirmed: true, intake_id: 'intake-1' });
+      return Promise.resolve({});
+    });
+    renderReview();
+    expect(await screen.findByRole('heading', { name: '提出物' })).toBeInTheDocument();
+    const calendarChoice = screen.getByLabelText('Google Calendarにも表示する');
+    expect(calendarChoice).toHaveValue('false');
+    fireEvent.change(calendarChoice, { target: { value: 'true' } });
+    fireEvent.click(screen.getByRole('button', { name: '選んだ1件を登録' }));
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith(
+      'confirm-nursery-review',
+      expect.objectContaining({
+        selected_items: [expect.objectContaining({
+          review_item_id: 'item-submission',
+          confirmed_value: expect.objectContaining({
+            title: '遠足同意書を提出',
+            due_date: '2026-09-22',
+            add_to_calendar: true,
+          }),
+        })],
+      }),
+    ));
+  });
+
   it('requires ambiguity resolution before confirmation and resolves only through the CAS endpoint', async () => {
     callEdgeFunction.mockImplementation((name: string) => {
       if (name === 'get-nursery-review') return Promise.resolve({
