@@ -8,7 +8,7 @@
 | CURRENT main read | `f85cbb0574731138db3972ec8ad093d86020fad4` (`2026-09-05`) |
 | Working branch | `impl/issue-48-ux-closeout` |
 | PR | [#50](https://github.com/syoudai0514/family-ops/pull/50) (Draft) |
-| Exact head / CI | `bb4b9dc97071cbeabb8e883f4160a54d0f94c5b7`; full CI #447 is green (Web, Edge, DB, real Supabase CLI integration). |
+| Exact head / CI | `b249396a2b241e6b5da07f09722627ee3def096a`; full CI #448 is green (Web, Edge, DB, real Supabase CLI integration). |
 | Scope boundary | Source implementation and review handoff only. No main merge, production change, real LINE test delivery, or provider mutation. |
 | Assessed | **112/112** (no unassessed decisions) |
 | Remaining gaps | H1–H5/M1–M5 are implemented; final CI must run on the final documentation head. Physical iPhone capture remains intentionally gated pending a reviewed device/environment; no production mutation is authorized. |
