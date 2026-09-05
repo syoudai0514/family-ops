@@ -1,3 +1,10 @@
+/* The old per-weekday transport card is retained only as dormant R0 source
+ * compatibility inside RoutineSchedule. The final UX contract replaces it with
+ * the period-scoped weekly-template editor rendered above the routine settings. */
+.routine-matrix-card {
+  display: none;
+}
+
 .transport-template-card {
   display: grid;
   gap: 1rem;
