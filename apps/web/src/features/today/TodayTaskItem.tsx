@@ -7,18 +7,22 @@ export type TodayTaskItemProps = TaskChecklistItemProps & {
 };
 
 export function TodayTaskItem({ executionTarget, ...props }: TodayTaskItemProps) {
+  const target = executionTarget ?? (
+    props.task as typeof props.task & { execution_target?: TaskExecutionTarget | null }
+  ).execution_target ?? null;
+
   return (
     <Fragment>
       <TaskChecklistItem {...props} />
-      {executionTarget && (
+      {target && (
         <li className="task-execution-target-row" aria-label={`${props.task.title}の実行先`}>
           <span className="task-item-meta">実行先</span>
-          {executionTarget.target_kind === 'url' && executionTarget.url ? (
-            <a href={executionTarget.url} target="_blank" rel="noreferrer">
-              {executionTarget.label || 'リンクを開く'}
+          {target.target_kind === 'url' && target.url ? (
+            <a href={target.url} target="_blank" rel="noreferrer">
+              {target.label || 'リンクを開く'}
             </a>
           ) : (
-            <span>{executionTarget.destination}</span>
+            <span>{target.destination}</span>
           )}
         </li>
       )}
