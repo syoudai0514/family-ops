@@ -1,52 +1,56 @@
-# おうちコンシェルジュ UX prototype
+# おうちコンシェルジュ / おうちノート UX prototype
 
-Design-only interactive prototype for Family Ops / おうちノート.
+Design-only interactive prototype / UI contract for Family Ops / おうちノート.
 
-## Purpose
+## Final audited contract
 
-- Preserve the CURRENT PWA information architecture and existing purpose-specific entry points.
-- Add `おうちコンシェルジュ` as an additional free-input entrance.
-- Support text input and transcription-first voice input.
-- Reuse the same semantic model across LINE and PWA conceptually: household context, household terminology, multi-intent decomposition, ambiguity detection, candidate generation, authority/safety checks, and explicit confirmation.
-- Keep deterministic explicit actions deterministic; do not route every click through AI.
+The final UX review has moved beyond the original concierge-only prototype.
 
-## CURRENT baseline used for this prototype
+Use these files as the implementation handoff:
 
-Prototype baseline was fresh-read from PR #50, branch `impl/issue-48-ux-closeout`, around head `364c0203c8e2c067769cbfb9a9629061c2ca89ed` on 2026-09-05. The implementation branch is active, so source always remains authoritative.
+- `UX-CONTRACT-FINAL-SPEC.md` — final screen / state / transition contract
+- `UX-CONTRACT-FINAL-AUDIT.md` — canonical traceability and 100-point audit result
 
-CURRENT primary navigation reflected here:
+The exact final interactive HTML delivered with the review has SHA-256:
 
-- 今日
-- 週
-- 月
-- 買い物
-- 履歴
-- ＋
+`42b5a0630d699f969edf14b9b53b0b8bc5fc725c28b5af352a1f9adc050666b4`
 
-Existing Quick Add items remain present. `おうちコンシェルジュ` is added above them rather than replacing them.
+The older `index.html`, `prototype.css`, `prototype.js`, and versioned V3/V4/V5 documents are historical design iterations and must **not** override the final spec/audit or the canonical requirements.
 
-## Included prototype flows
+## Canonical authority
 
-- Today long state with shortcuts, current check-in, pending reply, next action, schedule, morning/evening work, partner-critical item, shopping summary
-- Week
-- Month + day agenda sheet
-- Quick Add
-- Event / schedule form
-- Requests
-- Shopping
-- Handovers
-- History
-- Check-in
-- Settings
-- Nursery notice review / provenance example
-- Ouchi Concierge free text
-- Voice recording / transcription-first flow
-- AI candidate review
-- Candidate edit
-- Registration success
+Requirements / UX authority remains:
 
-## Run
+`docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 
-Open `index.html` in a browser. No build step is required.
+The final audit fresh-read Appendix A literally and maps all 114 decision rows (`Q1`–`Q112` plus `Q60-1` / `Q60-2`). The prototype/spec is an implementation aid, not a new requirements authority.
 
-This is a design artifact only. It does not call production APIs, send LINE messages, mutate Google Calendar, apply migrations, or change production data.
+## Final product loop
+
+The primary loop is:
+
+**今日の状況を最初に把握 → 要対応へ直接移動 → 今やる親タスクと小作業を理解 → その場で完了 → 夜は残りだけをまとめて実績化 → 例外だけ深掘り**
+
+Key final decisions include:
+
+- Today first-view linked situation summary
+- morning/day/evening runtime composition
+- parent-task + subtask progress
+- exact bulk actual scope with `余力があれば` excluded
+- immediate completion + evening reconciliation
+- post-bulk correction / undo
+- request / share / owner / anyone / waiting / carryover state coverage
+- text + transcription-first `おうちコンシェルジュ`
+- literal LINE reference contract
+- nursery Q89–Q106 review surfaces
+- Google Q110–Q112 decisions + shared Authority conflict review
+- real back/scroll/form/details/daypart/tab restoration contract
+- Loading / Empty / Error / Stale states
+
+## Implementation rule
+
+Reproduce the final contract's information hierarchy, wording, scope visibility, normal-vs-exception disclosure, state transitions, and return-state behavior while reusing CURRENT canonical domain/API/state logic.
+
+Do **not** copy prototype demo JavaScript as production business logic or introduce a second parser/state machine.
+
+This remains a design artifact only. It does not call production APIs, send LINE messages, mutate Google Calendar, apply migrations, merge main, or change production data.
