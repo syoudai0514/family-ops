@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>おうちノート｜おうちコンシェルジュ UX Prototype</title>
+  <link rel="stylesheet" href="prototype.css" />
+</head>
+<body>
+  <div class="prototype-wrap">
+    <div class="devbar" aria-label="プロトタイプ画面一覧">
+      <strong>画面一覧</strong>
+      <button data-screen="today">今日</button>
+      <button data-screen="week">週</button>
+      <button data-screen="month">月</button>
+      <button data-screen="requests">お願い</button>
+      <button data-screen="shopping">買い物</button>
+      <button data-screen="handovers">引き継ぎ</button>
+      <button data-screen="history">履歴</button>
+      <button data-screen="event">予定追加</button>
+      <button data-screen="checkin">入力</button>
+      <button data-screen="settings">設定</button>
+      <button data-screen="nursery">園おたより確認</button>
+      <button data-screen="concierge">おうちコンシェルジュ</button>
+    </div>
+
+    <div class="phone" id="phone">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 100%</span></div>
+      <header class="app-nav">
+        <button class="iconbtn" id="backBtn" aria-label="戻る">‹</button>
+        <div class="brand"><span class="home-glyph">⌂</span> おうちノート</div>
+        <button class="iconbtn" id="settingsBtn" aria-label="設定">⚙</button>
+      </header>
+      <main class="content" id="content"></main>
+      <nav class="bottom-nav" id="bottomNav" aria-label="主要メニュー">
+        <button class="navitem" data-screen="today"><span class="nicon">⌂</span>今日</button>
+        <button class="navitem" data-screen="week"><span class="nicon">▦</span>週</button>
+        <button class="navitem" data-screen="month"><span class="nicon">□</span>月</button>
+        <button class="navitem" data-screen="shopping"><span class="nicon">⌑</span>買い物</button>
+        <button class="navitem" data-screen="history"><span class="nicon">◷</span>履歴</button>
+        <button class="addnav" id="addBtn" aria-label="追加">＋</button>
+      </nav>
+      <div id="overlay"></div>
+    </div>
+  </div>
+  <script src="prototype.js"></script>
+</body>
+</html>
