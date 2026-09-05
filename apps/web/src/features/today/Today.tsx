@@ -468,6 +468,9 @@ export function Today() {
         tomorrowDate={tomorrowDate}
         assigneeId={tomorrowMorningAssigneeId}
         assigneeLabel={tomorrowMorningAssigneeLabel}
+        existingTitles={tomorrowPlanning.tasks
+          .filter((task) => task.category === 'handover_preparation' && task.status !== 'cancelled')
+          .map((task) => task.title)}
         onChanged={() => void data.refresh()}
       />
 

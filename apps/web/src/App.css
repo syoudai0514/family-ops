@@ -141,6 +141,38 @@ body {
   background: var(--color-surface);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
 }
+
+.shopping-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.shopping-primary-action {
+  flex: 1;
+  min-height: 44px;
+}
+
+.shopping-overflow > div {
+  min-width: min(280px, calc(100vw - 48px));
+}
+
+.preparation-added-list {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: var(--surface-muted, #f4f6f7);
+  border-radius: 10px;
+}
+
+.preparation-added-list p,
+.preparation-added-list ul {
+  margin: 0;
+}
+
+.preparation-added-list ul {
+  padding-left: 1.2em;
+}
 .task-overflow label {
   display: grid;
   gap: 0.2rem;
