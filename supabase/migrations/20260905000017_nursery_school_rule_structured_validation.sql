@@ -74,7 +74,22 @@ begin
   if v_count > 6 then raise exception 'NURSERY_PREPARATION_RULE_INPUT_INVALID'; end if;
 
   for v_key, v_val in select key, value from jsonb_each(p_value) loop
-    if v_key in ('note','notes') then
+    -- Legacy/canonical DD9 confirmation already stores a single preparation as
+    -- {"item":"..."}. Keep that exact confirmed aggregate valid without
+    -- reopening the pre-review validator or allowing arbitrary top-level keys.
+    if v_key in ('item','title','category') then
+      if jsonb_typeof(v_val) not in ('string','null')
+         or (jsonb_typeof(v_val) = 'string'
+             and (length(btrim(v_val #>> '{}')) < 1 or length(v_val #>> '{}') > 240)) then
+        raise exception 'NURSERY_PREPARATION_RULE_INPUT_INVALID';
+      end if;
+    elsif v_key = 'quantity' then
+      if jsonb_typeof(v_val) not in ('string','number','null')
+         or (jsonb_typeof(v_val) = 'string'
+             and (length(btrim(v_val #>> '{}')) < 1 or length(v_val #>> '{}') > 120)) then
+        raise exception 'NURSERY_PREPARATION_RULE_INPUT_INVALID';
+      end if;
+    elsif v_key in ('note','notes') then
       if jsonb_typeof(v_val) not in ('string','null')
          or (jsonb_typeof(v_val) = 'string' and length(v_val #>> '{}') > 500) then
         raise exception 'NURSERY_PREPARATION_RULE_INPUT_INVALID';
