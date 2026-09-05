@@ -40,9 +40,10 @@ function compactEventTitle(item: CalendarProjectionItem) {
   return withoutLeadingTime || title;
 }
 
-function dateHeading(date: string) {
-  const value = new Date(`${date}T00:00:00+09:00`);
-  return `${value.getMonth() + 1}/${value.getDate()} の予定`;
+export function monthDateHeading(date: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return '選択日の予定';
+  return `${Number(match[2])}/${Number(match[3])} の予定`;
 }
 
 export function MonthView() {
@@ -199,7 +200,7 @@ export function MonthView() {
             <div className="month-inline-heading">
               <div>
                 <p className="eyebrow">選択中</p>
-                <h2>{dateHeading(selected)}</h2>
+                <h2>{monthDateHeading(selected)}</h2>
               </div>
               {transportCompactToken(selectedTransport, primaryUserId, partnerUserId) && (
                 <strong className="month-inline-transport-token">
