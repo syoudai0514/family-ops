@@ -60,6 +60,9 @@ const GAP_FILL_FUNCTIONS = new Set([
   'confirm-nursery-review',
   'delete-nursery-source-image',
   'process-nursery-image-intake',
+  // Q110-Q112 authenticated Google inbound diff/duplicate review surfaces.
+  'list-google-event-reviews',
+  'resolve-google-event-review',
   // Issue #48 final UX: period-scoped weekly transport template + occurrence override.
   'transport-schedule',
 ]);
