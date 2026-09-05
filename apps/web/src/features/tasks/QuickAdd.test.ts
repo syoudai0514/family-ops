@@ -7,8 +7,9 @@ describe('Quick Add destinations', () => {
     expect(quickAddDestination('preparation')).toBe('/settings/routines#morning-preparation');
   });
 
-  it('routes Event planning to the human review surface', () => {
+  it('routes Event planning and Nursery review to their human review surfaces', () => {
     expect(quickAddDestination('event')).toBe('/events/new');
+    expect(quickAddDestination('nursery')).toBe('/nursery/reviews');
   });
 
   it('keeps every Quick Add action in the single shared sheet', () => {
@@ -18,6 +19,7 @@ describe('Quick Add destinations', () => {
       'お願いを送る',
       '買い物を追加',
       '引き継ぎを書く',
+      '園のおたよりを確認',
       '定例を追加',
       '朝準備を編集',
     ]);
