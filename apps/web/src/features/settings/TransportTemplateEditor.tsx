@@ -184,7 +184,12 @@ export function TransportTemplateEditor({ members }: { members: HouseholdMemberW
 
           <label className="transport-template-start">
             この生活パターンを始める日
-            <input type="date" value={validFrom} onChange={(event) => setValidFrom(event.target.value)} />
+            <input
+              type="date"
+              aria-label="この生活パターンを始める日"
+              value={validFrom}
+              onChange={(event) => setValidFrom(event.target.value)}
+            />
             <small>期限未定で保存され、次の生活パターンを追加すると直前分が自動で閉じます。</small>
           </label>
 
