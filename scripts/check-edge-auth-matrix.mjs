@@ -64,6 +64,11 @@ const GAP_FILL_FUNCTIONS = new Set([
   'propose-ai-draft',
   'confirm-request-draft',
   'confirm-handover-draft',
+  // Q17 literal Event flow names are absent from the frozen v6 inventory;
+  // both are authenticated PWA adapters over the existing family_events /
+  // task_instances canonical model, with proposal separated from confirm.
+  'propose-event-plan',
+  'confirm-event-plan',
   'list-pending-actions',
   'confirm-pending-action',
   'cancel-pending-action',
