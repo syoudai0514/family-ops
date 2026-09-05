@@ -15,37 +15,6 @@ function normalized(text: string): string {
   return text.normalize("NFKC").replace(/\s+/g, "").trim();
 }
 
-// Appendix A Q58: a calendar-day boundary alone never starts a new context.
-// Only an explicit topic-change phrase, or a long gap plus a clearly distinct
-// fixed product topic, may detach a follow-up from the previous referent.
-export function hasExplicitLineTopicSwitch(text: string): boolean {
-  const value = normalized(text);
-  return /^(?:別の話(?:だけど|なんだけど|で)?|話(?:は|を)?変(?:える|わる)(?:けど|んだけど)?|話題変(?:える|わる)(?:けど|んだけど)?|別件(?:だけど|で)?|ところで)[、,。.!！]?/.test(value);
-}
-
-export function shouldStartNewLineContext(
-  text: string,
-  previousTitle: string,
-  previousUpdatedAt: string | null | undefined,
-  nowMs = Date.now(),
-): boolean {
-  if (hasExplicitLineTopicSwitch(text)) return true;
-  if (!previousUpdatedAt) return false;
-  const previousMs = Date.parse(previousUpdatedAt);
-  if (!Number.isFinite(previousMs) || nowMs - previousMs < 12 * 60 * 60 * 1000) return false;
-
-  const value = normalized(text);
-  const oldTitle = normalized(previousTitle);
-  // Pronouns and an explicit repeat of the old title mean continuation even
-  // after a night/day boundary. This is the important Q58 non-reset rule.
-  if (/^(?:それ|これ|さっき|昨日の|前の)/.test(value) || (oldTitle && value.includes(oldTitle))) return false;
-
-  // Be conservative: only fixed, unambiguous product entry topics are judged
-  // distinct after a long gap. Free prose stays attached unless the user says
-  // the topic changed, avoiding a guessed context reset.
-  return readOnlyLineIntent(text) !== null || lineCreationStarterKind(text) !== null;
-}
-
 export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
   const value = normalized(text);
   // These are the literal six LINE entry labels from Q73.  They deliberately
