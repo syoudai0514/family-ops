@@ -1,7 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { mamaUserId, papaUserId } from '../../lib/familyRoles';
-import { buildCalendarProjection, transportTokens, type CalendarProjectionItem } from './calendarProjection';
+import { TaskFormModal } from '../tasks/TaskFormModal';
+import {
+  buildCalendarProjection,
+  transportCompactToken,
+  transportLabel,
+  type CalendarProjectionItem,
+} from './calendarProjection';
 import { localIsoDate } from './dateHelpers';
 import { DayAgendaSheet } from './DayAgendaSheet';
 import { usePlanningData } from './usePlanningData';
@@ -34,6 +40,11 @@ function compactEventTitle(item: CalendarProjectionItem) {
   return withoutLeadingTime || title;
 }
 
+function dateHeading(date: string) {
+  const value = new Date(`${date}T00:00:00+09:00`);
+  return `${value.getMonth() + 1}/${value.getDate()} の予定`;
+}
+
 export function MonthView() {
   const { household, members } = useHousehold();
   const [anchor, setAnchor] = useState(() => new Date());
@@ -45,6 +56,7 @@ export function MonthView() {
   );
   const [selected, setSelected] = useState(localIsoDate(new Date()));
   const [sheetDate, setSheetDate] = useState<string | null>(null);
+  const [taskFormDate, setTaskFormDate] = useState<string | null>(null);
   const primaryUserId = papaUserId(members);
   const partnerUserId = mamaUserId(members);
   const projection = useMemo(
@@ -62,12 +74,24 @@ export function MonthView() {
   const firstOffset = (start.getDay() + 6) % 7;
   const totalCells = firstOffset + days.length > 35 ? 42 : 35;
   const today = localIsoDate(new Date());
+  const selectedTransport = projection.transportByDate.get(selected);
+  const selectedItems = projection.itemsByDate.get(selected) ?? [];
+  const selectedMainTasks = tasks.filter(
+    (task) =>
+      task.scheduled_date === selected &&
+      (task.status === 'todo' || task.status === 'in_progress') &&
+      task.definition_code !== 'dropoff' &&
+      task.definition_code !== 'pickup' &&
+      task.category !== 'dropoff' &&
+      task.category !== 'pickup',
+  );
 
   const changeMonth = (delta: number) => {
     const next = new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1);
     setAnchor(next);
     setSelected(localIsoDate(next));
     setSheetDate(null);
+    setTaskFormDate(null);
   };
 
   return (
@@ -105,6 +129,7 @@ export function MonthView() {
         <p role="status">読み込み中…</p>
       ) : (
         <>
+          <p className="month-contract-hint">日を選ぶと、予定・送迎・やることをカレンダーの下で確認できます。</p>
           <div className="month-grid month-weekdays" aria-hidden="true">
             {['月', '火', '水', '木', '金', '土', '日'].map((day) => (
               <span key={day}>{day}</span>
@@ -117,9 +142,8 @@ export function MonthView() {
               const date = localIsoDate(day);
               const transport = projection.transportByDate.get(date);
               const dayItems = projection.itemsByDate.get(date) ?? [];
-              const tokens = transportTokens(transport, primaryUserId, partnerUserId);
-              const hasTransport =
-                tokens.dropoff.token !== '—' || tokens.pickup.token !== '—';
+              const compactTransport = transportCompactToken(transport, primaryUserId, partnerUserId);
+              const hasTransport = compactTransport.length > 0;
               const visibleItemLimit = hasTransport ? 2 : 3;
               const visibleItems = dayItems.slice(0, visibleItemLimit);
               const hiddenCount = Math.max(0, dayItems.length - visibleItems.length);
@@ -129,12 +153,9 @@ export function MonthView() {
                 <button
                   key={date}
                   type="button"
-                  onClick={() => {
-                    setSelected(date);
-                    setSheetDate(date);
-                  }}
+                  onClick={() => setSelected(date)}
                   aria-pressed={selected === date}
-                  aria-label={`${date}の予定とやることを開く`}
+                  aria-label={`${date}を選択`}
                   className={[
                     'month-day',
                     selected === date ? 'selected' : '',
@@ -163,23 +184,8 @@ export function MonthView() {
                       );
                     })}
                     {hasTransport && (
-                      <small className="transport-compact" aria-label="送り迎え担当">
-                        {tokens.dropoff.token !== '—' && (
-                          <span className="transport-part">
-                            送
-                            <b className={`transport-owner ${tokens.dropoff.tone}`}>
-                              {tokens.dropoff.token}
-                            </b>
-                          </span>
-                        )}
-                        {tokens.pickup.token !== '—' && (
-                          <span className="transport-part">
-                            迎
-                            <b className={`transport-owner ${tokens.pickup.tone}`}>
-                              {tokens.pickup.token}
-                            </b>
-                          </span>
-                        )}
+                      <small className="transport-compact" aria-label={`送迎 ${compactTransport}`}>
+                        {compactTransport}
                       </small>
                     )}
                     {hiddenCount > 0 && <small className="month-more">+{hiddenCount}</small>}
@@ -188,7 +194,60 @@ export function MonthView() {
               );
             })}
           </div>
-          <p className="month-tap-hint">日付をタップすると、その日の予定・送迎・やることをまとめて確認できます。</p>
+
+          <section className="card month-inline-agenda" aria-live="polite" data-selected-date={selected}>
+            <div className="month-inline-heading">
+              <div>
+                <p className="eyebrow">選択中</p>
+                <h2>{dateHeading(selected)}</h2>
+              </div>
+              {transportCompactToken(selectedTransport, primaryUserId, partnerUserId) && (
+                <strong className="month-inline-transport-token">
+                  {transportCompactToken(selectedTransport, primaryUserId, partnerUserId)}
+                </strong>
+              )}
+            </div>
+            <div className="month-inline-groups">
+              <div>
+                <h3>予定</h3>
+                {selectedItems.length > 0 ? (
+                  <ul className="month-inline-list">
+                    {selectedItems.slice(0, 4).map((item) => (
+                      <li key={item.id}>{item.fullTitle}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="empty-hint">予定はありません。</p>
+                )}
+              </div>
+              <div>
+                <h3>送迎</h3>
+                <p className="month-inline-detail">
+                  {transportLabel(selectedTransport, primaryUserId, partnerUserId) ?? '送迎はありません。'}
+                </p>
+              </div>
+              <div>
+                <h3>主なToDo・準備</h3>
+                {selectedMainTasks.length > 0 ? (
+                  <ul className="month-inline-list">
+                    {selectedMainTasks.slice(0, 4).map((task) => (
+                      <li key={task.id}>{task.title}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="empty-hint">やることはありません。</p>
+                )}
+              </div>
+            </div>
+            <div className="month-inline-actions">
+              <button type="button" className="secondary-button" onClick={() => setSheetDate(selected)}>
+                詳しく見る・編集
+              </button>
+              <button type="button" onClick={() => setTaskFormDate(selected)}>
+                この日に追加
+              </button>
+            </div>
+          </section>
         </>
       )}
 
@@ -197,6 +256,17 @@ export function MonthView() {
           date={sheetDate}
           onClose={() => setSheetDate(null)}
           onChanged={refresh}
+        />
+      )}
+      {taskFormDate && (
+        <TaskFormModal
+          mode="create"
+          initialScheduledDate={taskFormDate}
+          onClose={() => setTaskFormDate(null)}
+          onSaved={() => {
+            setTaskFormDate(null);
+            void refresh();
+          }}
         />
       )}
     </main>
