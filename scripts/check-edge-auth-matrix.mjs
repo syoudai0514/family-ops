@@ -76,6 +76,7 @@ const GAP_FILL_FUNCTIONS = new Set([
   'complete-onboarding-step',
   'replace-recurrence-schedule',
   'update-task-categories',
+  'update-household-terminology',
   'process-family-ops-calendar-outbox',
   // v3.3 review-fix P1: explicit household role, routine inclusion, and
   // calendar write-target mutations are implemented endpoints but were not

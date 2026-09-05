@@ -11,6 +11,7 @@ import { WeekView } from '../features/planning/WeekView';
 import { MonthView } from '../features/planning/MonthView';
 import { SettingsHome } from '../features/settings/SettingsHome';
 import { CategorySettings } from '../features/settings/CategorySettings';
+import { HouseholdTerminology } from '../features/settings/HouseholdTerminology';
 import { QuickAdd } from '../features/tasks/QuickAdd';
 import { TestSimulation } from '../features/testSimulation/TestSimulation';
 
@@ -83,6 +84,7 @@ export function AppShell() {
         <Route path="/settings" element={<SettingsHome />} />
         <Route path="/settings/routines" element={<RoutineSchedule />} />
         <Route path="/settings/categories" element={<CategorySettings />} />
+        <Route path="/settings/terminology" element={<HouseholdTerminology />} />
         <Route path="/settings/test-simulation" element={<TestSimulation />} />
         <Route path="/checkin/:sessionId" element={<CheckinPage />} />
         <Route path="*" element={<Today />} />

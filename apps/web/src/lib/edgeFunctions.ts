@@ -20,6 +20,7 @@ export const EDGE_FUNCTIONS = {
   createTaskDefinition: 'create-task-definition',
   editTaskDefinition: 'edit-task-definition',
   updateTaskCategories: 'update-task-categories',
+  updateHouseholdTerminology: 'update-household-terminology',
   deactivateTaskDefinition: 'deactivate-task-definition',
   sendRequest: 'send-request',
   acceptRequest: 'accept-request',

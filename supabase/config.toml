@@ -131,6 +131,9 @@ verify_jwt = true
 [functions.update-task-categories]
 verify_jwt = true
 
+[functions.update-household-terminology]
+verify_jwt = true
+
 [functions.deactivate-task-definition]
 verify_jwt = true
 
