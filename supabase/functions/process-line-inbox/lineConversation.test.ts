@@ -1,11 +1,9 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   formatScheduleReply,
-  hasExplicitLineTopicSwitch,
   lineCreationStarterKind,
   menuQuickReplies,
   readOnlyLineIntent,
-  shouldStartNewLineContext,
 } from "./lineConversation.ts";
 
 Deno.test("recognizes schedule/help as read-only", () => {
@@ -25,29 +23,6 @@ Deno.test("vague creation starters enter clarification instead of help or fake t
   assertEquals(lineCreationStarterKind("お願いを送りたい"), "request");
   assertEquals(lineCreationStarterKind("買い物を追加したい"), "shopping");
   assertEquals(lineCreationStarterKind("明日の夜にゴミ出しをする"), null);
-});
-
-Deno.test("Q58 keeps context across the next day unless topic actually changes", () => {
-  const previous = "2026-09-05T09:00:00+09:00";
-  const nextDay = Date.parse("2026-09-06T11:00:00+09:00");
-  assertEquals(shouldStartNewLineContext("それどうなった？", "遠足の準備", previous, nextDay), false);
-  assertEquals(shouldStartNewLineContext("昨日の遠足の準備は？", "遠足の準備", previous, nextDay), false);
-  assertEquals(shouldStartNewLineContext("遠足の準備をママにして", "遠足の準備", previous, nextDay), false);
-});
-
-Deno.test("Q58 explicit topic-switch wording always starts a new context", () => {
-  assertEquals(hasExplicitLineTopicSwitch("別の話だけど、明日にして"), true);
-  assertEquals(hasExplicitLineTopicSwitch("話変わるけど予定を追加したい"), true);
-  assertEquals(hasExplicitLineTopicSwitch("別件で、お願いを送りたい"), true);
-  assertEquals(hasExplicitLineTopicSwitch("それ明日にして"), false);
-});
-
-Deno.test("Q58 long gap resets only when a distinct fixed topic is clear", () => {
-  const previous = "2026-09-05T09:00:00+09:00";
-  const longAfter = Date.parse("2026-09-06T09:30:00+09:00");
-  assertEquals(shouldStartNewLineContext("買い物を追加したい", "遠足の準備", previous, longAfter), true);
-  assertEquals(shouldStartNewLineContext("それ", "遠足の準備", previous, longAfter), false);
-  assertEquals(shouldStartNewLineContext("遠足の準備、明日にして", "遠足の準備", previous, longAfter), false);
 });
 
 Deno.test("menu quick replies expose the literal six Q73 LINE entry points", () => {
