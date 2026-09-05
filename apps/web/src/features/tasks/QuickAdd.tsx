@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { Modal } from '../../components/Modal';
 import { TaskFormModal } from './TaskFormModal';
 
-type QuickAddTarget = 'task' | 'request' | 'shopping' | 'handover' | 'routine' | 'preparation';
+type QuickAddTarget = 'task' | 'event' | 'request' | 'shopping' | 'handover' | 'routine' | 'preparation';
 
 export const quickAddOptions: ReadonlyArray<{
   target: QuickAddTarget;
   label: string;
   detail?: string;
 }> = [
-  { target: 'task', label: '単発予定を追加', detail: '歯医者・特別持ち物・行事' },
+  { target: 'task', label: '単発ToDoを追加', detail: '今日やること・特別な持ち物' },
+  { target: 'event', label: 'イベント・予定を追加', detail: '行事と準備ToDoをまとめて確認' },
   { target: 'request', label: 'お願いを送る', detail: '担当変更や依頼' },
   { target: 'shopping', label: '買い物を追加' },
   { target: 'handover', label: '引き継ぎを書く' },
@@ -19,6 +20,7 @@ export const quickAddOptions: ReadonlyArray<{
 ];
 
 export function quickAddDestination(target: Exclude<QuickAddTarget, 'task'>) {
+  if (target === 'event') return '/events/new';
   if (target === 'request') return '/requests';
   if (target === 'shopping') return '/shopping';
   if (target === 'handover') return '/handovers';
