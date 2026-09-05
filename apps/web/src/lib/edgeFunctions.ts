@@ -75,6 +75,8 @@ export const EDGE_FUNCTIONS = {
   resolveNurseryAmbiguity: 'resolve-nursery-ambiguity',
   confirmNurseryReview: 'confirm-nursery-review',
   deleteNurserySourceImage: 'delete-nursery-source-image',
+  listGoogleEventReviews: 'list-google-event-reviews',
+  resolveGoogleEventReview: 'resolve-google-event-review',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];
