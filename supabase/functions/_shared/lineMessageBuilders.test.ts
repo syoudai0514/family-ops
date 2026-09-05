@@ -118,7 +118,7 @@ Deno.test(
   },
 );
 
-Deno.test('two recipient actions share one horizontal row', () => {
+Deno.test('two primary request responses share one horizontal row', () => {
   const message = buildAssignmentRequestFlex({
     requestId: 'request-compact',
     title: '今日のお迎え',
@@ -137,7 +137,7 @@ Deno.test('two recipient actions share one horizontal row', () => {
   };
   const row = message.contents.footer.contents[0];
   assertEquals(row.layout, 'horizontal');
-  assertEquals(row.contents.map((button) => button.action.label), ['引き受ける', '今日は難しい']);
+  assertEquals(row.contents.map((button) => button.action.label), ['やる', '難しい']);
 });
 
 Deno.test(

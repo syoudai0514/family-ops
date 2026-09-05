@@ -5,6 +5,9 @@ import { tokyoIsoDate } from '../planning/dateHelpers';
 import { useHistoryData, type HistoryEntry, type PlannedVsActualOutcome } from './useHistoryData';
 import type { TaskEvent, TaskEventType } from '../../lib/types';
 import { useMemo, useState } from 'react';
+import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
+import { newOperationId } from '../../lib/id';
 
 const OUTCOME_LABELS: Record<PlannedVsActualOutcome, string> = {
   completed_on_time: '完了（期限内）',
@@ -66,12 +69,53 @@ export function completedNextTokyoMorning(scheduledDate: string, completedAt: st
 function HistoryRow({ entry, members }: { entry: HistoryEntry; members: HouseholdMemberWithProfile[] }) {
   const { task, outcome, events, wasReassigned } = entry;
   const reassignment = wasReassigned ? reassignmentSummary(events, members) : null;
+  const [editingActual, setEditingActual] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>(() => task.actual_completed_by_id ? [task.actual_completed_by_id] : []);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function saveActualCorrection() {
+    if (selectedUserIds.length === 0) {
+      setError('実施した人を一人以上選んでください。');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await callEdgeFunction(EDGE_FUNCTIONS.correctTaskActual, {
+        operation_id: newOperationId(), task_id: task.id,
+        participant_user_ids: selectedUserIds, expected_revision: task.revision ?? 1,
+      });
+      setEditingActual(false);
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '訂正に失敗しました。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <li className="history-item card">
     <div className="history-item-header"><strong>{task.title}</strong><span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span></div>
     <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
     {task.status === 'completed' && <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {memberLabel(task.actual_completed_by_id, members)}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 翌朝に完了' : ''}</p>}
     {outcome === 'waiting' && <p className="task-item-meta">{task.waiting_note ? `待ち理由: ${task.waiting_note}` : '確認待ち'}{task.next_check_at ? ` · 次回確認 ${formatDateTimeJa(task.next_check_at)}` : ''}</p>}
     {reassignment && <p className="task-item-meta">{reassignment}</p>}
+    {task.status === 'completed' && (
+      <div className="history-correction">
+        {!editingActual ? <button type="button" className="text-button" onClick={() => setEditingActual(true)}>実績を訂正</button> : (
+          <fieldset>
+            <legend>実際にやった人</legend>
+            {members.map((member) => {
+              const checked = selectedUserIds.includes(member.user_id);
+              return <label key={member.user_id} className="inline-check"><input type="checkbox" checked={checked} disabled={busy} onChange={() => setSelectedUserIds((ids) => checked ? ids.filter((id) => id !== member.user_id) : [...ids, member.user_id])} />{memberLabel(member.user_id, members)}</label>;
+            })}
+            <p className="task-item-meta">訂正前の記録は履歴に残ります。</p>
+            <div className="task-item-actions"><button type="button" disabled={busy} onClick={saveActualCorrection}>訂正を保存</button><button type="button" className="text-button" disabled={busy} onClick={() => setEditingActual(false)}>やめる</button></div>
+          </fieldset>
+        )}
+        {error && <p role="alert" className="error-text">{error}</p>}
+      </div>
+    )}
     <EventTrail events={events} members={members} />
   </li>;
 }

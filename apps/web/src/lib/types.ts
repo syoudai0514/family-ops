@@ -87,6 +87,7 @@ export interface TaskInstance {
   attention_state?: TaskAttentionState;
   waiting_note?: string | null;
   next_check_at?: string | null;
+  revision?: number;
 }
 
 export interface TaskSubtaskInstance {

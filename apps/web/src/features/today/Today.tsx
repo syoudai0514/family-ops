@@ -10,6 +10,7 @@ import { TodaySchedule } from './TodaySchedule';
 import { TomorrowPreparationCard } from './TomorrowPreparationCard';
 import { PendingActionCard } from './PendingActionCard';
 import { PendingActionEditModal } from './PendingActionEditModal';
+import { useCurrentRoutineSessions, type CurrentRoutineSessionType } from '../checkin/useCurrentRoutineSessions';
 import { TaskFormModal } from '../tasks/TaskFormModal';
 import { QuickAdd } from '../tasks/QuickAdd';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
@@ -25,6 +26,19 @@ import {
 } from '../planning/calendarProjection';
 import { mamaUserId, papaUserId } from '../../lib/familyRoles';
 import type { PendingAction, RequestRow, TaskInstance } from '../../lib/types';
+
+const INPUT_LABELS: Record<CurrentRoutineSessionType, string> = {
+  dropoff: '朝の入力',
+  pickup: 'お迎えの入力',
+  nonpickup_evening: '今夜の入力',
+};
+
+function localDaypart(): 'morning' | 'day' | 'evening' {
+  const hour = new Date().getHours();
+  if (hour < 11) return 'morning';
+  if (hour < 17) return 'day';
+  return 'evening';
+}
 
 export function selectNextOwnedTask(tasks: TaskInstance[], userId: string | null | undefined) {
   if (!userId) return null;
@@ -48,20 +62,21 @@ function RequestQuickActions({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showOther, setShowOther] = useState(false);
 
-  async function respond(kind: 'accept' | 'decline') {
+  async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     setBusy(true);
     setError(null);
     try {
-      const functionName =
-        kind === 'accept' && request.assignment_task_instance_id
+      const functionName = kind === 'checking' || kind === 'consult'
+        ? EDGE_FUNCTIONS.respondRequest
+        : kind === 'accept' && request.assignment_task_instance_id
           ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest
-          : kind === 'accept'
-            ? EDGE_FUNCTIONS.acceptRequest
-            : EDGE_FUNCTIONS.declineRequest;
+          : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
       await callEdgeFunction(functionName, {
         operation_id: newOperationId(),
         request_id: request.id,
+        ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}),
       });
       onChanged();
     } catch (err) {
@@ -82,12 +97,22 @@ function RequestQuickActions({
       </div>
       <div className="task-item-actions">
         <button type="button" disabled={busy} onClick={() => respond('accept')}>
-          引き受ける
+          やる
         </button>
         <button type="button" disabled={busy} onClick={() => respond('decline')}>
-          断る
+          難しい
+        </button>
+        <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>
+          その他の返答
         </button>
       </div>
+      {showOther && (
+        <div className="request-other-actions">
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('checking')}>確認してみる</button>
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('consult')}>相談する</button>
+          <p className="task-item-meta">相談では、今の条件を二人で確認してから合意します。担当はこの時点では変わりません。</p>
+        </div>
+      )}
       {error && (
         <p role="alert" className="error-text">
           {error}
@@ -103,6 +128,7 @@ export function Today() {
   const data = useTodayData(household?.id ?? null, user?.id ?? null);
   const schedule = useTodaySchedule(household?.id ?? null, user?.id ?? null);
   const pending = usePendingActions(household?.id ?? null, user?.id ?? null);
+  const currentInputs = useCurrentRoutineSessions(Boolean(household?.id && user?.id));
   const tomorrowDate = useMemo(() => tokyoIsoDate(addDays(new Date(), 1)), []);
   const tomorrowPlanning = usePlanningData(household?.id ?? null, tomorrowDate, tomorrowDate);
   const navigate = useNavigate();
@@ -110,6 +136,8 @@ export function Today() {
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
   const [editingPendingAction, setEditingPendingAction] = useState<PendingAction | null>(null);
   const [shoppingCollapsed, setShoppingCollapsed] = useState(true);
+  const daypart = localDaypart();
+  const isEvening = daypart === 'evening';
   const allDaySchedule = data.briefSchedule.filter((item) => item.is_all_day);
 
   const nextTask = useMemo(() => selectNextOwnedTask(data.tasks, me?.user_id), [data.tasks, me]);
@@ -182,9 +210,28 @@ export function Today() {
     );
   }
 
-  function renderOperationalSection(title: string, tasks: TaskInstance[], description?: string) {
+  function renderOperationalSection(
+    title: string,
+    tasks: TaskInstance[],
+    description?: string,
+    options: { collapseWhenEvening?: boolean } = {},
+  ) {
     if (tasks.length === 0) return null;
     const completedCount = tasks.filter((task) => task.status === 'completed').length;
+    const activeTasks = tasks.filter((task) => task.status === 'todo' || task.status === 'in_progress');
+    if (isEvening && options.collapseWhenEvening) {
+      return (
+        <section className="card compact-section task-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">朝のまとめ</p>
+              <h2>{title} {completedCount}/{tasks.length}完了</h2>
+            </div>
+          </div>
+          {activeTasks.length > 0 ? renderTaskList(activeTasks) : <p className="empty-hint">朝の残りはありません。</p>}
+        </section>
+      );
+    }
     return (
       <section className="card task-section">
         <div className="section-heading">
@@ -224,6 +271,22 @@ export function Today() {
   }
 
   const hasPendingDecisions = data.incomingRequests.length > 0 || pending.pendingActions.length > 0;
+  const waitingTasks = data.tasks.filter(
+    (task) => task.attention_state === 'waiting' && (task.status === 'todo' || task.status === 'in_progress'),
+  );
+  const partnerCriticalTasks = data.tasks.filter(
+    (task) => task.planned_assignee_id && task.planned_assignee_id !== me?.user_id &&
+      (task.status === 'todo' || task.status === 'in_progress') &&
+      (task.task_kind === 'transport' || Boolean(task.due_at)),
+  );
+  const preferredInputType: CurrentRoutineSessionType = daypart === 'morning'
+    ? 'dropoff'
+    : daypart === 'day'
+      ? 'pickup'
+      : 'nonpickup_evening';
+  const currentInput = currentInputs.sessions.find(
+    (session) => session.can_act && session.session_type === preferredInputType,
+  ) ?? currentInputs.sessions.find((session) => session.can_act) ?? null;
 
   return (
     <div className="app-shell">
@@ -246,6 +309,67 @@ export function Today() {
         <p role="alert" className="error-text">
           {data.error}
         </p>
+      )}
+
+      <section className="today-shortcuts" aria-label="よく使う操作">
+        {currentInput && (
+          <button type="button" className="today-shortcut-primary" onClick={() => navigate(`/checkin/${currentInput.id}`)}>
+            <span aria-hidden="true">{currentInput.session_type === 'nonpickup_evening' ? '🌙' : '📝'}</span>
+            入力
+          </button>
+        )}
+        <button type="button" onClick={() => navigate('/requests')}><span aria-hidden="true">🙏</span> お願い</button>
+        <button type="button" onClick={() => navigate('/handovers')}><span aria-hidden="true">💬</span> 共有</button>
+      </section>
+
+      {currentInputs.error && <p role="status" className="empty-hint">{currentInputs.error}</p>}
+      {currentInput && (
+        <section className="card current-input-card" aria-label={INPUT_LABELS[currentInput.session_type]}>
+          <div>
+            <p className="eyebrow">{daypart === 'evening' ? '今日をしめくくる' : 'いま済ませる'}</p>
+            <h2>{INPUT_LABELS[currentInput.session_type]}</h2>
+            <p>{currentInput.remaining_count > 0 ? `残り ${currentInput.remaining_count}件。例外だけ詳しく入力できます。` : '入力する項目はありません。'}</p>
+          </div>
+          <button type="button" className="hero-primary" onClick={() => navigate(`/checkin/${currentInput.id}`)}>
+            入力する
+          </button>
+        </section>
+      )}
+
+      {hasPendingDecisions && (
+        <section className="card decision-card" aria-label="まず確認">
+          <div className="section-heading">
+            <div><p className="eyebrow">まず確認</p><h2>返事が必要です</h2></div>
+            <span>{data.incomingRequests.length + pending.pendingActions.length}件</span>
+          </div>
+          {pending.error && <p role="alert" className="error-text">{pending.error}</p>}
+          <ul className="request-list">
+            {data.incomingRequests.map((request) => (
+              <RequestQuickActions key={request.id} request={request} onChanged={data.refresh} />
+            ))}
+            {pending.pendingActions.map((action) => (
+              <PendingActionCard key={action.id} action={action} onConfirm={pending.confirm} onCancel={pending.cancel} onEdit={setEditingPendingAction} onEditAsRequest={handleEditAsRequest} onEditAsTask={handleEditAsTask} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {waitingTasks.length > 0 && (
+        <section className="card compact-section waiting-summary" aria-label="確認日">
+          <div className="section-heading"><div><p className="eyebrow">確認日</p><h2>待ちにしていること</h2></div><span>{waitingTasks.length}件</span></div>
+          {renderTaskList(waitingTasks)}
+        </section>
+      )}
+
+      {genericUnreadHandovers.length > 0 && (
+        <section className="card compact-section">
+          <div className="section-heading"><div><p className="eyebrow">引き継ぎ・共有</p><h2>未読の引き継ぎ</h2></div></div>
+          <ul className="handover-list">
+            {genericUnreadHandovers.map((h) => (
+              <li key={h.id} className="handover-item unread"><strong>{h.period}</strong> — {h.shared_text}</li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {nextTask && (
@@ -337,8 +461,8 @@ export function Today() {
       )}
       {renderOperationalSection('今日の送迎', todaySections.transport)}
       {renderOperationalSection('今日の特別対応', todaySections.special)}
-      {renderOperationalSection('朝準備', todaySections.morningPreparation)}
-      {renderOperationalSection('朝の定例家事', todaySections.morningChores)}
+      {renderOperationalSection('朝準備', todaySections.morningPreparation, undefined, { collapseWhenEvening: true })}
+      {renderOperationalSection('朝の定例家事', todaySections.morningChores, undefined, { collapseWhenEvening: true })}
 
       <TomorrowPreparationCard
         tomorrowDate={tomorrowDate}
@@ -353,48 +477,12 @@ export function Today() {
         '月・週には表示しません。',
       )}
 
-      {hasPendingDecisions && (
-        <section className="card decision-card">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">返事が必要です</p>
-              <h2>判断待ち</h2>
-            </div>
-            <span>{data.incomingRequests.length + pending.pendingActions.length}件</span>
-          </div>
-          {pending.error && (
-            <p role="alert" className="error-text">
-              {pending.error}
-            </p>
-          )}
-          <ul className="request-list">
-            {data.incomingRequests.map((request) => (
-              <RequestQuickActions key={request.id} request={request} onChanged={data.refresh} />
-            ))}
-            {pending.pendingActions.map((action) => (
-              <PendingActionCard
-                key={action.id}
-                action={action}
-                onConfirm={pending.confirm}
-                onCancel={pending.cancel}
-                onEdit={setEditingPendingAction}
-                onEditAsRequest={handleEditAsRequest}
-                onEditAsTask={handleEditAsTask}
-              />
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {genericUnreadHandovers.length > 0 && (
-        <section className="card compact-section">
-          <h2>未読の引き継ぎ</h2>
-          <ul className="handover-list">
-            {genericUnreadHandovers.map((h) => (
-              <li key={h.id} className="handover-item unread">
-                <strong>{h.period}</strong> — {h.shared_text}
-              </li>
-            ))}
+      {partnerCriticalTasks.length > 0 && (
+        <section className="card compact-section partner-summary" aria-label="相手の重要な予定">
+          <p className="eyebrow">相手の重要な予定</p>
+          <h2>ここだけ確認</h2>
+          <ul className="today-schedule-list">
+            {partnerCriticalTasks.slice(0, 3).map((task) => <li key={task.id}>{task.title}</li>)}
           </ul>
         </section>
       )}

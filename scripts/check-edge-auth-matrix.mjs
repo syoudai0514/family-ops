@@ -95,6 +95,14 @@ const GAP_FILL_FUNCTIONS = new Set([
   // accepted canonical test-context workspace; it remains JWT-authenticated
   // and is absent from the frozen v6 endpoint inventory.
   'test-simulation',
+  // Issue #48 closes user-facing gaps over already-reviewed canonical
+  // commands/read models. The frozen v6 inventory has no names for these
+  // adapters; each remains an authenticated user mutation/read.
+  'get-current-routine-sessions',
+  'reconcile-routine-session',
+  'respond-request',
+  'set-task-waiting',
+  'correct-task-actual',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

@@ -224,6 +224,23 @@ verify_jwt = true
 [functions.routine-session-item-action]
 verify_jwt = true
 
+# Issue #48 PWA adapters over existing canonical command/read primitives.
+# They are all user-facing and derive the actor from the verified JWT.
+[functions.get-current-routine-sessions]
+verify_jwt = true
+
+[functions.reconcile-routine-session]
+verify_jwt = true
+
+[functions.respond-request]
+verify_jwt = true
+
+[functions.set-task-waiting]
+verify_jwt = true
+
+[functions.correct-task-actual]
+verify_jwt = true
+
 [functions.google-calendar-oauth-start]
 verify_jwt = true
 

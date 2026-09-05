@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
@@ -48,23 +48,28 @@ export function TaskChecklistItem({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actor, setActor] = useState<'self' | 'partner'>('self');
+  const [editingWaiting, setEditingWaiting] = useState(false);
+  const [waitingNote, setWaitingNote] = useState(task.waiting_note ?? '');
+  const [nextCheckAt, setNextCheckAt] = useState(() => toDateTimeLocal(task.next_check_at));
   const doneSubtasks = subtasks.filter((item) => item.is_completed).length;
   const requiredSubtasks = subtasks.filter((item) => item.required);
   const optionalOnlyChecklist =
     task.completion_mode === 'subtasks' && subtasks.length > 0 && requiredSubtasks.length === 0;
 
-  async function withOperation(fn: (operationId: string) => Promise<unknown>) {
+  async function withOperation(fn: (operationId: string) => Promise<unknown>): Promise<boolean> {
     setError(null);
     setBusy(true);
     try {
       await fn(newOperationId());
       onChanged();
+      return true;
     } catch (err) {
       if (err instanceof FamilyOpsApiError && err.code === 'TASK_TERMINAL') {
         setError('この項目はすでに完了・キャンセル済みです。');
       } else {
         setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。');
       }
+      return false;
     } finally {
       setBusy(false);
     }
@@ -99,6 +104,31 @@ export function TaskChecklistItem({
         completion_actor: actor,
       }),
     );
+  }
+
+  function handleWaitingSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!nextCheckAt) {
+      setError('確認日を選んでください。');
+      return;
+    }
+    void withOperation((operationId) => callEdgeFunction(EDGE_FUNCTIONS.setTaskWaiting, {
+      operation_id: operationId,
+      task_id: task.id,
+      waiting_action: task.attention_state === 'waiting' ? 'update' : 'set',
+      waiting_note: waitingNote.trim() || null,
+      next_check_at: new Date(nextCheckAt).toISOString(),
+      expected_revision: task.revision ?? 1,
+    })).then((succeeded) => { if (succeeded) setEditingWaiting(false); });
+  }
+
+  function handleResumeWaiting() {
+    void withOperation((operationId) => callEdgeFunction(EDGE_FUNCTIONS.setTaskWaiting, {
+      operation_id: operationId,
+      task_id: task.id,
+      waiting_action: 'resume',
+      expected_revision: task.revision ?? 1,
+    }));
   }
 
   return (
@@ -139,6 +169,7 @@ export function TaskChecklistItem({
             {task.completion_mode === 'subtasks' && subtasks.length > 0
               ? ` · ${doneSubtasks}/${subtasks.length}項目`
               : ''}
+            {task.attention_state === 'waiting' ? ` · 待ち${task.next_check_at ? `（確認 ${localClock(task.next_check_at)}）` : ''}` : ''}
           </span>
         </button>
 
@@ -177,6 +208,15 @@ export function TaskChecklistItem({
             )}
             {!editable && !completed && task.origin !== 'manual' && (
               <small className="task-menu-note">定例から作られた項目です</small>
+            )}
+            {!completed && task.attention_state !== 'waiting' && (
+              <button type="button" onClick={() => setEditingWaiting(true)} disabled={busy}>待ちにする</button>
+            )}
+            {!completed && task.attention_state === 'waiting' && (
+              <>
+                <button type="button" onClick={handleResumeWaiting} disabled={busy}>再開する</button>
+                <button type="button" onClick={() => setEditingWaiting(true)} disabled={busy}>確認日を変更</button>
+              </>
             )}
             <button
               type="button"
@@ -218,6 +258,14 @@ export function TaskChecklistItem({
         </ul>
       )}
 
+      {editingWaiting && (
+        <form className="task-waiting-editor" onSubmit={handleWaitingSubmit}>
+          <label>待っている理由（任意）<input value={waitingNote} onChange={(event) => setWaitingNote(event.target.value)} placeholder="例: 園から返事待ち" /></label>
+          <label>次に確認する日<input type="datetime-local" required value={nextCheckAt} onChange={(event) => setNextCheckAt(event.target.value)} /></label>
+          <div className="task-item-actions"><button type="submit" disabled={busy}>{task.attention_state === 'waiting' ? '待ちを続ける' : '待ちにする'}</button><button type="button" className="text-button" onClick={() => setEditingWaiting(false)} disabled={busy}>やめる</button></div>
+        </form>
+      )}
+
       {error && (
         <p role="alert" className="error-text task-checklist-error">
           {error}
@@ -225,4 +273,17 @@ export function TaskChecklistItem({
       )}
     </li>
   );
+}
+
+function toDateTimeLocal(value: string | null | undefined): string {
+  if (!value) {
+    const next = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    next.setHours(9, 0, 0, 0);
+    const pad = (number: number) => String(number).padStart(2, '0');
+    return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T${pad(next.getHours())}:${pad(next.getMinutes())}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (number: number) => String(number).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

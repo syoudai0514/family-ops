@@ -168,17 +168,21 @@ function statusLabel(status: RequestRow['status']): string {
 function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showOther, setShowOther] = useState(false);
 
-  async function respond(kind: 'accept' | 'decline') {
+  async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     setBusy(true);
     setError(null);
     try {
-      const functionName = kind === 'accept' && request.assignment_task_instance_id
+      const functionName = kind === 'checking' || kind === 'consult'
+        ? EDGE_FUNCTIONS.respondRequest
+        : kind === 'accept' && request.assignment_task_instance_id
         ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest
         : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
       await callEdgeFunction(functionName, {
         operation_id: newOperationId(),
         request_id: request.id,
+        ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}),
       });
       onChanged();
     } catch (err) {
@@ -198,11 +202,21 @@ function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onCha
       {request.status === 'pending' && (
         <div className="task-item-actions">
           <button type="button" disabled={busy} onClick={() => respond('accept')}>
-            引き受ける
+            やる
           </button>
           <button type="button" disabled={busy} onClick={() => respond('decline')}>
-            断る
+            難しい
           </button>
+          <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>
+            その他の返答
+          </button>
+        </div>
+      )}
+      {request.status === 'pending' && showOther && (
+        <div className="request-other-actions">
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('checking')}>確認してみる</button>
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('consult')}>相談する</button>
+          <p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p>
         </div>
       )}
       {error && (
