@@ -7,8 +7,8 @@
 | Canonical Issue | [#48](https://github.com/syoudai0514/family-ops/issues/48) |
 | CURRENT main read | `f85cbb0574731138db3972ec8ad093d86020fad4` (`2026-09-05`) |
 | Working branch | `impl/issue-48-ux-closeout` |
-| PR | Not created — create one Draft PR only after the bundled implementation is coherent. |
-| Exact head / CI | Initial source head `f85cbb0574731138db3972ec8ad093d86020fad4`; CI for this branch has not yet run. |
+| PR | [#50](https://github.com/syoudai0514/family-ops/pull/50) (Draft) |
+| Exact head / CI | Initial implementation head `10cf5b6c885d9f73b73e40f898dbc670f4608663`; CI run #437 is in progress. Any later documentation-only head is recorded in the Issue #48 handoff comment. |
 | Scope boundary | Source implementation and review handoff only. No main merge, production change, real LINE test delivery, or provider mutation. |
 | Assessed | **112/112** (no unassessed decisions) |
 | Remaining gaps at matrix creation | Today ordering/input entry; check-in interactive subtasks and reconciliation hierarchy; Request wording/branches; waiting/history surfaces; Shopping mobile action density; tomorrow card; guide/evidence synchronization. |
@@ -144,7 +144,9 @@ Update this section with each coherent commit and the final exact PR head. A rev
 
 | Commit | Scope | Verification | Remaining scope |
 | --- | --- | --- | --- |
-| _pending_ | Matrix created before behavior changes | source/read evidence above | A–M implementation |
+| `abb7067` | Matrix created before behavior changes | 112/112 assessed | UX implementation |
+| `6939da1` / PR #50 initial `10cf5b6` | Today/check-in/request/waiting/history canonical adapters and mobile UI | auth-matrix lint + diff check PASS; CI #437 running | Shopping simplification, already-agreed correction surface, production/device evidence |
+| `90289b4` | Wife guide, playbook and PDF screenshot checklist | documentation synchronized to source UI | independent review / reviewed production capture |
 
 ## Required final evidence
 

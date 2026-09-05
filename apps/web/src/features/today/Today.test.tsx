@@ -235,14 +235,14 @@ describe('Today', () => {
     expect(screen.getByText('⚠ 予定と重複')).toBeInTheDocument();
   });
 
-  it('shows Priority 2 (判断待ち) with the LINE-created pending action from list-pending-actions', async () => {
+  it('shows the first-priority confirmation card with the LINE-created pending action', async () => {
     render(
       <MemoryRouter>
         <Today />
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '判断待ち' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: '返事が必要です' })).toBeInTheDocument();
     });
     await waitFor(() => {
       expect(screen.getByText('オムツ')).toBeInTheDocument();
