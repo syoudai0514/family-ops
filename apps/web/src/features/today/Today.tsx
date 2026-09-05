@@ -53,6 +53,15 @@ export function selectNextOwnedTask(tasks: TaskInstance[], userId: string | null
   );
 }
 
+export function shouldShowWaitingTask(task: TaskInstance, now = new Date()): boolean {
+  if (task.attention_state !== 'waiting' || !['todo', 'in_progress'].includes(task.status)) return false;
+  if (!task.next_check_at) return true;
+  if (new Date(task.next_check_at) <= now) return true;
+  // A future check date normally suppresses the item. A due task is still
+  // shown so waiting cannot hide an immediate deadline risk.
+  return Boolean(task.due_at && new Date(task.due_at) <= now);
+}
+
 function RequestQuickActions({
   request,
   onChanged,
@@ -271,9 +280,7 @@ export function Today() {
   }
 
   const hasPendingDecisions = data.incomingRequests.length > 0 || pending.pendingActions.length > 0;
-  const waitingTasks = data.tasks.filter(
-    (task) => task.attention_state === 'waiting' && (task.status === 'todo' || task.status === 'in_progress'),
-  );
+  const waitingTasks = data.tasks.filter((task) => shouldShowWaitingTask(task));
   const partnerCriticalTasks = data.tasks.filter(
     (task) => task.planned_assignee_id && task.planned_assignee_id !== me?.user_id &&
       (task.status === 'todo' || task.status === 'in_progress') &&

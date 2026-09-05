@@ -143,7 +143,7 @@ export function TestSimulation() {
         action: 'open',
         operation_id: newOperationId(),
         simulated_role: simulatedRole,
-        label: 'PWA 1人E2Eテスト',
+        label: '🧪 1人LINE会話テスト',
       });
       await loadWorkspace(result.test_context_id);
     } catch (err) {
@@ -249,8 +249,8 @@ export function TestSimulation() {
       </div>
       <div className="today-header">
         <div>
-          <p className="eyebrow">DD10 · 1アカウントE2E</p>
-          <h1>1人テストモード</h1>
+          <p className="eyebrow">DD10 · 1人LINE会話</p>
+          <h1>🧪 1人LINEテスト</h1>
         </div>
         <Link to="/settings">設定へ戻る</Link>
       </div>
@@ -259,7 +259,7 @@ export function TestSimulation() {
 
       {!active?.active || !workspace ? (
         <section className="card">
-          <h2>相手役を作って試す</h2>
+          <h2>相手役とのLINE会話を試す</h2>
           <p>ログインは今のあなたのままです。相手役はテスト専用ActorRefとして作られ、実ユーザーにはなりません。</p>
           <label>
             相手役
@@ -282,7 +282,7 @@ export function TestSimulation() {
           </section>
 
           <form className="card stack-form" onSubmit={sendRequest}>
-            <h2>1. お願いを作る</h2>
+            <h2>1. LINEでお願いを送る</h2>
             <label>
               向き
               <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}>
@@ -293,11 +293,11 @@ export function TestSimulation() {
             <label>タイトル<input value={title} maxLength={160} onChange={(e) => setTitle(e.target.value)} required /></label>
             <label>メッセージ<textarea value={message} maxLength={2000} onChange={(e) => setMessage(e.target.value)} /></label>
             <label>期限（任意）<input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} /></label>
-            <button type="submit" disabled={busy}>{busy ? '処理中…' : 'テストお願いを送る'}</button>
+            <button type="submit" disabled={busy}>{busy ? '処理中…' : '🧪 LINEに送る'}</button>
           </form>
 
           <section className="card">
-            <h2>2. お願いに返事する</h2>
+            <h2>2. LINEの返事を試す</h2>
             {workspace.requests.length === 0 && <p className="empty-hint">まだお願いはありません。</p>}
             <ul className="request-list">
               {workspace.requests.map((request) => {
@@ -313,8 +313,8 @@ export function TestSimulation() {
                     </div>
                     {actionable && (
                       <div className="task-item-actions">
-                        <button type="button" disabled={busy} onClick={() => respond(request, 'accept')}>引き受ける</button>
-                        <button type="button" disabled={busy} onClick={() => respond(request, 'decline')}>断る</button>
+                        <button type="button" disabled={busy} onClick={() => respond(request, 'accept')}>やる</button>
+                        <button type="button" disabled={busy} onClick={() => respond(request, 'decline')}>難しい</button>
                       </div>
                     )}
                   </li>
@@ -342,8 +342,8 @@ export function TestSimulation() {
           </section>
 
           <section className="card">
-            <h2>テスト通知</h2>
-            <p className="empty-hint">実LINEには送らず、テスト用outboxにだけ記録します。</p>
+            <h2>🧪 LINE会話</h2>
+            <p className="empty-hint">実LINEには送らず、test_delivery_outbox にだけ記録します。</p>
             {workspace.deliveries.length === 0 ? <p>まだありません。</p> : (
               <ul className="notification-list">
                 {workspace.deliveries.map((delivery) => (

@@ -205,7 +205,7 @@ function AssignmentChangeForm({
       setBusy(false);
     }
   };
-  const scopeLabel = scope === 'this_week' ? '今週だけ' : '今回だけ';
+  const scopeLabel = alreadyAgreed ? '今回だけ' : scope === 'this_week' ? '今週だけ' : '今回だけ';
   return (
     <div className="modal-backdrop" role="presentation">
       <form className="modal-panel stack-form" onSubmit={submit}>
@@ -237,14 +237,14 @@ function AssignmentChangeForm({
               口頭などで、すでに二人で調整済み
             </label>
             {alreadyAgreed && <p className="task-item-meta">調整済みは今回だけに反映します。新しい承認依頼は作りません。</p>}
-            <label>
+            {!alreadyAgreed && <label>
               {alreadyAgreed ? '相手へ残すひとこと（任意）' : `${partnerName}へ送る文面`}
               <textarea
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 placeholder="今日ちょっと遅くなるので、お願いできる？"
               />
-            </label>
+            </label>}
             <button type="button" disabled={busy} onClick={() => setPreviewing(true)}>
               {alreadyAgreed ? '変更内容を確認' : 'LINE送信内容を確認'}
             </button>
@@ -253,7 +253,7 @@ function AssignmentChangeForm({
           <section className="line-sender-preview" aria-label="LINE担当変更プレビュー">
             <p className="line-preview-kicker">LINE · 送る側の確認</p>
             <h3>{alreadyAgreed ? 'この内容で担当を更新しますか？' : 'この内容で送りますか？'}</h3>
-            <p className="line-preview-message">{message || '担当をお願いしてもいい？'}</p>
+            <p className="line-preview-message">{alreadyAgreed ? '二人で調整済みの内容を、今回だけ反映します。' : message || '担当をお願いしてもいい？'}</p>
             <p className="line-preview-meta">
               {task.title} / {scopeLabel} / 自分 → {partnerName}
             </p>

@@ -8,10 +8,10 @@
 | CURRENT main read | `f85cbb0574731138db3972ec8ad093d86020fad4` (`2026-09-05`) |
 | Working branch | `impl/issue-48-ux-closeout` |
 | PR | [#50](https://github.com/syoudai0514/family-ops/pull/50) (Draft) |
-| Exact head / CI | Current implementation head is recorded per commit below. Full CI #440 and #441 are green; the final LINE/PWA handoff head is awaiting its own run. |
+| Exact head / CI | Review-remediation commits are `5577b5559a27bafabb4c0d427f06c32d6f660ef1` and `d7c9af2`; remote exact head/CI is recorded only after the PR branch update. |
 | Scope boundary | Source implementation and review handoff only. No main merge, production change, real LINE test delivery, or provider mutation. |
 | Assessed | **112/112** (no unassessed decisions) |
-| Remaining gaps | Handover importance/validity distinction, comment-attached difficult reply, consultation terms/dual-confirmation visibility, and impact-based notification classification remain separately identified below. Production/device capture remains gated pending reviewed environment. |
+| Remaining gaps | Independent review H1–H5/M1–M5 are being re-verified on this branch. Physical iPhone capture remains intentionally gated pending a reviewed device/environment; no production mutation is authorized. |
 
 ## Status vocabulary
 
@@ -38,20 +38,20 @@ All canonical anchors below are `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BA
 | Q13 | Show future owner; allow early execution | Q13 | week/month projections, task completion | PASS | planning tests |
 | Q14 | No reminder only because early work possible | Q14 | notification policy | PASS | notification tests |
 | Q15 | Partner early work shown only if load reduces | Q15 | DailyBrief summary policy | PASS | design/current/04 |
-| Q16 | Share confirmation depends on importance | Q16; Q37 | handover importance/read model | UI_GAP | Make important confirmation distinct in UI |
+| Q16 | Share confirmation depends on importance | Q16; Q37 | `Handovers.tsx` displays required acknowledgement distinctly | UI_GAP | Creation-time importance selection remains to be verified against canonical create command |
 | Q17 | Event template + AI candidate + human confirm | Q17 | candidate pipeline exists | INTENTIONALLY_GATED | adapter/P1 gate; no unsafe activation |
 | Q18 | No event-wide coordinator | Q18 | event participant model | PASS | design evidence |
 | Q19 | Event LINE only at milestones/risk | Q19 | notification outbox policy | PASS | LINE tests |
 | Q20 | Latest state normal, history separate | Q20 | Today vs `HistoryPage` | PASS | history tests |
 | Q21 | Start/estimate/due/reminder optional | Q21 | `TaskFormModal` optional fields | PASS | form tests |
-| Q22 | Waiting + next check | Q22 | Task overflow supports wait/continue/resume/change date | PASS | Canonical `set-task-waiting` edge adapter |
+| Q22 | Waiting + next check | Q22 | `TaskChecklistItem`, `set-task-waiting`, `shouldShowWaitingTask` | PASS | Optional next check; future wait suppression + overdue visibility regression |
 | Q23 | Today hierarchy | Q23; design/current/04 | Today orders confirmation, waiting, exceptions, handover, work | PASS | Daypart ordering source evidence |
 | Q24 | Daypart then must/normal/spare | Q24 | task kinds + evening morning-summary collapse | PASS | Today source evidence |
 | Q25 | Push morning/night, exceptions anytime | Q25 | dispatch scheduling | PASS | notification fixtures |
 | Q26 | Night fixed at 20:30 | Q26 | DailyBrief scheduler | PASS | scheduled tests |
-| Q27 | One LINE conversation test mode | Q27; design/current/06 | PR #47 `test-simulation` | PASS | simulation tests/safety assertions |
+| Q27 | One LINE conversation test mode | Q27; design/current/06 | synthetic LINE source + `test_delivery_outbox`, `TestSimulation.tsx` | PASS | one-user ActorRef isolation; no production notification/outbox/Google writes |
 | Q28 | Analysis non-push and deep | Q28 | History is navigation surface | PASS | UI evidence |
-| Q29 | Correct actuals, preserve history | Q29 | `HistoryPage` correction UI + canonical append-only command | PASS | `correct-task-actual` edge adapter |
+| Q29 | Correct actuals, preserve history | Q29 | History reads active `task_actual_participants`, then sends whole selected set | PASS | multi-participant display/preservation regression |
 | Q30 | Expired change fails; re-propose | Q30 | assignment request expiry command | PASS | edge/SQL tests |
 | Q31 | Incomplete varies by task nature | Q31 | carryover/routine semantics | PASS | reconciliation tests |
 | Q32 | Multiple actual people, simple normal UI | Q32 | actual participant data/actor selector | PASS | domain/read-model tests |
@@ -59,13 +59,13 @@ All canonical anchors below are `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BA
 | Q34 | Google is schedule-first | Q34 | calendar projection/ownership | PASS | provider tests |
 | Q35 | Own work primary, partner summary | Q35 | own next task + partner critical summary | PASS | Today source evidence |
 | Q36 | Accepted request becomes linked ToDo | Q36 | accept request command | PASS | request command tests |
-| Q37 | Only action-required handover asks confirmation | Q37 | handover fields; list is flat | UI_GAP | UI copy/action separation |
+| Q37 | Only action-required handover asks confirmation | Q37 | important handover acknowledgement copy/action | UI_GAP | New important-handover authoring contract remains unverified |
 | Q38 | Share household default | Q38 | create handover default | PASS | edge tests |
 | Q39 | New request/share normally immediate | Q39 | outbox/reply pipeline | PASS | LINE tests |
 | Q40 | Partner completion summarized, not every ping | Q40 | DailyBrief policy | PASS | notification tests |
-| Q41 | Use `難しい`; commented decline one final notice | Q41 | `難しい` labels in PWA/LINE; comment persistence absent | UI_GAP | Add canonical comment-attached decline branch |
+| Q41 | Use `難しい`; commented decline one final notice | Q41 | `negotiate-request` + `CommentedDecline` | PASS | comment is recorded against canonical attempt; stale revision fails closed |
 | Q42 | Light request ends difficult; necessary stays unresolved | Q42 | request authority semantics | PASS | request tests |
-| Q43 | Checking vs consultation semantics | Q43 | PWA/LINE deep-link other-response branch; terms state is not displayed | UI_GAP | Read/project current attempt terms + both confirmations |
+| Q43 | Checking vs consultation semantics | Q43 | request-attempt reader + negotiate adapter + visible conditions/confirmation state | PASS | one confirmation remains awaiting-confirmation; canonical second confirmation accepts |
 | Q44 | First tier: do/difficult/other | Q44 | PWA three choices; LINE Flex deep-links other response | PASS | shared response wording/URI contract |
 | Q45 | Change request, not overwrite | Q45 | assignment change request | PASS | mutation tests |
 | Q46 | Accepted cancellation needs counterpart confirm | Q46 | accepted request followup UI invokes canonical counterpart-confirm command | PASS | `start-request-followup` UI + edge |
@@ -109,8 +109,8 @@ All canonical anchors below are `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BA
 | Q82 | Delete only registration error; preserve outcomes | Q82 | terminal states/events | PASS | command tests |
 | Q83 | Ask whether assignment was pre-agreed | Q83 | Week assignment form provides `調整済み` choice | PASS | direct canonical assignment adapter |
 | Q84 | Externally agreed: audit + neutral correction | Q84 | canonical assignment command emits audit + neutral notification | PASS | `change-task-assignment` edge / Week UI |
-| Q85 | Important pre-agreed changes immediate; minor digest | Q85 | notification classification basis | RUNTIME_GAP | canonical notification classification |
-| Q86 | Timing auto by kind/date/impact | Q86 | notification policy partial | RUNTIME_GAP | classify command/read model |
+| Q85 | Important pre-agreed changes immediate; minor digest | Q85 | `fn_assignment_change_delivery_urgency_v1` before-insert policy | PASS | transport/safety/near-term immediate; ordinary chore digest |
+| Q86 | Timing auto by kind/date/impact | Q86 | same canonical outbox policy | PASS | policy preserves notification bridge quota/retry/bundle behavior |
 | Q87 | Night collapses morning completed work | Q87 | static long Today sections | UI_GAP | night compact summary |
 | Q88 | Morning schedule weekday 06:30/nonwork 09:00 | Q88 | DailyBrief config | PASS | scheduler fixtures |
 | Q89 | Nursery image → candidates + confirm | Q89 | external adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |

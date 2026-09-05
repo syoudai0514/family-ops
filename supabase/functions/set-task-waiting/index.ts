@@ -13,14 +13,14 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
       typeof body.expected_revision !== 'number' || !Number.isSafeInteger(body.expected_revision)) {
     throw new FamilyOpsError('INVALID_INPUT', 'task_id, waiting_action and expected_revision are required', 400);
   }
-  if (body.waiting_action !== 'resume' && typeof body.next_check_at !== 'string') {
-    throw new FamilyOpsError('INVALID_INPUT', 'next_check_at is required while waiting', 400);
+  if (body.waiting_action !== 'resume' && body.next_check_at !== undefined && body.next_check_at !== null && typeof body.next_check_at !== 'string') {
+    throw new FamilyOpsError('INVALID_INPUT', 'next_check_at must be an ISO timestamp when provided', 400);
   }
   return jsonResponse(await callServerTx(createServiceRoleClient(), 'server_tx_set_task_waiting', {
     p_actor_id: actorId, p_operation_id: operationId, p_task_id: body.task_id,
     p_waiting_action: body.waiting_action,
     p_waiting_note: typeof body.waiting_note === 'string' ? body.waiting_note : null,
-    p_next_check_at: body.waiting_action === 'resume' ? null : body.next_check_at,
+    p_next_check_at: body.waiting_action === 'resume' || body.next_check_at == null ? null : body.next_check_at,
     p_expected_revision: body.expected_revision,
   }));
 }));

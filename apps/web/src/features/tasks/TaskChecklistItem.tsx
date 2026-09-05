@@ -108,16 +108,12 @@ export function TaskChecklistItem({
 
   function handleWaitingSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!nextCheckAt) {
-      setError('確認日を選んでください。');
-      return;
-    }
     void withOperation((operationId) => callEdgeFunction(EDGE_FUNCTIONS.setTaskWaiting, {
       operation_id: operationId,
       task_id: task.id,
       waiting_action: task.attention_state === 'waiting' ? 'update' : 'set',
       waiting_note: waitingNote.trim() || null,
-      next_check_at: new Date(nextCheckAt).toISOString(),
+      next_check_at: nextCheckAt ? new Date(nextCheckAt).toISOString() : undefined,
       expected_revision: task.revision ?? 1,
     })).then((succeeded) => { if (succeeded) setEditingWaiting(false); });
   }
@@ -261,7 +257,7 @@ export function TaskChecklistItem({
       {editingWaiting && (
         <form className="task-waiting-editor" onSubmit={handleWaitingSubmit}>
           <label>待っている理由（任意）<input value={waitingNote} onChange={(event) => setWaitingNote(event.target.value)} placeholder="例: 園から返事待ち" /></label>
-          <label>次に確認する日<input type="datetime-local" required value={nextCheckAt} onChange={(event) => setNextCheckAt(event.target.value)} /></label>
+          <label>次に確認する日（任意）<input type="datetime-local" value={nextCheckAt} onChange={(event) => setNextCheckAt(event.target.value)} /></label>
           <div className="task-item-actions"><button type="submit" disabled={busy}>{task.attention_state === 'waiting' ? '待ちを続ける' : '待ちにする'}</button><button type="button" className="text-button" onClick={() => setEditingWaiting(false)} disabled={busy}>やめる</button></div>
         </form>
       )}
@@ -276,12 +272,7 @@ export function TaskChecklistItem({
 }
 
 function toDateTimeLocal(value: string | null | undefined): string {
-  if (!value) {
-    const next = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    next.setHours(9, 0, 0, 0);
-    const pad = (number: number) => String(number).padStart(2, '0');
-    return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T${pad(next.getHours())}:${pad(next.getMinutes())}`;
-  }
+  if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const pad = (number: number) => String(number).padStart(2, '0');

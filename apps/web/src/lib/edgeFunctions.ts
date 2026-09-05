@@ -25,6 +25,7 @@ export const EDGE_FUNCTIONS = {
   acceptRequest: 'accept-request',
   declineRequest: 'decline-request',
   respondRequest: 'respond-request',
+  negotiateRequest: 'negotiate-request',
   cancelRequest: 'cancel-request',
   startRequestFollowup: 'start-request-followup',
   proposeAiDraft: 'propose-ai-draft',

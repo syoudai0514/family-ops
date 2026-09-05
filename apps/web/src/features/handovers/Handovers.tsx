@@ -189,10 +189,12 @@ function HandoverRow({ handover, isRead, onChanged }: { handover: Handover; isRe
           {handover.categories.length > 0 ? ` · ${handover.categories.join(', ')}` : ''}
         </span>
         <p>{handover.shared_text}</p>
+        {handover.valid_until && <p className="task-item-meta">有効期限: {new Date(handover.valid_until).toLocaleString('ja-JP')} {new Date(handover.valid_until).getTime() < Date.now() ? '（期限切れ）' : ''}</p>}
+        {handover.ack_policy === 'required' && <p className="task-item-meta">重要: 確認の返答が必要です。</p>}
       </div>
       {!isRead && (
         <button type="button" disabled={busy} onClick={markRead}>
-          既読にする
+          {handover.ack_policy === 'required' ? '確認した' : '既読にする'}
         </button>
       )}
       {error && (

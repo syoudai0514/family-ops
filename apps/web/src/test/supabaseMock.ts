@@ -12,6 +12,7 @@ function createQueryBuilder(rows: Row[]) {
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
     in: vi.fn(() => builder),
+    is: vi.fn(() => builder),
     order: vi.fn(() => builder),
     gte: vi.fn(() => builder),
     limit: vi.fn(() => builder),

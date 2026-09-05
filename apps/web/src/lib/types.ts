@@ -137,6 +137,11 @@ export interface Handover {
   categories: string[];
   occurred_on: string;
   created_at: string;
+  info_kind?: 'share' | 'handover';
+  valid_from?: string;
+  valid_until?: string | null;
+  ack_policy?: 'none' | 'required';
+  status?: 'active' | 'superseded' | 'expired';
 }
 
 export interface HandoverRead {

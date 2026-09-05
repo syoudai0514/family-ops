@@ -9,8 +9,18 @@ import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
 import type { PendingAction, RequestRow } from '../../lib/types';
 
+interface RequestAttempt {
+  id: string;
+  request_id: string;
+  state: 'pending' | 'checking' | 'consulting' | 'awaiting_confirmation' | 'accepted' | 'declined';
+  revision: number;
+  terms_revision: number;
+  terms: Record<string, unknown> | null;
+}
+
 function useRequests(householdId: string | null) {
   const [requests, setRequests] = useState<RequestRow[]>([]);
+  const [attempts, setAttempts] = useState<Map<string, RequestAttempt>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +39,21 @@ function useRequests(householdId: string | null) {
     else {
       const rows = (data ?? []) as RequestRow[];
       const taskIds = rows.map((row) => row.linked_task_instance_id).filter((id): id is string => Boolean(id));
+      const requestIds = rows.map((row) => row.id);
+      if (requestIds.length > 0) {
+        const { data: attemptRows, error: attemptError } = await supabase
+          .from('request_attempts').select('id, request_id, state, revision, terms_revision, terms')
+          .in('request_id', requestIds).is('test_context_id', null)
+          .order('created_at', { ascending: false });
+        if (attemptError) setError(attemptError.message);
+        else {
+          const latest = new Map<string, RequestAttempt>();
+          for (const attempt of (attemptRows ?? []) as RequestAttempt[]) {
+            if (!latest.has(attempt.request_id)) latest.set(attempt.request_id, attempt);
+          }
+          setAttempts(latest);
+        }
+      } else setAttempts(new Map());
       if (taskIds.length > 0) {
         const { data: tasks, error: taskError } = await supabase
           .from('task_instances').select('id, revision, title, due_at').in('id', taskIds);
@@ -47,13 +72,13 @@ function useRequests(householdId: string | null) {
     load();
   }, [load]);
 
-  return { requests, loading, error, refresh: load };
+  return { requests, attempts, loading, error, refresh: load };
 }
 
 export function Requests() {
   const { user } = useAuth();
   const { household, partner } = useHousehold();
-  const { requests, loading, error, refresh } = useRequests(household?.id ?? null);
+  const { requests, attempts, loading, error, refresh } = useRequests(household?.id ?? null);
   const location = useLocation();
   const navigate = useNavigate();
   const pendingActionRawText = typeof (location.state as { pendingActionRawText?: unknown } | null)?.pendingActionRawText === 'string'
@@ -141,7 +166,7 @@ export function Requests() {
         ) : (
           <ul className="request-list">
             {incoming.map((r) => (
-              <IncomingRequestRow key={r.id} request={r} onChanged={refresh} initialShowOther={r.id === otherResponseRequestId} />
+              <IncomingRequestRow key={r.id} request={r} attempt={attempts.get(r.id)} onChanged={refresh} initialShowOther={r.id === otherResponseRequestId} />
             ))}
           </ul>
         )}
@@ -180,7 +205,7 @@ function statusLabel(status: RequestRow['status']): string {
   }
 }
 
-function IncomingRequestRow({ request, onChanged, initialShowOther = false }: { request: RequestRow; onChanged: () => void; initialShowOther?: boolean }) {
+function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => void; initialShowOther?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(initialShowOther);
@@ -207,6 +232,19 @@ function IncomingRequestRow({ request, onChanged, initialShowOther = false }: { 
     }
   }
 
+  async function negotiate(action: 'checking' | 'consult' | 'edit_terms' | 'confirm_terms' | 'decline', terms?: Record<string, unknown>) {
+    if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
+    setBusy(true); setError(null);
+    try {
+      await callEdgeFunction(EDGE_FUNCTIONS.negotiateRequest, {
+        operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id, action, terms,
+        expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision,
+      });
+      onChanged();
+    } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。'); }
+    finally { setBusy(false); }
+  }
+
   return (
     <li className="request-item">
       <div>
@@ -214,7 +252,7 @@ function IncomingRequestRow({ request, onChanged, initialShowOther = false }: { 
         {request.shared_message && <p>{request.shared_message}</p>}
         {request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}
       </div>
-      {request.status === 'pending' && (
+      {request.status === 'pending' && attempt?.state !== 'consulting' && attempt?.state !== 'awaiting_confirmation' && (
         <div className="task-item-actions">
           <button type="button" disabled={busy} onClick={() => respond('accept')}>
             やる
@@ -229,10 +267,14 @@ function IncomingRequestRow({ request, onChanged, initialShowOther = false }: { 
       )}
       {request.status === 'pending' && showOther && (
         <div className="request-other-actions">
-          <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('checking')}>確認してみる</button>
-          <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('consult')}>相談する</button>
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button>
+          <CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} />
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button>
           <p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p>
         </div>
+      )}
+      {attempt && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && (
+        <ConsultationTerms attempt={attempt} busy={busy} onAction={negotiate} />
       )}
       {error && (
         <p role="alert" className="error-text">
@@ -241,6 +283,25 @@ function IncomingRequestRow({ request, onChanged, initialShowOther = false }: { 
       )}
     </li>
   );
+}
+
+function CommentedDecline({ busy, onSubmit }: { busy: boolean; onSubmit: (comment: string) => void }) {
+  const [comment, setComment] = useState('');
+  return <div className="request-comment-row">
+    <input aria-label="難しい理由（任意）" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="コメント付きで難しい" />
+    <button type="button" className="secondary-button" disabled={busy} onClick={() => onSubmit(comment)}>コメント付きで難しい</button>
+  </div>;
+}
+
+function ConsultationTerms({ attempt, busy, onAction }: { attempt: RequestAttempt; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) {
+  const [candidate, setCandidate] = useState(typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : '');
+  return <div className="request-other-actions" aria-label="相談の条件">
+    <p><strong>相談中</strong> — 担当はまだ変わりません。二人が同じ条件を確認してから確定します。</p>
+    <input aria-label="合意する条件" value={candidate} onChange={(event) => setCandidate(event.target.value)} placeholder="例：明日は私、金曜は交代" />
+    <button type="button" className="secondary-button" disabled={busy || !candidate.trim()} onClick={() => onAction('edit_terms', { candidate: candidate.trim() })}>この条件を提案</button>
+    <button type="button" disabled={busy} onClick={() => onAction('confirm_terms')}>この条件で確認する</button>
+    <p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? '相手の確認待ち' : '条件の入力待ち'}（条件版 {attempt.terms_revision}）</p>
+  </div>;
 }
 
 function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onChanged: () => void }) {

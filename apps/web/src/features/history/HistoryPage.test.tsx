@@ -31,6 +31,14 @@ vi.mock('../../lib/supabaseClient', () => ({
         { id: 'event-1', household_id: 'household-1', task_instance_id: 'task-1', actor_id: 'user-2', event_type: 'reassigned_once', payload: { old_assignee_id: 'user-1', new_assignee_id: 'user-2' }, source: 'pwa', idempotency_key: null, created_at: '2026-08-18T08:00:00Z' },
         { id: 'event-2', household_id: 'household-1', task_instance_id: 'task-1', actor_id: 'user-2', event_type: 'completed', payload: {}, source: 'pwa', idempotency_key: null, created_at: '2026-08-18T10:30:00Z' },
       ],
+      task_actual_participants: [
+        { task_instance_id: 'task-1', actor_ref_id: 'actor-1', removed_at: null },
+        { task_instance_id: 'task-1', actor_ref_id: 'actor-2', removed_at: null },
+      ],
+      domain_actor_refs: [
+        { id: 'actor-1', real_user_id: 'user-1' },
+        { id: 'actor-2', real_user_id: 'user-2' },
+      ],
     }),
     channel: vi.fn(() => { const channelObj = { on: () => channelObj, subscribe: () => channelObj }; return channelObj; }),
     removeChannel: vi.fn(),
@@ -61,6 +69,7 @@ describe('HistoryPage', () => {
     expect(screen.getByText('待ち')).toBeInTheDocument();
     expect(screen.getByText(/待ち理由: 園からの回答待ち/)).toBeInTheDocument();
     expect(screen.getByText('担当変更: パパ → ママ')).toBeInTheDocument();
+    expect(screen.getByText(/実績:.*パパ・ママ/)).toBeInTheDocument();
     expect(screen.queryByText(/スコア|ランキング|ポイント/)).not.toBeInTheDocument();
   });
 

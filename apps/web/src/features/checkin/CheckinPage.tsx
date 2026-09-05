@@ -74,6 +74,10 @@ const ITEM_STATUS_LABELS: Record<SessionItem['status'], string> = {
   cancelled: '取消',
 };
 
+function inputLabel(sessionType: SessionType): string {
+  return sessionType === 'dropoff' ? '🌅 朝の入力' : sessionType === 'pickup' ? '🌆 お迎えの入力' : '🌙 今夜の入力';
+}
+
 function isItemActive(item: SessionItem): boolean {
   return item.status === 'todo' || item.status === 'in_progress';
 }
@@ -234,7 +238,7 @@ export function CheckinPage() {
 
       {canAct && activeItems.length > 0 && !individualMode && (
         <section className="card checkin-reconciliation" aria-labelledby="checkin-reconciliation-title">
-          <p className="eyebrow">今夜の入力</p>
+          <p className="eyebrow">{inputLabel(session.session_type)}</p>
           <h2 id="checkin-reconciliation-title">今日はどうでしたか？</h2>
           <p className="empty-hint">細かな入力は例外があるときだけで大丈夫です。</p>
           <div className="checkin-reconciliation-actions">
