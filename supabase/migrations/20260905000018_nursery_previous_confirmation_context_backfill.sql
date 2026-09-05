@@ -18,8 +18,7 @@ begin
   end if;
 
   update private.nursery_review_items r
-  set previous_confirmed_item_id = previous.id
-  from lateral (
+  set previous_confirmed_item_id = (
     select c.id
     from public.nursery_confirmed_items c
     where c.household_id = r.household_id
@@ -28,10 +27,18 @@ begin
       and c.classification is not distinct from r.classification
     order by c.confirmed_at desc, c.id desc
     limit 1
-  ) previous
+  )
   where r.intake_id = new.id
     and r.household_id = new.household_id
-    and r.previous_confirmed_item_id is null;
+    and r.previous_confirmed_item_id is null
+    and exists (
+      select 1
+      from public.nursery_confirmed_items c
+      where c.household_id = r.household_id
+        and c.child_school_context_id = new.child_school_context_id
+        and c.item_kind = r.item_kind
+        and c.classification is not distinct from r.classification
+    );
 
   return new;
 end;
