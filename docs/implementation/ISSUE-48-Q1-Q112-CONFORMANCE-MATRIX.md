@@ -8,10 +8,11 @@
 | CURRENT main read | `f85cbb0574731138db3972ec8ad093d86020fad4` (`2026-09-05`) |
 | Working branch | `impl/issue-48-ux-closeout` |
 | PR | [#50](https://github.com/syoudai0514/family-ops/pull/50) (Draft) |
-| Exact head / CI | `b249396a2b241e6b5da07f09722627ee3def096a`; full CI #448 is green (Web, Edge, DB, real Supabase CLI integration). |
+| Reviewed head / CI (historical only) | `6fec96e1dd4ec3886f6173bba3f209c51a83128a`; CI #449 was green (Web, Edge, DB, real Supabase CLI integration). It is not conformance evidence for later commits. |
+| Matrix reconstruction state | **IN PROGRESS — NO-GO.** The table below is historical handoff material only and must not be used to claim conformance. Final reconstruction must start from the literal Appendix A wording at the final branch head. |
 | Scope boundary | Source implementation and review handoff only. No main merge, production change, real LINE test delivery, or provider mutation. |
-| Assessed | **112/112** (no unassessed decisions) |
-| Remaining gaps | H1–H5/M1–M5 are implemented; final CI must run on the final documentation head. Physical iPhone capture remains intentionally gated pending a reviewed device/environment; no production mutation is authorized. |
+| Assessed | Historical table: 112/112. **Current final assessment: not yet re-issued.** |
+| Remaining gaps | H6-A/H6-B, Q17, Q89–Q106 and all historical PASS rows require literal re-assessment. No re-review request is authorized. |
 
 ## Status vocabulary
 
@@ -19,7 +20,14 @@
 
 All canonical anchors below are `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`, Appendix A, unless a more specific design source is named.
 
-## Q1–Q112 assessment
+## Historical assessment — invalidated by PR #50 independent re-review
+
+The following legacy table is retained only for auditability of the earlier
+handoff. It shortens requirements and contains false PASS / invalid GATED
+findings; it is **not** the final Q1–Q112 matrix. The replacement table must
+include: literal requirement, all conditions, exact current source and test
+evidence, cross-Q E2E, user scenario, and one of PASS/UI_GAP/RUNTIME_GAP/
+TEST_GAP/INTENTIONALLY_GATED.
 
 | Q | Settled decision | Canonical source | CURRENT implementation evidence | Status | Remediation / test evidence |
 | --- | --- | --- | --- | --- | --- |

@@ -36,6 +36,19 @@ begin
     30
   );
   v_pending_id := (v_pending->>'pending_action_id')::uuid;
+  insert into private.line_user_links (household_id, user_id, line_user_id)
+  values (v_household_id, 'f1000000-0000-0000-0000-000000000001', 'line-conversation-owner');
+  v_result := public.server_tx_get_line_conversation_pending(
+    'f1000000-0000-0000-0000-000000000001', 'line-conversation-owner'
+  );
+  if (v_result->>'id')::uuid <> v_pending_id or v_result->>'status' <> 'draft' then
+    raise exception 'FAIL line-native: LINE follow-up must resolve the owner draft with visible draft state';
+  end if;
+  if public.server_tx_get_line_conversation_pending(
+    'f1000000-0000-0000-0000-000000000002', 'line-conversation-owner'
+  ) is not null then
+    raise exception 'FAIL line-native: LINE conversation context leaked to another actor';
+  end if;
   v_result := public.server_tx_get_pending_action('f1000000-0000-0000-0000-000000000001', v_pending_id);
   if v_result->>'action_type' <> 'task_create_once' then
     raise exception 'FAIL line-native: sender must read own task preview';
@@ -76,6 +89,12 @@ begin
   end;
 
   perform public.server_tx_confirm_pending_action('f1000000-0000-0000-0000-000000000001', v_pending_id);
+  v_result := public.server_tx_get_line_conversation_pending(
+    'f1000000-0000-0000-0000-000000000001', 'line-conversation-owner'
+  );
+  if (v_result->>'id')::uuid <> v_pending_id or v_result->>'status' <> 'confirmed' then
+    raise exception 'FAIL line-native: confirmed follow-up must remain visible as terminal/current state, never a new draft';
+  end if;
   begin
     perform public.server_tx_update_pending_action(
       'f1000000-0000-0000-0000-000000000001', v_pending_id, 'task_create_once', '{}'::jsonb

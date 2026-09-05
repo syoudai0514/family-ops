@@ -90,38 +90,13 @@ export function buildLineMenuFlex(appBaseUrl: string): Record<string, unknown> {
         paddingAll: "9px",
         contents: [
           {
-            type: "text",
-            text: "予定を確認",
-            weight: "bold",
-            size: "xs",
-            color: MUTED,
-          },
-          {
             type: "box",
             layout: "horizontal",
             spacing: "xs",
             contents: [
               messageButton("今日", "今日の予定は？"),
-              messageButton("明日", "明日の予定教えて"),
-              messageButton("今週", "今週の予定は？"),
-            ],
-          },
-          { type: "separator", margin: "sm", color: BORDER },
-          {
-            type: "text",
-            text: "追加・お願い",
-            weight: "bold",
-            size: "xs",
-            color: MUTED,
-            margin: "sm",
-          },
-          {
-            type: "box",
-            layout: "horizontal",
-            spacing: "xs",
-            contents: [
-              messageButton("予定", "予定を追加したい"),
-              messageButton("タスク", "タスクを追加したい"),
+              messageButton("入力", "入力"),
+              messageButton("追加", "追加したい"),
             ],
           },
           {
@@ -130,12 +105,13 @@ export function buildLineMenuFlex(appBaseUrl: string): Record<string, unknown> {
             spacing: "xs",
             contents: [
               messageButton("お願い", "お願いを送りたい"),
-              messageButton("買い物", "買い物を追加したい"),
+              messageButton("共有", "共有"),
+              messageButton("その他", "その他"),
             ],
           },
           {
             type: "text",
-            text: "例「明日の夜にゴミ出し」「牛乳を買い物に追加」",
+            text: "追加は文章でそのまま送れます。例「牛乳なくなりそう」「金曜のお迎えお願い」",
             size: "xxs",
             color: MUTED,
             wrap: true,
@@ -156,6 +132,54 @@ export function buildLineMenuFlex(appBaseUrl: string): Record<string, unknown> {
             action: { type: "uri", label: "PWAを開く", uri: `${base}/today` },
           },
         ],
+      },
+    },
+  };
+}
+
+/**
+ * Q77's 「その他」 is intentionally not a dead-end shell link.  Each button
+ * reaches the management surface where that state can actually be reviewed
+ * or changed.  It is source/builder-only until provider menu publication is
+ * explicitly approved; no provider mutation is performed here.
+ */
+export function buildLineManagementFlex(appBaseUrl: string): Record<string, unknown> {
+  const base = appBaseUrl.replace(/\/$/, "");
+  const link = (label: string, path: string): Record<string, unknown> => ({
+    type: "button",
+    style: "secondary",
+    height: "sm",
+    action: { type: "uri", label, uri: `${base}${path}` },
+  });
+  return {
+    type: "flex",
+    altText: "おうちノートの管理メニュー",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "11px",
+        backgroundColor: "#F2FBF7",
+        contents: [{ type: "text", text: "その他・管理", weight: "bold", color: TEXT }],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "xs",
+        paddingAll: "9px",
+        contents: [
+          { type: "box", layout: "horizontal", spacing: "xs", contents: [link("家族の予定", "/month"), link("イベント・準備", "/week")] },
+          { type: "box", layout: "horizontal", spacing: "xs", contents: [link("買い物", "/shopping"), link("担当・曜日ルール", "/settings/routines")] },
+          { type: "box", layout: "horizontal", spacing: "xs", contents: [link("履歴・実績", "/history"), link("設定", "/settings")] },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "4px",
+        contents: [link("PWAを開く", "/today")],
       },
     },
   };
