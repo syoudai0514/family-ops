@@ -30,6 +30,8 @@ export const EDGE_FUNCTIONS = {
   cancelRequest: 'cancel-request',
   startRequestFollowup: 'start-request-followup',
   proposeAiDraft: 'propose-ai-draft',
+  proposeEventPlan: 'propose-event-plan',
+  confirmEventPlan: 'confirm-event-plan',
   addShoppingItem: 'add-shopping-item',
   assignShoppingItem: 'assign-shopping-item',
   orderShoppingItem: 'order-shopping-item',
