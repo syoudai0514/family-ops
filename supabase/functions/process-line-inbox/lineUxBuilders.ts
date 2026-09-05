@@ -185,6 +185,43 @@ export function buildLineManagementFlex(appBaseUrl: string): Record<string, unkn
   };
 }
 
+/** Q74: free text is primary; shortcuts only reduce effort when useful. */
+export function buildLineAddFlex(): Record<string, unknown> {
+  return {
+    type: "flex",
+    altText: "追加する内容をそのまま送ってください",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "12px",
+        contents: [
+          { type: "text", text: "追加", weight: "bold", size: "lg", color: TEXT },
+          {
+            type: "text",
+            text: "まずは文章でそのまま送れます。例「牛乳なくなりそう」「金曜のお迎えお願い」",
+            size: "sm", color: TEXT, wrap: true,
+          },
+          { type: "separator", color: BORDER },
+          { type: "text", text: "種類を先に選ぶこともできます", size: "xs", color: MUTED },
+          { type: "box", layout: "horizontal", spacing: "xs", contents: [
+            messageButton("予定", "予定を追加したい"),
+            messageButton("タスク", "タスクを追加したい"),
+          ] },
+          { type: "box", layout: "horizontal", spacing: "xs", contents: [
+            messageButton("買い物", "買い物を追加したい"),
+            messageButton("共有", "共有"),
+            messageButton("お願い", "お願いを送りたい"),
+          ] },
+        ],
+      },
+    },
+  };
+}
+
 export function buildIntentClarificationFlex(
   data: { pendingActionId: string; scheduleHint?: string | null },
 ): Record<string, unknown> {

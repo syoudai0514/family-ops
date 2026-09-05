@@ -6,6 +6,7 @@ export type LineReadOnlyIntent =
   | "week"
   | "menu"
   | "input"
+  | "add"
   | "share"
   | "other";
 export type LineCreationKind = "event" | "task" | "request" | "shopping";
@@ -20,6 +21,7 @@ export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
   // remain short, so the fixed menu is usable without making people learn a
   // second vocabulary.  Each is routed by the worker to a concrete surface.
   if (/^(?:入力|今日の入力|朝の入力|夜の入力)$/.test(value)) return "input";
+  if (/^(?:追加|追加したい|登録)$/.test(value)) return "add";
   if (/^(?:共有|引き継ぎ|共有したい)$/.test(value)) return "share";
   if (/^(?:その他|管理|設定)$/.test(value)) return "other";
   if (

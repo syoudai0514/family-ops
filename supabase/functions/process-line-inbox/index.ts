@@ -71,6 +71,7 @@ import {
 } from "./lineIntent.ts";
 import {
   buildIntentClarificationFlex,
+  buildLineAddFlex,
   buildLineManagementFlex,
   buildLineMenuFlex,
   buildMissingTitleFlex,
@@ -378,6 +379,16 @@ async function tryHandleReadOnlyText(
         ? `今日の入力はこちらです。\n${base}/today?entry=checkin`
         : "今日の入力を開いてください。",
     );
+  } else if (intent === "add") {
+    await replyOrEnqueuePush(client, {
+      replyToken: item.payload.replyToken,
+      lineUserId: item.source_external_user_id,
+      householdId: actor.household_id,
+      recipientUserId: actor.user_id,
+      text: "追加する内容をそのまま送ってください。",
+      message: buildLineAddFlex(),
+      dedupKey: `line-add:${item.provider_event_id}`,
+    });
   } else if (intent === "share") {
     const base = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
     await sendConfirmation(

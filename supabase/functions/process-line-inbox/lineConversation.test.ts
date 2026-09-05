@@ -38,6 +38,7 @@ Deno.test("menu quick replies expose the literal six Q73 LINE entry points", () 
 
 Deno.test("literal LINE entries route to their concrete surface", () => {
   assertEquals(readOnlyLineIntent("入力"), "input");
+  assertEquals(readOnlyLineIntent("追加したい"), "add");
   assertEquals(readOnlyLineIntent("共有"), "share");
   assertEquals(readOnlyLineIntent("その他"), "other");
 });
