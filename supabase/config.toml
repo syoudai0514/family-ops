@@ -49,6 +49,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.complete-task]
 verify_jwt = true
+[functions.add-task-completion-evidence]
+verify_jwt = true
 [functions.set-subtask-completion]
 verify_jwt = true
 [functions.create-task-definition]
