@@ -5,30 +5,38 @@ set role service_role;
 
 do $$
 declare
-  u1 uuid := '70000000-0000-0000-0000-000000000001';
-  u2 uuid := '70000000-0000-0000-0000-000000000002';
-  u3 uuid := '70000000-0000-0000-0000-000000000003';
+  u1 uuid := gen_random_uuid();
+  u2 uuid := gen_random_uuid();
+  u3 uuid := gen_random_uuid();
+  op_create_h1 uuid := gen_random_uuid();
+  op_invite uuid := gen_random_uuid();
+  op_join uuid := gen_random_uuid();
+  op_create_h2 uuid := gen_random_uuid();
+  op_template_a uuid := gen_random_uuid();
+  op_template_b uuid := gen_random_uuid();
+  op_override uuid := gen_random_uuid();
+  op_delete_override uuid := gen_random_uuid();
+  op_cross_household uuid := gen_random_uuid();
   h1 uuid; h2 uuid; token text; actor1 uuid; actor2 uuid;
   days_a jsonb; days_b jsonb; r_a jsonb; r_b jsonb; r_override jsonb;
   template_a uuid; template_b uuid; protected_task uuid; override_task uuid;
   before_day jsonb; after_day jsonb; failed boolean;
 begin
-  insert into auth.users(id) values(u1),(u2),(u3) on conflict do nothing;
+  insert into auth.users(id) values(u1),(u2),(u3);
   insert into public.profiles(user_id,display_name) values
-    (u1,'Transport Papa'),(u2,'Transport Mama'),(u3,'Other Household')
-    on conflict(user_id) do update set display_name=excluded.display_name;
+    (u1,'Transport Papa'),(u2,'Transport Mama'),(u3,'Other Household');
 
   h1 := (public.server_tx_create_household(
-    u1,'70000000-0000-0000-0000-000000000101','Transport UX H1','Papa'
+    u1,op_create_h1,'Transport UX H1','Papa'
   )->>'household_id')::uuid;
   token := public.server_tx_create_household_invite(
-    u1,'70000000-0000-0000-0000-000000000102'
+    u1,op_invite
   )->>'raw_token';
   perform public.server_tx_join_household(
-    u2,'70000000-0000-0000-0000-000000000103',token,'Mama'
+    u2,op_join,token,'Mama'
   );
   h2 := (public.server_tx_create_household(
-    u3,'70000000-0000-0000-0000-000000000104','Transport UX H2','Other'
+    u3,op_create_h2,'Transport UX H2','Other'
   )->>'household_id')::uuid;
 
   if (select family_role from public.household_members where household_id=h1 and user_id=u1) <> 'papa'
@@ -70,7 +78,7 @@ begin
     ) order by d) from generate_series(1,7) d
   );
   r_a := public.server_tx_save_transport_template(
-    u1,'70000000-0000-0000-0000-000000000201','2026-09-01',days_a
+    u1,op_template_a,'2026-09-01',days_a
   );
   template_a := (r_a->>'template_id')::uuid;
   if (r_a->>'valid_to') is not null then raise exception 'FAIL first template must be open-ended'; end if;
@@ -103,7 +111,7 @@ begin
     ) order by d) from generate_series(1,7) d
   );
   r_b := public.server_tx_save_transport_template(
-    u1,'70000000-0000-0000-0000-000000000202','2026-10-01',days_b
+    u1,op_template_b,'2026-10-01',days_b
   );
   template_b := (r_b->>'template_id')::uuid;
 
@@ -137,7 +145,7 @@ begin
   where d.template_id=template_b and d.weekday=2;
 
   r_override := public.server_tx_set_transport_occurrence_override(
-    u1,'70000000-0000-0000-0000-000000000203','2026-10-06',
+    u1,op_override,'2026-10-06',
     true,u1,false,null,'この日だけ送り交代'
   );
   if (r_override->>'override_id') is null then raise exception 'FAIL override id'; end if;
@@ -163,7 +171,7 @@ begin
   ) then raise exception 'FAIL override masquerades as protected one-off agreement'; end if;
 
   perform public.server_tx_delete_transport_occurrence_override(
-    u1,'70000000-0000-0000-0000-000000000204','2026-10-06'
+    u1,op_delete_override,'2026-10-06'
   );
   if exists(select 1 from public.transport_occurrence_overrides where household_id=h1 and occurrence_date='2026-10-06') then
     raise exception 'FAIL override row not deleted';
@@ -176,7 +184,7 @@ begin
 
   -- Same operation replay must not manufacture another template.
   if public.server_tx_save_transport_template(
-      u1,'70000000-0000-0000-0000-000000000202','2026-10-01',days_b
+      u1,op_template_b,'2026-10-01',days_b
     ) is distinct from r_b then
     raise exception 'FAIL template idempotent replay';
   end if;
@@ -187,7 +195,7 @@ begin
   failed:=false;
   begin
     perform public.server_tx_save_transport_template(
-      u1,'70000000-0000-0000-0000-000000000205','2026-11-01',
+      u1,op_cross_household,'2026-11-01',
       jsonb_set(days_b,'{0,dropoff_user_id}',to_jsonb(u3::text))
     );
   exception when others then failed:=position('CROSS_HOUSEHOLD_RESOURCE' in sqlerrm)>0; end;
