@@ -235,6 +235,9 @@ verify_jwt = true
 [functions.respond-request]
 verify_jwt = true
 
+[functions.negotiate-request]
+verify_jwt = true
+
 [functions.set-task-waiting]
 verify_jwt = true
 

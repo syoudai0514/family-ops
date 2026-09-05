@@ -101,6 +101,7 @@ const GAP_FILL_FUNCTIONS = new Set([
   'get-current-routine-sessions',
   'reconcile-routine-session',
   'respond-request',
+  'negotiate-request',
   'set-task-waiting',
   'correct-task-actual',
   'change-task-assignment',
