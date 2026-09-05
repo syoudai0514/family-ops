@@ -31,6 +31,7 @@ export function SettingsHome() {
         <Link to="/settings/terminology" className="settings-link"><strong>家庭内用語</strong><span>LINEで使う言い回しと意味</span></Link>
         <Link to="/notifications" className="settings-link"><strong>通知</strong><span>LINEとアプリ内のお知らせ</span></Link>
         <Link to="/handovers" className="settings-link"><strong>引き継ぎ</strong><span>朝・夜の共有メモ</span></Link>
+        <Link to="/planning/google-review" className="settings-link"><strong>Google予定の変更確認</strong><span>時間変更・削除・重複候補を確認</span></Link>
         <Link to="/settings/test-simulation" className="settings-link"><strong>🧪 1人テストモード</strong><span>1アカウントでお願い→返事→完了まで安全に試す</span></Link>
       </section>
       <CalendarIntegrationSettings />
