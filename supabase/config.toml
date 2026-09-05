@@ -181,6 +181,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.test-simulation]
 verify_jwt = true
+[functions.transport-schedule]
+verify_jwt = true
 
 # Q89-Q106 authenticated review/list/resolve/confirm/delete surfaces.
 [functions.get-nursery-review]
