@@ -77,6 +77,7 @@ const FIELD_LABELS: Record<string, string> = {
   location: '場所',
   details: '詳細',
   url: '実行先URL',
+  add_to_calendar: 'Google Calendarにも表示する',
   effective_from: '開始日',
   effective_to: '終了日',
   occurrence_date: '対象日',
@@ -118,16 +119,21 @@ function contextLabel(context: NurseryContext) {
   return [context.child_display_name, context.school_display_name, context.class_display_name].filter(Boolean).join('・');
 }
 
+function makeDraft(item: NurseryReviewItem): DraftItem {
+  const value: JsonObject = { ...item.proposed_value };
+  // Q104: Calendar is optional and must never be selected by image inference.
+  // The human review surface starts OFF and can explicitly choose ON.
+  if (item.item_kind === 'submission') value.add_to_calendar = false;
+  return {
+    selected: item.classification !== 'other',
+    value,
+    advancedJson: JSON.stringify(value, null, 2),
+    jsonError: null,
+  };
+}
+
 function buildDrafts(items: NurseryReviewItem[]): Record<string, DraftItem> {
-  return Object.fromEntries(items.map((item) => [
-    item.id,
-    {
-      selected: item.classification !== 'other',
-      value: { ...item.proposed_value },
-      advancedJson: JSON.stringify(item.proposed_value, null, 2),
-      jsonError: null,
-    },
-  ]));
+  return Object.fromEntries(items.map((item) => [item.id, makeDraft(item)]));
 }
 
 function ReviewItemEditor({
@@ -433,7 +439,7 @@ export function NurseryReviewPage() {
           <ReviewItemEditor
             key={item.id}
             item={item}
-            draft={drafts[item.id] ?? { selected: false, value: item.proposed_value, advancedJson: JSON.stringify(item.proposed_value, null, 2), jsonError: null }}
+            draft={drafts[item.id] ?? makeDraft(item)}
             onChange={(next) => setDrafts((current) => ({ ...current, [item.id]: next }))}
           />
         ))}
