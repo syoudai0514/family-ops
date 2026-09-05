@@ -39,9 +39,6 @@ function projectionDates(event: GooglePlanningOccurrence): string[] {
   if (!event.allDay) return [event.date];
   const endExclusive = event.allDayEndExclusive ?? addUtcDate(event.date, 1);
   const dates: string[] = [];
-  // Google and canonical all-day ranges use an exclusive display end here.
-  // The guard prevents a bad row from turning a Month/Week render into an
-  // unbounded loop.
   for (let date = event.date; date < endExclusive && dates.length < 366; date = addUtcDate(date, 1)) {
     dates.push(date);
   }
@@ -92,12 +89,8 @@ const isRoutine = (task: PlanningTask) =>
 
 function taskKind(task: PlanningTask): CalendarProjectionKind | null {
   if (isTransport(task)) return 'transport';
-  // Visibility is an explicit domain value. The legacy fallback is based only
-  // on persisted category/routine fields, never on a translated title.
   if (task.calendar_visibility === 'special') return 'special';
   if (task.calendar_visibility === 'hidden' || isRoutine(task)) return null;
-  // An unknown/legacy row is not a special event merely because it is
-  // non-routine. Calendar visibility must be an explicit persisted choice.
   return null;
 }
 
@@ -119,6 +112,26 @@ export function assigneeToken(ownerKindValue: CalendarOwnerKind) {
   if (ownerKindValue === 'partner') return 'M';
   if (ownerKindValue === 'family') return '家族';
   return '未';
+}
+
+function transportActorToken(userId: string | null, primaryUserId: string | null, partnerUserId: string | null) {
+  if (!userId) return null;
+  const token = assigneeToken(ownerKind(userId, primaryUserId, partnerUserId));
+  // Compact transport presentation is deliberately restricted to ASCII actor
+  // tokens. Unknown/family-wide values belong in detail UI rather than a narrow
+  // month/provider title.
+  return /^[A-Za-z]+$/.test(token) ? token : null;
+}
+
+export function transportCompactToken(
+  transport: TransportProjection | undefined,
+  primaryUserId: string | null,
+  partnerUserId: string | null,
+) {
+  if (!transport) return '';
+  const dropoff = transportActorToken(transport.dropoffAssigneeId, primaryUserId, partnerUserId);
+  const pickup = transportActorToken(transport.pickupAssigneeId, primaryUserId, partnerUserId);
+  return `${dropoff ? `送${dropoff}` : ''}${pickup ? `迎${pickup}` : ''}`;
 }
 
 export function transportTokens(transport: TransportProjection | undefined, primaryUserId: string | null, partnerUserId: string | null) {
@@ -189,9 +202,6 @@ export function buildCalendarProjection({
   }
   for (const event of occurrences) {
     const source = event.source ?? 'google';
-    // A Family Ops Google mirror remains represented by its canonical task,
-    // not the inbound Google occurrence. Native Family Events are independent
-    // canonical rows and are intentionally rendered below.
     if (source === 'google' && event.generatedByFamilyOps) continue;
     const owner = ownerKind(event.ownerUserId, primaryUserId, partnerUserId);
     const dates = projectionDates(event);
@@ -228,6 +238,12 @@ export function buildCalendarProjection({
 
 export function transportLabel(transport: TransportProjection | undefined, primaryUserId: string | null, partnerUserId: string | null) {
   if (!transport) return null;
-  const token = (id: string | null) => id ? assigneeToken(ownerKind(id, primaryUserId, partnerUserId)) : '—';
-  return `送 ${token(transport.dropoffAssigneeId)} ｜ 迎 ${token(transport.pickupAssigneeId)}`;
+  const name = (id: string | null) => {
+    const kind = ownerKind(id, primaryUserId, partnerUserId);
+    if (kind === 'primary') return 'パパ';
+    if (kind === 'partner') return 'ママ';
+    if (kind === 'family') return '家族';
+    return '未定';
+  };
+  return `送り：${name(transport.dropoffAssigneeId)} / 迎え：${name(transport.pickupAssigneeId)}`;
 }
