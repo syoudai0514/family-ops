@@ -15,6 +15,9 @@ export interface TaskChecklistItemProps {
   showTime?: boolean;
 }
 
+const EVIDENCE_MAX_BYTES = 2 * 1024 * 1024;
+const EVIDENCE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
 function assigneeLabel(task: TaskInstance, members: HouseholdMemberWithProfile[]): string {
   if (!task.planned_assignee_id) return '未定';
   const member = members.find((m) => m.user_id === task.planned_assignee_id);
@@ -31,6 +34,15 @@ function localClock(value: string | null) {
     minute: '2-digit',
     hour12: false,
   }).format(new Date(value));
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)));
+  }
+  return btoa(binary);
 }
 
 export function TaskChecklistItem({
@@ -51,6 +63,10 @@ export function TaskChecklistItem({
   const [editingWaiting, setEditingWaiting] = useState(false);
   const [waitingNote, setWaitingNote] = useState(task.waiting_note ?? '');
   const [nextCheckAt, setNextCheckAt] = useState(() => toDateTimeLocal(task.next_check_at));
+  const [editingEvidence, setEditingEvidence] = useState(false);
+  const [evidenceNote, setEvidenceNote] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidenceSaved, setEvidenceSaved] = useState(false);
   const doneSubtasks = subtasks.filter((item) => item.is_completed).length;
   const requiredSubtasks = subtasks.filter((item) => item.required);
   const optionalOnlyChecklist =
@@ -76,6 +92,8 @@ export function TaskChecklistItem({
   }
 
   function handleComplete() {
+    // Q106: this remains a direct one-tap command. Evidence is never required
+    // and is not collected before or during normal completion.
     void withOperation((operationId) =>
       callEdgeFunction(EDGE_FUNCTIONS.completeTask, {
         operation_id: operationId,
@@ -125,6 +143,40 @@ export function TaskChecklistItem({
       waiting_action: 'resume',
       expected_revision: task.revision ?? 1,
     }));
+  }
+
+  async function handleEvidenceSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setEvidenceSaved(false);
+    if (!evidenceNote.trim() && !evidenceFile) {
+      setError('メモまたは画像のどちらかを追加してください。');
+      return;
+    }
+    if (evidenceFile && (!EVIDENCE_MIME.has(evidenceFile.type) || evidenceFile.size > EVIDENCE_MAX_BYTES)) {
+      setError('画像はJPEG・PNG・WebP、2MB以下にしてください。');
+      return;
+    }
+    setBusy(true);
+    try {
+      const image = evidenceFile
+        ? { mime_type: evidenceFile.type, base64: await fileToBase64(evidenceFile) }
+        : undefined;
+      await callEdgeFunction(EDGE_FUNCTIONS.addTaskCompletionEvidence, {
+        operation_id: newOperationId(),
+        task_id: task.id,
+        note: evidenceNote.trim() || undefined,
+        image,
+      });
+      setEvidenceNote('');
+      setEvidenceFile(null);
+      setEditingEvidence(false);
+      setEvidenceSaved(true);
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '証跡を保存できませんでした。');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -214,6 +266,9 @@ export function TaskChecklistItem({
                 <button type="button" onClick={() => setEditingWaiting(true)} disabled={busy}>確認日を変更</button>
               </>
             )}
+            {completed && (
+              <button type="button" onClick={() => setEditingEvidence(true)} disabled={busy}>証跡を追加（任意）</button>
+            )}
             <button
               type="button"
               className="danger-button"
@@ -262,6 +317,19 @@ export function TaskChecklistItem({
         </form>
       )}
 
+      {editingEvidence && completed && (
+        <form className="task-waiting-editor" onSubmit={handleEvidenceSubmit}>
+          <p className="empty-hint">完了はすでに記録済みです。必要なときだけメモやスクリーンショットを残せます。</p>
+          <label>完了メモ（任意）<textarea rows={3} value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder="例: 提出完了、受付番号1234" /></label>
+          <label>画像（任意・2MBまで）<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)} /></label>
+          <div className="task-item-actions">
+            <button type="submit" disabled={busy}>証跡を保存</button>
+            <button type="button" className="text-button" onClick={() => setEditingEvidence(false)} disabled={busy}>やめる</button>
+          </div>
+        </form>
+      )}
+
+      {evidenceSaved && <p role="status" className="empty-hint">証跡を追加しました。</p>}
       {error && (
         <p role="alert" className="error-text task-checklist-error">
           {error}
