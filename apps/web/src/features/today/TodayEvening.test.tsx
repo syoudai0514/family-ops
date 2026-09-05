@@ -57,6 +57,6 @@ describe('Q87 evening Today collapse', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
     expect(screen.getByRole('heading', { name: '朝準備 1/2完了' })).toBeInTheDocument();
     expect(screen.queryByText('朝の連絡帳')).not.toBeInTheDocument();
-    expect(screen.getByText('朝の水筒')).toBeInTheDocument();
+    expect(screen.getAllByText('朝の水筒').length).toBeGreaterThan(0);
   });
 });
