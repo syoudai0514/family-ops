@@ -54,6 +54,10 @@ vi.mock('./DayAgendaSheet', () => ({
   DayAgendaSheet: ({ date }: { date: string }) => <div data-testid="day-agenda-sheet">detail:{date}</div>,
 }));
 
+vi.mock('./TransportOccurrenceOverrideModal', () => ({
+  TransportOccurrenceOverrideModal: ({ date }: { date: string }) => <div data-testid="transport-override-modal">override:{date}</div>,
+}));
+
 vi.mock('../tasks/TaskFormModal', () => ({
   TaskFormModal: ({ initialScheduledDate }: { initialScheduledDate?: string }) => (
     <div data-testid="task-form-modal">add:{initialScheduledDate}</div>
@@ -67,16 +71,17 @@ describe('MonthView inline day contract', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('selects a date inline first, then opens detail or add only from the summary actions', () => {
+  it('selects a date inline first, then opens detail, add, or one-day transport edit from the summary', () => {
     render(<MonthView />);
 
     expect(screen.queryByTestId('day-agenda-sheet')).not.toBeInTheDocument();
     expect(screen.queryByTestId('task-form-modal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('transport-override-modal')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '2026-09-06を選択' }));
 
     expect(screen.getByText('9/6 の予定')).toBeInTheDocument();
-    expect(screen.getByText('家族予定')).toBeInTheDocument();
+    expect(screen.getAllByText('家族予定').length).toBeGreaterThan(0);
     expect(screen.getByText('送り：パパ / 迎え：ママ')).toBeInTheDocument();
     expect(screen.getByText('水着を準備')).toBeInTheDocument();
     expect(screen.getAllByText('送P迎M').length).toBeGreaterThan(0);
@@ -87,5 +92,8 @@ describe('MonthView inline day contract', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'この日に追加' }));
     expect(screen.getByTestId('task-form-modal')).toHaveTextContent('add:2026-09-06');
+
+    fireEvent.click(screen.getByRole('button', { name: 'この日だけ変更' }));
+    expect(screen.getByTestId('transport-override-modal')).toHaveTextContent('override:2026-09-06');
   });
 });
