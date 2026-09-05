@@ -26,7 +26,20 @@ function useRequests(householdId: string | null) {
       .eq('household_id', householdId)
       .order('due_at', { ascending: true, nullsFirst: false });
     if (fetchError) setError(fetchError.message);
-    else setRequests(data ?? []);
+    else {
+      const rows = (data ?? []) as RequestRow[];
+      const taskIds = rows.map((row) => row.linked_task_instance_id).filter((id): id is string => Boolean(id));
+      if (taskIds.length > 0) {
+        const { data: tasks, error: taskError } = await supabase
+          .from('task_instances').select('id, revision, title, due_at').in('id', taskIds);
+        if (taskError) setError(taskError.message);
+        const byId = new Map((tasks ?? []).map((task) => [task.id, task]));
+        setRequests(rows.map((row) => {
+          const task = row.linked_task_instance_id ? byId.get(row.linked_task_instance_id) : undefined;
+          return task ? { ...row, linked_task_revision: task.revision, linked_task_title: task.title, linked_task_due_at: task.due_at } : row;
+        }));
+      } else setRequests(rows);
+    }
     setLoading(false);
   }, [householdId]);
 
@@ -197,7 +210,7 @@ function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onCha
       <div>
         <strong>{request.shared_title}</strong> — {request.assignment_task_instance_id ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}
         {request.shared_message && <p>{request.shared_message}</p>}
-        {request.due_at && <span className="task-item-meta">期限: {formatDateTimeJa(request.due_at)}</span>}
+        {request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}
       </div>
       {request.status === 'pending' && (
         <div className="task-item-actions">
@@ -257,7 +270,7 @@ function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onCha
       <div>
         <strong>{request.shared_title}</strong> — {statusLabel(request.status)}
         {request.shared_message && <p>{request.shared_message}</p>}
-        {request.due_at && <span className="task-item-meta">期限: {formatDateTimeJa(request.due_at)}</span>}
+        {request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}
       </div>
       {request.status === 'pending' && (
         <div className="task-item-actions">
@@ -266,12 +279,67 @@ function OutgoingRequestRow({ request, onChanged }: { request: RequestRow; onCha
           </button>
         </div>
       )}
+      {request.status === 'accepted' && (
+        <AcceptedRequestFollowup request={request} onChanged={onChanged} />
+      )}
       {error && (
         <p role="alert" className="error-text">
           {error}
         </p>
       )}
     </li>
+  );
+}
+
+function AcceptedRequestFollowup({ request, onChanged }: { request: RequestRow; onChanged: () => void }) {
+  const [mode, setMode] = useState<'change' | 'cancel' | null>(null);
+  const [title, setTitle] = useState(request.linked_task_title ?? request.shared_title);
+  const [replyDueAt, setReplyDueAt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canPropose = typeof request.revision === 'number' && typeof request.linked_task_revision === 'number';
+
+  async function submit() {
+    if (!mode || !canPropose) return;
+    if (mode === 'change' && !title.trim()) { setError('変更後の内容を入力してください。'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      await callEdgeFunction(EDGE_FUNCTIONS.startRequestFollowup, {
+        operation_id: newOperationId(), request_id: request.id, attempt_kind: mode,
+        task_patch: mode === 'change' ? { title: title.trim() } : undefined,
+        reply_due_at: replyDueAt ? new Date(replyDueAt).toISOString() : undefined,
+        expected_request_revision: request.revision,
+        expected_task_revision: request.linked_task_revision,
+      });
+      setMode(null);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '提案を送れませんでした。最新の状態を確認してください。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!request.linked_task_instance_id) return null;
+  return (
+    <div className="request-followup">
+      {!mode ? (
+        <div className="task-item-actions">
+          <button type="button" className="secondary-button" disabled={!canPropose} onClick={() => setMode('change')}>変更を相談</button>
+          <button type="button" className="text-button" disabled={!canPropose} onClick={() => setMode('cancel')}>取消を相談</button>
+        </div>
+      ) : (
+        <div className="stack-form request-followup-form">
+          <p className="task-item-meta">{mode === 'change' ? '変更案を二人で確認してから反映します。' : '取消は相手の確認後にだけ反映します。'}</p>
+          {mode === 'change' && <label>変更後の内容<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>}
+          <label>返事がほしい期限（任意）<input type="datetime-local" value={replyDueAt} onChange={(event) => setReplyDueAt(event.target.value)} /></label>
+          <div className="task-item-actions"><button type="button" disabled={busy} onClick={() => void submit()}>{busy ? '送信中…' : '確認をお願いする'}</button><button type="button" className="text-button" disabled={busy} onClick={() => setMode(null)}>やめる</button></div>
+        </div>
+      )}
+      {!canPropose && <p className="task-item-meta">このお願いは最新情報を読み直してから変更・取消できます。</p>}
+      {error && <p role="alert" className="error-text">{error}</p>}
+    </div>
   );
 }
 
@@ -370,7 +438,7 @@ function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage =
         <textarea value={message} onChange={(e) => setMessage(e.target.value)} required placeholder="AIで言い換えるか、直接入力してください" />
       </label>
       <label>
-        期限（任意）
+        作業期限（任意）
         <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
       </label>
       <p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>
@@ -384,7 +452,7 @@ function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage =
           <p className="line-preview-kicker">LINE · 送る側の確認</p>
           <h3>この内容で送りますか？</h3>
           <p className="line-preview-message">{message}</p>
-          <p className="line-preview-meta">{dueDate ? new Date(dueDate).toLocaleString('ja-JP') : '期限なし'} / 今回だけ</p>
+          <p className="line-preview-meta">{dueDate ? `作業期限: ${new Date(dueDate).toLocaleString('ja-JP')}` : '作業期限なし'} / 今回だけ</p>
           <p className="empty-hint">送るまでは、相手に通知されません。</p>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '送信中…' : 'LINEで送る'}</button></div>
         </section>

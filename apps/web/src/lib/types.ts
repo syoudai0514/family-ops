@@ -120,6 +120,10 @@ export interface RequestRow {
   cancelled_at: string | null;
   assignment_task_instance_id?: string | null;
   assignment_scope?: 'once' | 'this_week' | null;
+  revision?: number;
+  linked_task_revision?: number | null;
+  linked_task_title?: string | null;
+  linked_task_due_at?: string | null;
 }
 
 export type HandoverPeriod = 'morning' | 'day' | 'evening' | 'other';
