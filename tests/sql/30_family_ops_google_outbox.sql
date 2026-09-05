@@ -93,7 +93,7 @@ begin
   where not (household_id = v_hh_id and projection_key = 'transport:2026-09-01');
   v_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-30', 120);
   if v_claim->>'action' <> 'upsert'
-     or v_claim #>> '{event,summary}' <> '送 P ｜ 迎 M'
+     or v_claim #>> '{event,summary}' <> '送P迎M'
      or v_claim #>> '{event,start,date}' <> '2026-09-01'
      or v_claim #>> '{event,transparency}' <> 'transparent' then
     raise exception 'FAIL family-google-outbox: transport must be one transparent all-day P/M event, got %', v_claim;
@@ -108,7 +108,7 @@ begin
   update public.task_instances set planned_assignee_id = v_partner where id = v_dropoff_task;
   v_second_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-30-b', 120);
   if v_second_claim->>'provider_event_id' <> v_claim->>'deterministic_event_id'
-     or v_second_claim #>> '{event,summary}' <> '送 M ｜ 迎 M' then
+     or v_second_claim #>> '{event,summary}' <> '送M迎M' then
     raise exception 'FAIL family-google-outbox: accepted reassignment must PATCH the stable daily provider id, got %', v_second_claim;
   end if;
   perform public.server_tx_complete_family_ops_calendar_mirror(
