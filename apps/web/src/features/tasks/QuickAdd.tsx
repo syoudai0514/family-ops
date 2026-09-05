@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Modal } from '../../components/Modal';
 import { TaskFormModal } from './TaskFormModal';
 
-type QuickAddTarget = 'task' | 'event' | 'request' | 'shopping' | 'handover' | 'routine' | 'preparation';
+type QuickAddTarget = 'task' | 'event' | 'request' | 'shopping' | 'handover' | 'routine' | 'preparation' | 'nursery';
 
 export const quickAddOptions: ReadonlyArray<{
   target: QuickAddTarget;
@@ -15,6 +15,7 @@ export const quickAddOptions: ReadonlyArray<{
   { target: 'request', label: 'お願いを送る', detail: '担当変更や依頼' },
   { target: 'shopping', label: '買い物を追加' },
   { target: 'handover', label: '引き継ぎを書く' },
+  { target: 'nursery', label: '園のおたよりを確認', detail: 'LINEで送った画像の登録候補' },
   { target: 'routine', label: '定例を追加', detail: '送迎・朝夜家事の毎週ルール' },
   { target: 'preparation', label: '朝準備を編集' },
 ];
@@ -24,6 +25,7 @@ export function quickAddDestination(target: Exclude<QuickAddTarget, 'task'>) {
   if (target === 'request') return '/requests';
   if (target === 'shopping') return '/shopping';
   if (target === 'handover') return '/handovers';
+  if (target === 'nursery') return '/nursery/reviews';
   if (target === 'preparation') return '/settings/routines#morning-preparation';
   return '/settings/routines#custom-routines';
 }
@@ -42,8 +44,6 @@ export function QuickAdd({
   const [open, setOpen] = useState(false);
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const navigate = useNavigate();
-  // Keep the bottom-nav action rightmost; only the glyph is centered inside the button.
-  // Explicit geometry avoids font/padding differences on iOS shifting the plus visually.
   const isBottomNavAdd = className?.split(/\s+/).includes('bottom-nav-add') ?? false;
   const choose = (target: QuickAddTarget) => {
     setOpen(false);
