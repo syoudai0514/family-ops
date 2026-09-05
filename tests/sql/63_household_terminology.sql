@@ -4,8 +4,8 @@
 \set ON_ERROR_STOP on
 
 insert into auth.users (id) values
-  ('54000000-0000-0000-0000-000000000001'),
-  ('54000000-0000-0000-0000-000000000002');
+  ('63000000-0000-0000-0000-000000000001'),
+  ('63000000-0000-0000-0000-000000000002');
 
 set role service_role;
 
@@ -18,15 +18,15 @@ declare
   v_column_count integer;
 begin
   v_first := public.server_tx_create_household(
-    '54000000-0000-0000-0000-000000000001', gen_random_uuid(), 'Terminology A', 'Owner A'
+    '63000000-0000-0000-0000-000000000001', gen_random_uuid(), 'Terminology A', 'Owner A'
   );
   v_first_household := (v_first->>'household_id')::uuid;
   v_second := public.server_tx_create_household(
-    '54000000-0000-0000-0000-000000000002', gen_random_uuid(), 'Terminology B', 'Owner B'
+    '63000000-0000-0000-0000-000000000002', gen_random_uuid(), 'Terminology B', 'Owner B'
   );
 
   perform public.server_tx_replace_household_terminology(
-    '54000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    '63000000-0000-0000-0000-000000000001', gen_random_uuid(),
     jsonb_build_array(jsonb_build_object('phrase','送り','meaning','保育園の送り'))
   );
   select id into v_term_id from public.household_terminology
@@ -36,14 +36,14 @@ begin
   -- Edit is an explicit reconfirmation; deletion happens only when the user
   -- saves a reviewed list without that row.
   perform public.server_tx_replace_household_terminology(
-    '54000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    '63000000-0000-0000-0000-000000000001', gen_random_uuid(),
     jsonb_build_array(jsonb_build_object('id',v_term_id,'phrase','送り','meaning','保育園へ送る'))
   );
   if (select meaning from public.household_terminology where id = v_term_id) <> '保育園へ送る' then
     raise exception 'FAIL terminology: edit did not persist';
   end if;
   perform public.server_tx_replace_household_terminology(
-    '54000000-0000-0000-0000-000000000001', gen_random_uuid(), '[]'::jsonb
+    '63000000-0000-0000-0000-000000000001', gen_random_uuid(), '[]'::jsonb
   );
   if exists (select 1 from public.household_terminology where id = v_term_id) then
     raise exception 'FAIL terminology: deleted term remains active';
@@ -51,7 +51,7 @@ begin
 
   begin
     perform public.server_tx_replace_household_terminology(
-      '54000000-0000-0000-0000-000000000002', gen_random_uuid(),
+      '63000000-0000-0000-0000-000000000002', gen_random_uuid(),
       jsonb_build_array(jsonb_build_object('id',v_term_id,'phrase','送り','meaning','別家庭'))
     );
     raise exception 'FAIL terminology: another household may edit a removed foreign term';
