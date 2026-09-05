@@ -222,6 +222,48 @@ export function buildLineAddFlex(): Record<string, unknown> {
   };
 }
 
+export function buildMultiIntentPreviewFlex(data: {
+  pendingActionId: string;
+  candidates: Array<{ candidateId: string; kind: string; title: string; missingFields: string[] }>;
+}): Record<string, unknown> {
+  const label = (kind: string): string => ({ share: "共有", task: "タスク", shopping: "買い物", request: "お願い", actual: "実績" }[kind] ?? "候補");
+  const lines: Record<string, unknown>[] = data.candidates.slice(0, 5).flatMap((candidate) => [
+    row(label(candidate.kind), candidate.title),
+    ...(candidate.missingFields.length > 0 ? [{
+      type: "text", size: "xxs", color: "#B54708", wrap: true,
+      text: `確認が必要: ${candidate.missingFields.join("・")}`,
+    }] : []),
+    {
+      type: "button", style: "link", height: "sm",
+      action: {
+        type: "postback", label: `${candidate.title}を取り消す`,
+        data: `action=cancel_multi_candidate&pending_action_id=${data.pendingActionId}&candidate_id=${candidate.candidateId}`,
+        displayText: `${candidate.title}を取り消す`,
+      },
+    },
+  ]);
+  const hasMissing = data.candidates.some((candidate) => candidate.missingFields.length > 0);
+  return {
+    type: "flex",
+    altText: "読み取った内容を確認してください",
+    contents: {
+      type: "bubble", size: "mega",
+      header: { type: "box", layout: "vertical", paddingAll: "11px", backgroundColor: "#F2FBF7", contents: [
+        { type: "text", text: "この内容でよいですか？", weight: "bold", color: TEXT },
+        { type: "text", text: "候補ごとに取り消せます。不明な項目だけ確認します。", size: "xs", color: MUTED, margin: "xs" },
+      ] },
+      body: { type: "box", layout: "vertical", spacing: "xs", paddingAll: "10px", contents: lines },
+      footer: { type: "box", layout: "vertical", spacing: "xs", paddingAll: "5px", contents: [
+        ...(hasMissing ? [{ type: "text", size: "xs", color: "#B54708", wrap: true, text: "不明な箇所だけ教えてください。理解できている内容は残ります。" }] : [{
+          type: "button", style: "primary", color: LINE_GREEN, height: "sm",
+          action: { type: "postback", label: "まとめて登録", data: `action=confirm_pending&pending_action_id=${data.pendingActionId}`, displayText: "まとめて登録" },
+        }]),
+        { type: "button", style: "secondary", height: "sm", action: { type: "postback", label: "全部取り消す", data: `action=cancel_pending&pending_action_id=${data.pendingActionId}`, displayText: "全部取り消す" } },
+      ] },
+    },
+  };
+}
+
 export function buildIntentClarificationFlex(
   data: { pendingActionId: string; scheduleHint?: string | null },
 ): Record<string, unknown> {

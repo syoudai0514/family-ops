@@ -14,6 +14,34 @@ export type LineConversationCandidate = {
   missingFields: string[];
 };
 
+/** Durable, sender-private payload used by the existing pending-action queue. */
+export type LineMultiIntentPendingCandidate = {
+  candidate_id: string;
+  kind: LineConversationCandidate["kind"];
+  title: string;
+  source_text: string;
+  status: "draft" | "cancelled";
+  missing_fields: string[];
+  action_type: "task_create_once" | "shopping_item_add" | "request_create" | "handover_create" | "actual_record";
+  payload: Record<string, unknown>;
+};
+
+export function activeMultiIntentCandidates(
+  value: unknown,
+): LineMultiIntentPendingCandidate[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((candidate): candidate is LineMultiIntentPendingCandidate => {
+    if (!candidate || typeof candidate !== "object") return false;
+    const row = candidate as Record<string, unknown>;
+    return typeof row.candidate_id === "string" &&
+      typeof row.title === "string" &&
+      row.status === "draft" &&
+      Array.isArray(row.missing_fields) &&
+      typeof row.action_type === "string" &&
+      row.payload !== null && typeof row.payload === "object";
+  });
+}
+
 function title(value: string): string {
   return value.replace(/[。！!？?]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
 }

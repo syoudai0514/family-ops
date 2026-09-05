@@ -75,8 +75,14 @@ import {
   buildLineManagementFlex,
   buildLineMenuFlex,
   buildMissingTitleFlex,
+  buildMultiIntentPreviewFlex,
   buildScheduleSummaryFlex,
 } from "./lineUxBuilders.ts";
+import {
+  deterministicLineConversationCandidates,
+  isMultiIntentMessage,
+  type LineMultiIntentPendingCandidate,
+} from "./lineMultiIntent.ts";
 import { replyOrEnqueuePush } from "../_shared/lineMessaging.ts";
 import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
 import {
@@ -688,6 +694,194 @@ async function tryHandlePendingReferent(
   return true;
 }
 
+async function buildMultiIntentPendingCandidates(
+  client: SupabaseClient,
+  actor: LineActor,
+  text: string,
+): Promise<LineMultiIntentPendingCandidate[]> {
+  const candidates = deterministicLineConversationCandidates(text);
+  if (!isMultiIntentMessage(candidates)) return [];
+  const partner = await partnerUserId(client, actor);
+  return Promise.all(candidates.map(async (candidate) => {
+    const intent = candidate.intent;
+    const base = {
+      candidate_id: candidate.candidateId,
+      kind: candidate.kind,
+      title: candidate.title,
+      source_text: candidate.sourceText,
+      status: "draft" as const,
+      missing_fields: [...candidate.missingFields],
+    };
+    if (candidate.kind === "share") {
+      return {
+        ...base,
+        action_type: "handover_create" as const,
+        payload: { shared_text: candidate.title, period: "today", categories: ["general"] },
+      };
+    }
+    if (candidate.kind === "actual") {
+      // Natural language alone does not safely identify which canonical task
+      // receives an actual.  Ask only for that target; never create a fake
+      // completion or silently turn it into an unrelated note.
+      return {
+        ...base,
+        action_type: "actual_record" as const,
+        missing_fields: [...base.missing_fields, "実績にする作業"],
+        payload: { title: candidate.title, scheduled_date: jstIsoDateOffset(0) },
+      };
+    }
+    if (candidate.kind === "shopping") {
+      return {
+        ...base,
+        action_type: "shopping_item_add" as const,
+        payload: {
+          title: candidate.title,
+          purchase_method: /amazon|アマゾン/i.test(candidate.sourceText) ? "amazon" : "store",
+          assignee_user_id: intent?.targetRole
+            ? await householdUserForRole(client, actor.household_id, intent.targetRole)
+            : null,
+          scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
+          due_local_time: intent?.dueLocalTime ?? null,
+        },
+      };
+    }
+    if (candidate.kind === "request") {
+      return {
+        ...base,
+        action_type: "request_create" as const,
+        missing_fields: partner ? base.missing_fields : [...base.missing_fields, "お願いする相手"],
+        payload: {
+          title: candidate.title,
+          shared_message: intent?.sharedMessage ?? `${candidate.title}をお願いできますか？`,
+          recipient_user_id: partner,
+          scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
+          due_local_time: intent?.dueLocalTime ?? null,
+        },
+      };
+    }
+    return {
+      ...base,
+      action_type: "task_create_once" as const,
+      payload: {
+        title: candidate.title,
+        category: "todo",
+        scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
+        due_local_time: intent?.dueLocalTime ?? null,
+        planned_assignee_user_id: intent?.targetRole
+          ? await householdUserForRole(client, actor.household_id, intent.targetRole)
+          : actor.user_id,
+        routine_phase: "anytime",
+        calendar_visibility: intent?.calendarVisibility ?? "hidden",
+        subtasks: intent?.subtasks ?? [],
+      },
+    };
+  }));
+}
+
+async function tryCreateMultiIntentReview(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  text: string,
+): Promise<boolean> {
+  const candidates = await buildMultiIntentPendingCandidates(client, actor, text);
+  if (candidates.length === 0) return false;
+  const operationId = await deterministicOperationId("line-text", item.provider_event_id);
+  const { data, error } = await client.rpc("server_tx_create_pending_action", {
+    p_actor_id: actor.user_id,
+    p_household_id: actor.household_id,
+    p_operation_id: operationId,
+    p_source: "line",
+    p_action_type: "line_multi_intent_review",
+    p_normalized_payload: { raw_text: text, candidates },
+    p_ttl_minutes: PENDING_ACTION_TTL_MINUTES,
+  });
+  if (error || !data?.pending_action_id) {
+    console.error("process-line-inbox: create multi intent review failed", error?.message);
+    return true;
+  }
+  await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text: "読み取った内容を確認してください。",
+    message: buildMultiIntentPreviewFlex({
+      pendingActionId: String(data.pending_action_id),
+      candidates: candidates.map((candidate) => ({
+        candidateId: candidate.candidate_id,
+        kind: candidate.kind,
+        title: candidate.title,
+        missingFields: candidate.missing_fields,
+      })),
+    }),
+    dedupKey: `line-multi-intent-preview:${item.provider_event_id}`,
+  });
+  return true;
+}
+
+async function cancelMultiIntentCandidate(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  pendingActionId: string,
+  candidateId: string,
+): Promise<void> {
+  const pending = await getEditablePending(client, actor, pendingActionId);
+  if (!pending || pending.action_type !== "line_multi_intent_review") {
+    await sendConfirmation(client, item, actor, "この候補はすでに更新されています。最新の内容を確認してください。");
+    return;
+  }
+  const rows = Array.isArray(pending.normalized_payload.candidates)
+    ? pending.normalized_payload.candidates
+    : [];
+  let found = false;
+  const candidates = rows.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const candidate = row as Record<string, unknown>;
+    if (candidate.candidate_id !== candidateId) return candidate;
+    found = true;
+    return { ...candidate, status: "cancelled" };
+  });
+  if (!found) {
+    await sendConfirmation(client, item, actor, "その候補はすでに取り消されています。最新の内容を確認してください。");
+    return;
+  }
+  const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
+    ...pending.normalized_payload,
+    candidates,
+  });
+  if (!updated) return;
+  const active = candidates.filter((row): row is Record<string, unknown> =>
+    Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
+  );
+  if (active.length === 0) {
+    await client.rpc("server_tx_cancel_pending_action", {
+      p_actor_id: actor.user_id,
+      p_pending_action_id: updated.id,
+    });
+    await sendConfirmation(client, item, actor, "すべての候補を取り消しました。");
+    return;
+  }
+  await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text: "残した内容を確認してください。",
+    message: buildMultiIntentPreviewFlex({
+      pendingActionId: updated.id,
+      candidates: active.map((candidate) => ({
+        candidateId: String(candidate.candidate_id), kind: String(candidate.kind),
+        title: String(candidate.title),
+        missingFields: Array.isArray(candidate.missing_fields)
+          ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+      })),
+    }),
+    dedupKey: `line-multi-intent-cancel:${item.provider_event_id}:${candidateId}`,
+  });
+}
+
 function correctionRole(text: string): "papa" | "mama" | "self" | null {
   // Prefer the replacement at the end of a contrast, otherwise accept an
   // explicit short correction such as "パパに変更".  "ママじゃなくてパパ"
@@ -1212,6 +1406,20 @@ async function handlePostback(
   const data = item.payload.postback?.data;
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
+
+  if (
+    fields.action === "cancel_multi_candidate" &&
+    fields.pending_action_id && fields.candidate_id
+  ) {
+    await cancelMultiIntentCandidate(
+      client,
+      item,
+      actor,
+      fields.pending_action_id,
+      fields.candidate_id,
+    );
+    return;
+  }
 
   if (fields.action === "create_partner_invite" && fields.pending_action_id) {
     const pending = await getEditablePending(
@@ -1929,6 +2137,7 @@ async function handleText(
   if (await tryHandleReadOnlyText(client, item, actor, text)) return;
   if (await tryHandlePendingReferent(client, item, actor, text)) return;
   if (await tryApplyLineTextEdit(client, item, actor, text)) return;
+  if (await tryCreateMultiIntentReview(client, item, actor, text)) return;
 
   const starterKind = lineCreationStarterKind(text);
   const parsed = starterKind ? null : parseLineText(text);

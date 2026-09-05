@@ -11,6 +11,9 @@ import {
   extractLineIntent,
   toTaskSubtasks,
 } from '../process-line-inbox/lineIntent.ts';
+import {
+  activeMultiIntentCandidates,
+} from '../process-line-inbox/lineMultiIntent.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 const WORKER_ID = `process-pending-actions:${crypto.randomUUID()}`;
@@ -46,6 +49,20 @@ type PreparedDraft = {
 interface ExecutionOutcome {
   result_type: string;
   result_id: string | null;
+}
+
+async function derivedOperationId(parentOperationId: string, suffix: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`${parentOperationId}:${suffix}`),
+  );
+  const bytes = new Uint8Array(digest).slice(0, 16);
+  // RFC 4122 version/variant bits; same parent+candidate always gives the
+  // same child operation id across lease reclaim and webhook replay.
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((part) => part.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 async function userForRole(
@@ -415,6 +432,39 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
         result_type: 'request',
         result_id: (data as { request_id?: string })?.request_id ?? null,
       };
+    }
+    case 'handover_create': {
+      const { data, error } = await client.rpc('server_tx_create_handover_v2', {
+        p_actor_id: item.actor_id,
+        p_operation_id: item.operation_id,
+        p_shared_text: String(p.shared_text ?? ''),
+        p_period: String(p.period ?? 'today'),
+        p_categories: Array.isArray(p.categories) ? p.categories : ['general'],
+        p_occurred_on: null,
+        p_valid_until: null,
+        p_ack_policy: 'none',
+      });
+      if (error) throw new Error(error.message);
+      return {
+        result_type: 'handover',
+        result_id: (data as { handover_id?: string })?.handover_id ?? null,
+      };
+    }
+    case 'line_multi_intent_review': {
+      const candidates = activeMultiIntentCandidates(p.candidates);
+      if (candidates.length === 0) throw new Error('multi-intent review has no candidates');
+      if (candidates.some((candidate) => candidate.missing_fields.length > 0)) {
+        throw new Error('multi-intent review still needs clarification');
+      }
+      for (const candidate of candidates) {
+        await execute(client, {
+          ...item,
+          action_type: candidate.action_type,
+          normalized_payload: candidate.payload,
+          operation_id: await derivedOperationId(item.operation_id, candidate.candidate_id),
+        });
+      }
+      return { result_type: 'multi_intent', result_id: null };
     }
     default:
       throw new Error(`unsupported action_type: ${item.action_type}`);
