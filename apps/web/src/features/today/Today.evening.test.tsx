@@ -19,31 +19,32 @@ vi.mock('../../app/HouseholdContext', () => ({
   }),
 }));
 
-const completedMorning = {
-  id: 'morning-done', household_id: 'household-1', task_definition_id: null, recurrence_rule_id: null,
-  origin: 'recurring', title: '朝の洗濯', category: 'routine', task_kind: 'morning_chore', routine_phase: 'morning',
-  scheduled_date: '2026-09-05', due_at: null, planned_assignee_id: 'user-1', completion_mode: 'whole',
-  status: 'completed', actual_completed_by_id: 'user-1', completed_at: '2026-09-05T07:00:00+09:00',
-};
-const unresolvedMorning = {
-  ...completedMorning,
-  id: 'morning-problem', title: '朝の薬を確認', planned_assignee_id: null,
-  status: 'todo', actual_completed_by_id: null, completed_at: null,
-};
-
 vi.mock('./useTodayData', () => ({
-  useTodayData: () => ({
-    loading: false,
-    error: null,
-    tasks: [completedMorning, unresolvedMorning],
-    carryoverTasks: [],
-    subtasksByTaskId: new Map(),
-    incomingRequests: [],
-    unreadHandovers: [],
-    openShoppingItems: [],
-    briefSchedule: [],
-    refresh: vi.fn(),
-  }),
+  useTodayData: () => {
+    const completedMorning = {
+      id: 'morning-done', household_id: 'household-1', task_definition_id: null, recurrence_rule_id: null,
+      origin: 'recurring', title: '朝の洗濯', category: 'routine', task_kind: 'morning_chore', routine_phase: 'morning',
+      scheduled_date: '2026-09-05', due_at: null, planned_assignee_id: 'user-1', completion_mode: 'whole',
+      status: 'completed', actual_completed_by_id: 'user-1', completed_at: '2026-09-05T07:00:00+09:00',
+    };
+    const unresolvedMorning = {
+      ...completedMorning,
+      id: 'morning-problem', title: '朝の薬を確認', planned_assignee_id: null,
+      status: 'todo', actual_completed_by_id: null, completed_at: null,
+    };
+    return {
+      loading: false,
+      error: null,
+      tasks: [completedMorning, unresolvedMorning],
+      carryoverTasks: [],
+      subtasksByTaskId: new Map(),
+      incomingRequests: [],
+      unreadHandovers: [],
+      openShoppingItems: [],
+      briefSchedule: [],
+      refresh: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('./usePendingActions', () => ({
