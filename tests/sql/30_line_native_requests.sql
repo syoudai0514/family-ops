@@ -59,7 +59,7 @@ begin
     'f1000000-0000-0000-0000-000000000001', v_pending_id, 'task_create_once',
     jsonb_build_object('title', '病院の保険証を準備', 'scheduled_date', '2026-08-22',
       'due_local_time', '20:00', 'planned_assignee_user_id', 'f1000000-0000-0000-0000-000000000002'),
-    (v_result->>'revision')::bigint
+    (v_result->>'revision')::bigint, 1000
   );
   if v_result->'normalized_payload'->>'planned_assignee_user_id' <> 'f1000000-0000-0000-0000-000000000002'
      or (v_result->>'revision')::bigint <> 1 then
@@ -75,7 +75,7 @@ begin
     jsonb_build_object('title', '病院の保険証を準備', 'scheduled_date', '2026-08-22',
       'due_local_time', '20:00', 'planned_assignee_user_id', 'f1000000-0000-0000-0000-000000000002',
       'line_edit_mode', true),
-    (v_result->>'revision')::bigint
+    (v_result->>'revision')::bigint, 2000
   );
   v_result := public.server_tx_get_line_pending_text_edit('f1000000-0000-0000-0000-000000000001');
   if (v_result->>'id')::uuid <> v_pending_id or v_result->'normalized_payload'->>'line_edit_mode' <> 'true'
@@ -103,7 +103,7 @@ begin
   begin
     perform public.server_tx_update_pending_action(
       'f1000000-0000-0000-0000-000000000001', v_pending_id, 'task_create_once', '{}'::jsonb,
-      (v_result->>'revision')::bigint
+      (v_result->>'revision')::bigint, 3000
     );
     raise exception 'FAIL line-native: confirmed preview must not be editable';
   exception when others then
