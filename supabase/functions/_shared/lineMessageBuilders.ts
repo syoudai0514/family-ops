@@ -6,6 +6,7 @@ export type AssignmentChangeLineData = {
   title: string;
   message: string;
   scope: "once" | "this_week";
+  otherResponseUrl?: string;
 };
 
 export function rewritePickupRequest(rawText: string): string {
@@ -269,6 +270,7 @@ export function buildGeneralRequestFlex(data: {
   acceptPendingActionId: string;
   declinePendingActionId: string;
   scheduleLabel?: string;
+  otherResponseUrl?: string;
 }): Record<string, unknown> {
   return {
     type: "flex",
@@ -327,6 +329,7 @@ export function buildGeneralRequestFlex(data: {
           data:
             `action=confirm_pending&pending_action_id=${data.declinePendingActionId}`,
         },
+        ...(data.otherResponseUrl ? [{ label: "その他の返答", uri: data.otherResponseUrl, type: "uri" as const }] : []),
       ]),
     },
   };
@@ -382,6 +385,7 @@ export function buildAssignmentRequestFlex(
           label: "難しい",
           data: `action=decline_assignment_change&request_id=${data.requestId}`,
         },
+        ...(data.otherResponseUrl ? [{ label: "その他の返答", uri: data.otherResponseUrl, type: "uri" as const }] : []),
       ]),
     },
   };

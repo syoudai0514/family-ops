@@ -118,26 +118,28 @@ Deno.test(
   },
 );
 
-Deno.test('two primary request responses share one horizontal row', () => {
+Deno.test('request Flex keeps the primary pair compact and adds a PWA other-response path', () => {
   const message = buildAssignmentRequestFlex({
     requestId: 'request-compact',
     title: '今日のお迎え',
     message: 'お願いできますか？',
     scope: 'once',
+    otherResponseUrl: 'https://example.test/requests?request=request-compact&response=other',
   }) as {
     contents: {
       footer: {
-        contents: Array<{
-          type: 'box';
-          layout: string;
-          contents: Array<{ action: { label: string } }>;
-        }>;
+        contents: Array<
+          | { type: 'button'; action: { label: string } }
+          | { type: 'box'; layout: string; contents: Array<{ action: { label: string } }> }
+        >;
       };
     };
   };
   const row = message.contents.footer.contents[0];
-  assertEquals(row.layout, 'horizontal');
-  assertEquals(row.contents.map((button) => button.action.label), ['やる', '難しい']);
+  assertEquals((row as { action: { label: string } }).action.label, 'やる');
+  const secondaryRow = message.contents.footer.contents[1];
+  assertEquals((secondaryRow as { layout: string }).layout, 'horizontal');
+  assertEquals((secondaryRow as { contents: Array<{ action: { label: string } }> }).contents.map((button) => button.action.label), ['難しい', 'その他の返答']);
 });
 
 Deno.test(

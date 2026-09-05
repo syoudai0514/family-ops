@@ -60,6 +60,8 @@ export function Requests() {
     ? (location.state as { pendingActionRawText: string }).pendingActionRawText
     : '';
   const pendingId = new URLSearchParams(location.search).get('pending');
+  const otherResponseRequestId = new URLSearchParams(location.search).get('response') === 'other'
+    ? new URLSearchParams(location.search).get('request') : null;
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [pendingLoadError, setPendingLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(() => Boolean(pendingId) || new URLSearchParams(location.search).has('date') || Boolean(pendingActionRawText));
@@ -139,7 +141,7 @@ export function Requests() {
         ) : (
           <ul className="request-list">
             {incoming.map((r) => (
-              <IncomingRequestRow key={r.id} request={r} onChanged={refresh} />
+              <IncomingRequestRow key={r.id} request={r} onChanged={refresh} initialShowOther={r.id === otherResponseRequestId} />
             ))}
           </ul>
         )}
@@ -178,10 +180,10 @@ function statusLabel(status: RequestRow['status']): string {
   }
 }
 
-function IncomingRequestRow({ request, onChanged }: { request: RequestRow; onChanged: () => void }) {
+function IncomingRequestRow({ request, onChanged, initialShowOther = false }: { request: RequestRow; onChanged: () => void; initialShowOther?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showOther, setShowOther] = useState(false);
+  const [showOther, setShowOther] = useState(initialShowOther);
 
   async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     setBusy(true);

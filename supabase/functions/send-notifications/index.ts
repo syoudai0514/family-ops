@@ -158,6 +158,8 @@ function buildRichRequestMessage(
     (candidate) => candidate.type === 'request_received' && Boolean(candidate.payload?.request_id),
   );
   if (!item?.payload?.request_id) return null;
+  const appBaseUrl = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
+  const otherResponseUrl = appBaseUrl ? `${appBaseUrl}/requests?request=${encodeURIComponent(item.payload.request_id)}&response=other` : undefined;
 
   if (item.payload.request_kind === 'assignment_change') {
     return buildAssignmentRequestFlex({
@@ -165,6 +167,7 @@ function buildRichRequestMessage(
       title: item.title ?? '担当変更',
       message: item.body ?? '',
       scope: item.payload.scope ?? 'once',
+      otherResponseUrl,
     });
   }
 
@@ -194,6 +197,7 @@ function buildRichRequestMessage(
     acceptPendingActionId,
     declinePendingActionId,
     scheduleLabel: label,
+    otherResponseUrl,
   });
 }
 
