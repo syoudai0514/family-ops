@@ -656,6 +656,51 @@ async function tryHandlePendingReferent(
     return true;
   }
 
+  if (pending.action_type === "line_multi_intent_review") {
+    const candidates = Array.isArray(pending.normalized_payload.candidates)
+      ? pending.normalized_payload.candidates.filter((row): row is Record<string, unknown> =>
+        Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
+      )
+      : [];
+    if (/だけやめて|取り消|キャンセル/.test(text)) {
+      const matched = candidates.filter((candidate) => {
+        const title = typeof candidate.title === "string" ? candidate.title : "";
+        return title.length > 0 && text.includes(title);
+      });
+      if (matched.length === 1) {
+        await cancelMultiIntentCandidate(
+          client, item, actor, pending.id, String(matched[0].candidate_id),
+        );
+        return true;
+      }
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "どの内容を取り消すかだけ教えてください。ほかの候補は残します。",
+      );
+      return true;
+    }
+    if (isPendingReferentQuestion(text)) {
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        `確認待ちは${candidates.map((candidate) => `「${String(candidate.title)}」`).join("、")}です。`,
+      );
+      return true;
+    }
+    // A group correction needs a target candidate.  Do not reinterpret a
+    // bare date/role message as a new input or silently update every item.
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "どの内容を直すかだけ添えてください。理解できている候補はそのまま残します。",
+    );
+    return true;
+  }
+
   if (/だけやめて|取り消|キャンセル/.test(text)) {
     // With a single pending candidate this is an unambiguous cancellation.
     // Grouped candidates use their own candidate id and never enter here.
