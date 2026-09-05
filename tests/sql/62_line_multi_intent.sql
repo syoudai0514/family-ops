@@ -44,7 +44,7 @@ begin
       jsonb_build_object('candidate_id','c1','kind','task','title','水着を準備','status','draft','missing_fields','[]'::jsonb,'action_type','task_create_once','payload',jsonb_build_object('title','水着を準備')),
       jsonb_build_object('candidate_id','c2','kind','shopping','title','牛乳','status','cancelled','missing_fields','[]'::jsonb,'action_type','shopping_item_add','payload',jsonb_build_object('title','牛乳'))
     )),
-    (v_current->>'revision')::bigint
+    (v_current->>'revision')::bigint, 1000
   );
   if v_updated->'normalized_payload'->'candidates'->1->>'status' <> 'cancelled'
      or (v_updated->>'revision')::bigint <> 1 then
@@ -53,7 +53,7 @@ begin
   begin
     perform public.server_tx_update_pending_action(
       'a2000000-0000-0000-0000-000000000002', v_pending_id, 'line_multi_intent_review', '{}'::jsonb,
-      (v_updated->>'revision')::bigint
+      (v_updated->>'revision')::bigint, 2000
     );
     raise exception 'FAIL line-multi: partner must not alter sender grouped draft';
   exception when others then
