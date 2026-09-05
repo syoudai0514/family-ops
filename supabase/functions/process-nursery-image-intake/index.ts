@@ -12,6 +12,7 @@ type Claimed = {
 type ContextRow = { id: string; school_display_name: string; class_display_name: string | null; recognition_aliases: string[] | null };
 type ReviewItem = { candidate_key: string; origin: 'source_explicit'|'ai_inference'; item_kind: string; classification?: string | null; source_page: number; source_locator?: string; confidence_band: 'high'|'medium'|'low'; proposed_value: Record<string, unknown> };
 type ModelResult = NurseryAnalysis & { review_items: ReviewItem[] };
+type PreviousImage = { found: boolean; intake_id?: string; received_at?: string; page_index?: number | null };
 
 const WORKER_ID = `process-nursery-image-intake:${crypto.randomUUID()}`;
 
@@ -27,7 +28,7 @@ async function fetchLineImage(messageId: string): Promise<{ bytes: Uint8Array; c
   return { bytes, contentType: response.headers.get('content-type') ?? 'image/jpeg' };
 }
 
-async function analyzeImage(bytes: Uint8Array, contentType: string, contexts: ContextRow[]): Promise<ModelResult> {
+async function analyzeImage(bytes: Uint8Array, contentType: string, contexts: ContextRow[], hasRecentPage: boolean): Promise<ModelResult> {
   const apiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
   const model = Deno.env.get('GEMINI_MODEL_VISION') ?? Deno.env.get('GEMINI_MODEL_REWRITE') ?? '';
   if (!apiKey || !model) throw new Error('GEMINI_NOT_CONFIGURED');
@@ -37,9 +38,10 @@ async function analyzeImage(bytes: Uint8Array, contentType: string, contexts: Co
     'First decide triage: ordinary_photo, nursery_notice, or needs_clarification. Ordinary family photos must not be extracted.',
     'Never return names/contact/address/roster/other-child data. Include only facts/actions for the selected household child/class.',
     'Contexts: '+JSON.stringify(contexts),
+    `A recent image page from the same LINE sender exists within 10 minutes: ${hasRecentPage ? 'yes' : 'no'}. Set same_document_as_previous=true only when this image itself gives evidence it continues that notice (page numbering, repeated heading/layout/context, or explicit continuation). Time proximity alone is not enough.`,
     'Schema: {triage,same_document_as_previous,child_school_context_id,context_confidence,ambiguous_fields,source_facts,ai_candidates,review_items}.',
-    'review_items entries: candidate_key, origin(source_explicit|ai_inference), item_kind(preparation|task|timetable|submission|url|recurrence|exception), classification(recommended|other only for timetable), source_page, source_locator, confidence_band, proposed_value.',
-    'For URL use proposed_value {title,due_date,url}; only http/https. For tasks use {title,due_date}. For recurrence always include effective_from/effective_to <= 366 days and rule_spec.',
+    'review_items entries: candidate_key, origin(source_explicit|ai_inference), item_kind(preparation|task|timetable|shared_info|submission|url|recurrence|exception), classification(recommended|other only for timetable), source_page, source_locator, confidence_band, proposed_value.',
+    'For timetable use proposed_value {title,date,location?,details?}. For shared_info use {text,date?}. For URL use proposed_value {title,due_date,url}; only http/https. For tasks use {title,due_date}. For recurrence always include effective_from/effective_to <= 366 days and rule_spec.',
     'Keep Other timetable items. Ask ambiguity only for nursery/child/class/date/document_group.',
   ].join('\n');
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
@@ -65,15 +67,18 @@ Deno.serve(withServiceHandler(async (req: Request) => {
   const { data, error } = await client.rpc('server_tx_claim_nursery_line_images', { p_limit: 5, p_worker: WORKER_ID });
   if (error) throw error;
   const claimed = (data ?? []) as Claimed[];
-  const previousBySender = new Map<string, Claimed>();
   let processed=0;
   for (const item of claimed) {
     try {
       if (Deno.env.get('TEST_MODE') === '1') throw new Error('TEST_MODE_PROVIDER_READ_DISABLED');
+      const { data: previousData, error: previousError } = await client.rpc('server_read_previous_nursery_image',{p_current_id:item.id});
+      if (previousError) throw previousError;
+      const previous = (previousData ?? {found:false}) as PreviousImage;
+
       const image = await fetchLineImage(item.line_message_id);
       const { data: contexts, error: contextsError } = await client.from('child_school_contexts').select('id,school_display_name,class_display_name,recognition_aliases').eq('household_id',item.household_id);
       if (contextsError) throw contextsError;
-      const analysis = await analyzeImage(image.bytes,image.contentType,(contexts ?? []) as ContextRow[]);
+      const analysis = await analyzeImage(image.bytes,image.contentType,(contexts ?? []) as ContextRow[],previous.found === true);
       if (analysis.triage === 'ordinary_photo') {
         const { error: finishError } = await client.rpc('server_tx_finish_nursery_image_review',{ p_intake_id:item.id,p_expected_revision:item.revision,p_status:'ordinary_photo',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:true });
         if (finishError) throw finishError; processed++; continue;
@@ -88,12 +93,18 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       const status = analysis.ambiguous_fields.length > 0 || analysis.triage === 'needs_clarification' ? 'needs_clarification' : 'review_ready';
       const { data: finished, error: recordError } = await client.rpc('server_tx_record_nursery_line_analysis',{p_intake_id:item.id,p_expected_revision:preparedRevision,p_child_school_context_id:analysis.child_school_context_id,p_context_confidence:analysis.context_confidence,p_ambiguity_fields:analysis.ambiguous_fields,p_source_facts:[],p_ai_candidates:[],p_review_items:analysis.review_items,p_status:status});
       if (recordError) throw recordError;
-      const previous = previousBySender.get(`${item.household_id}:${item.line_user_id}`);
-      if (previous && mayGroupNurseryPages({sameDocumentAsPrevious:analysis.same_document_as_previous,sameHousehold:true,sameLineUser:true,elapsedSeconds:(Date.parse(item.received_at)-Date.parse(previous.received_at))/1000,currentPageCount:1})) {
-        const { error: groupError } = await client.rpc('server_tx_group_nursery_image_pages',{p_previous_id:previous.id,p_current_id:item.id,p_expected_current_revision:Number(finished.revision)});
+
+      if (previous.found && previous.intake_id && previous.received_at && mayGroupNurseryPages({
+        sameDocumentAsPrevious:analysis.same_document_as_previous,
+        sameHousehold:true,
+        sameLineUser:true,
+        elapsedSeconds:(Date.parse(item.received_at)-Date.parse(previous.received_at))/1000,
+        currentPageCount:Math.max(1,Number(previous.page_index ?? 1)),
+      })) {
+        const { error: groupError } = await client.rpc('server_tx_group_nursery_image_pages',{p_previous_id:previous.intake_id,p_current_id:item.id,p_expected_current_revision:Number(finished.revision)});
         if (groupError) console.warn('nursery grouping deferred', { intakeId:item.id,message:groupError.message });
       }
-      previousBySender.set(`${item.household_id}:${item.line_user_id}`,item); processed++;
+      processed++;
     } catch (err) {
       console.error('process-nursery-image-intake failed',{intakeId:item.id,message:err instanceof Error?err.message:String(err)});
       try { await client.rpc('server_tx_finish_nursery_image_review',{p_intake_id:item.id,p_expected_revision:item.revision,p_status:'failed',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:false}); } catch { /* stale/prepared rows remain auditable for retry/remediation */ }
