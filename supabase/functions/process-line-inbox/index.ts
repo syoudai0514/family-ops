@@ -667,7 +667,10 @@ async function tryHandlePendingReferent(
   const role = correctionRole(text);
   const date = correctionDate(text);
   if (!role && !date) return false; // ambiguous: do not mutate a guessed field
-  const payload = { ...pending.normalized_payload, line_edit_mode: false };
+  const payload: Record<string, unknown> = {
+    ...pending.normalized_payload,
+    line_edit_mode: false,
+  };
   if (date) payload.scheduled_date = date;
   if (role) {
     const assignee = role === "self" ? actor.user_id : await householdUserForRole(client, actor.household_id, role);
