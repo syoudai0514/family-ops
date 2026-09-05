@@ -66,6 +66,28 @@ describe('NurseryReviewPage', () => {
     expect(screen.getByText('その他の予定 — 消さずに確認できます')).toBeInTheDocument();
   });
 
+  it('shows a reviewed family-share candidate with editable share text and date', async () => {
+    callEdgeFunction.mockImplementation((name: string) => {
+      if (name === 'get-nursery-review') return Promise.resolve({
+        ...REVIEW,
+        items: [
+          ...REVIEW.items,
+          {
+            id: 'item-share', candidate_key: 'share', origin: 'source_explicit', item_kind: 'shared_info', classification: null,
+            source_document_id: 'doc-1', source_page: 2, source_locator: '注意事項',
+            proposed_value: { text: '当日は園指定の体操服で登園', date: '2026-10-08' }, confidence_band: 'high', previous_confirmed_item_id: null,
+          },
+        ],
+      });
+      return Promise.resolve({});
+    });
+    renderReview();
+    expect(await screen.findByRole('heading', { name: '家族への共有' })).toBeInTheDocument();
+    expect(screen.getByLabelText('共有内容')).toHaveValue('当日は園指定の体操服で登園');
+    expect(screen.getByLabelText('日付')).toHaveAttribute('type', 'date');
+    expect(screen.getByText('出典: 画像 2ページ目 · 注意事項')).toBeInTheDocument();
+  });
+
   it('sends only selected candidates and carries the human-edited field to confirm', async () => {
     renderReview();
     await screen.findByRole('heading', { name: 'この内容で登録しますか？' });
