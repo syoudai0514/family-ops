@@ -9,6 +9,7 @@ import { CheckinPage } from '../features/checkin/CheckinPage';
 import { HistoryPage } from '../features/history/HistoryPage';
 import { WeekView } from '../features/planning/WeekView';
 import { MonthView } from '../features/planning/MonthView';
+import { GoogleEventReviewPage } from '../features/planning/GoogleEventReviewPage';
 import { SettingsHome } from '../features/settings/SettingsHome';
 import { CategorySettings } from '../features/settings/CategorySettings';
 import { HouseholdTerminology } from '../features/settings/HouseholdTerminology';
@@ -75,6 +76,7 @@ export function AppShell() {
         <Route path="/today" element={<Today />} />
         <Route path="/week" element={<WeekView />} />
         <Route path="/month" element={<MonthView />} />
+        <Route path="/planning/google-review" element={<GoogleEventReviewPage />} />
         <Route path="/events/new" element={<EventPlanPage />} />
         <Route path="/nursery/reviews" element={<NurseryReviewPage />} />
         <Route path="/nursery/reviews/:intakeId" element={<NurseryReviewPage />} />
