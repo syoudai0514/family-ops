@@ -146,6 +146,34 @@ describe('NurseryReviewPage', () => {
     ));
   });
 
+  it('keeps an uncertain URL/destination unselected until the human opts in', async () => {
+    callEdgeFunction.mockImplementation((name: string) => {
+      if (name === 'get-nursery-review') return Promise.resolve({
+        ...REVIEW,
+        items: [{
+          id: 'item-target', candidate_key: 'execution-target', origin: 'ai_inference', item_kind: 'url', classification: null,
+          source_document_id: 'doc-1', source_page: 1, source_locator: 'p1:url1',
+          proposed_value: { title: '申込書を提出', due_date: '2026-09-23', destination: '園事務室の提出箱' }, confidence_band: 'low', previous_confirmed_item_id: null,
+        }],
+      });
+      if (name === 'confirm-nursery-review') return Promise.resolve({ confirmed: true, intake_id: 'intake-1' });
+      return Promise.resolve({});
+    });
+    renderReview();
+    expect(await screen.findByRole('heading', { name: 'URL / QR / 提出先' })).toBeInTheDocument();
+    expect(screen.getByLabelText('提出先・実行先')).toHaveValue('園事務室の提出箱');
+    expect(screen.getByText(/実行先の読み取りに確信がないため未選択/)).toBeInTheDocument();
+    const select = screen.getByRole('checkbox', { name: '登録する' });
+    expect(select).not.toBeChecked();
+    expect(screen.getByRole('button', { name: '選んだ0件を登録' })).toBeInTheDocument();
+    fireEvent.click(select);
+    fireEvent.click(screen.getByRole('button', { name: '選んだ1件を登録' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith(
+      'confirm-nursery-review',
+      expect.objectContaining({ selected_items: [expect.objectContaining({ review_item_id: 'item-target' })] }),
+    ));
+  });
+
   it('requires ambiguity resolution before confirmation and resolves only through the CAS endpoint', async () => {
     callEdgeFunction.mockImplementation((name: string) => {
       if (name === 'get-nursery-review') return Promise.resolve({
