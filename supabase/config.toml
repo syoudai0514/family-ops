@@ -180,8 +180,12 @@ verify_jwt = true
 [functions.test-simulation]
 verify_jwt = true
 
-# Q89-Q106 authenticated review/confirm/delete surfaces.
+# Q89-Q106 authenticated review/list/resolve/confirm/delete surfaces.
 [functions.get-nursery-review]
+verify_jwt = true
+[functions.list-nursery-reviews]
+verify_jwt = true
+[functions.resolve-nursery-ambiguity]
 verify_jwt = true
 [functions.confirm-nursery-review]
 verify_jwt = true
