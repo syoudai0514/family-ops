@@ -10,12 +10,24 @@ import type {
   TaskSubtaskInstance,
 } from '../../lib/types';
 
+export interface TaskExecutionTarget {
+  id: string;
+  household_id: string;
+  task_instance_id: string;
+  target_kind: 'url' | 'destination';
+  label: string | null;
+  url: string | null;
+  destination: string | null;
+  created_at: string;
+}
+
 export interface TodayData {
   loading: boolean;
   error: string | null;
   tasks: TaskInstance[];
   carryoverTasks: TaskInstance[];
   subtasksByTaskId: Map<string, TaskSubtaskInstance[]>;
+  executionTargetsByTaskId: Map<string, TaskExecutionTarget>;
   incomingRequests: RequestRow[];
   unreadHandovers: Handover[];
   openShoppingItems: ShoppingItem[];
@@ -60,6 +72,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
   const [carryoverTasks, setCarryoverTasks] = useState<TaskInstance[]>([]);
   const [subtasksByTaskId, setSubtasksByTaskId] = useState<Map<string, TaskSubtaskInstance[]>>(new Map());
+  const [executionTargetsByTaskId, setExecutionTargetsByTaskId] = useState<Map<string, TaskExecutionTarget>>(new Map());
   const [incomingRequests, setIncomingRequests] = useState<RequestRow[]>([]);
   const [unreadHandovers, setUnreadHandovers] = useState<Handover[]>([]);
   const [openShoppingItems, setOpenShoppingItems] = useState<ShoppingItem[]>([]);
@@ -202,26 +215,42 @@ export function useTodayData(householdId: string | null, userId: string | null):
         setBriefSchedule(brief.schedule ?? []);
       }
 
+      const visibleTaskIds = [...new Set([...taskRows, ...carryoverRows].map((task) => task.id))];
       const subtaskModeTaskIds = [...taskRows, ...carryoverRows]
         .filter((task) => task.completion_mode === 'subtasks')
         .map((task) => task.id);
-      if (subtaskModeTaskIds.length > 0) {
-        const { data: subtaskRows, error: subtaskError } = await supabase
-          .from('task_subtask_instances')
-          .select('*')
-          .in('task_instance_id', subtaskModeTaskIds)
-          .order('sort_order', { ascending: true });
-        if (subtaskError) throw subtaskError;
-        const grouped = new Map<string, TaskSubtaskInstance[]>();
-        for (const row of subtaskRows ?? []) {
-          const list = grouped.get(row.task_instance_id) ?? [];
-          list.push(row);
-          grouped.set(row.task_instance_id, list);
-        }
-        setSubtasksByTaskId(grouped);
-      } else {
-        setSubtasksByTaskId(new Map());
+
+      const [subtaskResult, targetResult] = await Promise.all([
+        subtaskModeTaskIds.length > 0
+          ? supabase
+              .from('task_subtask_instances')
+              .select('*')
+              .in('task_instance_id', subtaskModeTaskIds)
+              .order('sort_order', { ascending: true })
+          : Promise.resolve({ data: [] as TaskSubtaskInstance[], error: null }),
+        visibleTaskIds.length > 0
+          ? supabase
+              .from('task_execution_targets')
+              .select('*')
+              .eq('household_id', householdId)
+              .in('task_instance_id', visibleTaskIds)
+          : Promise.resolve({ data: [] as TaskExecutionTarget[], error: null }),
+      ]);
+
+      if (subtaskResult.error) throw subtaskResult.error;
+      if (targetResult.error) throw targetResult.error;
+
+      const groupedSubtasks = new Map<string, TaskSubtaskInstance[]>();
+      for (const row of subtaskResult.data ?? []) {
+        const list = groupedSubtasks.get(row.task_instance_id) ?? [];
+        list.push(row);
+        groupedSubtasks.set(row.task_instance_id, list);
       }
+      setSubtasksByTaskId(groupedSubtasks);
+
+      const targetMap = new Map<string, TaskExecutionTarget>();
+      for (const row of targetResult.data ?? []) targetMap.set(row.task_instance_id, row as TaskExecutionTarget);
+      setExecutionTargetsByTaskId(targetMap);
     } catch (err) {
       setError(err instanceof Error ? err.message : '読み込みに失敗しました。');
     } finally {
@@ -241,6 +270,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
     tasks,
     carryoverTasks,
     subtasksByTaskId,
+    executionTargetsByTaskId,
     incomingRequests,
     unreadHandovers,
     openShoppingItems,
