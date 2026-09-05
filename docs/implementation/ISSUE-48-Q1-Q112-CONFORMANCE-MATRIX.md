@@ -8,10 +8,10 @@
 | CURRENT main read | `f85cbb0574731138db3972ec8ad093d86020fad4` (`2026-09-05`) |
 | Working branch | `impl/issue-48-ux-closeout` |
 | PR | [#50](https://github.com/syoudai0514/family-ops/pull/50) (Draft) |
-| Exact head / CI | Review-remediation commits are `5577b5559a27bafabb4c0d427f06c32d6f660ef1` and `d7c9af2`; remote exact head/CI is recorded only after the PR branch update. |
+| Exact head / CI | `bb4b9dc97071cbeabb8e883f4160a54d0f94c5b7`; full CI #447 is green (Web, Edge, DB, real Supabase CLI integration). |
 | Scope boundary | Source implementation and review handoff only. No main merge, production change, real LINE test delivery, or provider mutation. |
 | Assessed | **112/112** (no unassessed decisions) |
-| Remaining gaps | Independent review H1–H5/M1–M5 are being re-verified on this branch. Physical iPhone capture remains intentionally gated pending a reviewed device/environment; no production mutation is authorized. |
+| Remaining gaps | H1–H5/M1–M5 are implemented; final CI must run on the final documentation head. Physical iPhone capture remains intentionally gated pending a reviewed device/environment; no production mutation is authorized. |
 
 ## Status vocabulary
 
@@ -38,7 +38,7 @@ All canonical anchors below are `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BA
 | Q13 | Show future owner; allow early execution | Q13 | week/month projections, task completion | PASS | planning tests |
 | Q14 | No reminder only because early work possible | Q14 | notification policy | PASS | notification tests |
 | Q15 | Partner early work shown only if load reduces | Q15 | DailyBrief summary policy | PASS | design/current/04 |
-| Q16 | Share confirmation depends on importance | Q16; Q37 | `Handovers.tsx` displays required acknowledgement distinctly | UI_GAP | Creation-time importance selection remains to be verified against canonical create command |
+| Q16 | Share confirmation depends on importance | Q16; Q37 | `server_tx_create_handover_v2` and `Handovers.tsx` authoring UI | PASS | important acknowledgement is explicit; ordinary shares stay read-only acknowledgement |
 | Q17 | Event template + AI candidate + human confirm | Q17 | candidate pipeline exists | INTENTIONALLY_GATED | adapter/P1 gate; no unsafe activation |
 | Q18 | No event-wide coordinator | Q18 | event participant model | PASS | design evidence |
 | Q19 | Event LINE only at milestones/risk | Q19 | notification outbox policy | PASS | LINE tests |
@@ -59,7 +59,7 @@ All canonical anchors below are `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BA
 | Q34 | Google is schedule-first | Q34 | calendar projection/ownership | PASS | provider tests |
 | Q35 | Own work primary, partner summary | Q35 | own next task + partner critical summary | PASS | Today source evidence |
 | Q36 | Accepted request becomes linked ToDo | Q36 | accept request command | PASS | request command tests |
-| Q37 | Only action-required handover asks confirmation | Q37 | important handover acknowledgement copy/action | UI_GAP | New important-handover authoring contract remains unverified |
+| Q37 | Only action-required handover asks confirmation | Q37 | `ack_policy=required` authoring + distinct `確認した` action | PASS | ordinary handover keeps `既読にする` |
 | Q38 | Share household default | Q38 | create handover default | PASS | edge tests |
 | Q39 | New request/share normally immediate | Q39 | outbox/reply pipeline | PASS | LINE tests |
 | Q40 | Partner completion summarized, not every ping | Q40 | DailyBrief policy | PASS | notification tests |

@@ -73,6 +73,22 @@ end; $$;
 revoke all on function public.server_tx_negotiate_request_v1(uuid,uuid,uuid,uuid,text,jsonb,bigint,integer) from public, anon, authenticated;
 grant execute on function public.server_tx_negotiate_request_v1(uuid,uuid,uuid,uuid,text,jsonb,bigint,integer) to service_role;
 
+create or replace function public.server_tx_create_handover_v2(
+  p_actor_id uuid, p_operation_id uuid, p_shared_text text, p_period text,
+  p_categories text[], p_occurred_on date, p_valid_until timestamptz default null,
+  p_ack_policy text default 'none'
+) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare v_result jsonb; v_handover_id uuid;
+begin
+  if p_ack_policy not in ('none','required') or (p_valid_until is not null and p_valid_until < now()) then raise exception 'INVALID_INPUT'; end if;
+  v_result := public.server_tx_create_handover(p_actor_id,p_operation_id,p_shared_text,p_period,p_categories,p_occurred_on);
+  v_handover_id := (v_result->>'handover_id')::uuid;
+  update public.handovers set valid_until=p_valid_until, ack_policy=p_ack_policy, revision=revision+1 where id=v_handover_id;
+  return v_result;
+end; $$;
+revoke all on function public.server_tx_create_handover_v2(uuid,uuid,text,text,text[],date,timestamptz,text) from public, anon, authenticated;
+grant execute on function public.server_tx_create_handover_v2(uuid,uuid,text,text,text[],date,timestamptz,text) to service_role;
+
 -- Already-agreed assignment changes should not interrupt a partner for a
 -- minor chore. Transport/safety-sensitive work stays immediate; everything
 -- else is delivered in the normal digest path.  This runs before the outbox
