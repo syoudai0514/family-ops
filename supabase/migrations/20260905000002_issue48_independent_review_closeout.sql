@@ -85,6 +85,7 @@ returns text language sql stable security definer set search_path = '' as $$
               then 'immediate' else 'digest' end
   from public.task_instances t where t.id=p_task_id
 $$;
+revoke all on function private.fn_assignment_change_delivery_urgency_v1(uuid) from public, anon, authenticated;
 
 create or replace function private.fn_apply_assignment_change_delivery_policy_v1()
 returns trigger language plpgsql security definer set search_path = '' as $$
@@ -94,6 +95,7 @@ begin
   end if;
   return new;
 end; $$;
+revoke all on function private.fn_apply_assignment_change_delivery_policy_v1() from public, anon, authenticated;
 drop trigger if exists assignment_change_delivery_policy_v1 on public.user_notifications;
 create trigger assignment_change_delivery_policy_v1 before insert on public.user_notifications
 for each row execute function private.fn_apply_assignment_change_delivery_policy_v1();

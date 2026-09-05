@@ -125,7 +125,7 @@ function HistoryRow({ entry, members, onChanged }: { entry: HistoryEntry; member
 export function HistoryPage() {
   const { user } = useAuth();
   const { household, members } = useHousehold();
-  const { loading, error, entries } = useHistoryData(household?.id ?? null, user?.id ?? null);
+  const { loading, error, entries, refresh } = useHistoryData(household?.id ?? null, user?.id ?? null);
   const [filter, setFilter] = useState<'all' | 'routine' | 'planned' | 'request'>('all');
   const visibleEntries = useMemo(() => entries.filter((entry) => {
     if (filter === 'all') return true;
