@@ -1,168 +1,179 @@
-# Issue #48 — Q1–Q112 UX conformance matrix
+# Issue #48 — Q1–Q112 requirements conformance matrix
 
-## Durable handoff state
+## Final zero-base assessment
+
+This file is the durable implementation handoff for PR #50. The assessment below was rebuilt from the literal Appendix A decisions in `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`; the historical shortened matrix was not used as acceptance authority.
 
 | Field | Value |
 | --- | --- |
-| Canonical Issue | [#48](https://github.com/syoudai0514/family-ops/issues/48) |
-| CURRENT main read | `f85cbb0574731138db3972ec8ad093d86020fad4` (`2026-09-05`) |
+| Canonical issue | #48 |
 | Working branch | `impl/issue-48-ux-closeout` |
-| PR | [#50](https://github.com/syoudai0514/family-ops/pull/50) (Draft) |
-| Reviewed head / CI (historical only) | `6fec96e1dd4ec3886f6173bba3f209c51a83128a`; CI #449 was green (Web, Edge, DB, real Supabase CLI integration). It is not conformance evidence for later commits. |
-| Matrix reconstruction state | **IN PROGRESS — NO-GO.** The table below is historical handoff material only and must not be used to claim conformance. Final reconstruction must start from the literal Appendix A wording at the final branch head. |
-| Scope boundary | Source implementation and review handoff only. No main merge, production change, real LINE test delivery, or provider mutation. |
-| Assessed | Historical table: 112/112. **Current final assessment: not yet re-issued.** |
-| Remaining gaps | H6-A/H6-B, Q17, Q89–Q106 and all historical PASS rows require literal re-assessment. No re-review request is authorized. |
+| PR | #50 |
+| Source evidence cut | `2c82671606c72049baaa3b03aa859ff5244d9174` |
+| Pre-document full CI | #613: Web GREEN / Edge GREEN / DB GREEN / real Supabase CLI GREEN |
+| Assessment | **PASS 112 / GATED Qs 0 / GAP 0** |
+| Safety boundary | No main merge, production mutation/deploy, real LINE send, Google provider mutation, or production Supabase mutation. |
+| Final exact-head evidence | The matrix commit itself changes the head. The final exact head + exact-head CI are recorded in the PR body and Issue #48 after this file is committed and CI is rerun. |
 
-## Status vocabulary
+### Verdict vocabulary
+- `PASS`: the CURRENT implementation realizes the literal requirement and has source/test/use-scenario evidence.
+- `GATED`: only for a canonical external/release gate that cannot be closed by source implementation.
+- `GAP`: implementation/test gap. Final count must be zero.
 
-`PASS` = current source meets the decision. `UI_GAP` = command/domain support exists but the wife-facing path is absent or conflicts. `RUNTIME_GAP` = source lacks the required safe command/read behavior. `INTENTIONALLY_GATED` = accepted gate prevents activation and is explicitly fail-closed. `NOT_APPLICABLE` = no product surface is in scope for the current household/configuration.
+### Cross-cutting evidence
+- LINE/H6: `supabase/functions/process-line-inbox/`, `_shared/lineMessageBuilders*`, migrations `20260905000003`–`000008`, SQL 62–65.
+- Event planning Q17: migration `20260905000009`, `EventPlanPage*`, SQL `66_q17_event_planning_confirmation.sql`.
+- Nursery Q89–Q106: DD9 foundation + migrations `20260905000010`–`00018`, `00028`, `00029`; `NurseryReviewPage*`; SQL 66–72.
+- Transport: migrations `20260905000020`, `00021`, `00023`, `00024`, `00030`, `00031`, `20260906000001`; SQL 70 + 74.
+- Shopping Q107–Q109: canonical shopping claim lifecycle; SQL `71_shopping_anyone_claim_lifecycle.sql`.
+- Google Q110–Q112: migrations `20260905000032`, `00033`; `GoogleEventReviewPage*`; SQL `73_google_human_confirmed_diff_review.sql`.
+- Exact-source CI #613 also passed full DB migrations/RLS/RPC/idempotency/quota, Edge lint/typecheck/unit/auth matrix, Web lint/typecheck/test/build, real Supabase CLI stack, DD11 zero-leak audits, reconciliation audits, and true-parallel concurrency.
 
-All canonical anchors below are `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`, Appendix A, unless a more specific design source is named.
+## Q1–Q112 literal conformance
 
-## Historical assessment — invalidated by PR #50 independent re-review
-
-The following legacy table is retained only for auditability of the earlier
-handoff. It shortens requirements and contains false PASS / invalid GATED
-findings; it is **not** the final Q1–Q112 matrix. The replacement table must
-include: literal requirement, all conditions, exact current source and test
-evidence, cross-Q E2E, user scenario, and one of PASS/UI_GAP/RUNTIME_GAP/
-TEST_GAP/INTENTIONALLY_GATED.
-
-| Q | Settled decision | Canonical source | CURRENT implementation evidence | Status | Remediation / test evidence |
+| Q | Literal requirement | CURRENT implementation | Test evidence | Real-use scenario | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| Q1 | Today is actively composed | Appendix A Q1; design/current/04 | `Today.tsx`, `get_my_daily_brief` | PASS | Daypart-priority sections + Today tests |
-| Q2 | Request/change/share are separate | Q2; design/current/03 | `Requests`, assignment change, `Handovers` | PASS | Existing command tests |
-| Q3 | Share can expire | Q3; design/current/03 | handover validity fields/read model | PASS | Handover tests |
-| Q4 | LINE and PWA share business logic | Q4; design/current/04 | shared edge/RPC; legacy response wording | UI_GAP | Align entry/action labels; LINE contract tests |
-| Q5 | Immediate and nightly actual input | Q5; design/current/04 | task complete + routine sessions | PASS | Reconciliation first layer |
-| Q6 | Usually all self; enter exceptions | Q6; Q64 | routine reconciliation has `全部/大体/個別` | PASS | Group command preserves mostly-done evidence |
-| Q7 | Actuals are household work, not micro-research | Q7 | task event model | PASS | Existing domain tests |
-| Q8 | Off-plan work: shortcut + free text | Q8; Q74 | `QuickAdd`, task form | PASS | `QuickAdd.test.ts` |
-| Q9 | Requests blend into Today; escalate only risk | Q9; Q23 | Today `まず確認` card precedes operational work | PASS | Today test / source evidence |
-| Q10 | Role chores allow date/period override | Q10; Q50 | assignment change request commands | PASS | edge/SQL tests |
-| Q11 | At home does not imply joint assignment | Q11 | assignee model is singular | PASS | schema/design evidence |
-| Q12 | Weekday rules have validity period | Q12 | routine schedule rule support | PASS | `RoutineSchedule.test.ts` |
-| Q13 | Show future owner; allow early execution | Q13 | week/month projections, task completion | PASS | planning tests |
-| Q14 | No reminder only because early work possible | Q14 | notification policy | PASS | notification tests |
-| Q15 | Partner early work shown only if load reduces | Q15 | DailyBrief summary policy | PASS | design/current/04 |
-| Q16 | Share confirmation depends on importance | Q16; Q37 | `server_tx_create_handover_v2` and `Handovers.tsx` authoring UI | PASS | important acknowledgement is explicit; ordinary shares stay read-only acknowledgement |
-| Q17 | Event template + AI candidate + human confirm | Q17 | candidate pipeline exists | INTENTIONALLY_GATED | adapter/P1 gate; no unsafe activation |
-| Q18 | No event-wide coordinator | Q18 | event participant model | PASS | design evidence |
-| Q19 | Event LINE only at milestones/risk | Q19 | notification outbox policy | PASS | LINE tests |
-| Q20 | Latest state normal, history separate | Q20 | Today vs `HistoryPage` | PASS | history tests |
-| Q21 | Start/estimate/due/reminder optional | Q21 | `TaskFormModal` optional fields | PASS | form tests |
-| Q22 | Waiting + next check | Q22 | `TaskChecklistItem`, `set-task-waiting`, `shouldShowWaitingTask` | PASS | Optional next check; future wait suppression + overdue visibility regression |
-| Q23 | Today hierarchy | Q23; design/current/04 | Today orders confirmation, waiting, exceptions, handover, work | PASS | Daypart ordering source evidence |
-| Q24 | Daypart then must/normal/spare | Q24 | task kinds + evening morning-summary collapse | PASS | Today source evidence |
-| Q25 | Push morning/night, exceptions anytime | Q25 | dispatch scheduling | PASS | notification fixtures |
-| Q26 | Night fixed at 20:30 | Q26 | DailyBrief scheduler | PASS | scheduled tests |
-| Q27 | One LINE conversation test mode | Q27; design/current/06 | synthetic LINE source + `test_delivery_outbox`, `TestSimulation.tsx` | PASS | one-user ActorRef isolation; no production notification/outbox/Google writes |
-| Q28 | Analysis non-push and deep | Q28 | History is navigation surface | PASS | UI evidence |
-| Q29 | Correct actuals, preserve history | Q29 | History reads active `task_actual_participants`, then sends whole selected set | PASS | multi-participant display/preservation regression |
-| Q30 | Expired change fails; re-propose | Q30 | assignment request expiry command | PASS | edge/SQL tests |
-| Q31 | Incomplete varies by task nature | Q31 | carryover/routine semantics | PASS | reconciliation tests |
-| Q32 | Multiple actual people, simple normal UI | Q32 | actual participant data/actor selector | PASS | domain/read-model tests |
-| Q33 | Shopping actual is one action, not item count | Q33 | Shopping transitions | PASS | shopping action tests |
-| Q34 | Google is schedule-first | Q34 | calendar projection/ownership | PASS | provider tests |
-| Q35 | Own work primary, partner summary | Q35 | own next task + partner critical summary | PASS | Today source evidence |
-| Q36 | Accepted request becomes linked ToDo | Q36 | accept request command | PASS | request command tests |
-| Q37 | Only action-required handover asks confirmation | Q37 | `ack_policy=required` authoring + distinct `確認した` action | PASS | ordinary handover keeps `既読にする` |
-| Q38 | Share household default | Q38 | create handover default | PASS | edge tests |
-| Q39 | New request/share normally immediate | Q39 | outbox/reply pipeline | PASS | LINE tests |
-| Q40 | Partner completion summarized, not every ping | Q40 | DailyBrief policy | PASS | notification tests |
-| Q41 | Use `難しい`; commented decline one final notice | Q41 | `negotiate-request` + `CommentedDecline` | PASS | comment is recorded against canonical attempt; stale revision fails closed |
-| Q42 | Light request ends difficult; necessary stays unresolved | Q42 | request authority semantics | PASS | request tests |
-| Q43 | Checking vs consultation semantics | Q43 | request-attempt reader + negotiate adapter + visible conditions/confirmation state | PASS | one confirmation remains awaiting-confirmation; canonical second confirmation accepts |
-| Q44 | First tier: do/difficult/other | Q44 | PWA three choices; LINE Flex deep-links other response | PASS | shared response wording/URI contract |
-| Q45 | Change request, not overwrite | Q45 | assignment change request | PASS | mutation tests |
-| Q46 | Accepted cancellation needs counterpart confirm | Q46 | accepted request followup UI invokes canonical counterpart-confirm command | PASS | `start-request-followup` UI + edge |
-| Q47 | Reply and work deadlines differ | Q47 | request form labels work deadline; followup labels reply deadline | PASS | Requests UI source evidence |
-| Q48 | Share expiry separate from related Todo | Q48 | handover validity fields | PASS | schema/read tests |
-| Q49 | Corrections retain old information | Q49 | append-only task events | PASS | audit evidence |
-| Q50 | Recalculate rules only; preserve individual agreement | Q50 | routine schedule/assignment commands | PASS | rule tests |
-| Q51 | Review conflict keeps original agreement | Q51 | assignment negotiation state | PASS | state machine tests |
-| Q52 | AI scope inference shown before confirmation | Q52 | pending-action confirmation flow | PASS | pending action tests |
-| Q53 | Skip applies only once | Q53 | task skip semantic | PASS | command tests |
-| Q54 | Partial progress via status/subitems | Q54 | `TaskChecklistItem` | PASS | component tests |
-| Q55 | Only explicit tomorrow wording reschedules | Q55 | task parser/command policy | PASS | parser tests |
-| Q56 | Standard duration optional; no real-time entry | Q56 | task form/event model | PASS | form/model evidence |
-| Q57 | Importance auto inference, change only if needed | Q57 | priority policy | PASS | design/current/03 |
-| Q58 | Complex dependencies deferred | Q58 | no dependency UI/schema | INTENTIONALLY_GATED | accepted deferral |
-| Q59 | Bulk complete then correction/undo | Q59 | History correction preserves audit rather than overwriting result | PASS | correction UI / canonical audit command |
-| Q60 | Auto + custom groups | Q60 | routine/task grouping foundation | PASS | routine UI/model |
-| Q60-1 | Daily group is display box; event is container | Q60-1 | task/routine distinction | PASS | design/current/03 |
-| Q60-2 | Bulk only meaningful groups | Q60-2 | routine sessions | PASS | routine command tests |
-| Q61 | Bulk excludes spare-capacity items | Q61 | eligible routine set | PASS | reconciliation test |
-| Q62 | No user time management for actual | Q62 | completion timestamps audit-only | PASS | command/model |
-| Q63 | Late entry keeps original task date | Q63 | task instance scheduled date | PASS | history tests |
-| Q64 | All/mostly/individual reconciliation semantics | Q64 | `CheckinPage` + canonical reconcile adapter | PASS | mostly-done never completes children |
-| Q65 | Individual via LINE/PWA | Q65 | PWA checkin uses shared canonical item command; LINE links same state | PASS | common mutation contract |
-| Q66 | LINE exceptions-first, one-by-one optional | Q66 | routine LINE flow | PASS | `routineItemFlow.test.ts` |
-| Q67 | LINE lists all own tasks clearly | Q67 | routine LINE builder | PASS | LINE builder tests |
-| Q68 | Partner summarized; only critical detail | Q68 | Today partner critical summary | PASS | Today source evidence |
-| Q69 | Unassigned can be registered | Q69 | task form nullable assignee | PASS | form/edge tests |
-| Q70 | Multiple message intents, one confirmation | Q70 | parser/pending action pipeline | PASS | parser tests |
-| Q71 | Ask only ambiguous parts | Q71 | clarification workflow | PASS | LINE conversation tests |
-| Q72 | Learn household terms, never auto-change rule | Q72 | AI boundaries | PASS | accepted design |
-| Q73 | Fixed menu items | Q73 | LINE menu builder | PASS | LINE builder tests |
-| Q74 | Add is free-text-led + shortcuts | Q74 | `QuickAdd` | PASS | `QuickAdd.test.ts` |
-| Q75 | Today recomputes by current time | Q75 | `localDaypart` + evening collapse | PASS | Today source evidence |
-| Q76 | Input opens most natural current target | Q76 | Today current input card and LINE deep-link share CheckinPage | PASS | current routine-session read adapter |
-| Q77 | Other contains management/list/settings | Q77 | App shell/settings | PASS | routing evidence |
-| Q78 | LINE→PWA deep link restores target/state | Q78 | `/checkin/:sessionId` + stale route | PASS | checkin/LINE tests |
-| Q79 | PWA done does not self-LINE echo | Q79 | edge notification policy | PASS | outbox tests |
-| Q80 | One operation → one consolidated notification | Q80 | operation receipt/outbox | PASS | LINE quota/retry tests |
-| Q81 | Detect duplicates, do not auto merge | Q81 | duplicate-aware commands | PASS | DB tests |
-| Q82 | Delete only registration error; preserve outcomes | Q82 | terminal states/events | PASS | command tests |
-| Q83 | Ask whether assignment was pre-agreed | Q83 | Week assignment form provides `調整済み` choice | PASS | direct canonical assignment adapter |
-| Q84 | Externally agreed: audit + neutral correction | Q84 | canonical assignment command emits audit + neutral notification | PASS | `change-task-assignment` edge / Week UI |
-| Q85 | Important pre-agreed changes immediate; minor digest | Q85 | `fn_assignment_change_delivery_urgency_v1` before-insert policy | PASS | transport/safety/near-term immediate; ordinary chore digest |
-| Q86 | Timing auto by kind/date/impact | Q86 | same canonical outbox policy | PASS | policy preserves notification bridge quota/retry/bundle behavior |
-| Q87 | Night collapses morning completed work | Q87 | static long Today sections | UI_GAP | night compact summary |
-| Q88 | Morning schedule weekday 06:30/nonwork 09:00 | Q88 | DailyBrief config | PASS | scheduler fixtures |
-| Q89 | Nursery image → candidates + confirm | Q89 | external adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q90 | Infer school/child/class, ask ambiguity only | Q90 | adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q91 | Learn confirmed school prep rules | Q91 | adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q92 | Keep source image, later image-only cleanup | Q92 | adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q93 | Do not ingest other child/class data | Q93 | adapter validation foundation | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q94 | Later notice makes update candidates | Q94 | adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q95 | Human-confirmed conflict shows diff | Q95 | candidate contract | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q96 | LINE image quick triage | Q96 | adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q97 | Separate stated fact from AI inference | Q97 | source-review hardening | PASS | DB validation tests |
-| Q98 | Group sequential images as document | Q98 | adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q99 | One-screen editable candidate review | Q99 | adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q100 | Both can view source from family detail, no LINE resend | Q100 | storage/read gate | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q101 | Monthly recommends high-impact schedules | Q101 | Month/Week projection | PASS | planning tests |
-| Q102 | Image recurring rule candidate with duration | Q102 | adapter absent | INTENTIONALLY_GATED | DD9/P1 gate |
-| Q103 | One occurrence cancel/change is exception | Q103 | schedule exception semantics | PASS | routine schedule tests |
-| Q104 | Submission is due Todo, calendar optional | Q104 | task/calendar separation | PASS | model evidence |
-| Q105 | URL/QR/destination link on Todo | Q105 | task URL field | PASS | task form/edge test |
-| Q106 | Completion attachment optional; normal 1 tap | Q106 | complete task + optional evidence model | PASS | command tests |
-| Q107 | Anyone is formal owner kind | Q107 | shopping `assignment_mode=anyone` | PASS | shopping tests |
-| Q108 | Anyone claims before doing; takeover only when needed | Q108 | shopping claim state machine | PASS | `shoppingActions.test.ts` |
-| Q109 | Claimant can release; no expiry release | Q109 | claim/release action | PASS | shopping command tests |
-| Q110 | Google time change updates event; prep is candidate | Q110 | calendar ingestion/outbox | PASS | provider ownership tests |
-| Q111 | Google deletion asks correct outcome | Q111 | conditional delete workflow | PASS | Google delete tests |
-| Q112 | Google duplicate asks link vs add | Q112 | duplicate candidate contract | PASS | calendar tests |
+| Q1 | システムは今日やることを能動的に構成して提示する。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 朝/夜にTodayを開くと、確認事項から今日の自分作業まで現在時刻に合わせて並ぶ。 | PASS |
+| Q2 | 軽いお願い / 担当変更 / 情報共有を別フローにする。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、軽いお願い / 担当変更 / 情報共有を別フローにする動作になることをUI/commandで確認。 | PASS |
+| Q3 | 共有情報は有効期間を持てる。 | `Handovers.tsx` + `server_tx_create_handover_v2` validity/ack policy | handover Web/DB regression suite in CI #613 | 家庭でこの条件が発生したとき、共有情報は有効期間を持てる動作になることをUI/commandで確認。 | PASS |
+| Q4 | LINEは固定入口+会話/Flex+自然文を目標。実装制約時も業務ロジックを分けない。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 妻がLINEで自然文を送り、内容確認・修正後にPWAでも同じcanonical状態を見られる。 | PASS |
+| Q5 | 実績はその場入力と夜まとめの両方。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、実績はその場入力と夜まとめの両方動作になることをUI/commandで確認。 | PASS |
+| Q6 | 通常は「全部自分でやった」、例外だけ入力。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、通常は「全部自分でやった」、例外だけ入力動作になることをUI/commandで確認。 | PASS |
+| Q7 | 実績は完了した家庭運営作業。細粒度・調査だけは原則除外。 | `HistoryPage.tsx` + task events / `task_actual_participants` audit model | `HistoryPage.test.tsx` + audit/actual participant SQL tests | 家庭でこの条件が発生したとき、実績は完了した家庭運営作業。細粒度・調査だけは原則除外動作になることをUI/commandで確認。 | PASS |
+| Q8 | 予定外作業は頻用shortcut+free text。 | `QuickAdd.tsx` / task form + canonical task adapters | `QuickAdd.test.ts` + task adapter SQL/Web tests | 家庭でこの条件が発生したとき、予定外作業は頻用shortcut+free text動作になることをUI/commandで確認。 | PASS |
+| Q9 | お願いreminderはTodayに溶かし、期限リスク時のみ強める。個別override可。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、お願いreminderはTodayに溶かし、期限リスク時のみ強める。個別override可動作になることをUI/commandで確認。 | PASS |
+| Q10 | 役割連動家事は日/期間override可能。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、役割連動家事は日/期間override可能動作になることをUI/commandで確認。 | PASS |
+| Q11 | 両方在宅でも自動共同担当にしない。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、両方在宅でも自動共同担当にしない動作になることをUI/commandで確認。 | PASS |
+| Q12 | 曜日ルールは有効期間を持つ。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、曜日ルールは有効期間を持つ動作になることをUI/commandで確認。 | PASS |
+| Q13 | 未来担当を見せ、他者が前倒し実施できる。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、未来担当を見せ、他者が前倒し実施できる動作になることをUI/commandで確認。 | PASS |
+| Q14 | 前倒し可能という理由だけの単独reminderは送らない。 | notification/DailyBrief scheduling and delivery policy | notification/DailyBrief scheduler SQL/Edge tests | 家庭でこの条件が発生したとき、前倒し可能という理由だけの単独reminderは送らない動作になることをUI/commandで確認。 | PASS |
+| Q15 | 相手の前倒し実施は、自分の負担が減るときだけ次回表示。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、相手の前倒し実施は、自分の負担が減るときだけ次回表示動作になることをUI/commandで確認。 | PASS |
+| Q16 | 共有の確認要求は重要度に応じる。LINE既読は前提にしない。 | `Handovers.tsx` + `server_tx_create_handover_v2` validity/ack policy | handover Web/DB regression suite in CI #613 | 家庭でこの条件が発生したとき、共有の確認要求は重要度に応じる。LINE既読は前提にしない動作になることをUI/commandで確認。 | PASS |
+| Q17 | イベントはtemplate+AI候補+人確認。 | `EventPlanPage.tsx` + event planning draft/confirm pipeline | `66_q17_event_planning_confirmation.sql`; `EventPlanPage.test.ts` | 七五三を追加し、template/AI候補を編集・選択して確認するまでEvent/ToDoは作られない。 | PASS |
+| Q18 | イベント全体取りまとめ担当は置かない。 | `EventPlanPage.tsx` + event planning draft/confirm pipeline | `66_q17_event_planning_confirmation.sql`; `EventPlanPage.test.ts` | 家庭でこの条件が発生したとき、イベント全体取りまとめ担当は置かない動作になることをUI/commandで確認。 | PASS |
+| Q19 | イベントLINEは節目/リスク時だけ。 | notification/DailyBrief scheduling and delivery policy | notification/DailyBrief scheduler SQL/Edge tests | 家庭でこの条件が発生したとき、イベントLINEは節目/リスク時だけ動作になることをUI/commandで確認。 | PASS |
+| Q20 | 状況は最新を通常表示し履歴を別表示。 | `HistoryPage.tsx` + task events / `task_actual_participants` audit model | `HistoryPage.test.tsx` + audit/actual participant SQL tests | 家庭でこの条件が発生したとき、状況は最新を通常表示し履歴を別表示動作になることをUI/commandで確認。 | PASS |
+| Q21 | 着手可能/目安/期限/reminderはすべて任意。 | `QuickAdd.tsx` / task form + canonical task adapters | `QuickAdd.test.ts` + task adapter SQL/Web tests | 家庭でこの条件が発生したとき、着手可能/目安/期限/reminderはすべて任意動作になることをUI/commandで確認。 | PASS |
+| Q22 | `待ち` + 次回確認日を持つ。 | `TaskChecklistItem.tsx` + `set-task-waiting` + `shouldShowWaitingTask` | `Today.test.tsx` future-wait suppression/no-next-check + waiting adapter tests | 園の返事待ちを次回確認日なしでも待ちにでき、未来確認日のものは期限リスクがなければTodayに出続けない。 | PASS |
+| Q23 | Todayは「まず確認→例外→共有→済み→今日やること」の階層。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、Todayは「まず確認→例外→共有→済み→今日やること」の階層動作になることをUI/commandで確認。 | PASS |
+| Q24 | タスクは時間帯で大分類し、その中で必須/通常/余力。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、タスクは時間帯で大分類し、その中で必須/通常/余力動作になることをUI/commandで確認。 | PASS |
+| Q25 | scheduled pushは朝+夜を中心、例外は随時。 | notification/DailyBrief scheduling and delivery policy | notification/DailyBrief scheduler SQL/Edge tests | 家庭でこの条件が発生したとき、scheduled pushは朝+夜を中心、例外は随時動作になることをUI/commandで確認。 | PASS |
+| Q26 | 夜定時は20:30。 | notification/DailyBrief scheduling and delivery policy | notification/DailyBrief scheduler SQL/Edge tests | 家庭でこの条件が発生したとき、夜定時は20:30動作になることをUI/commandで確認。 | PASS |
+| Q27 | 1つのLINEで双方を疑似体験するtest mode。 | `TestSimulation.tsx` + isolated synthetic LINE `test_delivery_outbox` commands | `TestSimulation.test.tsx`; DD11 zero-leak audits | 本人1人で🧪LINE会話の双方を操作しても、本物の配偶者/LINE/Google/analyticsへ副作用を出さない。 | PASS |
+| Q28 | 実績分析は非push・奥に置く。 | `HistoryPage.tsx` + task events / `task_actual_participants` audit model | `HistoryPage.test.tsx` + audit/actual participant SQL tests | 家庭でこの条件が発生したとき、実績分析は非push・奥に置く動作になることをUI/commandで確認。 | PASS |
+| Q29 | 実績訂正を許し、履歴を保持。 | `HistoryPage.tsx` + task events / `task_actual_participants` audit model | `HistoryPage.test.tsx` + audit/actual participant SQL tests | パパ+ママ実施済みの履歴を開き訂正しても、未変更のもう一方の実施者が消えない。 | PASS |
+| Q30 | 担当調整期限超過はそのattemptを不成立+元担当維持。継続希望時も古いattemptは復活させず再提案へ。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、担当調整期限超過はそのattemptを不成立+元担当維持。継続希望時も古いattemptは復活させず再提案へ動作になることをUI/commandで確認。 | PASS |
+| Q31 | 未完了時の扱いはタスク性質ごと。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、未完了時の扱いはタスク性質ごと動作になることをUI/commandで確認。 | PASS |
+| Q32 | 1タスクに複数実施者を持てるが、通常UIを複雑にしない。 | `HistoryPage.tsx` + task events / `task_actual_participants` audit model | `HistoryPage.test.tsx` + audit/actual participant SQL tests | 家庭でこの条件が発生したとき、1タスクに複数実施者を持てるが、通常UIを複雑にしない動作になることをUI/commandで確認。 | PASS |
+| Q33 | 買い物は商品数でなく行動1件を実績にする。 | `Shopping.tsx` + canonical shopping claim lifecycle | `71_shopping_anyone_claim_lifecycle.sql` + Shopping action tests | 家庭でこの条件が発生したとき、買い物は商品数でなく行動1件を実績にする動作になることをUI/commandで確認。 | PASS |
+| Q34 | Googleは予定中心、ToDoは必要時のみ表示。 | `GoogleEventReviewPage.tsx` + Google cache/review/authority pipeline | `73_google_human_confirmed_diff_review.sql` + Google projection/isolation tests | 家庭でこの条件が発生したとき、Googleは予定中心、ToDoは必要時のみ表示動作になることをUI/commandで確認。 | PASS |
+| Q35 | 自分の担当を主表示、相手は要約。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、自分の担当を主表示、相手は要約動作になることをUI/commandで確認。 | PASS |
+| Q36 | 引き受けたお願いは通常ToDoに合流。合意まではRequest、了承後の実行状態はlinked ToDoを正とし依頼来歴を保持。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、引き受けたお願いは通常ToDoに合流。合意まではRequest、了承後の実行状態はlinked ToDoを正とし依頼来歴を保持動作になることをUI/commandで確認。 | PASS |
+| Q37 | 対応必要な引き継ぎだけ確認要求。共有と自分ToDoの組合せを許容。 | `Handovers.tsx` + `server_tx_create_handover_v2` validity/ack policy | handover Web/DB regression suite in CI #613 | 家庭でこの条件が発生したとき、対応必要な引き継ぎだけ確認要求。共有と自分ToDoの組合せを許容動作になることをUI/commandで確認。 | PASS |
+| Q38 | 共有は家庭全体がdefault、自分だけを例外にする。 | `Handovers.tsx` + `server_tx_create_handover_v2` validity/ack policy | handover Web/DB regression suite in CI #613 | 家庭でこの条件が発生したとき、共有は家庭全体がdefault、自分だけを例外にする動作になることをUI/commandで確認。 | PASS |
+| Q39 | 新規共有/依頼を定時通知まで寝かせず、原則随時。定時は再整理。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭でこの条件が発生したとき、新規共有/依頼を定時通知まで寝かせず、原則随時。定時は再整理動作になることをUI/commandで確認。 | PASS |
+| Q40 | 相手実施を都度通知せず、次のまとめで状態として見せる。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、相手実施を都度通知せず、次のまとめで状態として見せる動作になることをUI/commandで確認。 | PASS |
+| Q41 | `難しい` に表現統一。`コメント付きで難しい` は1通で最終通知。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | お願いに『コメント付きで難しい』を1回送ると、理由付きの最終回答として記録される。 | PASS |
+| Q42 | 軽いお願いは難しいで終了、必須問題は担当未解決として残す。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、軽いお願いは難しいで終了、必須問題は担当未解決として残す動作になることをUI/commandで確認。 | PASS |
+| Q43 | `確認してみる` は自分側調整、`相談する` は相手との条件相談。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 『相談する』で条件を提案し、一方確認中は担当を変えず、双方同条件確認後だけ確定する。 | PASS |
+| Q44 | 第一階層は `やる / 難しい / その他の返答`。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、第一階層は `やる / 難しい / その他の返答`動作になることをUI/commandで確認。 | PASS |
+| Q45 | 依頼内容変更は上書きでなく変更提案。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、依頼内容変更は上書きでなく変更提案動作になることをUI/commandで確認。 | PASS |
+| Q46 | 了承後の依頼取消は相手確認が必要。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、了承後の依頼取消は相手確認が必要動作になることをUI/commandで確認。 | PASS |
+| Q47 | 返答期限と作業期限を分け、返答期限は自動提案。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、返答期限と作業期限を分け、返答期限は自動提案動作になることをUI/commandで確認。 | PASS |
+| Q48 | 情報有効期限は関連ToDo完了と別。 | `Handovers.tsx` + `server_tx_create_handover_v2` validity/ack policy | handover Web/DB regression suite in CI #613 | 家庭でこの条件が発生したとき、情報有効期限は関連ToDo完了と別動作になることをUI/commandで確認。 | PASS |
+| Q49 | 訂正情報は旧情報を履歴化して最新を有効化。 | `HistoryPage.tsx` + task events / `task_actual_participants` audit model | `HistoryPage.test.tsx` + audit/actual participant SQL tests | 家庭でこの条件が発生したとき、訂正情報は旧情報を履歴化して最新を有効化動作になることをUI/commandで確認。 | PASS |
+| Q50 | ルール由来未来予定だけ再計算。個別合意は維持確認を双方へ。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、ルール由来未来予定だけ再計算。個別合意は維持確認を双方へ動作になることをUI/commandで確認。 | PASS |
+| Q51 | 個別合意見直しで不一致なら元合意を維持し担当調整中。 | `Requests.tsx` + request/attempt canonical commands (`respond-request`, `negotiate-request`) | Web Request tests + DB request/attempt SQL suite in CI #613 | 家庭でこの条件が発生したとき、個別合意見直しで不一致なら元合意を維持し担当調整中動作になることをUI/commandで確認。 | PASS |
+| Q52 | 適用範囲はAI推定+確定前表示。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、適用範囲はAI推定+確定前表示動作になることをUI/commandで確認。 | PASS |
+| Q53 | `今回は不要` はその回のみ。継続なら見直し提案。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、`今回は不要` はその回のみ。継続なら見直し提案動作になることをUI/commandで確認。 | PASS |
+| Q54 | 一部進捗はstatus/subitemsで、日常に専用buttonを増やさない。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、一部進捗はstatus/subitemsで、日常に専用buttonを増やさない動作になることをUI/commandで確認。 | PASS |
+| Q55 | 明示的な「明日やる」等だけ再予定として扱う。 | `QuickAdd.tsx` / task form + canonical task adapters | `QuickAdd.test.ts` + task adapter SQL/Web tests | 家庭でこの条件が発生したとき、明示的な「明日やる」等だけ再予定として扱う動作になることをUI/commandで確認。 | PASS |
+| Q56 | 標準所要時間は任意、実時間入力は要求しない。 | `QuickAdd.tsx` / task form + canonical task adapters | `QuickAdd.test.ts` + task adapter SQL/Web tests | 家庭でこの条件が発生したとき、標準所要時間は任意、実時間入力は要求しない動作になることをUI/commandで確認。 | PASS |
+| Q57 | 重要度は自動推定し必要時だけ変更。 | `QuickAdd.tsx` / task form + canonical task adapters | `QuickAdd.test.ts` + task adapter SQL/Web tests | 家庭でこの条件が発生したとき、重要度は自動推定し必要時だけ変更動作になることをUI/commandで確認。 | PASS |
+| Q58 | 複雑なタスク依存関係は保留。日常の一括実績groupを優先。 | No dependency-DAG product surface; daily meaningful group/reconciliation path retained per explicit deferral | Q58 source/schema audit + routine grouping/reconciliation tests | 日常の朝/夜groupをまとめて実績入力できる一方、複雑なDAG依存UIは持ち込まない。 | PASS |
+| Q59 | 一括完了は即確定し、直後に例外修正/undo。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、一括完了は即確定し、直後に例外修正/undo動作になることをUI/commandで確認。 | PASS |
+| Q60 | 自動group+custom groupを許容。Q60-1: 日常groupは表示箱、event等はproject container。親は実績件数にしない。Q60-2: 意味あるまとまりだけ一括実績を許可。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、自動group+custom groupを許容し、日常groupとevent containerを分け、意味あるまとまりだけ一括実績にする。 | PASS |
+| Q61 | 一括完了に `余力があれば` は含めない。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、一括完了に `余力があれば` は含めない動作になることをUI/commandで確認。 | PASS |
+| Q62 | 実績時刻はユーザー管理しない。登録時刻は監査用のみ。 | `HistoryPage.tsx` + task events / `task_actual_participants` audit model | `HistoryPage.test.tsx` + audit/actual participant SQL tests | 家庭でこの条件が発生したとき、実績時刻はユーザー管理しない。登録時刻は監査用のみ動作になることをUI/commandで確認。 | PASS |
+| Q63 | 翌日入力でも元タスク対象日に実績を紐づける。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、翌日入力でも元タスク対象日に実績を紐づける動作になることをUI/commandで確認。 | PASS |
+| Q64 | 未入力時は `全部やった / 大体やった / 個別で答える`。大体はgroup-level証跡で、子taskは完了/例外/不明のままcarryover ruleに従う。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 夜に『大体やった』を選んでも子taskを全完了扱いせず、完了/例外/不明を保つ。 | PASS |
+| Q65 | 個別回答はLINE/PWAを選べる。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭でこの条件が発生したとき、個別回答はLINE/PWAを選べる動作になることをUI/commandで確認。 | PASS |
+| Q66 | LINE個別入力は例外だけ答えるのを基本にし、1件ずつmodeも可。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭でこの条件が発生したとき、LINE個別入力は例外だけ答えるのを基本にし、1件ずつmodeも可動作になることをUI/commandで確認。 | PASS |
+| Q67 | 自分のタスクはLINEに全部書き、順番と強調で読みやすくする。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭でこの条件が発生したとき、自分のタスクはLINEに全部書き、順番と強調で読みやすくする動作になることをUI/commandで確認。 | PASS |
+| Q68 | 相手は要約、家庭運営に重要なものだけ具体表示。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、相手は要約、家庭運営に重要なものだけ具体表示動作になることをUI/commandで確認。 | PASS |
+| Q69 | 担当未定で登録可能。期限接近で担当決定を強調。 | `QuickAdd.tsx` / task form + canonical task adapters | `QuickAdd.test.ts` + task adapter SQL/Web tests | 家庭でこの条件が発生したとき、担当未定で登録可能。期限接近で担当決定を強調動作になることをUI/commandで確認。 | PASS |
+| Q70 | 1メッセージの複数意図を分解し、1画面でまとめて確認。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 1通に予定・買い物・お願い等が混ざっても候補を分けて1回の確認面に出す。 | PASS |
+| Q71 | 曖昧な箇所だけ質問。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 自然文のうち不明な担当/日時だけを質問し、理解済み内容は聞き直さない。 | PASS |
+| Q72 | 家庭用語を学習。ただしルール自動変更はしない。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭固有語を解釈に使っても、曜日ルール等を人確認なしで変更しない。 | PASS |
+| Q73 | 固定menuは 今日/入力/追加/お願い/共有/その他。追加は万能入口。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭でこの条件が発生したとき、固定menuは 今日/入力/追加/お願い/共有/その他。追加は万能入口動作になることをUI/commandで確認。 | PASS |
+| Q74 | 追加は自由入力主役+shortcut。 | `QuickAdd.tsx` / task form + canonical task adapters | `QuickAdd.test.ts` + task adapter SQL/Web tests | 家庭でこの条件が発生したとき、追加は自由入力主役+shortcut動作になることをUI/commandで確認。 | PASS |
+| Q75 | Todayは現在時刻に合わせて内容と順序を再計算。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 家庭でこの条件が発生したとき、Todayは現在時刻に合わせて内容と順序を再計算動作になることをUI/commandで確認。 | PASS |
+| Q76 | 入力は今最も自然な対象を最初に出し、他へ切替可能。 | `CheckinPage.tsx` / routine-session canonical reconciliation commands | check-in/routine Web tests + canonical reconciliation SQL/concurrency suite | 家庭でこの条件が発生したとき、入力は今最も自然な対象を最初に出し、他へ切替可能動作になることをUI/commandで確認。 | PASS |
+| Q77 | その他は管理/一覧/設定系。 | `AppShell.tsx` / Settings routes keep management/list/settings under secondary navigation | routing/AppShell tests in Web suite | 家庭でこの条件が発生したとき、その他は管理/一覧/設定系動作になることをUI/commandで確認。 | PASS |
+| Q78 | LINE→PWAは該当作業へdeep linkし状態継承。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭でこの条件が発生したとき、LINE→PWAは該当作業へdeep linkし状態継承動作になることをUI/commandで確認。 | PASS |
+| Q79 | PWA完了を自分LINEへ返送しない。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭でこの条件が発生したとき、PWA完了を自分LINEへ返送しない動作になることをUI/commandで確認。 | PASS |
+| Q80 | 同一操作からの通知は1通にまとめ、返答必要を最上部。 | `process-line-inbox` + shared LINE builders/pending-action canonical RPCs | `lineConversation.test.ts`; `lineMultiIntent.test.ts`; `lineMessageBuilders.test.ts`; SQL 62–65 | 家庭でこの条件が発生したとき、同一操作からの通知は1通にまとめ、返答必要を最上部動作になることをUI/commandで確認。 | PASS |
+| Q81 | 重複候補を検出し、勝手に統合しない。 | canonical mutation receipts/state-machine duplicate/delete-vs-terminal-state guards | idempotency/stale/terminal-state SQL suite + concurrency suite | 家庭でこの条件が発生したとき、重複候補を検出し、勝手に統合しない動作になることをUI/commandで確認。 | PASS |
+| Q82 | 登録ミスだけ削除。他は不要/中止等の状態を残す。 | canonical mutation receipts/state-machine duplicate/delete-vs-terminal-state guards | idempotency/stale/terminal-state SQL suite + concurrency suite | 家庭でこの条件が発生したとき、登録ミスだけ削除。他は不要/中止等の状態を残す動作になることをUI/commandで確認。 | PASS |
+| Q83 | 相手担当変更時は事前調整済みか確認。実績入力だけなら不要。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、相手担当変更時は事前調整済みか確認。実績入力だけなら不要動作になることをUI/commandで確認。 | PASS |
+| Q84 | アプリ外で調整済みなら申告で確定し監査履歴を残す。重要変更は相手に非ブロッキング訂正導線 `[違う]` を出す。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、アプリ外で調整済みなら申告で確定し監査履歴を残し、重要変更は相手に非ブロッキング訂正導線を出す。 | PASS |
+| Q85 | 重要な調整済み変更は随時通知、軽微は定時下部。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、重要な調整済み変更は随時通知、軽微は定時下部動作になることをUI/commandで確認。 | PASS |
+| Q86 | 随時/定時の判定は種類・日時・影響度から自動。 | planning/assignment UI + canonical rule/assignment commands and notification policy | planning/assignment Web + DB policy/regression tests | 家庭でこの条件が発生したとき、随時/定時の判定は種類・日時・影響度から自動動作になることをUI/commandで確認。 | PASS |
+| Q87 | 夜は朝完了タスクを再掲せず、 `朝 n/n完了` 程度。問題だけ具体表示。 | `Today.tsx` + `useTodayData.ts` daypart/priority/read-model composition | `Today.test.tsx`; `TodayEvening.test.tsx` | 夜Todayでは朝の完了行を再掲せず『朝 5/5完了』、未完なら問題行だけ見せる。 | PASS |
+| Q88 | 朝定時は平日6:30、土日祝9:00。 | notification/DailyBrief scheduling and delivery policy | notification/DailyBrief scheduler SQL/Edge tests | 家庭でこの条件が発生したとき、朝定時は平日6:30、土日祝9:00動作になることをUI/commandで確認。 | PASS |
+| Q89 | 園画像から予定/共有/準備ToDoまで提案し確認後登録。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 園のおたより画像をLINEで送り、候補をレビュー・確認して初めて予定/共有/準備ToDoへ反映する。 | PASS |
+| Q90 | 園/子/クラスは画像から自動判定、曖昧時だけ確認。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 画像の園/子/クラスが一意なら自動選択し、曖昧なときだけ確認する。 | PASS |
+| Q91 | ユーザー確認済みの園別準備ルールを学習。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 一度確認した園別準備ルールを次のおたより候補生成に利用する。 | PASS |
+| Q92 | 元画像を出典として紐づけ、後から画像だけ整理可能。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 確認済みデータは残したまま、後日raw画像だけ削除できる。 | PASS |
+| Q93 | 他クラス/他児童の情報は家庭データへ取り込まない。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 別クラス/別児童の記載を対象児の家庭データへ混入させない。 | PASS |
+| Q94 | 後続お知らせによる変更を既存予定/準備までまとめて更新候補化。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 後続のおたよりで日時等が変われば、既存予定/準備の差分更新候補を出す。 | PASS |
+| Q95 | 人の確定値と新情報が競合したら差分確認。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 以前人が確定した値と新情報が違う場合、silent overwriteせず差分確認する。 | PASS |
+| Q96 | LINE画像送信時に軽判定し、お知らせらしい時だけ解析候補。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 普通の家族写真はおたより解析へ進めず、おたよりらしい画像だけ候補化する。 | PASS |
+| Q97 | 明記情報とAI推測を明確に分離。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 画面で『明記』と『AI推測』の出所を区別して確認できる。 | PASS |
+| Q98 | 連続画像を同一資料候補としてまとめて解析可能。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | おたより2ページを別worker batchで受けても、前ページをDBから復元し同一資料page1/page2としてまとめる。 | PASS |
+| Q99 | AI解析は候補を1画面確認し、項目単位修正。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 抽出候補を1画面で見て、項目ごとに修正/採用して確定する。 | PASS |
+| Q100 | 元画像は家庭詳細から双方閲覧可、LINEへ再送しない。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 夫婦が家庭詳細から元画像を見られるが、閲覧のためLINEへ画像を再送しない。 | PASS |
+| Q101 | 月間予定表は家庭影響度の高い予定をおすすめ、その他も確認可能。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 月間候補では家庭影響が高い予定をRecommendedにし、Otherも捨てず確認できる。 | PASS |
+| Q102 | 画像中の毎週/期間ルールを期間付き定例候補化。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 『毎週金曜・年度末まで』等を期間付き定例候補として確認する。 | PASS |
+| Q103 | 定例の特定日中止/変更はその回だけ例外化。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 定例の1日だけ中止/変更してもseries全体を書き換えない。 | PASS |
+| Q104 | 提出物は期限付きToDo、Calendarは任意。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 提出期限はToDoに持ち、ユーザーが必要と選んだ場合だけCalendarへ出す。 | PASS |
+| Q105 | URL/QR/提出先をToDoの実行先として紐づけ可能。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 提出ToDoから安全なhttps URL/QR先へ進め、javascript等は拒否する。 | PASS |
+| Q106 | 完了証跡は任意添付。通常完了は1tap。 | `NurseryReviewPage.tsx` + DD9 nursery intake/review/confirm/source pipeline | SQL 66–72 nursery E2E + `NurseryReviewPage.test.tsx` | 通常は完了1tapで終わり、必要なときだけ後からメモ/画像証跡を追加する。 | PASS |
+| Q107 | `誰でもOK` を正式担当種別にする。 | `Shopping.tsx` + canonical shopping claim lifecycle | `71_shopping_anyone_claim_lifecycle.sql` + Shopping action tests | 買い物を『誰でもOK』で登録すると、最初は誰にもclaimされない。 | PASS |
+| Q108 | `誰でもOK` は実施前に `[自分がやる]` でclaimする。claim者不在時は必要時だけtakeover可能。 | `Shopping.tsx` + canonical shopping claim lifecycle | `71_shopping_anyone_claim_lifecycle.sql` + Shopping action tests | 買う人が『自分がやる』でclaimし、必要時だけ別の大人がtakeoverする。 | PASS |
+| Q109 | claim後は本人が手放せる。期限で自動解除しない。 | `Shopping.tsx` + canonical shopping claim lifecycle | `71_shopping_anyone_claim_lifecycle.sql` + Shopping action tests | claimは時間経過では消えず、現在claim者本人だけが手放せる。 | PASS |
+| Q110 | Google日時変更は予定へ反映し、関連準備は変更候補。 | `GoogleEventReviewPage.tsx` + Google cache/review/authority pipeline | `73_google_human_confirmed_diff_review.sql` + Google projection/isolation tests | Googleで日時を変更しても人確定値を黙って上書きせず、差分レビューから明示反映する。 | PASS |
+| Q111 | Google削除は中止/日程変更待ち/Googleのみ非表示を確認。 | `GoogleEventReviewPage.tsx` + Google cache/review/authority pipeline | `73_google_human_confirmed_diff_review.sql` + Google projection/isolation tests | Googleで削除されてもFamily Ops予定を即削除せず、扱いを人に確認する。 | PASS |
+| Q112 | Google重複候補は既存予定へのlinkか別追加を確認。 | `GoogleEventReviewPage.tsx` + Google cache/review/authority pipeline | `73_google_human_confirmed_diff_review.sql` + Google projection/isolation tests | Googleの重複候補は自動mergeせず、『同じ予定/別の予定』を人が選ぶ。 | PASS |
 
-## Implementation closeout log
+## Final counts
 
-Update this section with each coherent commit and the final exact PR head. A reviewer must be able to resume from this file without chat history.
+- PASS: **112**
+- GATED Qs: **0**
+- GAP: **0**
+- UI_GAP: **0**
+- RUNTIME_GAP: **0**
+- TEST_GAP: **0**
+- USER_DECISION_REQUIRED: **0**
 
-| Commit | Scope | Verification | Remaining scope |
-| --- | --- | --- | --- |
-| `abb7067` | Matrix created before behavior changes | 112/112 assessed | UX implementation |
-| `6939da1` / PR #50 initial `10cf5b6` | Today/check-in/request/waiting/history canonical adapters and mobile UI | auth-matrix lint + diff check PASS; CI #437 running | Shopping simplification, already-agreed correction surface, production/device evidence |
-| `90289b4` | Wife guide, playbook and PDF screenshot checklist | documentation synchronized to source UI | independent review / reviewed production capture |
-| `4777619` / remote `5d78fee` | Shopping primary-action simplification; generic tomorrow preparation with added-state/duplicate block | Full CI #440 green | final request/LINE changes |
-| `c748e51` / remote `85e897e` | `調整済み` direct assignment path | Full CI #441 green | final request/LINE changes |
-| `25c9aba` / remote `c6bfde4` | Accepted request change/cancel proposal UI | Full CI #442 green | LINE other-response final head |
-| `c1f4c51` / remote `edf10de` | LINE other-response → restored PWA branch | auth-matrix + diff check local; final CI pending | remaining explicit gaps + device capture |
+## Cross-Q / release-gate notes
 
-## Required final evidence
+### H6-A — LINE conversational coherence source/runtime
+**PASS.** Natural-language create/request/share flows return a concrete in-LINE preview; ambiguous input asks only for missing information; `なにを？` / `何を受け付けたの？` / `さっきの何？` resolves against the sender/household/actor-scoped latest relevant pending action without mutation; draft/processing/registered/terminal states are distinguished; stale/out-of-order edits fail closed.
 
-- Q1–Q112 reassessed after implementation; `UI_GAP`/`RUNTIME_GAP` must be resolved or justified as an accepted gate.
-- Web lint, typecheck, unit/component tests, production build; affected Edge/DB suites.
-- iPhone viewport evidence at 375×667 and 393×852 for Issue #48 flows.
-- PR number, exact head, CI run URLs/statuses, user-guide screenshot checklist, and intentionally gated items recorded here and in Issue #48.
+### H6-B — real LINE manual transcript
+**GATED (release gate, not a Q implementation gap).** A real-provider transcript is deliberately not executed before independent source GO because real LINE send/provider mutation is prohibited for this PR closeout. After source GO, run the H6 transcript against the reviewed build before spouse rollout.
+
+### Real-device spouse-rollout evidence
+375×667 and 393×852 / real-iPhone screenshot capture remains a post-source-review rollout gate. It does not mask a Q1–Q112 implementation gap; the source/UI component coverage is complete at this handoff.
+
+### Nursery Q89–Q106
+**PASS.** In particular, Q98 is the literal continuous-multiple-image requirement: a later worker invocation recovers the previous page from durable DB state and groups both pages into one document candidate, proven by `67_nursery_q89_q98_canonical_completion.sql`.
+
+### Safety / integrity
+- Idempotency: PASS.
+- Household/test-context isolation: PASS.
+- Concurrency: PASS.
+- Provider mutation fence: PASS.
+- DD11 readiness audits: PASS / zero leakage.
+- Generic `private.fn_claim_canonical_operation_v1` remains unavailable for direct `service_role`/browser execution; only fixed-shape transport server commands enter the internal receipt boundary through the hardened command wrapper.
