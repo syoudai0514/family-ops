@@ -14,6 +14,7 @@ import { CategorySettings } from '../features/settings/CategorySettings';
 import { HouseholdTerminology } from '../features/settings/HouseholdTerminology';
 import { QuickAdd } from '../features/tasks/QuickAdd';
 import { TestSimulation } from '../features/testSimulation/TestSimulation';
+import { EventPlanPage } from '../features/events/EventPlanPage';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -76,6 +77,7 @@ export function AppShell() {
         <Route path="/today" element={<Today />} />
         <Route path="/week" element={<WeekView />} />
         <Route path="/month" element={<MonthView />} />
+        <Route path="/events/new" element={<EventPlanPage />} />
         <Route path="/requests" element={<Requests />} />
         <Route path="/shopping" element={<Shopping />} />
         <Route path="/handovers" element={<Handovers />} />
