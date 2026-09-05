@@ -15,6 +15,7 @@ export const EDGE_FUNCTIONS = {
   completeTask: 'complete-task',
   setTaskWaiting: 'set-task-waiting',
   correctTaskActual: 'correct-task-actual',
+  changeTaskAssignment: 'change-task-assignment',
   setSubtaskCompletion: 'set-subtask-completion',
   createTaskDefinition: 'create-task-definition',
   editTaskDefinition: 'edit-task-definition',

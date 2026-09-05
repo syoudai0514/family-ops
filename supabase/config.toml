@@ -241,6 +241,9 @@ verify_jwt = true
 [functions.correct-task-actual]
 verify_jwt = true
 
+[functions.change-task-assignment]
+verify_jwt = true
+
 [functions.google-calendar-oauth-start]
 verify_jwt = true
 

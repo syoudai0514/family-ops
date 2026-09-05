@@ -176,6 +176,7 @@ function AssignmentChangeForm({
 }) {
   const [scope, setScope] = useState<'once' | 'this_week'>('once');
   const [message, setMessage] = useState('');
+  const [alreadyAgreed, setAlreadyAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,13 +185,17 @@ function AssignmentChangeForm({
     setBusy(true);
     setError(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.createAssignmentChangeRequest, {
-        operation_id: newOperationId(),
-        task_id: task.id,
-        recipient_user_id: partnerId,
-        scope,
-        shared_message: message,
-      });
+      if (alreadyAgreed) {
+        await callEdgeFunction(EDGE_FUNCTIONS.changeTaskAssignment, {
+          operation_id: newOperationId(), task_id: task.id, assignee_user_id: partnerId,
+          already_agreed: true, expected_revision: task.revision ?? 1,
+        });
+      } else {
+        await callEdgeFunction(EDGE_FUNCTIONS.createAssignmentChangeRequest, {
+          operation_id: newOperationId(), task_id: task.id, recipient_user_id: partnerId,
+          scope, shared_message: message,
+        });
+      }
       await onSaved();
     } catch (err) {
       setError(
@@ -210,7 +215,7 @@ function AssignmentChangeForm({
             ×
           </button>
         </div>
-        <p>相手が「引き受ける」を押すまで、担当は変わりません。</p>
+        <p>{alreadyAgreed ? '口頭などで調整済みとして、通知付きで担当を更新します。' : '相手が「やる」を押すまで、担当は変わりません。'}</p>
         <Link className="secondary-button" to="/settings/routines" onClick={onClose}>
           定常ルールを変更
         </Link>
@@ -221,13 +226,19 @@ function AssignmentChangeForm({
               <select
                 value={scope}
                 onChange={(event) => setScope(event.target.value as 'once' | 'this_week')}
+                disabled={alreadyAgreed}
               >
                 <option value="once">今回だけ</option>
                 <option value="this_week">今週だけ</option>
               </select>
             </label>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={alreadyAgreed} onChange={(event) => setAlreadyAgreed(event.target.checked)} />
+              口頭などで、すでに二人で調整済み
+            </label>
+            {alreadyAgreed && <p className="task-item-meta">調整済みは今回だけに反映します。新しい承認依頼は作りません。</p>}
             <label>
-              {partnerName}へ送る文面
+              {alreadyAgreed ? '相手へ残すひとこと（任意）' : `${partnerName}へ送る文面`}
               <textarea
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
@@ -235,18 +246,18 @@ function AssignmentChangeForm({
               />
             </label>
             <button type="button" disabled={busy} onClick={() => setPreviewing(true)}>
-              LINE送信内容を確認
+              {alreadyAgreed ? '変更内容を確認' : 'LINE送信内容を確認'}
             </button>
           </>
         ) : (
           <section className="line-sender-preview" aria-label="LINE担当変更プレビュー">
             <p className="line-preview-kicker">LINE · 送る側の確認</p>
-            <h3>この内容で送りますか？</h3>
+            <h3>{alreadyAgreed ? 'この内容で担当を更新しますか？' : 'この内容で送りますか？'}</h3>
             <p className="line-preview-message">{message || '担当をお願いしてもいい？'}</p>
             <p className="line-preview-meta">
               {task.title} / {scopeLabel} / 自分 → {partnerName}
             </p>
-            <p className="empty-hint">送るまでは相手に通知されません。</p>
+            <p className="empty-hint">{alreadyAgreed ? '更新後、相手には「担当を更新しました」と通知されます。' : '送るまでは相手に通知されません。'}</p>
             <div className="modal-actions">
               <button
                 type="button"
@@ -256,7 +267,7 @@ function AssignmentChangeForm({
               >
                 編集
               </button>
-              <button disabled={busy}>{busy ? '送信中…' : 'LINEで送る'}</button>
+              <button disabled={busy}>{busy ? '処理中…' : alreadyAgreed ? '調整済みで更新' : 'LINEで送る'}</button>
             </div>
           </section>
         )}

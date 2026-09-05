@@ -103,6 +103,7 @@ const GAP_FILL_FUNCTIONS = new Set([
   'respond-request',
   'set-task-waiting',
   'correct-task-actual',
+  'change-task-assignment',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');
