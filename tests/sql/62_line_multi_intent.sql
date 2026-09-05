@@ -5,8 +5,8 @@
 \set ON_ERROR_STOP on
 
 insert into auth.users (id) values
-  ('53000000-0000-0000-0000-000000000001'),
-  ('53000000-0000-0000-0000-000000000002');
+  ('a2000000-0000-0000-0000-000000000001'),
+  ('a2000000-0000-0000-0000-000000000002');
 
 set role service_role;
 
@@ -19,14 +19,14 @@ declare
   v_updated jsonb;
 begin
   v_household := public.server_tx_create_household(
-    '53000000-0000-0000-0000-000000000001', gen_random_uuid(), 'LINE Multi HH', 'Owner'
+    'a2000000-0000-0000-0000-000000000001', gen_random_uuid(), 'LINE Multi HH', 'Owner'
   );
   v_household_id := (v_household->>'household_id')::uuid;
   insert into public.household_members (household_id, user_id, member_role)
-  values (v_household_id, '53000000-0000-0000-0000-000000000002', 'adult');
+  values (v_household_id, 'a2000000-0000-0000-0000-000000000002', 'adult');
 
   v_pending := public.server_tx_create_pending_action(
-    '53000000-0000-0000-0000-000000000001', v_household_id, gen_random_uuid(),
+    'a2000000-0000-0000-0000-000000000001', v_household_id, gen_random_uuid(),
     'line', 'line_multi_intent_review',
     jsonb_build_object('candidates', jsonb_build_array(
       jsonb_build_object('candidate_id','c1','kind','task','title','水着を準備','status','draft','missing_fields','[]'::jsonb,'action_type','task_create_once','payload',jsonb_build_object('title','水着を準備')),
@@ -35,7 +35,7 @@ begin
   );
   v_pending_id := (v_pending->>'pending_action_id')::uuid;
   v_updated := public.server_tx_update_pending_action(
-    '53000000-0000-0000-0000-000000000001', v_pending_id, 'line_multi_intent_review',
+    'a2000000-0000-0000-0000-000000000001', v_pending_id, 'line_multi_intent_review',
     jsonb_build_object('candidates', jsonb_build_array(
       jsonb_build_object('candidate_id','c1','kind','task','title','水着を準備','status','draft','missing_fields','[]'::jsonb,'action_type','task_create_once','payload',jsonb_build_object('title','水着を準備')),
       jsonb_build_object('candidate_id','c2','kind','shopping','title','牛乳','status','cancelled','missing_fields','[]'::jsonb,'action_type','shopping_item_add','payload',jsonb_build_object('title','牛乳'))
@@ -46,7 +46,7 @@ begin
   end if;
   begin
     perform public.server_tx_update_pending_action(
-      '53000000-0000-0000-0000-000000000002', v_pending_id, 'line_multi_intent_review', '{}'::jsonb
+      'a2000000-0000-0000-0000-000000000002', v_pending_id, 'line_multi_intent_review', '{}'::jsonb
     );
     raise exception 'FAIL line-multi: partner must not alter sender grouped draft';
   exception when others then
