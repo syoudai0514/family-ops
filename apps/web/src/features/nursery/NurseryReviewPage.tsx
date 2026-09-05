@@ -17,7 +17,7 @@ type NurseryReviewItem = {
   id: string;
   candidate_key: string;
   origin: 'source_explicit' | 'ai_inference';
-  item_kind: 'preparation' | 'task' | 'timetable' | 'submission' | 'url' | 'recurrence' | 'exception';
+  item_kind: 'preparation' | 'task' | 'timetable' | 'shared_info' | 'submission' | 'url' | 'recurrence' | 'exception';
   classification: 'recommended' | 'other' | null;
   source_document_id: string;
   source_page: number;
@@ -62,6 +62,7 @@ const ITEM_KIND_LABELS: Record<NurseryReviewItem['item_kind'], string> = {
   preparation: '準備するもの',
   task: 'ToDo',
   timetable: '予定',
+  shared_info: '家族への共有',
   submission: '提出物',
   url: 'URL / QR / 提出先',
   recurrence: '定例予定',
@@ -70,7 +71,11 @@ const ITEM_KIND_LABELS: Record<NurseryReviewItem['item_kind'], string> = {
 
 const FIELD_LABELS: Record<string, string> = {
   title: '内容',
+  text: '共有内容',
   due_date: '期限・日付',
+  date: '日付',
+  location: '場所',
+  details: '詳細',
   url: '実行先URL',
   effective_from: '開始日',
   effective_to: '終了日',
@@ -94,7 +99,7 @@ function errorMessage(error: unknown): string {
 }
 
 function primitiveInputType(key: string): 'date' | 'url' | 'text' {
-  if (key === 'due_date' || key === 'effective_from' || key === 'effective_to' || key === 'occurrence_date') return 'date';
+  if (key === 'date' || key === 'due_date' || key === 'effective_from' || key === 'effective_to' || key === 'occurrence_date') return 'date';
   if (key === 'url') return 'url';
   return 'text';
 }
@@ -376,7 +381,7 @@ export function NurseryReviewPage() {
         <section className="card success-card">
           <p className="eyebrow">登録完了</p>
           <h1>確認した内容を登録しました</h1>
-          <p>選ばなかった候補は登録していません。AIの推測だけで家庭データを変更することはありません。</p>
+          <p>選ばなかった候補は登録していません。予定・共有・ToDo・準備ルールは、人が選んだ内容だけ反映します。</p>
           <button type="button" className="hero-primary" onClick={() => navigate('/today')}>今日へ戻る</button>
         </section>
       </main>
@@ -436,7 +441,7 @@ export function NurseryReviewPage() {
 
       <section className="card sticky-confirm-card">
         <h2>確認して登録</h2>
-        <p>{selectedCount}件を登録します。候補のままでは予定・ToDo・準備ルールは変更されません。</p>
+        <p>{selectedCount}件を登録します。候補のままでは予定・共有・ToDo・準備ルールは変更されません。</p>
         <button
           type="button"
           className="hero-primary"
