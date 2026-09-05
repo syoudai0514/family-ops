@@ -93,4 +93,23 @@ describe('CalendarProjection', () => {
       id: 'google:camp:2026-08-25', fullTitle: '夏季休園', allDay: true,
     });
   });
+
+  it('projects a canonical Family Event without pretending it is Google or a task mirror', () => {
+    const projection = buildCalendarProjection({
+      primaryUserId: 'p', partnerUserId: 'm', tasks: [],
+      occurrences: [{
+        id: 'nursery-event', familyEventId: 'nursery-event', source: 'family_ops',
+        date: '2026-10-08', time: null, title: '秋の遠足', allDay: true,
+        allDayEndExclusive: '2026-10-09', transparent: false, ownerUserId: null,
+        providerEventId: null, generatedByFamilyOps: false, hasConflict: false,
+        location: '中央公園', sourceCalendar: 'おうちノート',
+      }],
+    });
+    expect(projection.itemsByDate.get('2026-10-08')).toEqual([
+      expect.objectContaining({
+        id: 'family-event:nursery-event', source: 'family_ops', kind: 'calendar',
+        fullTitle: '秋の遠足', location: '中央公園', providerEventId: null, linkedTaskId: null,
+      }),
+    ]);
+  });
 });
