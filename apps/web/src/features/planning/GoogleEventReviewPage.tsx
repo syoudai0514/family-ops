@@ -1,0 +1,128 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
+import { newOperationId } from '../../lib/id';
+
+type Review = {
+  id: string;
+  revision: number;
+  candidate_kind: 'protected_change' | 'google_deleted' | 'possible_duplicate';
+  family_event_title: string;
+  family_event_all_day: boolean;
+  family_event_starts_at: string | null;
+  family_event_ends_at: string | null;
+  family_event_starts_on: string | null;
+  family_event_ends_on: string | null;
+  family_event_location_text: string | null;
+  google_title: string | null;
+  google_all_day: boolean;
+  google_starts_at: string | null;
+  google_ends_at: string | null;
+  google_starts_on: string | null;
+  google_ends_on: string | null;
+  google_location_text: string | null;
+  changed_fields: string[];
+};
+
+type Resolution = 'accept_google' | 'keep_family' | 'same_event' | 'different_event';
+
+function scheduleLabel(allDay: boolean, startAt: string | null, endAt: string | null, startOn: string | null, endOn: string | null) {
+  if (allDay) return startOn === endOn ? (startOn ?? '日付なし') : `${startOn ?? '?'} 〜 ${endOn ?? '?'}`;
+  const fmt = (value: string | null) => value ? new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(value)) : '時刻なし';
+  return `${fmt(startAt)} 〜 ${fmt(endAt)}`;
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof FamilyOpsApiError && error.code === 'CONFLICT') return '内容が更新されました。最新の候補を読み直してください。';
+  if (error instanceof Error) return error.message;
+  return '操作に失敗しました。もう一度お試しください。';
+}
+
+function ReviewCard({ review, busy, onResolve }: { review: Review; busy: boolean; onResolve: (review: Review, resolution: Resolution) => void }) {
+  const currentSchedule = scheduleLabel(review.family_event_all_day, review.family_event_starts_at, review.family_event_ends_at, review.family_event_starts_on, review.family_event_ends_on);
+  const googleSchedule = scheduleLabel(review.google_all_day, review.google_starts_at, review.google_ends_at, review.google_starts_on, review.google_ends_on);
+
+  if (review.candidate_kind === 'possible_duplicate') {
+    return <article className="card">
+      <p className="eyebrow">重複候補</p>
+      <h2>{review.family_event_title}</h2>
+      <p>Googleにも同じ日時・同じ名前の予定があります。</p>
+      <dl>
+        <dt>おうちノート</dt><dd>{currentSchedule}</dd>
+        <dt>Google</dt><dd>{review.google_title ?? '無題'} · {googleSchedule}</dd>
+      </dl>
+      <div className="button-row">
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => onResolve(review, 'different_event')}>別の予定</button>
+        <button type="button" className="primary-button" disabled={busy} onClick={() => onResolve(review, 'same_event')}>同じ予定</button>
+      </div>
+    </article>;
+  }
+
+  if (review.candidate_kind === 'google_deleted') {
+    return <article className="card">
+      <p className="eyebrow">Googleから消えた予定</p>
+      <h2>{review.family_event_title}</h2>
+      <p>Googleでは削除されています。おうちノート側はまだ削除していません。</p>
+      <div className="button-row">
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => onResolve(review, 'keep_family')}>予定を残す</button>
+        <button type="button" className="primary-button" disabled={busy} onClick={() => onResolve(review, 'accept_google')}>削除を反映</button>
+      </div>
+    </article>;
+  }
+
+  return <article className="card">
+    <p className="eyebrow">Googleで変更あり</p>
+    <h2>{review.family_event_title}</h2>
+    <p>人が確認した内容は自動で上書きしていません。差分を確認してください。</p>
+    {review.changed_fields.includes('title') && <p><strong>名前</strong><br />おうちノート: {review.family_event_title}<br />Google: {review.google_title ?? '無題'}</p>}
+    {review.changed_fields.includes('schedule') && <p><strong>日時</strong><br />おうちノート: {currentSchedule}<br />Google: {googleSchedule}</p>}
+    {review.changed_fields.includes('location') && <p><strong>場所</strong><br />おうちノート: {review.family_event_location_text ?? '未設定'}<br />Google: {review.google_location_text ?? '未設定'}</p>}
+    <div className="button-row">
+      <button type="button" className="secondary-button" disabled={busy} onClick={() => onResolve(review, 'keep_family')}>おうちノートのまま</button>
+      <button type="button" className="primary-button" disabled={busy} onClick={() => onResolve(review, 'accept_google')}>Googleの変更を反映</button>
+    </div>
+  </article>;
+}
+
+export function GoogleEventReviewPage() {
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true); setError(null);
+    try { setReviews(await callEdgeFunction<Review[]>(EDGE_FUNCTIONS.listGoogleEventReviews, {})); }
+    catch (e) { setError(errorMessage(e)); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function resolve(review: Review, resolution: Resolution) {
+    setBusyId(review.id); setError(null);
+    try {
+      await callEdgeFunction(EDGE_FUNCTIONS.resolveGoogleEventReview, {
+        operationId: newOperationId(), candidateId: review.id,
+        expectedRevision: review.revision, resolution,
+      });
+      await load();
+    } catch (e) { setError(errorMessage(e)); }
+    finally { setBusyId(null); }
+  }
+
+  return <main className="app-shell planning-page">
+    <div className="section-heading">
+      <div><p className="eyebrow">Googleカレンダー</p><h1>予定の変更を確認</h1></div>
+      <Link className="secondary-button" to="/month">月表示へ戻る</Link>
+    </div>
+    <p className="empty-hint">Google側の変更・削除・重複候補だけを確認します。人が確定した内容を勝手に上書き・削除・マージしません。</p>
+    {error && <p role="alert" className="error-text">{error}</p>}
+    {loading ? <p role="status">読み込み中…</p> : reviews.length === 0 ? (
+      <div className="card"><p>確認が必要なGoogle予定はありません。</p></div>
+    ) : reviews.map((review) => <ReviewCard key={review.id} review={review} busy={busyId === review.id} onResolve={resolve} />)}
+  </main>;
+}
