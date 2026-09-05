@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCalendarProjection, transportLabel, transportTokens, type PlanningTask } from './calendarProjection';
+import { buildCalendarProjection, transportCompactToken, transportLabel, transportTokens, type PlanningTask } from './calendarProjection';
 
 const task = (overrides: Partial<PlanningTask>): PlanningTask => ({
   id: 'task', household_id: 'hh', task_definition_id: 'definition', recurrence_rule_id: null,
@@ -10,7 +10,7 @@ const task = (overrides: Partial<PlanningTask>): PlanningTask => ({
 });
 
 describe('CalendarProjection', () => {
-  it('aggregates dropoff and pickup into one stable transport row', () => {
+  it('aggregates dropoff and pickup and renders the exact compact transport contract', () => {
     const projection = buildCalendarProjection({
       primaryUserId: 'p', partnerUserId: 'm', occurrences: [],
       tasks: [
@@ -18,8 +18,11 @@ describe('CalendarProjection', () => {
         task({ id: 'pickup', category: 'pickup', definition_code: 'pickup', planned_assignee_id: 'm' }),
       ],
     });
+    const transport = projection.transportByDate.get('2026-08-24');
     expect(projection.allItems).toEqual([]);
-    expect(transportLabel(projection.transportByDate.get('2026-08-24'), 'p', 'm')).toBe('送 P ｜ 迎 M');
+    expect(transportCompactToken(transport, 'p', 'm')).toBe('送P迎M');
+    expect(transportCompactToken(transport, 'p', 'm')).not.toMatch(/[\s|｜/]/);
+    expect(transportLabel(transport, 'p', 'm')).toBe('送り：パパ / 迎え：ママ');
   });
 
   it('excludes morning/evening routines without looking at task titles', () => {
@@ -37,7 +40,7 @@ describe('CalendarProjection', () => {
     const projection = buildCalendarProjection({
       primaryUserId: 'p', partnerUserId: 'm', tasks: [],
       occurrences: [{
-        id: 'occurrence', date: '2026-08-24', time: null, title: '送 P ｜ 迎 M', allDay: true,
+        id: 'occurrence', date: '2026-08-24', time: null, title: '送P迎M', allDay: true,
         transparent: true, ownerUserId: null, providerEventId: 'provider-id', generatedByFamilyOps: true, hasConflict: false,
       }],
     });
@@ -69,14 +72,21 @@ describe('CalendarProjection', () => {
     expect(projection.itemsByDate.get('2026-08-24')?.[0].id).toBe('google:a');
   });
 
-  it('renders a missing transport side as an em dash', () => {
-    const projection = buildCalendarProjection({ primaryUserId: 'p', partnerUserId: 'm', occurrences: [], tasks: [
+  it('renders one-sided compact transport without placeholder or separator', () => {
+    const dropoffProjection = buildCalendarProjection({ primaryUserId: 'p', partnerUserId: 'm', occurrences: [], tasks: [
       task({ id: 'dropoff', category: 'dropoff', definition_code: 'dropoff', planned_assignee_id: 'p' }),
     ] });
-    expect(transportLabel(projection.transportByDate.get('2026-08-24'), 'p', 'm')).toBe('送 P ｜ 迎 —');
-    expect(transportTokens(projection.transportByDate.get('2026-08-24'), 'p', 'm')).toEqual({
+    const dropoff = dropoffProjection.transportByDate.get('2026-08-24');
+    expect(transportCompactToken(dropoff, 'p', 'm')).toBe('送P');
+    expect(transportLabel(dropoff, 'p', 'm')).toBe('送り：パパ / 迎え：未定');
+    expect(transportTokens(dropoff, 'p', 'm')).toEqual({
       dropoff: { token: 'P', tone: 'primary' }, pickup: { token: '—', tone: 'none' },
     });
+
+    const pickupProjection = buildCalendarProjection({ primaryUserId: 'p', partnerUserId: 'm', occurrences: [], tasks: [
+      task({ id: 'pickup', category: 'pickup', definition_code: 'pickup', planned_assignee_id: 'm' }),
+    ] });
+    expect(transportCompactToken(pickupProjection.transportByDate.get('2026-08-24'), 'p', 'm')).toBe('迎M');
   });
 
   it('projects a multi-day Google all-day event onto every visible covered date', () => {
