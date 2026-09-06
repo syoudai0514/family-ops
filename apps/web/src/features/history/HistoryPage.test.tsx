@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { createSupabaseFromMock } from '../../test/supabaseMock';
 import { completedNextTokyoMorning, HistoryPage, reassignmentSummary } from './HistoryPage';
@@ -61,7 +62,7 @@ vi.mock('../../app/HouseholdContext', () => ({
 
 describe('HistoryPage', () => {
   it('renders canonical result semantics without score/ranking UI', async () => {
-    render(<HistoryPage />);
+    render(<MemoryRouter><HistoryPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole('heading', { name: '履歴' })).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText('お迎え')).toBeInTheDocument());
     expect(screen.getByText('完了（期限超過）')).toBeInTheDocument();
