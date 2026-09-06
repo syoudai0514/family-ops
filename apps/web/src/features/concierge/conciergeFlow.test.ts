@@ -8,15 +8,26 @@ const member = (userId: string, role: 'papa' | 'mama') => ({
 });
 
 describe('Concierge canonical flow', () => {
-  it('normalizes the shared LINE semantic candidate shape before rendering', () => {
+  it('normalizes the exact shared LINE semantic candidate shape before rendering', () => {
     const proposal = normalizeConciergeProposal({
       read_only_intent: null, clarification: null,
-      candidates: [{ id: 'c1', kind: 'task', title: '水着を準備', scheduledDate: '2026-09-08', missingFields: [] }],
-    }, '明日の水着を準備');
+      candidates: [{
+        candidateId: 'c1', kind: 'task', title: '水着を準備', sourceText: '明日の水着を準備', missingFields: [],
+        intent: { scheduledDate: '2026-09-08', dueLocalTime: null, targetRole: null, sharedMessage: null },
+      }],
+    }, 'fallback');
     expect(proposal.candidates[0]).toMatchObject({
       candidateId: 'c1', kind: 'task', title: '水着を準備', sourceText: '明日の水着を準備',
       intent: { scheduledDate: '2026-09-08' },
     });
+  });
+
+  it('keeps LINE assignee ambiguity intact for human confirmation', () => {
+    const proposal = normalizeConciergeProposal({
+      read_only_intent: null, clarification: null,
+      candidates: [{ candidateId: 'c1', kind: 'request', title: 'お迎え', sourceText: 'お迎えお願い', missingFields: ['assignee'], intent: null }],
+    }, 'お迎えお願い');
+    expect(proposal.candidates[0]?.missingFields).toEqual(['assignee']);
   });
 
   it('uses create-task only after confirmation for a task candidate', async () => {
