@@ -47,7 +47,6 @@ function result(candidate: ConciergeCandidate, ok: boolean, message: string): Co
 
 export async function commitConciergeCandidate(candidate: ConciergeCandidate, context: CommitContext): Promise<ConciergeCommitResult> {
   if (candidate.missingFields.length > 0) return result(candidate, false, `未確定: ${candidate.missingFields.join(' / ')}`);
-  if (candidate.kind === 'actual') return result(candidate, false, '予定外実績は原子的な専用登録経路からのみ登録できます。');
 
   const invoke = context.invoke ?? ((name, body) => callEdgeFunction(name, body));
   const operationId = context.operationId ?? (() => crypto.randomUUID());
@@ -58,7 +57,7 @@ export async function commitConciergeCandidate(candidate: ConciergeCandidate, co
     if (candidate.kind === 'task') {
       await invoke(EDGE_FUNCTIONS.createTask, {
         operation_id: operationId(), title: candidate.title, scheduled_date: scheduledDate,
-        completion_mode: 'all_assignees', calendar_visibility: 'visible',
+        completion_mode: 'whole', calendar_visibility: 'hidden',
       });
     } else if (candidate.kind === 'shopping') {
       await invoke(EDGE_FUNCTIONS.addShoppingItem, {
@@ -77,6 +76,10 @@ export async function commitConciergeCandidate(candidate: ConciergeCandidate, co
         operation_id: operationId(), target_user_id: targetUserId, desired_title: candidate.title,
         desired_due_at: candidate.intent?.desiredDueAt ?? null,
         desired_priority: candidate.intent?.priority ?? 'normal', desired_request_text: candidate.sourceText,
+      });
+    } else if (candidate.kind === 'actual') {
+      await invoke(EDGE_FUNCTIONS.recordUnplannedActual, {
+        operation_id: operationId(), title: candidate.title, scheduled_date: scheduledDate,
       });
     }
     return result(candidate, true, '登録しました');

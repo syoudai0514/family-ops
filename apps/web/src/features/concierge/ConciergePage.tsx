@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FamilyOpsApiError } from '../../lib/apiClient';
-import { loadConciergeDraft, proposeConciergeCandidates, saveConciergeDraft, type ConciergeRouteState } from './conciergeFlow';
+import { loadConciergeDraft, proposeConciergeCandidates, saveConciergeDraft, withActualScheduledDate, type ConciergeRouteState } from './conciergeFlow';
 import './concierge.css';
 
 type SpeechRecognitionLike = {
@@ -21,11 +21,19 @@ function getSpeechRecognition(): SpeechRecognitionCtor | null {
   return value.SpeechRecognition ?? value.webkitSpeechRecognition ?? null;
 }
 
+function todayInTokyo(): string {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const incoming = (location.state ?? {}) as ConciergeRouteState;
   const [text, setText] = useState(() => incoming.draft ?? loadConciergeDraft());
+  const today = useMemo(() => todayInTokyo(), []);
+  const [actualDate, setActualDate] = useState(today);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const speechAvailable = useMemo(() => Boolean(getSpeechRecognition()), []);
@@ -44,12 +52,17 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
       setError('内容を書いてください。');
       return;
     }
+    if (actualOnly && !actualDate) {
+      setError('実績の対象日を選んでください。');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const result = await proposeConciergeCandidates(value);
+      const candidates = actualOnly ? withActualScheduledDate(result.candidates, actualDate) : result.candidates;
       navigate('/concierge/results', {
-        state: { ...originState, draft: value, candidates: result.candidates, readOnlyIntent: result.read_only_intent, clarification: result.clarification },
+        state: { ...originState, draft: value, candidates, readOnlyIntent: result.read_only_intent, clarification: result.clarification },
       });
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '整理できませんでした。入力内容は残っています。');
@@ -82,12 +95,15 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
     <div className="app-shell concierge-page">
       <button type="button" className="text-button concierge-back" onClick={() => navigate(-1)}>‹ 戻る</button>
       <div className="eyebrow">{actualOnly ? '予定外の実績' : '✨ Quick Add'}</div>
-      <h1>{actualOnly ? '今日やったことを追加' : 'おうちコンシェルジュ'}</h1>
-      <p className="page-lead">{actualOnly ? '何でも書いてください。頻用shortcut + free textで予定外作業を追加できます。' : '予定外のことを、書く・話すでまとめて入力。'}</p>
+      <h1>{actualOnly ? 'やったことを追加' : 'おうちコンシェルジュ'}</h1>
+      <p className="page-lead">{actualOnly ? '予定になかった家事・育児も、実際にやった日を選んで記録できます。' : '予定外のことを、書く・話すでまとめて入力。'}</p>
       {actualOnly ? (
-        <div className="filter-chips" aria-label="よくある実績">
-          {['掃除機', '買い物', '予約', '書類提出'].map((item) => <button key={item} type="button" className="secondary-button" onClick={() => setText((current) => current ? `${current}。${item}をやった` : `${item}をやった`)}>{item}</button>)}
-        </div>
+        <>
+          <label className="concierge-input-label"><span>実際にやった日</span><input type="date" value={actualDate} max={today} onChange={(event) => setActualDate(event.target.value)} /></label>
+          <div className="filter-chips" aria-label="よくある実績">
+            {['掃除機', '買い物', '予約', '書類提出'].map((item) => <button key={item} type="button" className="secondary-button" onClick={() => setText((current) => current ? `${current}。${item}をやった` : `${item}をやった`)}>{item}</button>)}
+          </div>
+        </>
       ) : (
         <div className="filter-chips" aria-label="入力候補">
           {['予定', 'ToDo', '買い物', '共有', 'お願い', '実績'].map((item) => <span key={item} className="concierge-chip">{item}</span>)}
@@ -102,7 +118,7 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
         {!actualOnly && <button type="button" className="secondary-button" disabled={!speechAvailable || busy} onClick={startVoice}>🎙 話す</button>}
         <button type="button" disabled={busy} onClick={() => void organize()}>{busy ? '整理中…' : actualOnly ? '実績候補を確認' : 'AIで整理'}</button>
       </div>
-      <p className="meta">確認するまではToDo・お願い・買い物・共有・実績を作りません。質問は曖昧な部分だけ表示します。</p>
+      <p className="meta">確認するまではToDo・お願い・買い物・共有・実績を作りません。実績日は作業した日のtruthで、登録時刻は監査情報として別に残ります。</p>
     </div>
   );
 }

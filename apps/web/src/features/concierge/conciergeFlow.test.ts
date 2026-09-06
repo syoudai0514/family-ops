@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeConciergeProposal } from './conciergeFlow';
+import { normalizeConciergeProposal, withActualScheduledDate } from './conciergeFlow';
 import { commitConciergeCandidate } from './conciergeCommit';
 
 const member = (userId: string, role: 'papa' | 'mama') => ({
@@ -30,7 +30,7 @@ describe('Concierge canonical flow', () => {
     expect(proposal.candidates[0]?.missingFields).toEqual(['assignee']);
   });
 
-  it('uses create-task only after confirmation for a task candidate', async () => {
+  it('uses the valid canonical create-task contract only after confirmation', async () => {
     const calls: Array<{ name: string; body: object }> = [];
     const result = await commitConciergeCandidate({
       candidateId: 'task-1', kind: 'task', title: '水着を準備', sourceText: '水着を準備', missingFields: [], intent: { scheduledDate: '2026-09-08' },
@@ -42,7 +42,7 @@ describe('Concierge canonical flow', () => {
     expect(result.ok).toBe(true);
     expect(calls).toEqual([{ name: 'create-task', body: {
       operation_id: '00000000-0000-4000-8000-000000000123', title: '水着を準備',
-      scheduled_date: '2026-09-08', completion_mode: 'all_assignees', calendar_visibility: 'visible',
+      scheduled_date: '2026-09-08', completion_mode: 'whole', calendar_visibility: 'hidden',
     } }]);
   });
 
@@ -62,14 +62,25 @@ describe('Concierge canonical flow', () => {
     expect(calls[0]?.body.target_user_id).toBe(mama.user_id);
   });
 
-  it('never synthesizes an unplanned actual through two non-atomic commands', async () => {
-    let called = false;
+  it('pins the user-selected original target date onto actual candidates', () => {
+    const [actual] = withActualScheduledDate([{
+      candidateId: 'actual-1', kind: 'actual', title: '掃除機', sourceText: '掃除機かけた', missingFields: [], intent: null,
+    }], '2026-09-06');
+    expect(actual?.intent?.scheduledDate).toBe('2026-09-06');
+  });
+
+  it('records an unplanned actual through one atomic canonical endpoint', async () => {
+    const calls: Array<{ name: string; body: object }> = [];
     const result = await commitConciergeCandidate({
-      candidateId: 'actual-1', kind: 'actual', title: '掃除機', sourceText: '掃除機かけた', missingFields: [], intent: { scheduledDate: '2026-09-07' },
+      candidateId: 'actual-1', kind: 'actual', title: '掃除機', sourceText: '掃除機かけた', missingFields: [], intent: { scheduledDate: '2026-09-06' },
     }, {
-      members: [], me: null, partner: null, timeZone: 'Asia/Tokyo', invoke: async () => { called = true; return {}; },
+      members: [], me: null, partner: null, timeZone: 'Asia/Tokyo',
+      operationId: () => '00000000-0000-4000-8000-000000000125',
+      invoke: async (name, body) => { calls.push({ name, body }); return {}; },
     });
-    expect(result.ok).toBe(false);
-    expect(called).toBe(false);
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual([{ name: 'record-unplanned-actual', body: {
+      operation_id: '00000000-0000-4000-8000-000000000125', title: '掃除機', scheduled_date: '2026-09-06',
+    } }]);
   });
 });

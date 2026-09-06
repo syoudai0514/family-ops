@@ -95,6 +95,13 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
   };
 }
 
+export function withActualScheduledDate(candidates: ConciergeCandidate[], scheduledDate: string): ConciergeCandidate[] {
+  return candidates.map((candidate) => candidate.kind !== 'actual' ? candidate : {
+    ...candidate,
+    intent: { ...(candidate.intent ?? {}), scheduledDate },
+  });
+}
+
 export async function proposeConciergeCandidates(text: string): Promise<ConciergeProposal> {
   const raw = await callEdgeFunction<RawConciergeProposal>(EDGE_FUNCTIONS.proposeConciergeCandidates, { text });
   return normalizeConciergeProposal(raw, text);

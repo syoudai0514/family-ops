@@ -10,6 +10,7 @@ export const EDGE_FUNCTIONS = {
   editTask: 'edit-task',
   cancelTask: 'cancel-task',
   completeTask: 'complete-task',
+  recordUnplannedActual: 'record-unplanned-actual',
   addTaskCompletionEvidence: 'add-task-completion-evidence',
   setTaskWaiting: 'set-task-waiting',
   correctTaskActual: 'correct-task-actual',
