@@ -1,10 +1,21 @@
 -- H6-B real LINE regression: expiring old drafts must not reorder conversation
 -- recency and shadow the sender's fresh draft.
+--
+-- The real-provider failure needs two transactions to reproduce: transaction A
+-- creates the fresh conversation; transaction B (the sender's next LINE turn)
+-- lazily expires historical backlog rows, whose updated_at trigger then gives
+-- them a timestamp newer than the fresh draft.  Keep those boundaries here so
+-- the regression matches production rather than relying on same-transaction
+-- timestamp behavior.
 \set ON_ERROR_STOP on
 
 insert into auth.users (id) values ('a5000000-0000-0000-0000-000000000001');
 
 set role service_role;
+
+-- Transaction A: establish one historical expired-by-TTL conversation and one
+-- genuinely fresh draft. set_config(..., false) preserves generated ids for the
+-- following top-level statements in this psql session.
 do $$
 declare
   v_actor uuid := 'a5000000-0000-0000-0000-000000000001';
@@ -14,11 +25,6 @@ declare
   v_old_id uuid;
   v_fresh jsonb;
   v_fresh_id uuid;
-  v_read jsonb;
-  v_old_created_at timestamptz;
-  v_fresh_created_at timestamptz;
-  v_old_updated_at timestamptz;
-  v_fresh_updated_at timestamptz;
 begin
   v_household := public.server_tx_create_household(
     v_actor, gen_random_uuid(), 'H6-B backlog HH', 'Owner'
@@ -38,15 +44,9 @@ begin
   );
   v_old_id := (v_old->>'pending_action_id')::uuid;
 
-  -- Reproduce the production backlog: this row belongs to an older LINE
-  -- conversation, but later state maintenance has made its updated_at newer
-  -- than the genuinely fresh conversation.  Set that skew explicitly so the
-  -- regression is independent of whether a particular test database has an
-  -- updated_at trigger on pending_actions.
   update private.pending_actions
   set expires_at = now() - interval '1 minute',
-      created_at = now() - interval '1 day',
-      updated_at = now() + interval '1 minute'
+      created_at = now() - interval '1 day'
   where id = v_old_id;
 
   v_fresh := public.server_tx_create_pending_action(
@@ -61,10 +61,35 @@ begin
   );
   v_fresh_id := (v_fresh->>'pending_action_id')::uuid;
 
-  v_read := public.server_tx_get_line_conversation_pending(
-    v_actor, 'U-H6B-BACKLOG-ORDER'
-  );
+  perform set_config('h6b.old_id', v_old_id::text, false);
+  perform set_config('h6b.fresh_id', v_fresh_id::text, false);
+end;
+$$;
 
+-- Transaction B: this models the next incoming LINE turn. The lookup lazily
+-- expires the old draft in this later transaction. With the pre-fix function,
+-- ORDER BY updated_at would select that just-maintained historical row.
+select set_config(
+  'h6b.first_read',
+  public.server_tx_get_line_conversation_pending(
+    'a5000000-0000-0000-0000-000000000001'::uuid,
+    'U-H6B-BACKLOG-ORDER'
+  )::text,
+  false
+);
+
+-- Verify the production ordering hazard actually exists in the fixture and the
+-- fixed reader still returns the fresh conversation by immutable creation order.
+do $$
+declare
+  v_old_id uuid := current_setting('h6b.old_id')::uuid;
+  v_fresh_id uuid := current_setting('h6b.fresh_id')::uuid;
+  v_read jsonb := current_setting('h6b.first_read')::jsonb;
+  v_old_created_at timestamptz;
+  v_fresh_created_at timestamptz;
+  v_old_updated_at timestamptz;
+  v_fresh_updated_at timestamptz;
+begin
   select created_at, updated_at into v_old_created_at, v_old_updated_at
   from private.pending_actions where id = v_old_id;
   select created_at, updated_at into v_fresh_created_at, v_fresh_updated_at
@@ -74,14 +99,11 @@ begin
     raise exception 'FAIL h6b-backlog: old elapsed draft was not expired';
   end if;
 
-  -- Prove the fixture contains the exact ordering hazard: the historical row
-  -- is older by conversation creation time but newer by state-update time.
-  -- The pre-fix ORDER BY updated_at would therefore choose the wrong row.
   if v_old_created_at >= v_fresh_created_at then
     raise exception 'FAIL h6b-backlog: fixture old conversation is not older';
   end if;
   if v_old_updated_at <= v_fresh_updated_at then
-    raise exception 'FAIL h6b-backlog: fixture old row is not newer by updated_at';
+    raise exception 'FAIL h6b-backlog: later cleanup did not create updated_at shadow hazard';
   end if;
 
   if (v_read->>'id')::uuid <> v_fresh_id
@@ -89,12 +111,30 @@ begin
      or v_read->'normalized_payload'->>'title' <> 'ゴミ出し' then
     raise exception 'FAIL h6b-backlog: expired historical row shadowed fresh LINE draft';
   end if;
+end;
+$$;
 
-  perform public.server_tx_cancel_pending_action(v_actor, v_fresh_id);
-  v_read := public.server_tx_get_line_conversation_pending(
-    v_actor, 'U-H6B-BACKLOG-ORDER'
-  );
+-- Transaction C/D: terminal state updates must not change which conversation
+-- "なにを？"-style context refers to either.
+select public.server_tx_cancel_pending_action(
+  'a5000000-0000-0000-0000-000000000001'::uuid,
+  current_setting('h6b.fresh_id')::uuid
+);
 
+select set_config(
+  'h6b.second_read',
+  public.server_tx_get_line_conversation_pending(
+    'a5000000-0000-0000-0000-000000000001'::uuid,
+    'U-H6B-BACKLOG-ORDER'
+  )::text,
+  false
+);
+
+do $$
+declare
+  v_fresh_id uuid := current_setting('h6b.fresh_id')::uuid;
+  v_read jsonb := current_setting('h6b.second_read')::jsonb;
+begin
   if (v_read->>'id')::uuid <> v_fresh_id
      or v_read->>'status' <> 'cancelled' then
     raise exception 'FAIL h6b-backlog: terminal cancel changed conversation referent';
