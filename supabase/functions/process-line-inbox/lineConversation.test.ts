@@ -16,6 +16,16 @@ Deno.test("recognizes schedule/help as read-only", () => {
   assertEquals(readOnlyLineIntent("明日の保険証を準備"), null);
 });
 
+Deno.test("real-user schedule inquiry variants never become mutation candidates", () => {
+  assertEquals(readOnlyLineIntent("あしたのよていおしえて！"), "tomorrow");
+  assertEquals(readOnlyLineIntent("違う違う、ただ明日の予定知りたいだけ！"), "tomorrow");
+  assertEquals(readOnlyLineIntent("きょうのよてい知りたい"), "today");
+  assertEquals(readOnlyLineIntent("こんしゅうのよてい見たい！"), "week");
+  assertEquals(readOnlyLineIntent("明日なにある？"), "tomorrow");
+  assertEquals(readOnlyLineIntent("明日の予定を追加したい"), null);
+  assertEquals(readOnlyLineIntent("明日の予定を登録"), null);
+});
+
 Deno.test("vague creation starters enter clarification instead of help or fake task", () => {
   assertEquals(readOnlyLineIntent("明日の夜にタスクを追加したい"), null);
   assertEquals(lineCreationStarterKind("明日の夜にタスクを追加したい"), "task");
