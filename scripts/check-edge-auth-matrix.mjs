@@ -19,6 +19,9 @@ function parseFunctionsBlock(tomlText) {
 const GAP_FILL_FUNCTIONS = new Set([
   'configure-dropoff-pickup',
   'propose-ai-draft',
+  // Issue #54 PWA Concierge proposal surface. Authenticated and read-only with
+  // respect to business objects; it reuses the reviewed LINE semantic parser.
+  'propose-concierge-candidates',
   'confirm-request-draft',
   'confirm-handover-draft',
   'propose-event-plan',

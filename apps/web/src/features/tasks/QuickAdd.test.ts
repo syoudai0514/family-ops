@@ -12,16 +12,20 @@ describe('Quick Add destinations', () => {
     expect(quickAddDestination('nursery')).toBe('/nursery/reviews');
   });
 
-  it('keeps every Quick Add action in the single shared sheet', () => {
+  it('puts the approved Concierge first and keeps unplanned actual as a dedicated path', () => {
     expect(quickAddOptions.map((option) => option.label)).toEqual([
+      '✨ おうちコンシェルジュ',
       '単発ToDoを追加',
       'イベント・予定を追加',
       'お願いを送る',
       '買い物を追加',
       '引き継ぎを書く',
-      '園のおたよりを確認',
+      '画像から取り込む',
       '定例を追加',
       '朝準備を編集',
+      '予定外実績を追加',
     ]);
+    expect(quickAddDestination('concierge')).toBe('/concierge');
+    expect(quickAddDestination('actual')).toBe('/actuals/new');
   });
 });

@@ -151,6 +151,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.propose-ai-draft]
 verify_jwt = true
+[functions.propose-concierge-candidates]
+verify_jwt = true
 [functions.confirm-request-draft]
 verify_jwt = true
 [functions.confirm-handover-draft]
