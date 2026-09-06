@@ -11,11 +11,20 @@ export function ConciergeResultsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = (location.state ?? {}) as ConciergeRouteState;
-  const candidates = state.candidates ?? [];
-  const [selected, setSelected] = useState(() => new Set(candidates.map((candidate) => candidate.candidateId)));
+  const initialCandidates = state.candidates ?? [];
+  const [candidates, setCandidates] = useState<ConciergeCandidate[]>(initialCandidates);
+  const [selected, setSelected] = useState(() => new Set(initialCandidates.map((candidate) => candidate.candidateId)));
   const actualOnly = Boolean(state.actualOnly);
   const visibleCandidates = useMemo(() => actualOnly ? candidates.filter((candidate) => candidate.kind === 'actual') : candidates, [actualOnly, candidates]);
   const ambiguous = visibleCandidates.filter((candidate) => candidate.missingFields.length > 0);
+
+  function resolveAssignee(candidateId: string, role: 'papa' | 'mama') {
+    setCandidates((current) => current.map((candidate) => candidate.candidateId !== candidateId ? candidate : {
+      ...candidate,
+      intent: { ...(candidate.intent ?? {}), targetRole: role },
+      missingFields: candidate.missingFields.filter((field) => field !== 'assignee'),
+    }));
+  }
 
   if (state.readOnlyIntent) {
     return <div className="app-shell concierge-page">
@@ -34,7 +43,10 @@ export function ConciergeResultsPage() {
       <span><span className="badge">{KIND_LABEL[candidate.kind]}</span><b>{candidate.title}</b><small>{candidate.sourceText}</small>{candidate.intent?.scheduledDate && <small>対象日：{candidate.intent.scheduledDate}</small>}{candidate.intent?.targetRole && <small>担当：{candidate.intent.targetRole === 'papa' ? 'パパ' : 'ママ'}</small>}</span>
     </label>)}
     {state.clarification && <section className="card"><b>ここだけ確認</b><p>{state.clarification}</p></section>}
-    {ambiguous.length > 0 && <section className="card"><b>ここだけ確認</b>{ambiguous.map((candidate) => <p key={candidate.candidateId}>{candidate.title}：{candidate.missingFields.join(' / ')} が未確定です。</p>)}</section>}
+    {ambiguous.length > 0 && <section className="card"><b>ここだけ確認</b>{ambiguous.map((candidate) => <div key={candidate.candidateId}>
+      <p>{candidate.title}：{candidate.missingFields.join(' / ')} が未確定です。</p>
+      {candidate.missingFields.includes('assignee') && <div className="concierge-actions" aria-label={`${candidate.title}のお願い先`}><button type="button" onClick={() => resolveAssignee(candidate.candidateId, 'papa')}>パパにお願い</button><button type="button" onClick={() => resolveAssignee(candidate.candidateId, 'mama')}>ママにお願い</button></div>}
+    </div>)}</section>}
     {visibleCandidates.length === 0 && <p className="empty-hint">登録候補を作れませんでした。戻って言い方を少し変えてください。</p>}
     <button type="button" className="concierge-wide" disabled={selected.size === 0 || ambiguous.some((candidate) => selected.has(candidate.candidateId))} onClick={() => navigate('/concierge/confirm', { state: { ...state, candidates: visibleCandidates.filter((candidate) => selected.has(candidate.candidateId)) } })}>選択した内容をまとめて登録</button>
     <p className="meta">曖昧な部分だけ確認します。家庭内の言葉の意味を覚えても、担当ルールは勝手に変更しません。</p>
