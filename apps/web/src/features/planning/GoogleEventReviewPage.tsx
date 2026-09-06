@@ -11,6 +11,7 @@ type Review = {
   id: string;
   revision: number;
   candidate_kind: CandidateKind;
+  proposal_kind?: 'reschedule' | 'unnecessary';
   family_event_title: string;
   family_event_all_day?: boolean;
   family_event_starts_at?: string | null;
@@ -55,17 +56,18 @@ function errorMessage(error: unknown) {
 
 function ReviewCard({ review, busy, onResolve }: { review: Review; busy: boolean; onResolve: (review: Review, resolution: Resolution) => void }) {
   if (review.candidate_kind === 'preparation_change') {
+    const unnecessary = review.proposal_kind === 'unnecessary';
     return <article className="card">
-      <p className="eyebrow">関連する準備の変更候補</p>
+      <p className="eyebrow">{unnecessary ? '関連する準備の不要候補' : '関連する準備の変更候補'}</p>
       <h2>{review.task_title ?? '準備ToDo'}</h2>
-      <p>「{review.family_event_title}」の日時が変わりました。準備は自動で動かしていません。</p>
-      <dl>
+      {unnecessary ? <p>「{review.family_event_title}」は中止になりました。この準備は自動で完了・削除せず、今回不要にするか確認します。</p> : <p>「{review.family_event_title}」の日時が変わりました。準備は自動で動かしていません。</p>}
+      {!unnecessary && <dl>
         <dt>現在</dt><dd>{prepSchedule(review.old_scheduled_date, review.old_due_at)}</dd>
         <dt>変更候補</dt><dd>{prepSchedule(review.proposed_scheduled_date, review.proposed_due_at)}</dd>
-      </dl>
+      </dl>}
       <div className="button-row">
         <button type="button" className="secondary-button" disabled={busy} onClick={() => onResolve(review, 'keep')}>このまま</button>
-        <button type="button" className="primary-button" disabled={busy} onClick={() => onResolve(review, 'apply')}>変更を反映</button>
+        <button type="button" className="primary-button" disabled={busy} onClick={() => onResolve(review, 'apply')}>{unnecessary ? '今回は不要にする' : '変更を反映'}</button>
       </div>
     </article>;
   }
@@ -76,7 +78,7 @@ function ReviewCard({ review, busy, onResolve }: { review: Review; busy: boolean
   if (review.candidate_kind === 'possible_duplicate') {
     return <article className="card">
       <p className="eyebrow">重複候補</p><h2>{review.family_event_title}</h2>
-      <p>Googleにも同じ日時・同じ名前の予定があります。自動では統合しません。</p>
+      <p>Googleにも同じ日時・同じ名前の予定があります。</p><p className="task-item-meta">自動では統合しません。</p>
       <dl><dt>おうちノート</dt><dd>{currentSchedule}</dd><dt>Google</dt><dd>{review.google_title ?? '無題'} · {googleSchedule}</dd></dl>
       <div className="button-row">
         <button type="button" className="secondary-button" disabled={busy} onClick={() => onResolve(review, 'different_event')}>別の予定</button>
@@ -88,7 +90,7 @@ function ReviewCard({ review, busy, onResolve }: { review: Review; busy: boolean
   if (review.candidate_kind === 'google_deleted') {
     return <article className="card">
       <p className="eyebrow">Googleから消えた予定</p><h2>{review.family_event_title}</h2>
-      <p>Googleでは削除されています。家庭予定をどう扱うか選んでください。</p>
+      <p>Googleでは削除されています。おうちノート側はまだ削除していません。</p><p className="task-item-meta">家庭予定をどう扱うか選んでください。</p>
       <div className="button-row">
         <button type="button" disabled={busy} onClick={() => onResolve(review, 'cancel_family')}>予定を中止</button>
         <button type="button" className="secondary-button" disabled={busy} onClick={() => onResolve(review, 'waiting_reschedule')}>日程変更待ち</button>
