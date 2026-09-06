@@ -1,0 +1,60 @@
+name: Ops hotfix LINE schedule
+
+on:
+  push:
+    branches:
+      - ops/hotfix-line-schedule-a2c2692
+    paths:
+      - .github/workflows/_ops-hotfix-line-schedule.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: family-ops-edge-functions-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: dnlqxjpjpkxnfgculzip
+      REVIEWED_MAIN_SHA: a2c2692f89f0ba2ff9e5233c26c54070ccb401e8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REVIEWED_MAIN_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact main source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEWED_MAIN_SHA"
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+
+      - name: Require deployment credential
+        shell: bash
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || {
+            echo "::error::SUPABASE_ACCESS_TOKEN is required"
+            exit 1
+          }
+
+      - name: Deploy process-line-inbox only
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase functions deploy process-line-inbox \
+            --project-ref "$PROJECT_REF" \
+            --use-api
+
+      - name: Verify production inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase functions list --project-ref "$PROJECT_REF" | grep -F process-line-inbox
