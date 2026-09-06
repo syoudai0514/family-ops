@@ -7,6 +7,9 @@ import {
 } from "./lineConversation.ts";
 
 Deno.test("recognizes schedule/help as read-only", () => {
+  assertEquals(readOnlyLineIntent("今日"), "today");
+  assertEquals(readOnlyLineIntent("明日"), "tomorrow");
+  assertEquals(readOnlyLineIntent("今週"), "week");
   assertEquals(readOnlyLineIntent("今日の予定は？"), "today");
   assertEquals(readOnlyLineIntent("明日の予定教えて"), "tomorrow");
   assertEquals(readOnlyLineIntent("今週どうなってる？"), "week");
