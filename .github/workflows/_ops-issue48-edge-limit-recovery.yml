@@ -1,0 +1,72 @@
+name: Ops Issue48 Edge limit recovery
+
+on:
+  push:
+    branches:
+      - ops/issue48-release-edge-9aa626d
+    paths:
+      - .github/workflows/_ops-issue48-edge-limit-recovery.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: family-ops-edge-limit-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover-and-finish:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: dnlqxjpjpkxnfgculzip
+      REVIEWED_SHA: 9aa626dd197e088c8a4164958ea93fa6c1660aa4
+    steps:
+      - name: Delete confirmed non-product W303 proof functions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          for fn in w303-storage-proof w303-storage-chunk-proof w303-local-file-param-proof w303-part-inspect; do
+            echo "Deleting non-product proof function: $fn"
+            code=$(curl --silent --show-error --output /tmp/delete.json --write-out '%{http_code}' \
+              -X DELETE \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$PROJECT_REF/functions/$fn")
+            cat /tmp/delete.json || true
+            test "$code" = "200" || test "$code" = "404"
+          done
+
+      - name: Checkout exact independently reviewed source
+        uses: actions/checkout@v4
+        with:
+          ref: 9aa626dd197e088c8a4164958ea93fa6c1660aa4
+          fetch-depth: 1
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+
+      - name: Verify exact source and deploy remaining reviewed functions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+          for fn in transport-schedule update-household-terminology; do
+            test -f "supabase/functions/$fn/index.ts"
+            echo "Deploying $fn from $REVIEWED_SHA"
+            supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api
+          done
+
+      - name: Verify recovered production function inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase functions list --project-ref "$PROJECT_REF" > /tmp/functions.txt
+          cat /tmp/functions.txt
+          grep -q 'transport-schedule' /tmp/functions.txt
+          grep -q 'update-household-terminology' /tmp/functions.txt
+          ! grep -q 'w303-storage-proof' /tmp/functions.txt
+          ! grep -q 'w303-storage-chunk-proof' /tmp/functions.txt
+          ! grep -q 'w303-local-file-param-proof' /tmp/functions.txt
+          ! grep -q 'w303-part-inspect' /tmp/functions.txt
