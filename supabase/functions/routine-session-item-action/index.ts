@@ -28,7 +28,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   const reconciliationOperationId = typeof body["reconciliation_operation_id"] === "string"
     ? body["reconciliation_operation_id"] : null;
 
-  return jsonResponse(await callServerTx(createServiceRoleClient(), "server_tx_routine_session_item_action_v2", {
+  return jsonResponse(await callServerTx(createServiceRoleClient(), "server_tx_routine_session_item_action_v3", {
     p_actor_id: actorId,
     p_operation_id: operationId,
     p_session_id: sessionId,
