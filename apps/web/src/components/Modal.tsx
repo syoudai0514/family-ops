@@ -1,6 +1,88 @@
 import { useEffect, useId, useRef } from 'react';
 import type { ReactNode } from 'react';
 
+type ScrollLockSnapshot = {
+  scrollY: number;
+  body: {
+    overflow: string;
+    position: string;
+    top: string;
+    left: string;
+    right: string;
+    width: string;
+    overscrollBehavior: string;
+  };
+  root: {
+    overflow: string;
+    overscrollBehavior: string;
+  };
+};
+
+let scrollLockDepth = 0;
+let scrollLockSnapshot: ScrollLockSnapshot | null = null;
+
+function lockPageScroll() {
+  scrollLockDepth += 1;
+  if (scrollLockDepth > 1) return;
+
+  const body = document.body;
+  const root = document.documentElement;
+  const scrollY = window.scrollY;
+  scrollLockSnapshot = {
+    scrollY,
+    body: {
+      overflow: body.style.overflow,
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+      overscrollBehavior: body.style.overscrollBehavior,
+    },
+    root: {
+      overflow: root.style.overflow,
+      overscrollBehavior: root.style.overscrollBehavior,
+    },
+  };
+
+  // `body { overflow:hidden }` alone still allows the document behind a
+  // fixed modal to move in iOS Safari/PWA. Freeze the body at the current
+  // visual position and lock the root as well. The modal panel itself keeps
+  // its own vertical scrolling.
+  root.style.overflow = 'hidden';
+  root.style.overscrollBehavior = 'none';
+  body.style.overflow = 'hidden';
+  body.style.position = 'fixed';
+  body.style.top = `-${scrollY}px`;
+  body.style.left = '0';
+  body.style.right = '0';
+  body.style.width = '100%';
+  body.style.overscrollBehavior = 'none';
+}
+
+function unlockPageScroll() {
+  if (scrollLockDepth === 0) return;
+  scrollLockDepth -= 1;
+  if (scrollLockDepth > 0) return;
+
+  const snapshot = scrollLockSnapshot;
+  scrollLockSnapshot = null;
+  if (!snapshot) return;
+
+  const body = document.body;
+  const root = document.documentElement;
+  body.style.overflow = snapshot.body.overflow;
+  body.style.position = snapshot.body.position;
+  body.style.top = snapshot.body.top;
+  body.style.left = snapshot.body.left;
+  body.style.right = snapshot.body.right;
+  body.style.width = snapshot.body.width;
+  body.style.overscrollBehavior = snapshot.body.overscrollBehavior;
+  root.style.overflow = snapshot.root.overflow;
+  root.style.overscrollBehavior = snapshot.root.overscrollBehavior;
+  window.scrollTo(0, snapshot.scrollY);
+}
+
 export function Modal({
   title,
   onClose,
@@ -27,9 +109,8 @@ export function Modal({
 
   useEffect(() => {
     const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const originalOverflow = document.body.style.overflow;
     const previousHistoryState = window.history.state;
-    document.body.style.overflow = 'hidden';
+    lockPageScroll();
     window.history.pushState({ ...previousHistoryState, familyOpsModal: modalId }, '');
     panelRef.current?.focus();
 
@@ -45,7 +126,7 @@ export function Modal({
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('popstate', onPopState);
     return () => {
-      document.body.style.overflow = originalOverflow;
+      unlockPageScroll();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('popstate', onPopState);
       if (!restoredByBack.current && window.history.state?.familyOpsModal === modalId) {
