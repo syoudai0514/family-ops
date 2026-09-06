@@ -10,35 +10,32 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 
 const OUTCOME_LABELS: Record<PlannedVsActualOutcome, string> = {
-  completed_on_time: '完了（期限内）',
-  completed_late: '完了（期限超過）',
-  not_needed: '今回は不要',
-  could_not_do: 'できなかった',
-  expired_occurrence: '期限終了',
-  waiting: '待ち',
-  cancelled: 'キャンセル',
-  overdue_open: '未完了（期限超過）',
-  in_progress: '進行中',
-  upcoming: '予定',
+  completed_on_time: '完了（期限内）', completed_late: '完了（期限超過）', not_needed: '今回は不要',
+  could_not_do: 'できなかった', expired_occurrence: '期限終了', waiting: '待ち', cancelled: 'キャンセル',
+  overdue_open: '未完了（期限超過）', in_progress: '進行中', upcoming: '予定',
 };
 
 const OUTCOME_CLASS: Record<PlannedVsActualOutcome, string> = {
-  completed_on_time: 'history-outcome ok',
-  completed_late: 'history-outcome late',
-  not_needed: 'history-outcome skipped',
-  could_not_do: 'history-outcome skipped',
-  expired_occurrence: 'history-outcome skipped',
-  waiting: 'history-outcome pending',
-  cancelled: 'history-outcome skipped',
-  overdue_open: 'history-outcome late',
-  in_progress: 'history-outcome pending',
-  upcoming: 'history-outcome pending',
+  completed_on_time: 'history-outcome ok', completed_late: 'history-outcome late', not_needed: 'history-outcome skipped',
+  could_not_do: 'history-outcome skipped', expired_occurrence: 'history-outcome skipped', waiting: 'history-outcome pending',
+  cancelled: 'history-outcome skipped', overdue_open: 'history-outcome late', in_progress: 'history-outcome pending', upcoming: 'history-outcome pending',
 };
 
 const EVENT_TYPE_LABELS: Record<TaskEventType, string> = {
   created: '作成', edited: '編集', cancelled: 'キャンセル', completed: '完了',
   subtask_completed: 'サブタスク完了', reassigned_once: '再割り当て', skipped: 'スキップ',
 };
+
+type HistoryFilter = 'all' | 'routine' | 'planned' | 'request';
+const HISTORY_FILTER_KEY = 'family-ops:history-filter';
+
+function initialHistoryFilter(): HistoryFilter {
+  try {
+    const stored = sessionStorage.getItem(HISTORY_FILTER_KEY);
+    if (stored === 'routine' || stored === 'planned' || stored === 'request') return stored;
+  } catch { /* storage unavailable */ }
+  return 'all';
+}
 
 function memberLabel(userId: string | null, members: HouseholdMemberWithProfile[]): string {
   if (!userId) return '未定';
@@ -76,12 +73,8 @@ function HistoryRow({ entry, members, onChanged }: { entry: HistoryEntry; member
   useEffect(() => { if (!editingActual) setSelectedUserIds(actualParticipantUserIds); }, [actualParticipantUserIds, editingActual]);
 
   async function saveActualCorrection() {
-    if (selectedUserIds.length === 0) {
-      setError('実施した人を一人以上選んでください。');
-      return;
-    }
-    setBusy(true);
-    setError(null);
+    if (selectedUserIds.length === 0) { setError('実施した人を一人以上選んでください。'); return; }
+    setBusy(true); setError(null);
     try {
       await callEdgeFunction(EDGE_FUNCTIONS.correctTaskActual, {
         operation_id: newOperationId(), task_id: task.id,
@@ -91,34 +84,33 @@ function HistoryRow({ entry, members, onChanged }: { entry: HistoryEntry; member
       await onChanged();
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '訂正に失敗しました。');
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
-  return <li className="history-item card">
+  const participantLabel = actualParticipantUserIds.map((id) => memberLabel(id, members)).join('・') || '未記録';
+
+  return <li className="history-item card" data-history-task-id={task.id}>
     <div className="history-item-header"><strong>{task.title}</strong><span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span></div>
     <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
-    {task.status === 'completed' && <p className="task-item-meta">実績: {task.completed_at ? formatDateTimeJa(task.completed_at) : '—'} {actualParticipantUserIds.map((id) => memberLabel(id, members)).join('・') || '未記録'}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 翌朝に完了' : ''}</p>}
+    {task.status === 'completed' && <p className="task-item-meta"><strong>実績日: {task.scheduled_date}</strong> · {participantLabel}</p>}
     {outcome === 'waiting' && <p className="task-item-meta">{task.waiting_note ? `待ち理由: ${task.waiting_note}` : '確認待ち'}{task.next_check_at ? ` · 次回確認 ${formatDateTimeJa(task.next_check_at)}` : ''}</p>}
     {reassignment && <p className="task-item-meta">{reassignment}</p>}
-    {task.status === 'completed' && (
-      <div className="history-correction">
-        {!editingActual ? <button type="button" className="text-button" onClick={() => setEditingActual(true)}>実績を訂正</button> : (
-          <fieldset>
-            <legend>実際にやった人</legend>
-            {members.map((member) => {
-              const checked = selectedUserIds.includes(member.user_id);
-              return <label key={member.user_id} className="inline-check"><input type="checkbox" checked={checked} disabled={busy} onChange={() => setSelectedUserIds((ids) => checked ? ids.filter((id) => id !== member.user_id) : [...ids, member.user_id])} />{memberLabel(member.user_id, members)}</label>;
-            })}
-            <p className="task-item-meta">訂正前の記録は履歴に残ります。</p>
-            <div className="task-item-actions"><button type="button" disabled={busy} onClick={saveActualCorrection}>訂正を保存</button><button type="button" className="text-button" disabled={busy} onClick={() => setEditingActual(false)}>やめる</button></div>
-          </fieldset>
-        )}
-        {error && <p role="alert" className="error-text">{error}</p>}
-      </div>
-    )}
-    <EventTrail events={events} members={members} />
+    {task.status === 'completed' && <div className="history-correction">
+      {!editingActual ? <button type="button" className="text-button" onClick={() => setEditingActual(true)}>実績を訂正</button> : <fieldset>
+        <legend>実際にやった人</legend>
+        {members.map((member) => {
+          const checked = selectedUserIds.includes(member.user_id);
+          return <label key={member.user_id} className="inline-check"><input type="checkbox" checked={checked} disabled={busy} onChange={() => setSelectedUserIds((ids) => checked ? ids.filter((id) => id !== member.user_id) : [...ids, member.user_id])} />{memberLabel(member.user_id, members)}</label>;
+        })}
+        <p className="task-item-meta">訂正前の記録は履歴に残ります。実績日は元の対象日のままです。</p>
+        <div className="task-item-actions"><button type="button" disabled={busy} onClick={saveActualCorrection}>訂正を保存</button><button type="button" className="text-button" disabled={busy} onClick={() => setEditingActual(false)}>やめる</button></div>
+      </fieldset>}
+      {error && <p role="alert" className="error-text">{error}</p>}
+    </div>}
+    <details className="history-audit"><summary>監査情報</summary>
+      {task.completed_at && <p className="task-item-meta">登録時刻: {formatDateTimeJa(task.completed_at)}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 対象日の翌日以降に記録' : ''}</p>}
+      <EventTrail events={events} members={members} />
+    </details>
   </li>;
 }
 
@@ -126,7 +118,7 @@ export function HistoryPage() {
   const { user } = useAuth();
   const { household, members } = useHousehold();
   const { loading, error, entries, refresh } = useHistoryData(household?.id ?? null, user?.id ?? null);
-  const [filter, setFilter] = useState<'all' | 'routine' | 'planned' | 'request'>('all');
+  const [filter, setFilter] = useState<HistoryFilter>(initialHistoryFilter);
   const visibleEntries = useMemo(() => entries.filter((entry) => {
     if (filter === 'all') return true;
     if (filter === 'routine') return entry.task.routine_phase === 'morning' || entry.task.routine_phase === 'evening';
@@ -134,13 +126,18 @@ export function HistoryPage() {
     return entry.events.some((event) => event.source === 'request');
   }), [entries, filter]);
 
+  function chooseFilter(next: HistoryFilter) {
+    setFilter(next);
+    try { sessionStorage.setItem(HISTORY_FILTER_KEY, next); } catch { /* storage unavailable */ }
+  }
+
   if (loading) return <div className="app-shell"><p role="status">読み込み中…</p></div>;
 
   return <div className="app-shell">
     <div className="today-header"><h1>履歴</h1></div>
-    <p className="task-item-meta">直近2週間の予定と実際の結果です。</p>
+    <p className="task-item-meta">直近2週間の予定と実際の結果です。実績日は元の対象日で表示し、登録時刻は監査情報に分けています。</p>
     <div className="filter-chips" aria-label="履歴の絞り込み">
-      {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{label}</button>)}
+      {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => chooseFilter(key)}>{label}</button>)}
     </div>
     {error && <p role="alert" className="error-text">{error}</p>}
     <ul className="history-list">{visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}{visibleEntries.map((entry) => <HistoryRow key={entry.task.id} entry={entry} members={members} onChanged={refresh} />)}</ul>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { normalizeConciergeProposal } from './conciergeFlow';
 import { commitConciergeCandidate } from './conciergeCommit';
 
-const member = (userId: string, role: string) => ({
+const member = (userId: string, role: 'papa' | 'mama') => ({
   household_id: '00000000-0000-4000-8000-000000000001', user_id: userId,
   member_role: 'adult' as const, family_role: role, joined_at: '2026-01-01T00:00:00Z', profile: null,
 });
