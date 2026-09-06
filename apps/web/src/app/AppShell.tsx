@@ -17,6 +17,10 @@ import { QuickAdd } from '../features/tasks/QuickAdd';
 import { TestSimulation } from '../features/testSimulation/TestSimulation';
 import { EventPlanPage } from '../features/events/EventPlanPage';
 import { NurseryReviewPage } from '../features/nursery/NurseryReviewPage';
+import { ConciergePage } from '../features/concierge/ConciergePage';
+import { TranscriptPage } from '../features/concierge/TranscriptPage';
+import { ConciergeResultsPage } from '../features/concierge/ConciergeResultsPage';
+import { ConciergeConfirmPage } from '../features/concierge/ConciergeConfirmPage';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -54,23 +58,11 @@ export function AppShell() {
   return (
     <div className="app-root">
       <header className="app-nav">
-        <NavLink className="app-nav-brand" to="/today">
-          <span aria-hidden="true">⌂</span> おうちノート
-        </NavLink>
+        <NavLink className="app-nav-brand" to="/today"><span aria-hidden="true">⌂</span> おうちノート</NavLink>
         <nav className="desktop-nav" aria-label="主要メニュー">
-          {PRIMARY_NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          {PRIMARY_NAV_ITEMS.map((item) => <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>{item.label}</NavLink>)}
         </nav>
-        <NavLink to="/settings" className="header-icon" aria-label="設定">
-          ⚙
-        </NavLink>
+        <NavLink to="/settings" className="header-icon" aria-label="設定">⚙</NavLink>
       </header>
       <Routes>
         <Route path="/today" element={<Today />} />
@@ -91,12 +83,15 @@ export function AppShell() {
         <Route path="/settings/terminology" element={<HouseholdTerminology />} />
         <Route path="/settings/test-simulation" element={<TestSimulation />} />
         <Route path="/checkin/:sessionId" element={<CheckinPage />} />
+        <Route path="/concierge" element={<ConciergePage />} />
+        <Route path="/concierge/transcript" element={<TranscriptPage />} />
+        <Route path="/concierge/results" element={<ConciergeResultsPage />} />
+        <Route path="/concierge/confirm" element={<ConciergeConfirmPage />} />
+        <Route path="/actuals/new" element={<ConciergePage actualOnly />} />
         <Route path="*" element={<Today />} />
       </Routes>
       <nav className="bottom-nav" aria-label="主要メニュー">
-        {PRIMARY_NAV_ITEMS.map((item) => (
-          <BottomNavLink key={item.to} item={item} />
-        ))}
+        {PRIMARY_NAV_ITEMS.map((item) => <BottomNavLink key={item.to} item={item} />)}
         <QuickAdd className="bottom-nav-add" />
       </nav>
     </div>

@@ -28,6 +28,7 @@ export const EDGE_FUNCTIONS = {
   cancelRequest: 'cancel-request',
   startRequestFollowup: 'start-request-followup',
   proposeAiDraft: 'propose-ai-draft',
+  proposeConciergeCandidates: 'propose-concierge-candidates',
   proposeEventPlan: 'propose-event-plan',
   confirmEventPlan: 'confirm-event-plan',
   addShoppingItem: 'add-shopping-item',
