@@ -1,10 +1,11 @@
 // Route: /checkin/:sessionId -> CheckinPage
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
+import { useCurrentRoutineSessions, type CurrentRoutineSessionType } from './useCurrentRoutineSessions';
 
 type SessionType = 'dropoff' | 'pickup' | 'nonpickup_evening';
 type SessionStatus = 'open' | 'submitted' | 'auto_closed' | 'superseded';
@@ -58,6 +59,13 @@ const STATUS_LABELS: Record<SessionStatus, string> = {
   open: '対応中', submitted: '完了', auto_closed: '完了（自動）', superseded: '担当変更により無効',
 };
 
+export function previousIsoDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day));
+  value.setUTCDate(value.getUTCDate() - 1);
+  return value.toISOString().slice(0, 10);
+}
+
 function itemStatusLabel(item: SessionItem): string {
   if (item.status === 'completed') return '完了';
   if (item.status === 'cancelled') return '中止';
@@ -96,6 +104,9 @@ function useRoutineSession(sessionId: string | undefined) {
 export function CheckinPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentInputs = useCurrentRoutineSessions(Boolean(user));
   const { session, loading, error, refresh } = useRoutineSession(sessionId);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const [busyAll, setBusyAll] = useState(false);
@@ -113,6 +124,14 @@ export function CheckinPage() {
   const activeItems = session.items.filter(isItemActive);
   const canAct = session.can_act && session.status === 'open';
   const canCorrectBulk = Boolean(reconciliationOperationId && session.status === 'submitted');
+  const morningInput = currentInputs.sessions.find((candidate) => candidate.can_act && candidate.session_type === 'dropoff') ?? null;
+  const eveningInput = currentInputs.sessions.find((candidate) => candidate.can_act && candidate.session_type === 'nonpickup_evening') ?? null;
+  const originState = { originPath: location.pathname, originScrollY: window.scrollY };
+
+  function goToCurrentInput(type: CurrentRoutineSessionType) {
+    const target = currentInputs.sessions.find((candidate) => candidate.can_act && candidate.session_type === type);
+    if (target) navigate(`/checkin/${target.id}`, { replace: target.id === sessionId });
+  }
 
   async function runItemAction(taskInstanceId: string, action: ItemAction) {
     setActionError(null); setBusyItemId(taskInstanceId);
@@ -156,7 +175,7 @@ export function CheckinPage() {
       } else if (responseKind === 'mostly_done') {
         setReconciliationMessage('「大体やった」と記録しました。項目は勝手に完了にしていません。');
       } else {
-        setReconciliationMessage('個別で答える入力に切り替えました。'); setIndividualMode(true);
+        setReconciliationMessage('個別に記録する入力へ切り替えました。'); setIndividualMode(true);
       }
       await refresh();
     } catch (err) { setActionError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。'); }
@@ -178,6 +197,13 @@ export function CheckinPage() {
   }
 
   return <div className="app-shell">
+    <nav className="filter-chips" aria-label="チェックイン対象の切り替え">
+      <button type="button" className={session.session_type === 'nonpickup_evening' ? 'active' : ''} aria-pressed={session.session_type === 'nonpickup_evening'} disabled={!eveningInput || currentInputs.loading} onClick={() => goToCurrentInput('nonpickup_evening')}>今夜</button>
+      <button type="button" className={session.session_type === 'dropoff' ? 'active' : ''} aria-pressed={session.session_type === 'dropoff'} disabled={!morningInput || currentInputs.loading} onClick={() => goToCurrentInput('dropoff')}>朝の未入力{morningInput ? ` ${morningInput.remaining_count}` : ''}</button>
+      <button type="button" onClick={() => navigate('/history', { state: { correctionDate: previousIsoDate(session.scheduled_date), ...originState } })}>昨日分修正</button>
+      <button type="button" onClick={() => navigate('/actuals/new', { state: originState })}>予定外実績</button>
+    </nav>
+    {currentInputs.error && <p role="status" className="empty-hint">{currentInputs.error}</p>}
     <div className="today-header"><h1>{SESSION_TYPE_LABELS[session.session_type]} · {session.scheduled_date}</h1><span className="task-item-meta">{STATUS_LABELS[session.status]}</span></div>
     {session.status === 'superseded' && <p role="alert" className="error-text">担当の変更によりこのチェックは無効になりました（読み取り専用）。{session.current_session_id && <> <Link to={`/checkin/${session.current_session_id}`}>最新のチェックを見る</Link></>}</p>}
     {!session.can_act && session.status === 'open' && <p className="task-item-meta">このチェックは他の担当者のものです（閲覧のみ）。</p>}
@@ -195,11 +221,15 @@ export function CheckinPage() {
 
     {canAct && activeItems.length > 0 && !individualMode && <section className="card checkin-reconciliation" aria-labelledby="checkin-reconciliation-title">
       <p className="eyebrow">{inputLabel(session.session_type)}</p><h2 id="checkin-reconciliation-title">今日はどうでしたか？</h2>
-      <p className="empty-hint">細かな入力は例外があるときだけで大丈夫です。</p>
+      <div className="checkin-scope" aria-label="一括操作の対象">
+        <strong>この操作の対象: 必須/通常 {activeItems.length}件</strong>
+        <span className="task-item-meta">余力は一括対象外です。</span>
+      </div>
+      <p className="empty-hint">細かな入力は例外があるときだけで大丈夫です。「大体やった」では未入力項目や子項目を勝手に完了にしません。</p>
       <div className="checkin-reconciliation-actions">
         <button type="button" className="hero-primary" disabled={busyAll} onClick={() => runReconciliation('all_done')}>全部やった</button>
         <button type="button" className="secondary-button" disabled={busyAll} onClick={() => runReconciliation('mostly_done')}>大体やった</button>
-        <button type="button" className="text-button" disabled={busyAll} onClick={() => runReconciliation('individual')}>個別で答える</button>
+        <button type="button" className="text-button" disabled={busyAll} onClick={() => runReconciliation('individual')}>個別に記録</button>
       </div>
     </section>}
 
@@ -214,7 +244,7 @@ export function CheckinPage() {
           </div>
           {canEditItem && <div className="checkin-item-actions">
             <button type="button" className="hero-primary" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'complete')}>完了</button>
-            <details className="task-overflow"><summary aria-label={`${item.title}のその他の結果`}>その他</summary><div>
+            <details className="task-overflow"><summary aria-label={`${item.title}のその他の結果`}>その他の結果</summary><div>
               <button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'partner_handled')}>相手が対応</button>
               <button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'failed')}>できなかった</button>
               <button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'skip')}>今回は不要</button>
@@ -228,7 +258,7 @@ export function CheckinPage() {
       })}
       {session.items.length === 0 && <li className="empty-hint">項目はありません。</li>}
     </ul>
-    <Link className="text-button checkin-back-link" to="/">今日に戻る</Link>
+    <button type="button" className="text-button checkin-back-link" onClick={() => navigate(-1)}>戻る</button>
     {!user && <p className="task-item-meta">ログイン情報を確認できません。</p>}
   </div>;
 }
