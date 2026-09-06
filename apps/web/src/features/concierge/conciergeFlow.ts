@@ -20,18 +20,20 @@ export type ConciergeCandidate = {
   } | null;
 };
 
+type RawLineIntent = {
+  scheduledDate?: string;
+  dueLocalTime?: string | null;
+  targetRole?: string | null;
+  sharedMessage?: string | null;
+};
+
 type RawConciergeCandidate = {
-  id: string;
+  candidateId: string;
   kind: ConciergeCandidateKind;
   title: string;
-  detail?: string;
-  targetUserId?: string;
-  targetRole?: string;
-  scheduledDate?: string;
-  dueLocalTime?: string;
-  desiredDueAt?: string;
-  priority?: 'low' | 'normal' | 'high';
-  missingFields?: string[];
+  intent: RawLineIntent | null;
+  sourceText: string;
+  missingFields: string[];
 };
 
 type RawConciergeProposal = {
@@ -75,20 +77,20 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
     read_only_intent: raw.read_only_intent,
     clarification: raw.clarification,
     candidates: (raw.candidates ?? []).map((candidate) => ({
-      candidateId: candidate.id,
+      candidateId: candidate.candidateId,
       kind: candidate.kind,
       title: candidate.title,
-      sourceText: candidate.detail?.trim() || sourceText,
+      sourceText: candidate.sourceText?.trim() || sourceText,
       missingFields: candidate.missingFields ?? [],
-      intent: {
-        scheduledDate: candidate.scheduledDate,
-        dueLocalTime: candidate.dueLocalTime ?? null,
-        desiredDueAt: candidate.desiredDueAt ?? null,
-        priority: candidate.priority ?? null,
-        targetUserId: candidate.targetUserId ?? null,
-        targetRole: candidate.targetRole ?? null,
-        sharedMessage: candidate.detail ?? null,
-      },
+      intent: candidate.intent ? {
+        scheduledDate: candidate.intent.scheduledDate,
+        dueLocalTime: candidate.intent.dueLocalTime ?? null,
+        desiredDueAt: null,
+        priority: null,
+        targetUserId: null,
+        targetRole: candidate.intent.targetRole ?? null,
+        sharedMessage: candidate.intent.sharedMessage ?? null,
+      } : null,
     })),
   };
 }
