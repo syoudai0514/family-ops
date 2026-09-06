@@ -15,6 +15,8 @@ declare
   v_fresh jsonb;
   v_fresh_id uuid;
   v_read jsonb;
+  v_old_created_at timestamptz;
+  v_fresh_created_at timestamptz;
   v_old_updated_at timestamptz;
   v_fresh_updated_at timestamptz;
 begin
@@ -36,12 +38,15 @@ begin
   );
   v_old_id := (v_old->>'pending_action_id')::uuid;
 
-  -- Reproduce the production backlog: the historical draft is already past
-  -- its TTL, while its original conversation creation time is much older.
+  -- Reproduce the production backlog: this row belongs to an older LINE
+  -- conversation, but later state maintenance has made its updated_at newer
+  -- than the genuinely fresh conversation.  Set that skew explicitly so the
+  -- regression is independent of whether a particular test database has an
+  -- updated_at trigger on pending_actions.
   update private.pending_actions
   set expires_at = now() - interval '1 minute',
       created_at = now() - interval '1 day',
-      updated_at = now() - interval '1 day'
+      updated_at = now() + interval '1 minute'
   where id = v_old_id;
 
   v_fresh := public.server_tx_create_pending_action(
@@ -60,20 +65,23 @@ begin
     v_actor, 'U-H6B-BACKLOG-ORDER'
   );
 
-  select updated_at into v_old_updated_at
+  select created_at, updated_at into v_old_created_at, v_old_updated_at
   from private.pending_actions where id = v_old_id;
-  select updated_at into v_fresh_updated_at
+  select created_at, updated_at into v_fresh_created_at, v_fresh_updated_at
   from private.pending_actions where id = v_fresh_id;
 
   if (select status from private.pending_actions where id = v_old_id) <> 'expired' then
     raise exception 'FAIL h6b-backlog: old elapsed draft was not expired';
   end if;
 
-  -- The lazy expiry deliberately updates the old row after the fresh draft.
-  -- This assertion makes sure the regression fixture really reproduces the
-  -- production ordering hazard that existed with ORDER BY updated_at.
+  -- Prove the fixture contains the exact ordering hazard: the historical row
+  -- is older by conversation creation time but newer by state-update time.
+  -- The pre-fix ORDER BY updated_at would therefore choose the wrong row.
+  if v_old_created_at >= v_fresh_created_at then
+    raise exception 'FAIL h6b-backlog: fixture old conversation is not older';
+  end if;
   if v_old_updated_at <= v_fresh_updated_at then
-    raise exception 'FAIL h6b-backlog: fixture did not advance old updated_at';
+    raise exception 'FAIL h6b-backlog: fixture old row is not newer by updated_at';
   end if;
 
   if (v_read->>'id')::uuid <> v_fresh_id
