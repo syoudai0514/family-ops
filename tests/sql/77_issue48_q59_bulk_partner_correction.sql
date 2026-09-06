@@ -14,7 +14,7 @@ declare
   outsider uuid:=gen_random_uuid();
   hh uuid; other_hh uuid; token text;
   papa_ref uuid; mama_ref uuid; drop_def uuid;
-  task_id uuid; session_id uuid;
+  task_id uuid; v_session_id uuid;
   bulk_op uuid:=gen_random_uuid(); correction_op uuid:=gen_random_uuid();
   bulk_result jsonb; correction_result jsonb; replay_result jsonb;
   bulk_after_revision bigint; corrected_revision bigint;
@@ -48,12 +48,12 @@ begin
   perform public.server_tx_dispatch_routine_automation(
     ('2026-10-29 07:00:00'::timestamp at time zone 'Asia/Tokyo'),2000
   );
-  select id into session_id from public.routine_checkin_sessions
+  select id into v_session_id from public.routine_checkin_sessions
     where household_id=hh and session_type='dropoff' and scheduled_date='2026-10-29' and assignee_id=papa;
-  if session_id is null then raise exception 'FAIL Q59 fixture: routine session missing'; end if;
+  if v_session_id is null then raise exception 'FAIL Q59 fixture: routine session missing'; end if;
 
   -- 1. Papa says "全部やった": immediate bulk truth is self-completed.
-  bulk_result:=public.server_tx_reconcile_routine_session_v2(papa,bulk_op,session_id,'all_done');
+  bulk_result:=public.server_tx_reconcile_routine_session_v2(papa,bulk_op,v_session_id,'all_done');
   if coalesce((bulk_result->>'undo_available')::boolean,false) is not true then
     raise exception 'FAIL Q59: bulk operation did not expose immediate undo';
   end if;
@@ -73,7 +73,7 @@ begin
 
   -- 2. Immediately correct the exception: this one was actually handled by Mama.
   correction_result:=public.server_tx_routine_session_item_action_v3(
-    papa,correction_op,session_id,task_id,'partner_handled','pwa',null,bulk_op
+    papa,correction_op,v_session_id,task_id,'partner_handled','pwa',null,bulk_op
   );
   if coalesce((correction_result->>'corrected_actual')::boolean,false) is not true
      or correction_result->>'reconciliation_outcome'<>'partner_handled' then
@@ -101,9 +101,10 @@ begin
     raise exception 'FAIL Q59: correction left multiple active actual performers';
   end if;
   if not exists(
-    select 1 from public.routine_item_reconciliation_outcomes
-    where household_id=hh and session_id=session_id and task_instance_id=task_id
-      and actor_user_id=papa and outcome='partner_handled' and source='pwa' and operation_id=correction_op
+    select 1 from public.routine_item_reconciliation_outcomes rio
+    where rio.household_id=hh and rio.session_id=v_session_id and rio.task_instance_id=task_id
+      and rio.actor_user_id=papa and rio.outcome='partner_handled' and rio.source='pwa'
+      and rio.operation_id=correction_op
   ) then raise exception 'FAIL Q59: reconciliation outcome split from corrected actual truth'; end if;
 
   -- History read model uses active task_actual_participants first; these two
@@ -119,7 +120,7 @@ begin
 
   -- 3. Duplicate tap/webhook retry is exactly idempotent: no revision or participant drift.
   replay_result:=public.server_tx_routine_session_item_action_v3(
-    papa,correction_op,session_id,task_id,'partner_handled','pwa',null,bulk_op
+    papa,correction_op,v_session_id,task_id,'partner_handled','pwa',null,bulk_op
   );
   if replay_result is distinct from correction_result
      or (select revision from public.task_instances where id=task_id)<>corrected_revision
@@ -132,7 +133,7 @@ begin
   failed:=false;
   begin
     perform public.server_tx_routine_session_item_action_v3(
-      outsider,gen_random_uuid(),session_id,task_id,'partner_handled','pwa',null,bulk_op
+      outsider,gen_random_uuid(),v_session_id,task_id,'partner_handled','pwa',null,bulk_op
     );
   exception when others then
     failed:=position('CROSS_HOUSEHOLD_RESOURCE' in sqlerrm)>0;
