@@ -15,11 +15,45 @@ function normalized(text: string): string {
   return text.normalize("NFKC").replace(/\s+/g, "").trim();
 }
 
+function normalizedScheduleInquiry(text: string): string {
+  return normalized(text)
+    .replace(/[。.!！?？]+$/g, "")
+    .replace(/^(?:違う違う|ちがうちがう|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて)[、,]*/u, "")
+    .replace(/^ただ/u, "")
+    .replace(/きょう/gu, "今日")
+    .replace(/あした/gu, "明日")
+    .replace(/こんしゅう/gu, "今週")
+    .replace(/よてい/gu, "予定")
+    .replace(/おしえて/gu, "教えて")
+    .replace(/しりたい/gu, "知りたい")
+    .replace(/みたい/gu, "見たい")
+    .replace(/かくにんしたい/gu, "確認したい")
+    .replace(/なに/gu, "何");
+}
+
+function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | null {
+  const value = normalizedScheduleInquiry(text);
+  const match = value.match(/^(今日|明日|今週)(.*)$/u);
+  if (!match) return null;
+  const kind = match[1] === "今日" ? "today" : match[1] === "明日" ? "tomorrow" : "week";
+  const rest = match[2];
+
+  // Preserve the existing one-word shortcuts while expanding natural
+  // questions. These must be caught before the AI mutation classifier;
+  // otherwise a harmless query can become a bogus registration draft.
+  if (rest === "") return kind;
+  if (/^(?:の)?予定(?:は|を|が)?(?:教えて|知りたい|見たい|確認したい|何(?:が)?ある|どうなってる)?(?:だけ)?$/u.test(rest)) {
+    return kind;
+  }
+  if (/^(?:何(?:が)?ある|どうなってる)(?:の)?$/u.test(rest)) return kind;
+  return null;
+}
+
 export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
   const value = normalized(text);
-  // These are the literal six LINE entry labels from Q73.  They deliberately
+  // These are the literal six LINE entry labels from Q73. They deliberately
   // remain short, so the fixed menu is usable without making people learn a
-  // second vocabulary.  Each is routed by the worker to a concrete surface.
+  // second vocabulary. Each is routed by the worker to a concrete surface.
   if (/^(?:入力|今日の入力|朝の入力|夜の入力)$/.test(value)) return "input";
   if (/^(?:追加|追加したい|登録)$/.test(value)) return "add";
   if (/^(?:共有|引き継ぎ|共有したい)$/.test(value)) return "share";
@@ -28,15 +62,9 @@ export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
     /^(?:メニュー(?:を)?(?:出して|見せて|表示して)?|何(?:が|を)?できる(?:んだっけ|の|こと)?|何できる(?:んだっけ)?|できること(?:は|教えて)?|使い方(?:は|教えて)?|ヘルプ(?:お願い)?)[？?。!！]*$/
       .test(value)
   ) return "menu";
-  if (/^今週(?:の予定(?:は|教えて)?|どうなってる)?[？?]?$/.test(value)) {
-    return "week";
-  }
-  if (/^明日(?:の予定(?:は|教えて)?|なにある)?[？?]?$/.test(value)) {
-    return "tomorrow";
-  }
-  if (/^今日(?:の予定(?:は|教えて)?|なにある)?[？?]?$/.test(value)) {
-    return "today";
-  }
+
+  const scheduleIntent = scheduleReadOnlyIntent(text);
+  if (scheduleIntent) return scheduleIntent;
   return null;
 }
 
