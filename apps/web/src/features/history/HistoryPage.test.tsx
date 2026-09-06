@@ -69,7 +69,9 @@ describe('HistoryPage', () => {
     expect(screen.getByText('待ち')).toBeInTheDocument();
     expect(screen.getByText(/待ち理由: 園からの回答待ち/)).toBeInTheDocument();
     expect(screen.getByText('担当変更: パパ → ママ')).toBeInTheDocument();
-    expect(screen.getByText(/実績:.*パパ・ママ/)).toBeInTheDocument();
+    expect(screen.getByText(/実績日: 2026-08-18.*パパ・ママ/)).toBeInTheDocument();
+    expect(screen.getByText('監査情報')).toBeInTheDocument();
+    expect(screen.getByText(/登録時刻:/)).toBeInTheDocument();
     expect(screen.queryByText(/スコア|ランキング|ポイント/)).not.toBeInTheDocument();
   });
 
