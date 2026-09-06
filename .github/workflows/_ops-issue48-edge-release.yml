@@ -1,0 +1,89 @@
+name: Ops Issue48 reviewed Edge release
+
+on:
+  push:
+    branches:
+      - ops/issue48-release-edge-9aa626d
+    paths:
+      - .github/workflows/_ops-issue48-edge-release.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: family-ops-edge-functions-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-reviewed-edge:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: dnlqxjpjpkxnfgculzip
+      REVIEWED_SHA: 9aa626dd197e088c8a4164958ea93fa6c1660aa4
+    steps:
+      - name: Checkout exact independently reviewed source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+          fetch-depth: 1
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+
+      - name: Require deployment credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || {
+            echo "::error::SUPABASE_ACCESS_TOKEN is required"
+            exit 1
+          }
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+
+      - name: Deploy PR #50 changed Edge Functions from exact reviewed SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          functions=(
+            add-task-completion-evidence
+            change-task-assignment
+            confirm-event-plan
+            confirm-nursery-review
+            correct-task-actual
+            create-handover
+            delete-nursery-source-image
+            get-current-routine-sessions
+            get-nursery-review
+            line-webhook-receiver
+            list-google-event-reviews
+            list-nursery-reviews
+            negotiate-request
+            process-line-inbox
+            process-nursery-image-intake
+            process-pending-actions
+            propose-event-plan
+            reconcile-routine-session
+            resolve-google-event-review
+            resolve-nursery-ambiguity
+            respond-request
+            routine-session-item-action
+            send-notifications
+            set-task-waiting
+            transport-schedule
+            update-household-terminology
+          )
+          for function_name in "${functions[@]}"; do
+            test -f "supabase/functions/${function_name}/index.ts" || {
+              echo "::error::Missing reviewed function source: ${function_name}"
+              exit 1
+            }
+            echo "Deploying ${function_name} from ${REVIEWED_SHA}"
+            supabase functions deploy "${function_name}" \
+              --project-ref "$PROJECT_REF" \
+              --use-api
+          done
+
+      - name: List production functions after deploy
+        run: supabase functions list --project-ref "$PROJECT_REF"
