@@ -1,5 +1,5 @@
 import { NavLink, Route, Routes } from 'react-router-dom';
-import { Today } from '../features/today/Today';
+import { TodayContractPage } from '../features/today/TodayContractPage';
 import { Requests } from '../features/requests/Requests';
 import { Shopping } from '../features/shopping/Shopping';
 import { Handovers } from '../features/handovers/Handovers';
@@ -65,7 +65,7 @@ export function AppShell() {
         <NavLink to="/settings" className="header-icon" aria-label="設定">⚙</NavLink>
       </header>
       <Routes>
-        <Route path="/today" element={<Today />} />
+        <Route path="/today" element={<TodayContractPage />} />
         <Route path="/week" element={<WeekView />} />
         <Route path="/month" element={<MonthView />} />
         <Route path="/planning/google-review" element={<GoogleEventReviewPage />} />
@@ -88,7 +88,7 @@ export function AppShell() {
         <Route path="/concierge/results" element={<ConciergeResultsPage />} />
         <Route path="/concierge/confirm" element={<ConciergeConfirmPage />} />
         <Route path="/actuals/new" element={<ConciergePage actualOnly />} />
-        <Route path="*" element={<Today />} />
+        <Route path="*" element={<TodayContractPage />} />
       </Routes>
       <nav className="bottom-nav" aria-label="主要メニュー">
         {PRIMARY_NAV_ITEMS.map((item) => <BottomNavLink key={item.to} item={item} />)}

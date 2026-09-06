@@ -1,59 +1,66 @@
 # Issue #54 — Final UX Contract → Production Parity Matrix
 
-Status: implementation closeout in progress. This file is the durable literal 34-screen matrix required by Issue #54 and MUST be updated in the same PR as remediation. `MATCH` below means the CURRENT source/UI already materially maps to the approved contract at first-pass source audit; it is **not** a release PASS until automated and Gate C iPhone-equivalent evidence are recorded. `PARTIAL` is release FAIL. `MISSING` is release FAIL.
+Status: implementation closeout in progress. This is the durable 34-screen matrix for the user-approved final-v11 contract. `MATCH` means CURRENT source + deterministic regression materially implement the screen contract; it is not release approval until Gate C evidence and Gate D independent review are complete. `PARTIAL` and `MISSING` remain release failures.
 
 ## Authority and exact contract
 
-- CURRENT baseline at audit start: `main@543e6d879e53a0c48149ed4126140f12dfa51d7f`.
-- Working branch: `impl/issue-54-final-ux-parity`.
-- Product authority: `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` → Appendix A Q1–Q112 → `docs/design/current/` → Accepted ADRs (notably 0012/0013) → CURRENT source/schema.
-- Mandatory UI/interaction concretization: user-supplied `family-ops-ux-contract-final-v11-noscript.html`, SHA-256 `c1afa191a8e02f86683e886e0c59a60019b7388531dde19f96de690e8b9e2007`.
-- Repository Issue #54 originally mentions older prototype hash `42b5a0630d699f969edf14b9b53b0b8bc5fc725c28b5af352a1f9adc050666b4`; the newer IMPLEMENTATION OWNER DIRECTIVE explicitly identifies the supplied v11 hash above as mandatory. No older prototype is used as implementation truth.
-- HTML fixture chores/dates/owners are presentation fixtures only and MUST NOT become production seed/default data.
+- Working branch: `impl/issue-54-final-ux-parity`
+- Product authority: `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` → Appendix A Q1–Q112 → `docs/design/current/` → Accepted ADRs → CURRENT source/schema.
+- UI/interaction concretization: `family-ops-ux-contract-final-v11-noscript.html`
+- SHA-256: `c1afa191a8e02f86683e886e0c59a60019b7388531dde19f96de690e8b9e2007`
+- Fixture chores/dates/owners are presentation fixtures only; none are production defaults/seeds.
+- Current matrix after Issue #54 remediation in PR #56: **MATCH 20 / PARTIAL 13 / MISSING 1**.
+- Unweighted progress: **58.8%** (`MATCH / 34`).
+- Weighted progress: **77.9%** (`(MATCH + 0.5 × PARTIAL) / 34`; MISSING = 0 weight).
 
-Initial first-pass source audit: **MATCH 14 / PARTIAL 15 / MISSING 5**.
+| # | Contract item | CURRENT source / deterministic evidence | Status | Remaining before release closeout |
+|---:|---|---|---|---|
+| 1 | `today` | `/today` now routes through `TodayContractPage.tsx`: first-viewport `要対応 / 残り / 待ち / 明日影響`, direct-jump/fallback behavior, light Concierge entry; canonical detailed truth remains `Today.tsx`/`TodayTaskItem`; parent/subtask progress and direct completion remain canonical. `TodayContractPage.test.tsx` + existing `Today*.test.tsx`. | MATCH | Gate C iPhone-equivalent evidence. |
+| 2 | `checkin` | `CheckinPage.tsx`: target switcher (`今夜 / 朝の未入力 / 昨日分修正 / 予定外実績`), all/mostly/individual, correction/undo, direct subtask completion, explicit bulk scope copy. Existing server reconciliation keeps optional/余力 out of mutation scope. | PARTIAL | Expose canonical excluded-optional count as literal `余力 M件は対象外`, not an inferred zero/count. |
+| 3 | `individual` | `CheckinPage.tsx`: complete/partner/failed/not-needed/cancel/reschedule/unknown, direct subtask completion, `その他の結果`. | PARTIAL | Close explicit LINE/PWA choice/reference parity and Gate C. |
+| 4 | `actual_add` | `/actuals/new` uses Concierge actual-only entry; `record-unplanned-actual` + `20260907000001_issue54_unplanned_actual_atomic.sql` creates canonical task/actual atomically with original `scheduled_date`, idempotent operation receipt and participant truth; SQL regression `79_issue54_unplanned_actual_atomic.sql`. | MATCH | Gate C actual-entry → canonical History truth. |
+| 5 | `task_form` | `QuickAdd` → `TaskFormModal.tsx`; title-first canonical create/edit, assignment/date/detail/subtasks/calendar controls exist. | PARTIAL | Literal hierarchy + draft/back-state closeout evidence. |
+| 6 | `task_detail` | `TodayTaskItem` / `TaskChecklistItem`: subtask progress/direct completion, waiting/result/assignment operations; edit uses canonical modal. | PARTIAL | Contract-equivalent origin return/state proof. |
+| 7 | `groups` | Routine/category/custom routine settings and routine-session backend implement grouping semantics. | PARTIAL | Literal auto/custom group management + meaningful-scope bulk UI closeout. |
+| 8 | `requests` | `/requests`, Today quick responses and canonical request state machine support received/sent actions, accept/decline/checking/consult. | PARTIAL | Expired/new-proposal/history layout + return-state audit. |
+| 9 | `request_form` | `/requests` composer reuses canonical request commands and separates request semantics from task mutation. | PARTIAL | Response/work deadline and pre-send semantic explanation literal closeout. |
+| 10 | `assignment` | Canonical task/request assignment commands cover self/request/anyone and reassignment semantics. | PARTIAL | Single contract-equivalent assignment decision surface/correction affordance. |
+| 11 | `routine_rules` | `/settings/routines`, `TransportTemplateEditor`, `RoutineSchedule`, occurrence override; non-overlap period templates + future conflict behavior covered by tests. | MATCH | Gate C only. |
+| 12 | `handover` | `/handovers`; share scope/expiry/related ToDo, acknowledge independent from completion, correction/history semantics. | MATCH | Gate C only. |
+| 13 | `shopping` | `/shopping`; state tabs, anyone claim/release/takeover and shopping actual semantics; `shoppingActions.test.ts`. | MATCH | Gate C only. |
+| 14 | `anyone_owner` | Canonical `anyone` state distinct from unassigned; claim/release/takeover implemented. | PARTIAL | Literal current-claimant/disclosure UI confirmation. |
+| 15 | `event` | `/events/new` → `EventPlanPage`; project container/candidate confirmation flow + backend tests. | MATCH | Gate C only. |
+| 16 | `concierge` | Quick Add first item `✨ おうちコンシェルジュ`, Today light entry, `/concierge`, free text + suggestions + shared semantic proposal layer; proposal is read-only until human confirmation. | MATCH | Gate C only. |
+| 17 | `transcript` | `/concierge/transcript`; browser speech recognition `ja-JP`, editable transcript, same proposal layer as text. | MATCH | Gate C/WebKit evidence. |
+| 18 | `results` | `/concierge/results` + `/concierge/confirm`: multi-intent candidates, selected confirmation, `ここだけ確認`, zero-write read-only path, explicit human confirm, per-candidate success/error/retry; canonical command mapping in `conciergeCommit.ts`. | MATCH | Gate C multi-intent confirmation evidence. |
+| 19 | `duplicate_review` | Google/Nursery explicit duplicate decisions exist. | PARTIAL | Generic Concierge duplicate decision (`use existing / update / separate`) before generic candidate commit. |
+| 20 | `nursery` | `/nursery/reviews[/:intakeId]`; Q89–Q106 review/diff/provenance/inference/isolation behavior with Web/Edge/DB tests. | MATCH | Gate C only. |
+| 21 | `google` | `/planning/google-review`; event-centered diff/protected conflict/delete triage/duplicate link-add; provider-fence tests. | MATCH | Gate C safe evidence; real provider mutation prohibited. |
+| 22 | `conflict_review` | Protected current value vs candidates/source, explicit human resolution and authority audit across Google/Nursery. | MATCH | Gate C only. |
+| 23 | `week` | `/week`; future assignment/schedule/prep/advance projection. | MATCH | Gate C only. |
+| 24 | `month` | `/month`; compact transport token and inline selected-date agenda; `MonthView.test.tsx`. | MATCH | Gate C only. |
+| 25 | `dayagenda` | `DayAgendaSheet`; detail/edit from Month and retained selected-date flow. | MATCH | Gate C same-date/scroll evidence. |
+| 26 | `history` | `/history`: visible actual truth is original `scheduled_date`; performer correction; `completed_at` only inside collapsed `監査情報`; filter/selected-row/scroll/back state retained. `HistoryPage.test.tsx`. | MATCH | Gate C correction → return-state evidence. |
+| 27 | `notifications` | Notification policy/settings + outbox: weekday/weekend/night cadence, meaningful exceptions, bundle/echo fences. | MATCH | No real LINE send; Gate C safe UI evidence only. |
+| 28 | `line_reference` | LINE webhook/interactive adapters reuse canonical commands/read models and side-effect fences. | PARTIAL | Literal fixed menu/deep-link/state cross-surface closeout. |
+| 29 | `test_mode` | `/settings/test-simulation`; explicit simulated identity and provider/outbox side-effect fences; Web/Edge/DB tests. | MATCH | Gate C only. |
+| 30 | `delete_semantics` | Canonical task/request/event commands preserve not-needed/cancelled/history semantics. | PARTIAL | Literal unified mistaken-existence vs outcome explanation/choice UI. |
+| 31 | `settings` | `/settings`, terminology/routine/categories/notifications/test/calendar links; terminology independent from assignment rules. | MATCH | Gate C only. |
+| 32 | `states` | Cross-cutting loading/error/empty/realtime/stale handling exists. | PARTIAL | Consistent retry + input-preservation + stale-diff behavior across remaining edited surfaces. |
+| 33 | `non_ui_contract` | Q4/Q14/Q19/Q25/26/39/79/80/81/85/86/88/93/100 plus idempotency/CAS/isolation/provider/test fences are covered by canonical Edge/DB/real-stack suites. | MATCH | Must remain full green. |
+| 34 | `coverage` | This durable 34-row matrix now tracks CURRENT implementation and weighted/unweighted progress. | MISSING | Final exact remediation SHAs, Gate C artifact/evidence, full-CI run and zero PARTIAL/MISSING closeout. |
 
-| Contract item | Approved behavior | CURRENT route/component | CURRENT behavior | Test | Real screen / iPhone evidence | MATCH / PARTIAL / MISSING | Remediation commit |
-|---|---|---|---|---|---|---|---|
-| 1 `today` | First viewport `要対応 / 残り / 待ち / 明日影響`, direct jumps, priority order, daypart, partner summary, tomorrow impact, parent/subtask progress | `/today` → `features/today/Today.tsx`, `TodayTaskItem`, `TomorrowPreparationCard` | DailyBrief/daypart/waiting/tomorrow pieces exist; first-viewport 4-way linked summary and light Concierge entry are not literal | `Today*.test.tsx`, `TaskChecklistItem.test.tsx` | Gate C pending | PARTIAL | TBD |
-| 2 `checkin` | First-class actual flow; switch target; exact eligible scope before bulk; required/normal only; exception/undo | `/checkin/:sessionId` → `CheckinPage.tsx` | all/mostly/individual, correction and undo exist; no target switcher; bulk button is context-free `全部やった`; eligible/excluded scope not shown before mutation | Web check-in coverage exists indirectly; add regression | Gate C pending | PARTIAL | TBD |
-| 3 `individual` | Exception-first individual actual results; approved result labels; subtask direct completion; LINE/PWA choice | Integrated in `CheckinPage.tsx` | Complete/partner/failed/not-needed/cancel/reschedule/unknown exist; disclosure visible text is `その他`, not `その他の結果`; no explicit LINE/PWA choice surface | add regression | Gate C pending | PARTIAL | TBD |
-| 4 `actual_add` | Unplanned actual entry from approved path, shortcuts + free text; original target date semantics | no dedicated PWA surface | No approved standalone entry/surface | none | none | MISSING | TBD |
-| 5 `task_form` | Title-first one-off ToDo, assignment incl. unassigned/anyone, optional date/detail/subtasks/calendar | QuickAdd → `TaskFormModal.tsx` | Core creation/edit form exists; literal hierarchy/state-preservation audit still needed | task form/QuickAdd tests | Gate C pending | PARTIAL | TBD |
-| 6 `task_detail` | Subtask progress/direct completion; dates/waiting/carryover/result/assignment/calendar; return to origin | `TaskChecklistItem.tsx` + `TaskFormModal.tsx`/Today inline edit | Core task commands/subtasks/waiting exist; no contract-equivalent dedicated detail route/return-state contract | `TaskChecklistItem.test.tsx` | Gate C pending | PARTIAL | TBD |
-| 7 `groups` | Auto/custom groups; daily display box vs project container; meaningful-scope bulk only | routine/category settings + current routine sessions | Group concepts exist in backend/settings; no literal group-management surface matching approved contract | settings/routine tests | Gate C pending | PARTIAL | TBD |
-| 8 `requests` | Received/sent/expired; `やる/難しい/その他の返答`; checking/consulting; expiry/new proposal; accepted request history only | `/requests` → `Requests.tsx`, Today quick responses | State machine/actions substantially implemented; literal layout/copy and return-state still require closure | request/Today tests + Edge/DB | Gate C pending | PARTIAL | TBD |
-| 9 `request_form` | Separate response/work deadline, required-vs-light request, target, pre-send semantic explanation | integrated in `/requests` | Composer exists and canonical request commands reused; literal form/copy/state preservation audit pending | request tests | Gate C pending | PARTIAL | TBD |
-| 10 `assignment` | Unassigned → self/request/anyone; outside-app agreement confirmation; important correction affordance | task/request assignment flows + `TaskChecklistItem`/Requests | Canonical assignment/request commands exist; contract-equivalent single assignment screen not literal | task/request tests | Gate C pending | PARTIAL | TBD |
-| 11 `routine_rules` | Non-overlapping `[valid_from, valid_to]` weekly templates; open-ended default; auto-close previous; occurrence override; future-agreement conflict review | `/settings/routines` → `TransportTemplateEditor.tsx`, `RoutineSchedule.tsx`, `TransportOccurrenceOverrideModal.tsx` | Reviewed period-template + occurrence-override implementation exists | `TransportTemplateEditor.test.tsx`, routine tests | Gate C pending | MATCH | TBD |
-| 12 `handover` | Share scope/expiry/related ToDo independent; explicit acknowledge != completion; corrections/history | `/handovers` → `Handovers.tsx` | First-class handover/share behavior exists | backend/web coverage | Gate C pending | MATCH | TBD |
-| 13 `shopping` | State tabs; anyone-owner claim/release/takeover; online order/arrival; shopping action actual semantic | `/shopping` → `Shopping.tsx`, `shoppingActions.ts` | Anyone claim/release/takeover and shopping states implemented | `shoppingActions.test.ts` + backend | Gate C pending | MATCH | TBD |
-| 14 `anyone_owner` | Formal `anyone` assignment distinct from unassigned; claim, claimant release; need-based takeover | shopping/task surfaces + canonical commands | Canonical semantics exist; disclosure/current claimant confirmation needs literal UI check | shopping/task tests | Gate C pending | PARTIAL | TBD |
-| 15 `event` | Project container, no overall owner; template+AI candidates; human confirmation; milestone/risk notification | `/events/new` → `EventPlanPage.tsx` | Event plan/candidate surface exists and reuses canonical event commands | `EventPlanPage.test.ts` + backend | Gate C pending | MATCH | TBD |
-| 16 `concierge` | Quick Add first item + light Today entry; free text primary; shared semantic layer for PWA/LINE; no mutation before confirm | no route/component | No PWA Concierge | none | none | MISSING | TBD |
-| 17 `transcript` | Voice → transcript review → same semantic candidate layer; correction/high-impact fields visible | no route/component | No PWA voice/transcript surface | none | none | MISSING | TBD |
-| 18 `results` | Multi-intent split (ToDo/request/shopping/handover/actual), one-screen confirmation, only ambiguous questions, read-only no mutation | no route/component | Existing LINE/pending-action semantic infrastructure exists, but no PWA aggregate confirmation | none | none | MISSING | TBD |
-| 19 `duplicate_review` | Generic candidate duplicate decision: use existing/update/add separate; never silent merge | Google/Nursery duplicate review + backend duplicate checks | Domain-specific duplicate decisions exist; no shared Concierge duplicate surface | Google/Nursery tests | Gate C pending | PARTIAL | TBD |
-| 20 `nursery` | Q89–Q106: multi-image intake, target isolation, facts vs inference, rule learning, diff, recurrence, submission ToDo, raw image | `/nursery/reviews[/:intakeId]` → `NurseryReviewPage.tsx` | Substantial reviewed nursery candidate/review UI present | `NurseryReviewPage.test.tsx`, Edge/DB isolation | Gate C pending | MATCH | TBD |
-| 21 `google` | Event-centered sync; datetime diff; protected conflict; delete triage; duplicate link/add | `/planning/google-review` → `GoogleEventReviewPage.tsx` | Q110–Q112 review surface/commands present | `GoogleEventReviewPage.test.tsx`, Edge/DB/provider-fence tests | Gate C pending; provider mutation prohibited | MATCH | TBD |
-| 22 `conflict_review` | Current protected value + each candidate/source; newest-wins forbidden; human resolution audit | Google/Nursery candidate review components + authority backend | Shared authority semantics implemented though visual aggregation is split by source | authority/Google/Nursery tests | Gate C pending | MATCH | TBD |
-| 23 `week` | Future assignment, schedule, prep/advance distinction | `/week` → `WeekView.tsx` | Week projection and transport/prep visibility present | calendar projection/week tests | Gate C pending | MATCH | TBD |
-| 24 `month` | Month grid, compact `送P迎M`, select date shows inline agenda | `/month` → `MonthView.tsx` | Inline day selection/agenda and compact transport token implemented | `MonthView.test.tsx`, projection tests | Gate C pending | MATCH | TBD |
-| 25 `dayagenda` | Day detail/edit sheet; close restores same month/date/scroll | `DayAgendaSheet.tsx` from Month | Rich day sheet/edit exists; return-state requires Gate C proof | Month/DayAgenda tests | Gate C pending | MATCH | TBD |
-| 26 `history` | Original target occurrence/date is actual truth; performers; correction; audit timestamps collapsed; preserve filter/row/scroll | `/history` → `HistoryPage.tsx` | Correction exists, but UI displays `completed_at` as `実績` date/time and EventTrail timestamps always visible | `HistoryPage.test.tsx` | Gate C pending | PARTIAL | TBD |
-| 27 `notifications` | weekday 06:30/weekend-holiday 09:00/night 20:30; immediate meaningful exceptions; one-action-one-bundle; no completion echo | `/notifications` → `Notifications.tsx` + notification policy/outbox | Policy/settings and backend delivery model present | Web + Edge/DB notification tests | no real LINE send | MATCH | TBD |
-| 28 `line_reference` | Fixed menu 今日/入力/追加/お願い/共有/その他; same domain logic; deep links/state; no self-echo | LINE webhook/interactive adapters + shared commands/read models | Canonical LINE behavior exists; Issue #54 requires literal cross-surface semantic/parity and deep-link state re-check | Edge/DB LINE tests | real LINE send prohibited; safe test evidence pending | PARTIAL | TBD |
-| 29 `test_mode` | One LINE/user simulates both actors; explicit test identity; no prod LINE/Google/outbox side effects | `/settings/test-simulation` → `TestSimulation.tsx` | Dedicated simulation UI + backend side-effect fences exist | `TestSimulation.test.tsx`, Edge/DB fences | Gate C pending; no real provider mutation | MATCH | TBD |
-| 30 `delete_semantics` | Delete only mistaken existence; otherwise not-needed/cancelled/no-longer-needed; preserve actual/history | task/request/event canonical commands and contextual actions | Backend state semantics exist; no literal unified explanation/choice UI and some task surfaces need copy alignment | backend task/request tests | Gate C pending | PARTIAL | TBD |
-| 31 `settings` | Household terminology editable/deletable; learning meaning does not mutate assignment rule; links to routine/groups/notifications/test/Google | `/settings`, `/settings/terminology`, `/settings/routines` | Core settings surfaces present | settings tests | Gate C pending | MATCH | TBD |
-| 32 `states` | Loading/Empty/Error/Stale; keep user input on error; retry; stale diff instead of overwrite | cross-cutting components/hooks/modals | Loading/error are present; empty varies by page; stale/draft-preservation UX is not consistently literal | component/useRealtime tests | Gate C pending | PARTIAL | TBD |
-| 33 `non_ui_contract` | Q4/Q14/Q19/Q25/26/39/79/80/81/85/86/88/93/100 + idempotency/CAS/isolation/provider/test fences proven by source/test, not decorative UI | `docs/design/current/`, Edge/DB/real-stack tests | Canonical non-UI contracts already implemented/reviewed; must remain green after UI remediation | full Gate A | N/A except effects visible in safe scenarios | MATCH | TBD |
-| 34 `coverage` | Durable literal 34-screen matrix linked to tests/evidence/remediation, final zero PARTIAL/MISSING | this file | Matrix created; final evidence/commit IDs not yet closed | docs + final CI | Gate C pending | MISSING | `docs(issue-54): add initial 34-screen UX parity matrix` |
+## Gate tracking
+
+- **Gate A — deterministic source/test:** in progress. Latest pre-this-matrix head CI #663 is the active validation run; final head must be full green.
+- **Gate B — literal 34-screen conformance:** 20 MATCH / 13 PARTIAL / 1 MISSING.
+- **Gate C — real-use iPhone-equivalent scenario evidence:** pending final scenario harness/evidence. Route/component existence is not accepted as Gate C.
+- **Gate D — independent source review:** not started; PR remains Draft until A–C satisfy the closeout condition.
 
 ## Closeout rules
 
-1. Every `PARTIAL` / `MISSING` row must be remediated in this same Issue #54 PR; partial is never a release PASS.
-2. Every deterministic behavior added/changed gets Web regression coverage. Existing Edge/DB/real Supabase CLI contracts are reused rather than reimplemented.
-3. Gate C evidence must exercise the actual entry → screen → action → result → canonical truth → Back/state flow at iPhone viewport/equivalent. Component existence alone cannot fill the evidence column.
-4. Final closeout updates this file with exact remediation commit(s), exact tests, evidence artifact/path, and **MATCH 34 / PARTIAL 0 / MISSING 0** before independent review request.
-5. No main merge or production/provider mutation occurs in this PR before independent Gate D GO.
+1. Every `PARTIAL` / `MISSING` row must be remediated in this same PR; partial is never release PASS.
+2. Deterministic behavior added/changed gets Web/Edge/DB regression evidence as appropriate.
+3. Gate C must exercise actual entry → screen → operation → result → canonical truth → Back/state at iPhone viewport/equivalent.
+4. Final closeout records exact remediation commit(s), exact tests, Gate C evidence, and **MATCH 34 / PARTIAL 0 / MISSING 0**.
+5. No main merge, production deployment, production Supabase mutation, real LINE send/provider mutation, Google provider mutation, or non-main Vercel Preview occurs before independent Gate D GO.
