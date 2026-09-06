@@ -38,9 +38,10 @@ function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | n
   const kind = match[1] === "今日" ? "today" : match[1] === "明日" ? "tomorrow" : "week";
   const rest = match[2];
 
-  // Read-only schedule questions must be caught before the AI mutation
-  // classifier. Otherwise a harmless query can be forced into its
-  // task/request/shopping taxonomy and become a bogus registration draft.
+  // Preserve the existing one-word shortcuts while expanding natural
+  // questions. These must be caught before the AI mutation classifier;
+  // otherwise a harmless query can become a bogus registration draft.
+  if (rest === "") return kind;
   if (/^(?:の)?予定(?:は|を|が)?(?:教えて|知りたい|見たい|確認したい|何(?:が)?ある|どうなってる)?(?:だけ)?$/u.test(rest)) {
     return kind;
   }
