@@ -61,7 +61,13 @@ export interface TaskSubtaskDefinition {
 }
 
 export type TaskInstanceStatus = 'todo' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
-export type TaskOutcomeReason = 'could_not_do' | 'not_needed_this_occurrence' | 'expired_occurrence' | null;
+export type TaskOutcomeReason =
+  | 'could_not_do'
+  | 'not_needed_this_occurrence'
+  | 'expired_occurrence'
+  | 'rescheduled'
+  | 'unknown'
+  | null;
 export type TaskAttentionState = 'active' | 'waiting';
 
 export interface TaskInstance {
@@ -84,9 +90,11 @@ export interface TaskInstance {
   actual_completed_by_id: string | null;
   completed_at: string | null;
   outcome_reason?: TaskOutcomeReason;
+  rescheduled_to?: string | null;
   attention_state?: TaskAttentionState;
   waiting_note?: string | null;
   next_check_at?: string | null;
+  revision?: number;
 }
 
 export interface TaskSubtaskInstance {
@@ -119,6 +127,10 @@ export interface RequestRow {
   cancelled_at: string | null;
   assignment_task_instance_id?: string | null;
   assignment_scope?: 'once' | 'this_week' | null;
+  revision?: number;
+  linked_task_revision?: number | null;
+  linked_task_title?: string | null;
+  linked_task_due_at?: string | null;
 }
 
 export type HandoverPeriod = 'morning' | 'day' | 'evening' | 'other';
@@ -132,6 +144,11 @@ export interface Handover {
   categories: string[];
   occurred_on: string;
   created_at: string;
+  info_kind?: 'share' | 'handover';
+  valid_from?: string;
+  valid_until?: string | null;
+  ack_policy?: 'none' | 'required';
+  status?: 'active' | 'superseded' | 'expired';
 }
 
 export interface HandoverRead {

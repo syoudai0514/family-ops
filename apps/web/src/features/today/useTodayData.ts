@@ -10,12 +10,28 @@ import type {
   TaskSubtaskInstance,
 } from '../../lib/types';
 
+export interface TaskExecutionTarget {
+  id: string;
+  household_id: string;
+  task_instance_id: string;
+  target_kind: 'url' | 'destination';
+  label: string | null;
+  url: string | null;
+  destination: string | null;
+  created_at: string;
+}
+
+export type TodayTaskInstance = TaskInstance & {
+  execution_target?: TaskExecutionTarget | null;
+};
+
 export interface TodayData {
   loading: boolean;
   error: string | null;
-  tasks: TaskInstance[];
-  carryoverTasks: TaskInstance[];
+  tasks: TodayTaskInstance[];
+  carryoverTasks: TodayTaskInstance[];
   subtasksByTaskId: Map<string, TaskSubtaskInstance[]>;
+  executionTargetsByTaskId: Map<string, TaskExecutionTarget>;
   incomingRequests: RequestRow[];
   unreadHandovers: Handover[];
   openShoppingItems: ShoppingItem[];
@@ -57,9 +73,10 @@ function capabilityReaderDisabled(error: { message?: string } | null): boolean {
 export function useTodayData(householdId: string | null, userId: string | null): TodayData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<TaskInstance[]>([]);
-  const [carryoverTasks, setCarryoverTasks] = useState<TaskInstance[]>([]);
+  const [tasks, setTasks] = useState<TodayTaskInstance[]>([]);
+  const [carryoverTasks, setCarryoverTasks] = useState<TodayTaskInstance[]>([]);
   const [subtasksByTaskId, setSubtasksByTaskId] = useState<Map<string, TaskSubtaskInstance[]>>(new Map());
+  const [executionTargetsByTaskId, setExecutionTargetsByTaskId] = useState<Map<string, TaskExecutionTarget>>(new Map());
   const [incomingRequests, setIncomingRequests] = useState<RequestRow[]>([]);
   const [unreadHandovers, setUnreadHandovers] = useState<Handover[]>([]);
   const [openShoppingItems, setOpenShoppingItems] = useState<ShoppingItem[]>([]);
@@ -79,8 +96,8 @@ export function useTodayData(householdId: string | null, userId: string | null):
         p_local_date: today,
       });
 
-      let taskRows: TaskInstance[] = [];
-      let carryoverRows: TaskInstance[] = [];
+      let taskRows: TodayTaskInstance[] = [];
+      let carryoverRows: TodayTaskInstance[] = [];
 
       if (briefError && capabilityReaderDisabled(briefError)) {
         // R0 is intentionally legacy-read-only. The DB gate rejects the
@@ -133,12 +150,10 @@ export function useTodayData(householdId: string | null, userId: string | null):
         if (handoverRes.error) throw handoverRes.error;
         if (shoppingRes.error) throw shoppingRes.error;
 
-        taskRows = taskRes.data ?? [];
-        carryoverRows = (carryoverRes.data ?? []).filter(
+        taskRows = (taskRes.data ?? []) as TodayTaskInstance[];
+        carryoverRows = ((carryoverRes.data ?? []) as TodayTaskInstance[]).filter(
           (task) => task.task_kind === 'evening_chore' && task.scheduled_date === previousTokyoIsoDate(today),
         );
-        setTasks(taskRows);
-        setCarryoverTasks(carryoverRows);
         setIncomingRequests(requestRes.data ?? []);
         setOpenShoppingItems(shoppingRes.data ?? []);
         setBriefSchedule([]);
@@ -171,10 +186,10 @@ export function useTodayData(householdId: string | null, userId: string | null):
         const [taskRes, carryoverRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
           taskIds.length > 0
             ? supabase.from('task_instances').select('*').in('id', taskIds).order('due_at', { ascending: true, nullsFirst: false })
-            : Promise.resolve({ data: [] as TaskInstance[], error: null }),
+            : Promise.resolve({ data: [] as TodayTaskInstance[], error: null }),
           carryoverIds.length > 0
             ? supabase.from('task_instances').select('*').in('id', carryoverIds).order('due_at', { ascending: true, nullsFirst: false })
-            : Promise.resolve({ data: [] as TaskInstance[], error: null }),
+            : Promise.resolve({ data: [] as TodayTaskInstance[], error: null }),
           requestIds.length > 0
             ? supabase.from('requests').select('*').in('id', requestIds).order('due_at', { ascending: true, nullsFirst: false })
             : Promise.resolve({ data: [] as RequestRow[], error: null }),
@@ -192,36 +207,52 @@ export function useTodayData(householdId: string | null, userId: string | null):
         if (handoverRes.error) throw handoverRes.error;
         if (shoppingRes.error) throw shoppingRes.error;
 
-        taskRows = taskRes.data ?? [];
-        carryoverRows = carryoverRes.data ?? [];
-        setTasks(taskRows);
-        setCarryoverTasks(carryoverRows);
+        taskRows = (taskRes.data ?? []) as TodayTaskInstance[];
+        carryoverRows = (carryoverRes.data ?? []) as TodayTaskInstance[];
         setIncomingRequests(requestRes.data ?? []);
         setOpenShoppingItems(shoppingRes.data ?? []);
         setUnreadHandovers(handoverRes.data ?? []);
         setBriefSchedule(brief.schedule ?? []);
       }
 
+      const visibleTaskIds = [...new Set([...taskRows, ...carryoverRows].map((task) => task.id))];
       const subtaskModeTaskIds = [...taskRows, ...carryoverRows]
         .filter((task) => task.completion_mode === 'subtasks')
         .map((task) => task.id);
-      if (subtaskModeTaskIds.length > 0) {
-        const { data: subtaskRows, error: subtaskError } = await supabase
-          .from('task_subtask_instances')
-          .select('*')
-          .in('task_instance_id', subtaskModeTaskIds)
-          .order('sort_order', { ascending: true });
-        if (subtaskError) throw subtaskError;
-        const grouped = new Map<string, TaskSubtaskInstance[]>();
-        for (const row of subtaskRows ?? []) {
-          const list = grouped.get(row.task_instance_id) ?? [];
-          list.push(row);
-          grouped.set(row.task_instance_id, list);
-        }
-        setSubtasksByTaskId(grouped);
-      } else {
-        setSubtasksByTaskId(new Map());
+
+      const [subtaskResult, targetResult] = await Promise.all([
+        subtaskModeTaskIds.length > 0
+          ? supabase
+              .from('task_subtask_instances')
+              .select('*')
+              .in('task_instance_id', subtaskModeTaskIds)
+              .order('sort_order', { ascending: true })
+          : Promise.resolve({ data: [] as TaskSubtaskInstance[], error: null }),
+        visibleTaskIds.length > 0
+          ? supabase
+              .from('task_execution_targets')
+              .select('*')
+              .eq('household_id', householdId)
+              .in('task_instance_id', visibleTaskIds)
+          : Promise.resolve({ data: [] as TaskExecutionTarget[], error: null }),
+      ]);
+
+      if (subtaskResult.error) throw subtaskResult.error;
+      if (targetResult.error) throw targetResult.error;
+
+      const groupedSubtasks = new Map<string, TaskSubtaskInstance[]>();
+      for (const row of subtaskResult.data ?? []) {
+        const list = groupedSubtasks.get(row.task_instance_id) ?? [];
+        list.push(row);
+        groupedSubtasks.set(row.task_instance_id, list);
       }
+      setSubtasksByTaskId(groupedSubtasks);
+
+      const targetMap = new Map<string, TaskExecutionTarget>();
+      for (const row of targetResult.data ?? []) targetMap.set(row.task_instance_id, row as TaskExecutionTarget);
+      setExecutionTargetsByTaskId(targetMap);
+      setTasks(taskRows.map((task) => ({ ...task, execution_target: targetMap.get(task.id) ?? null })));
+      setCarryoverTasks(carryoverRows.map((task) => ({ ...task, execution_target: targetMap.get(task.id) ?? null })));
     } catch (err) {
       setError(err instanceof Error ? err.message : '読み込みに失敗しました。');
     } finally {
@@ -241,6 +272,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
     tasks,
     carryoverTasks,
     subtasksByTaskId,
+    executionTargetsByTaskId,
     incomingRequests,
     unreadHandovers,
     openShoppingItems,

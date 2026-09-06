@@ -1,0 +1,120 @@
+/* The old per-weekday transport card is retained only as dormant R0 source
+ * compatibility inside RoutineSchedule. The final UX contract replaces it with
+ * the period-scoped weekly-template editor rendered above the routine settings. */
+.routine-matrix-card {
+  display: none;
+}
+
+.transport-template-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.transport-template-timeline h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.transport-template-timeline ol {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transport-template-timeline li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.65rem;
+  background: var(--color-bg);
+  font-size: 0.88rem;
+}
+
+.transport-template-timeline li.current {
+  border-color: var(--color-accent);
+}
+
+.transport-template-start {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.transport-template-start small {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.transport-week-matrix {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.transport-week-head {
+  padding: 0.25rem 0.2rem;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.transport-week-row {
+  display: contents;
+}
+
+.transport-week-row > strong {
+  align-self: center;
+  text-align: center;
+}
+
+.transport-week-cell {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+}
+
+.transport-week-cell select,
+.transport-week-cell input {
+  width: 100%;
+  min-width: 0;
+}
+
+.transport-protected-conflicts {
+  padding: 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.65rem;
+}
+
+.transport-protected-conflicts summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+@media (max-width: 390px) {
+  .transport-template-card {
+    gap: 0.8rem;
+  }
+
+  .transport-week-matrix {
+    grid-template-columns: 2.2rem minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.2rem;
+  }
+
+  .transport-week-cell {
+    padding: 0.28rem;
+  }
+
+  .transport-week-cell select,
+  .transport-week-cell input {
+    font-size: 0.78rem;
+  }
+}

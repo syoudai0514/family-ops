@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { createSupabaseFromMock } from '../../test/supabaseMock';
-import { Today, selectNextOwnedTask } from './Today';
+import { Today, selectNextOwnedTask, shouldShowWaitingTask } from './Today';
 import type { PendingAction, TodaySchedule } from '../../lib/types';
 
 vi.mock('../../lib/supabaseClient', () => ({
@@ -155,6 +155,19 @@ vi.mock('../../app/HouseholdContext', () => ({
 }));
 
 describe('Today', () => {
+  it('suppresses a waiting task until its future check date unless an immediate deadline is at risk', () => {
+    const task = {
+      id: 'waiting', household_id: 'household-1', task_definition_id: null, recurrence_rule_id: null,
+      origin: 'manual' as const, title: '園からの返事', category: 'todo', routine_phase: 'anytime' as const,
+      scheduled_date: '2026-09-05', due_at: null, planned_assignee_id: 'user-1', completion_mode: 'whole' as const,
+      status: 'todo' as const, attention_state: 'waiting' as const, next_check_at: '2026-09-07T00:00:00Z',
+      actual_completed_by_id: null, completed_at: null,
+    };
+    const now = new Date('2026-09-05T00:00:00Z');
+    expect(shouldShowWaitingTask(task, now)).toBe(false);
+    expect(shouldShowWaitingTask({ ...task, due_at: '2026-09-04T23:00:00Z' }, now)).toBe(true);
+    expect(shouldShowWaitingTask({ ...task, next_check_at: null }, now)).toBe(true);
+  });
   it('selects my next task even when the partner has an earlier task', () => {
     const base = {
       household_id: 'household-1',
@@ -235,14 +248,14 @@ describe('Today', () => {
     expect(screen.getByText('⚠ 予定と重複')).toBeInTheDocument();
   });
 
-  it('shows Priority 2 (判断待ち) with the LINE-created pending action from list-pending-actions', async () => {
+  it('shows the first-priority confirmation card with the LINE-created pending action', async () => {
     render(
       <MemoryRouter>
         <Today />
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '判断待ち' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: '返事が必要です' })).toBeInTheDocument();
     });
     await waitFor(() => {
       expect(screen.getByText('オムツ')).toBeInTheDocument();

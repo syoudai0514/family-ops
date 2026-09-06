@@ -4,7 +4,6 @@
 \set ON_ERROR_STOP on
 
 set role service_role;
-
 do $$
 declare
   v_owner uuid := gen_random_uuid();
@@ -30,8 +29,10 @@ begin
     v_owner, gen_random_uuid(), 'DD3A Google isolation ' || v_owner::text, 'Owner'
   );
   v_hh_id := (v_hh->>'household_id')::uuid;
-  insert into public.household_members (household_id, user_id, member_role)
-  values (v_hh_id, v_partner, 'adult');
+  insert into public.household_members (household_id, user_id, member_role, family_role)
+  values (v_hh_id, v_partner, 'adult', 'mama');
+  update public.household_members set family_role='papa'
+  where household_id=v_hh_id and user_id=v_owner;
 
   perform private.backfill_canonical_foundation_v1();
   select id into v_owner_actor
@@ -150,7 +151,7 @@ begin
   v_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-41', 120);
   if v_claim->>'household_id' <> v_hh_id::text
      or v_claim->>'action' <> 'upsert'
-     or v_claim #>> '{event,summary}' <> '送 P ｜ 迎 M' then
+     or v_claim #>> '{event,summary}' <> '送P迎M' then
     raise exception 'FAIL google-test-isolation: test transport influenced production payload: %', v_claim;
   end if;
 

@@ -1,6 +1,14 @@
 import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
 
-export type LineReadOnlyIntent = "today" | "tomorrow" | "week" | "menu";
+export type LineReadOnlyIntent =
+  | "today"
+  | "tomorrow"
+  | "week"
+  | "menu"
+  | "input"
+  | "add"
+  | "share"
+  | "other";
 export type LineCreationKind = "event" | "task" | "request" | "shopping";
 
 function normalized(text: string): string {
@@ -9,6 +17,13 @@ function normalized(text: string): string {
 
 export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
   const value = normalized(text);
+  // These are the literal six LINE entry labels from Q73.  They deliberately
+  // remain short, so the fixed menu is usable without making people learn a
+  // second vocabulary.  Each is routed by the worker to a concrete surface.
+  if (/^(?:入力|今日の入力|朝の入力|夜の入力)$/.test(value)) return "input";
+  if (/^(?:追加|追加したい|登録)$/.test(value)) return "add";
+  if (/^(?:共有|引き継ぎ|共有したい)$/.test(value)) return "share";
+  if (/^(?:その他|管理|設定)$/.test(value)) return "other";
   if (
     /^(?:メニュー(?:を)?(?:出して|見せて|表示して)?|何(?:が|を)?できる(?:んだっけ|の|こと)?|何できる(?:んだっけ)?|できること(?:は|教えて)?|使い方(?:は|教えて)?|ヘルプ(?:お願い)?)[？?。!！]*$/
       .test(value)
@@ -59,18 +74,12 @@ const message = (label: string, text = label): LineQuickReplyAction => ({
 
 export function menuQuickReplies(): LineQuickReplyAction[] {
   return [
-    message("今日の予定", "今日の予定は？"),
-    message("明日の予定", "明日の予定教えて"),
-    message("今週の予定", "今週の予定は？"),
-    message("予定を追加", "予定を追加したい"),
-    message("タスク追加", "タスクを追加したい"),
+    message("今日", "今日の予定は？"),
+    message("入力", "入力"),
+    message("追加", "追加したい"),
     message("お願い", "お願いを送りたい"),
-    message("買い物", "買い物を追加したい"),
-    {
-      type: "uri",
-      label: "PWAを開く",
-      uri: `${Deno.env.get("APP_BASE_URL") ?? ""}/today`,
-    },
+    message("共有", "共有"),
+    message("その他", "その他"),
   ];
 }
 

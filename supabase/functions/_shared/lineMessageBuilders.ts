@@ -6,6 +6,7 @@ export type AssignmentChangeLineData = {
   title: string;
   message: string;
   scope: "once" | "this_week";
+  otherResponseUrl?: string;
 };
 
 export function rewritePickupRequest(rawText: string): string {
@@ -269,6 +270,7 @@ export function buildGeneralRequestFlex(data: {
   acceptPendingActionId: string;
   declinePendingActionId: string;
   scheduleLabel?: string;
+  otherResponseUrl?: string;
 }): Record<string, unknown> {
   return {
     type: "flex",
@@ -309,7 +311,7 @@ export function buildGeneralRequestFlex(data: {
         },
         {
           type: "text",
-          text: "引き受けるまでタスクにはなりません。",
+          text: "「やる」で合意するまでタスクにはなりません。",
           size: "xxs",
           wrap: true,
           color: "#777777",
@@ -317,16 +319,17 @@ export function buildGeneralRequestFlex(data: {
       ]),
       footer: compactActionFooter([
         {
-          label: "引き受ける",
+          label: "やる",
           data:
             `action=confirm_pending&pending_action_id=${data.acceptPendingActionId}`,
           primary: true,
         },
         {
-          label: "今回は難しい",
+          label: "難しい",
           data:
             `action=confirm_pending&pending_action_id=${data.declinePendingActionId}`,
         },
+        ...(data.otherResponseUrl ? [{ label: "その他の返答", uri: data.otherResponseUrl, type: "uri" as const }] : []),
       ]),
     },
   };
@@ -366,7 +369,7 @@ export function buildAssignmentRequestFlex(
         },
         {
           type: "text",
-          text: "「引き受ける」を押すまで、予定の担当は変わりません。",
+          text: "「やる」を押すまで、予定の担当は変わりません。",
           size: "xxs",
           wrap: true,
           color: "#777777",
@@ -374,14 +377,15 @@ export function buildAssignmentRequestFlex(
       ]),
       footer: compactActionFooter([
         {
-          label: "引き受ける",
+          label: "やる",
           data: `action=accept_assignment_change&request_id=${data.requestId}`,
           primary: true,
         },
         {
-          label: "今日は難しい",
+          label: "難しい",
           data: `action=decline_assignment_change&request_id=${data.requestId}`,
         },
+        ...(data.otherResponseUrl ? [{ label: "その他の返答", uri: data.otherResponseUrl, type: "uri" as const }] : []),
       ]),
     },
   };

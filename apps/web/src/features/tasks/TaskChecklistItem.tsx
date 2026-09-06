@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
@@ -14,6 +14,9 @@ export interface TaskChecklistItemProps {
   onChanged: () => void;
   showTime?: boolean;
 }
+
+const EVIDENCE_MAX_BYTES = 2 * 1024 * 1024;
+const EVIDENCE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 function assigneeLabel(task: TaskInstance, members: HouseholdMemberWithProfile[]): string {
   if (!task.planned_assignee_id) return '未定';
@@ -33,6 +36,15 @@ function localClock(value: string | null) {
   }).format(new Date(value));
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)));
+  }
+  return btoa(binary);
+}
+
 export function TaskChecklistItem({
   task,
   subtasks,
@@ -48,29 +60,40 @@ export function TaskChecklistItem({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actor, setActor] = useState<'self' | 'partner'>('self');
+  const [editingWaiting, setEditingWaiting] = useState(false);
+  const [waitingNote, setWaitingNote] = useState(task.waiting_note ?? '');
+  const [nextCheckAt, setNextCheckAt] = useState(() => toDateTimeLocal(task.next_check_at));
+  const [editingEvidence, setEditingEvidence] = useState(false);
+  const [evidenceNote, setEvidenceNote] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidenceSaved, setEvidenceSaved] = useState(false);
   const doneSubtasks = subtasks.filter((item) => item.is_completed).length;
   const requiredSubtasks = subtasks.filter((item) => item.required);
   const optionalOnlyChecklist =
     task.completion_mode === 'subtasks' && subtasks.length > 0 && requiredSubtasks.length === 0;
 
-  async function withOperation(fn: (operationId: string) => Promise<unknown>) {
+  async function withOperation(fn: (operationId: string) => Promise<unknown>): Promise<boolean> {
     setError(null);
     setBusy(true);
     try {
       await fn(newOperationId());
       onChanged();
+      return true;
     } catch (err) {
       if (err instanceof FamilyOpsApiError && err.code === 'TASK_TERMINAL') {
         setError('この項目はすでに完了・キャンセル済みです。');
       } else {
         setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。');
       }
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
   function handleComplete() {
+    // Q106: this remains a direct one-tap command. Evidence is never required
+    // and is not collected before or during normal completion.
     void withOperation((operationId) =>
       callEdgeFunction(EDGE_FUNCTIONS.completeTask, {
         operation_id: operationId,
@@ -99,6 +122,61 @@ export function TaskChecklistItem({
         completion_actor: actor,
       }),
     );
+  }
+
+  function handleWaitingSubmit(event: FormEvent) {
+    event.preventDefault();
+    void withOperation((operationId) => callEdgeFunction(EDGE_FUNCTIONS.setTaskWaiting, {
+      operation_id: operationId,
+      task_id: task.id,
+      waiting_action: task.attention_state === 'waiting' ? 'update' : 'set',
+      waiting_note: waitingNote.trim() || null,
+      next_check_at: nextCheckAt ? new Date(nextCheckAt).toISOString() : undefined,
+      expected_revision: task.revision ?? 1,
+    })).then((succeeded) => { if (succeeded) setEditingWaiting(false); });
+  }
+
+  function handleResumeWaiting() {
+    void withOperation((operationId) => callEdgeFunction(EDGE_FUNCTIONS.setTaskWaiting, {
+      operation_id: operationId,
+      task_id: task.id,
+      waiting_action: 'resume',
+      expected_revision: task.revision ?? 1,
+    }));
+  }
+
+  async function handleEvidenceSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setEvidenceSaved(false);
+    if (!evidenceNote.trim() && !evidenceFile) {
+      setError('メモまたは画像のどちらかを追加してください。');
+      return;
+    }
+    if (evidenceFile && (!EVIDENCE_MIME.has(evidenceFile.type) || evidenceFile.size > EVIDENCE_MAX_BYTES)) {
+      setError('画像はJPEG・PNG・WebP、2MB以下にしてください。');
+      return;
+    }
+    setBusy(true);
+    try {
+      const image = evidenceFile
+        ? { mime_type: evidenceFile.type, base64: await fileToBase64(evidenceFile) }
+        : undefined;
+      await callEdgeFunction(EDGE_FUNCTIONS.addTaskCompletionEvidence, {
+        operation_id: newOperationId(),
+        task_id: task.id,
+        note: evidenceNote.trim() || undefined,
+        image,
+      });
+      setEvidenceNote('');
+      setEvidenceFile(null);
+      setEditingEvidence(false);
+      setEvidenceSaved(true);
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '証跡を保存できませんでした。');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -139,6 +217,7 @@ export function TaskChecklistItem({
             {task.completion_mode === 'subtasks' && subtasks.length > 0
               ? ` · ${doneSubtasks}/${subtasks.length}項目`
               : ''}
+            {task.attention_state === 'waiting' ? ` · 待ち${task.next_check_at ? `（確認 ${localClock(task.next_check_at)}）` : ''}` : ''}
           </span>
         </button>
 
@@ -177,6 +256,18 @@ export function TaskChecklistItem({
             )}
             {!editable && !completed && task.origin !== 'manual' && (
               <small className="task-menu-note">定例から作られた項目です</small>
+            )}
+            {!completed && task.attention_state !== 'waiting' && (
+              <button type="button" onClick={() => setEditingWaiting(true)} disabled={busy}>待ちにする</button>
+            )}
+            {!completed && task.attention_state === 'waiting' && (
+              <>
+                <button type="button" onClick={handleResumeWaiting} disabled={busy}>再開する</button>
+                <button type="button" onClick={() => setEditingWaiting(true)} disabled={busy}>確認日を変更</button>
+              </>
+            )}
+            {completed && (
+              <button type="button" onClick={() => setEditingEvidence(true)} disabled={busy}>証跡を追加（任意）</button>
             )}
             <button
               type="button"
@@ -218,6 +309,27 @@ export function TaskChecklistItem({
         </ul>
       )}
 
+      {editingWaiting && (
+        <form className="task-waiting-editor" onSubmit={handleWaitingSubmit}>
+          <label>待っている理由（任意）<input value={waitingNote} onChange={(event) => setWaitingNote(event.target.value)} placeholder="例: 園から返事待ち" /></label>
+          <label>次に確認する日（任意）<input type="datetime-local" value={nextCheckAt} onChange={(event) => setNextCheckAt(event.target.value)} /></label>
+          <div className="task-item-actions"><button type="submit" disabled={busy}>{task.attention_state === 'waiting' ? '待ちを続ける' : '待ちにする'}</button><button type="button" className="text-button" onClick={() => setEditingWaiting(false)} disabled={busy}>やめる</button></div>
+        </form>
+      )}
+
+      {editingEvidence && completed && (
+        <form className="task-waiting-editor" onSubmit={handleEvidenceSubmit}>
+          <p className="empty-hint">完了はすでに記録済みです。必要なときだけメモやスクリーンショットを残せます。</p>
+          <label>完了メモ（任意）<textarea rows={3} value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder="例: 提出完了、受付番号1234" /></label>
+          <label>画像（任意・2MBまで）<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)} /></label>
+          <div className="task-item-actions">
+            <button type="submit" disabled={busy}>証跡を保存</button>
+            <button type="button" className="text-button" onClick={() => setEditingEvidence(false)} disabled={busy}>やめる</button>
+          </div>
+        </form>
+      )}
+
+      {evidenceSaved && <p role="status" className="empty-hint">証跡を追加しました。</p>}
       {error && (
         <p role="alert" className="error-text task-checklist-error">
           {error}
@@ -225,4 +337,12 @@ export function TaskChecklistItem({
       )}
     </li>
   );
+}
+
+function toDateTimeLocal(value: string | null | undefined): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (number: number) => String(number).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

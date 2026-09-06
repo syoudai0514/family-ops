@@ -7,10 +7,13 @@ interface TomorrowPreparationCardProps {
   tomorrowDate: string;
   assigneeId: string | null;
   assigneeLabel: string;
+  existingTitles: string[];
   onChanged: () => void;
 }
 
-const PRESETS = ['🏊 将生 プールの準備', '🏊 詩乃 プールの準備'] as const;
+function normalizedTitle(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ja-JP');
+}
 
 function formatDate(date: string) {
   const parsed = new Date(`${date}T00:00:00+09:00`);
@@ -26,6 +29,7 @@ export function TomorrowPreparationCard({
   tomorrowDate,
   assigneeId,
   assigneeLabel,
+  existingTitles,
   onChanged,
 }: TomorrowPreparationCardProps) {
   const [customTitle, setCustomTitle] = useState('');
@@ -33,10 +37,19 @@ export function TomorrowPreparationCard({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const formattedDate = useMemo(() => formatDate(tomorrowDate), [tomorrowDate]);
+  const registeredTitles = useMemo(
+    () => new Set(existingTitles.map(normalizedTitle)),
+    [existingTitles],
+  );
 
   async function register(title: string) {
     const cleanTitle = title.trim();
     if (!cleanTitle || busyTitle) return;
+    if (registeredTitles.has(normalizedTitle(cleanTitle))) {
+      setError('同じ準備はすでに明日に追加されています。');
+      setSuccess(null);
+      return;
+    }
     setBusyTitle(cleanTitle);
     setError(null);
     setSuccess(null);
@@ -72,26 +85,19 @@ export function TomorrowPreparationCard({
         {assigneeLabel ? ` 朝担当：${assigneeLabel}` : ' 朝担当はまだ未定です。'}
       </p>
 
-      <div className="quick-add-list">
-        {PRESETS.map((title) => (
-          <button
-            key={title}
-            type="button"
-            disabled={Boolean(busyTitle)}
-            onClick={() => void register(title)}
-          >
-            <strong>{title}</strong>
-            <small>{busyTitle === title ? '登録中…' : '1タップで明日の朝へ'}</small>
-          </button>
-        ))}
-      </div>
+      {existingTitles.length > 0 && (
+        <div className="preparation-added-list" aria-label="すでに追加済みの準備">
+          <p className="task-item-meta">追加済み</p>
+          <ul>{existingTitles.map((title) => <li key={title}>✓ {title}</li>)}</ul>
+        </div>
+      )}
 
       <div className="task-item-actions preparation-custom-row">
         <input
-          aria-label="その他の明日の準備"
+          aria-label="明日の準備"
           value={customTitle}
           onChange={(event) => setCustomTitle(event.target.value)}
-          placeholder="その他の持ち物・提出物"
+          placeholder="持ち物・提出物を追加"
           disabled={Boolean(busyTitle)}
         />
         <button
@@ -99,7 +105,7 @@ export function TomorrowPreparationCard({
           disabled={!customTitle.trim() || Boolean(busyTitle)}
           onClick={() => void register(customTitle)}
         >
-          引き継ぐ
+          明日に追加
         </button>
       </div>
 

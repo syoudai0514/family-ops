@@ -67,9 +67,13 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
     throw new FamilyOpsError("INVALID_INPUT", "categories must be an array of strings", 400);
   }
 
+  const validUntil = body["valid_until"];
+  const ackPolicy = body["ack_policy"];
+  if (validUntil !== undefined && validUntil !== null && (typeof validUntil !== "string" || Number.isNaN(Date.parse(validUntil)))) throw new FamilyOpsError("INVALID_INPUT", "valid_until must be an ISO date-time", 400);
+  if (ackPolicy !== undefined && ackPolicy !== "none" && ackPolicy !== "required") throw new FamilyOpsError("INVALID_INPUT", "ack_policy must be none or required", 400);
   const result = await callServerTx<{ handover_id: string }>(
     serviceClient,
-    "server_tx_create_handover",
+    "server_tx_create_handover_v2",
     {
       p_actor_id: actorId,
       p_operation_id: operationId,
@@ -77,6 +81,8 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
       p_period: period,
       p_categories: categories ?? [],
       p_occurred_on: occurredOn,
+      p_valid_until: typeof validUntil === "string" ? validUntil : null,
+      p_ack_policy: ackPolicy ?? "none",
     },
   );
 

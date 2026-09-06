@@ -158,13 +158,21 @@ begin
     raise exception 'FAIL canonical-foundation: request ActorRef/kind backfill incomplete';
   end if;
 
-  -- R0 convergence after old-runtime legacy assignment writes.
+  -- R0 coexistence: legacy Task assignment writes are now normalized by the
+  -- compatibility trigger in the same transaction. Shopping still exercises
+  -- the older reconciliation/backfill path, so both safety mechanisms remain
+  -- covered without requiring Task rows to become inconsistent first.
   update public.task_instances set planned_assignee_id = null where id = v_task_assigned;
   update public.shopping_items set assignee_id = null, status = 'wanted' where id = v_shop_assigned;
 
   if coalesce((select issue_count from private.canonical_foundation_reconciliation_v1()
-               where issue_type = 'task_planned_actor_mismatch'), 0) < 1 then
-    raise exception 'FAIL canonical-foundation: task unassignment drift not detected';
+               where issue_type = 'task_planned_actor_mismatch'), 0) <> 0 then
+    raise exception 'FAIL canonical-foundation: legacy Task bridge must prevent unassignment drift';
+  end if;
+  if (select assignment_mode from public.task_instances where id = v_task_assigned) <> 'unassigned'
+     or (select planned_assignee_actor_ref_id from public.task_instances where id = v_task_assigned) is not null
+     or (select assignment_source from public.task_instances where id = v_task_assigned) <> 'legacy_snapshot' then
+    raise exception 'FAIL canonical-foundation: legacy Task bridge did not converge immediately';
   end if;
   if coalesce((select issue_count from private.canonical_foundation_reconciliation_v1()
                where issue_type = 'shopping_assignee_actor_mismatch'), 0) < 1 then
@@ -175,7 +183,7 @@ begin
   if (select assignment_mode from public.task_instances where id = v_task_assigned) <> 'unassigned'
      or (select planned_assignee_actor_ref_id from public.task_instances where id = v_task_assigned) is not null
      or (select assignment_source from public.task_instances where id = v_task_assigned) <> 'legacy_snapshot' then
-    raise exception 'FAIL canonical-foundation: legacy task unassignment did not converge';
+    raise exception 'FAIL canonical-foundation: legacy Task bridge/backfill state changed unexpectedly';
   end if;
   if (select assignment_mode from public.shopping_items where id = v_shop_assigned) <> 'unassigned'
      or (select assignee_actor_ref_id from public.shopping_items where id = v_shop_assigned) is not null then
