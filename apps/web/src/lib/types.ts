@@ -61,7 +61,13 @@ export interface TaskSubtaskDefinition {
 }
 
 export type TaskInstanceStatus = 'todo' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
-export type TaskOutcomeReason = 'could_not_do' | 'not_needed_this_occurrence' | 'expired_occurrence' | null;
+export type TaskOutcomeReason =
+  | 'could_not_do'
+  | 'not_needed_this_occurrence'
+  | 'expired_occurrence'
+  | 'rescheduled'
+  | 'unknown'
+  | null;
 export type TaskAttentionState = 'active' | 'waiting';
 
 export interface TaskInstance {
@@ -84,6 +90,7 @@ export interface TaskInstance {
   actual_completed_by_id: string | null;
   completed_at: string | null;
   outcome_reason?: TaskOutcomeReason;
+  rescheduled_to?: string | null;
   attention_state?: TaskAttentionState;
   waiting_note?: string | null;
   next_check_at?: string | null;
