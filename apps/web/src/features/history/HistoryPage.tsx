@@ -5,6 +5,7 @@ import { tokyoIsoDate } from '../planning/dateHelpers';
 import { useHistoryData, type HistoryEntry, type PlannedVsActualOutcome } from './useHistoryData';
 import type { TaskEvent, TaskEventType } from '../../lib/types';
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
@@ -27,7 +28,10 @@ const EVENT_TYPE_LABELS: Record<TaskEventType, string> = {
 };
 
 type HistoryFilter = 'all' | 'routine' | 'planned' | 'request';
+type HistoryLocationState = { correctionDate?: string } | null;
 const HISTORY_FILTER_KEY = 'family-ops:history-filter';
+const HISTORY_SCROLL_KEY = 'family-ops:history-scroll-y';
+const HISTORY_SELECTED_KEY = 'family-ops:history-selected-task';
 
 function initialHistoryFilter(): HistoryFilter {
   try {
@@ -63,7 +67,23 @@ export function completedNextTokyoMorning(scheduledDate: string, completedAt: st
   return Boolean(completedAt && tokyoIsoDate(completedAt) > scheduledDate);
 }
 
-function HistoryRow({ entry, members, onChanged }: { entry: HistoryEntry; members: HouseholdMemberWithProfile[]; onChanged: () => Promise<void> }) {
+export function historyEntryMatchesDate(entry: HistoryEntry, correctionDate: string | null): boolean {
+  return !correctionDate || entry.task.scheduled_date === correctionDate;
+}
+
+function HistoryRow({
+  entry,
+  members,
+  onChanged,
+  selected,
+  onSelected,
+}: {
+  entry: HistoryEntry;
+  members: HouseholdMemberWithProfile[];
+  onChanged: () => Promise<void>;
+  selected: boolean;
+  onSelected: () => void;
+}) {
   const { task, outcome, events, wasReassigned, actualParticipantUserIds } = entry;
   const reassignment = wasReassigned ? reassignmentSummary(events, members) : null;
   const [editingActual, setEditingActual] = useState(false);
@@ -82,6 +102,7 @@ function HistoryRow({ entry, members, onChanged }: { entry: HistoryEntry; member
       });
       setEditingActual(false);
       await onChanged();
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-history-task-id="${task.id}"]`)?.focus({ preventScroll: true }));
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '訂正に失敗しました。');
     } finally { setBusy(false); }
@@ -89,14 +110,14 @@ function HistoryRow({ entry, members, onChanged }: { entry: HistoryEntry; member
 
   const participantLabel = actualParticipantUserIds.map((id) => memberLabel(id, members)).join('・') || '未記録';
 
-  return <li className="history-item card" data-history-task-id={task.id}>
+  return <li className={selected ? 'history-item card selected' : 'history-item card'} data-history-task-id={task.id} tabIndex={-1}>
     <div className="history-item-header"><strong>{task.title}</strong><span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span></div>
     <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
     {task.status === 'completed' && <p className="task-item-meta"><strong>実績日: {task.scheduled_date}</strong> · {participantLabel}</p>}
     {outcome === 'waiting' && <p className="task-item-meta">{task.waiting_note ? `待ち理由: ${task.waiting_note}` : '確認待ち'}{task.next_check_at ? ` · 次回確認 ${formatDateTimeJa(task.next_check_at)}` : ''}</p>}
     {reassignment && <p className="task-item-meta">{reassignment}</p>}
     {task.status === 'completed' && <div className="history-correction">
-      {!editingActual ? <button type="button" className="text-button" onClick={() => setEditingActual(true)}>実績を訂正</button> : <fieldset>
+      {!editingActual ? <button type="button" className="text-button" onClick={() => { onSelected(); setEditingActual(true); }}>実績を訂正</button> : <fieldset>
         <legend>実際にやった人</legend>
         {members.map((member) => {
           const checked = selectedUserIds.includes(member.user_id);
@@ -117,29 +138,57 @@ function HistoryRow({ entry, members, onChanged }: { entry: HistoryEntry; member
 export function HistoryPage() {
   const { user } = useAuth();
   const { household, members } = useHousehold();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { loading, error, entries, refresh } = useHistoryData(household?.id ?? null, user?.id ?? null);
   const [filter, setFilter] = useState<HistoryFilter>(initialHistoryFilter);
+  const [correctionDate, setCorrectionDate] = useState<string | null>(() => {
+    const state = location.state as HistoryLocationState;
+    return typeof state?.correctionDate === 'string' ? state.correctionDate : null;
+  });
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => {
+    try { return sessionStorage.getItem(HISTORY_SELECTED_KEY); } catch { return null; }
+  });
   const visibleEntries = useMemo(() => entries.filter((entry) => {
+    if (!historyEntryMatchesDate(entry, correctionDate)) return false;
     if (filter === 'all') return true;
     if (filter === 'routine') return entry.task.routine_phase === 'morning' || entry.task.routine_phase === 'evening';
     if (filter === 'planned') return entry.task.routine_phase !== 'morning' && entry.task.routine_phase !== 'evening';
     return entry.events.some((event) => event.source === 'request');
-  }), [entries, filter]);
+  }), [correctionDate, entries, filter]);
+
+  useEffect(() => {
+    if (loading) return;
+    let saved = 0;
+    try { saved = Number(sessionStorage.getItem(HISTORY_SCROLL_KEY) ?? '0'); } catch { /* storage unavailable */ }
+    if (Number.isFinite(saved) && saved > 0) requestAnimationFrame(() => window.scrollTo(0, saved));
+    const remember = () => {
+      try { sessionStorage.setItem(HISTORY_SCROLL_KEY, String(window.scrollY)); } catch { /* storage unavailable */ }
+    };
+    window.addEventListener('scroll', remember, { passive: true });
+    return () => { remember(); window.removeEventListener('scroll', remember); };
+  }, [loading]);
 
   function chooseFilter(next: HistoryFilter) {
     setFilter(next);
     try { sessionStorage.setItem(HISTORY_FILTER_KEY, next); } catch { /* storage unavailable */ }
   }
 
+  function selectTask(taskId: string) {
+    setSelectedTaskId(taskId);
+    try { sessionStorage.setItem(HISTORY_SELECTED_KEY, taskId); } catch { /* storage unavailable */ }
+  }
+
   if (loading) return <div className="app-shell"><p role="status">読み込み中…</p></div>;
 
   return <div className="app-shell">
-    <div className="today-header"><h1>履歴</h1></div>
+    <div className="today-header"><h1>履歴</h1><button type="button" className="text-button" onClick={() => navigate(-1)}>戻る</button></div>
     <p className="task-item-meta">直近2週間の予定と実際の結果です。実績日は元の対象日で表示し、登録時刻は監査情報に分けています。</p>
+    {correctionDate && <section className="card compact-section" aria-label="修正対象日"><strong>{correctionDate} の記録を訂正</strong><p className="task-item-meta">チェックインから指定された対象日だけを表示しています。</p><button type="button" className="text-button" onClick={() => setCorrectionDate(null)}>すべての日を表示</button></section>}
     <div className="filter-chips" aria-label="履歴の絞り込み">
       {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => chooseFilter(key)}>{label}</button>)}
     </div>
     {error && <p role="alert" className="error-text">{error}</p>}
-    <ul className="history-list">{visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}{visibleEntries.map((entry) => <HistoryRow key={entry.task.id} entry={entry} members={members} onChanged={refresh} />)}</ul>
+    <ul className="history-list">{visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}{visibleEntries.map((entry) => <HistoryRow key={entry.task.id} entry={entry} members={members} onChanged={refresh} selected={selectedTaskId === entry.task.id} onSelected={() => selectTask(entry.task.id)} />)}</ul>
   </div>;
 }
