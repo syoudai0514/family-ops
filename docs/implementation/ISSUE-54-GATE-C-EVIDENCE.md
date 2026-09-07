@@ -1,46 +1,51 @@
-# Issue #54 — Gate C iPhone-equivalent evidence
+# Issue #54 — Gate C real iPhone user acceptance evidence
 
-Status: PASS for safe pre-review evidence at PR #56 head `dbcb08ef822158b65bd5698babc79dd8e3101588`.
+Status: **FAIL / PENDING REAL IPHONE EXECUTION** after independent review of exact head `2f37e257b15f077940de27ef3821d7a4097b2e54`.
 
-## Scope and safety
+The previous version of this document incorrectly treated mobile CSS, jsdom/component tests, and CI as equivalent to Gate C. Issue #54 requires **real iPhone user acceptance using actual user scenarios, not component inspection**. Those deterministic checks remain useful Gate A evidence, but they do not satisfy Gate C.
 
-Gate C proves the approved final-v11 UX contract through real-use-equivalent interaction evidence without any prohibited external mutation.
+## Safety constraints
 
-- iPhone-equivalent target: mobile layout `max-width: 899px`, iOS safe-area guards, fixed bottom navigation, touch targets >= 44px.
-- No production deployment.
-- No production Supabase mutation.
-- No real LINE send/provider mutation.
-- No Google provider mutation.
-- Canonical truth is proven by the same DB/Edge paths executed in CI #702 real-stack tests.
+The real-iPhone pass must remain inside the pre-release safety boundary:
 
-## Evidence chain
+- no main merge before independent GO;
+- no production deployment/mutation performed by this remediation owner;
+- no real LINE send/provider mutation;
+- no Google provider mutation;
+- use existing safe/test-mode or already-available non-provider-mutating PWA paths where the scenario permits it.
 
-| Scenario | Entry | Operation | Result | Canonical truth | Return/state |
-|---|---|---|---|---|---|
-| Today / Check-in | `/today` -> `/checkin` | bulk/individual outcomes | receipt-scoped result and correction | DB suites incl. Issue #54 Check-in regression; CI #702 DB + real CLI GREEN | mounted route/back-state regressions |
-| Task create/edit | Quick Add -> task modal | create/edit + subtasks | canonical task appears in Today | Web task form regressions + CI #702 Web GREEN | session draft and modal return-state regressions |
-| Request create/respond | `/requests?bucket=active` | send with distinct reply/work deadlines; accept/decline/consult | state transition and recipient/sender view | `server_tx_send_request_v2`, `request_attempts.reply_due_at`; DB/real-stack CI #702 GREEN | URL bucket retained; response refresh restores scroll; Web regression GREEN |
-| Concierge | `/concierge` -> results -> confirm | multi-intent select/clarify/confirm | per-candidate success/failure | canonical command mappings + Edge/DB regressions | input preserved; failed-only retry preserves successful results |
-| History correction | `/history` | correction | visible scheduled-date truth updated while audit remains collapsed | History deterministic tests + DB suites | filter/selected row/scroll state retained |
-| Month/day agenda | `/month` -> selected day agenda | open detail/edit | updated canonical item reflected | Month/DayAgenda regressions | selected date preserved on return |
-| LINE reference | `/settings/line-reference` | six fixed entry deep links | PWA destination only | same canonical PWA surfaces; no provider mutation | navigation-only safe evidence |
-| Google/Nursery review | review screens | inspect/resolve protected diffs/duplicates | local canonical review decisions only | provider fences and DB/Edge tests GREEN | no external provider write performed |
-| Transcript | `/concierge/transcript` | `ja-JP` browser speech transcript remains editable | same proposal/confirm flow as text | deterministic transcript/Concierge source contract | mobile WebKit-compatible browser API path; no provider mutation |
+## Required real-iPhone scenarios
 
-## Mobile-equivalent source evidence
+Gate C is PASS only after the following are physically exercised on an iPhone and the observed results are recorded against one exact PR head.
 
-`apps/web/src/mobileHotfix.css` and `apps/web/src/App.css` enforce mobile/iOS behavior used by the above flows: `100dvh`, safe-area bottom padding, fixed bottom nav, touch-action manipulation, overflow guards, and >=44px controls at mobile width.
+| Scenario | Required physical interaction and acceptance evidence |
+|---|---|
+| Today first viewport | Open Today on iPhone. Confirm `最初にここだけ見ればOK` and four meaning labels (`返事・担当未定`, `今日の自分タスク`, `待ち・あとで確認`, `明日の予定・準備`) are readable without relying on component source. Tap each relevant shortcut and verify navigation/scroll target. |
+| Check-in bulk scope | Open an active check-in. Immediately above `全部やった`, verify the concrete included names are visible (e.g. `洗濯：畳む`, `明日の着替え準備`) and optional/excluded names (e.g. `フィルター掃除`) are visibly separated. Do not perform an unsafe external-provider mutation. |
+| Concierge / Transcript correction | Enter or dictate `金曜のお迎えママお願い……あ、やっぱ土曜。牛乳も買って。`. Verify Results contains a Saturday pickup/request assigned to Mama plus a separate milk shopping candidate, with no stale Friday candidate. |
+| Results edit | On the same Results screen, tap `編集`, change a candidate field, save it, and verify the changed candidate is what proceeds to confirmation. |
+| Back/state | Return/back through the exercised flows and verify draft/filter/selection/scroll state is preserved where the contract specifies it. |
+| Existing safe high-risk paths | Spot-check Requests response, History correction, Month/day agenda, LINE reference deep-link, and Google/Nursery review surfaces without real LINE/Google provider mutation. |
 
-## CI evidence
+## Deterministic support evidence (not Gate C by itself)
 
-CI #702 for exact head `dbcb08ef822158b65bd5698babc79dd8e3101588` is FULL GREEN:
+The following supports the physical run but cannot replace it:
 
-- Web lint: SUCCESS
-- Web typecheck: SUCCESS
-- Web tests: SUCCESS
-- Web build: SUCCESS
-- Edge lint/typecheck/unit/auth-matrix: SUCCESS
-- DB migrations + SQL regression suite: SUCCESS
-- Real Supabase CLI stack: SUCCESS, including reset/apply-all-migrations and real-stack integration tests
+- mobile/iOS source behavior in `apps/web/src/mobileHotfix.css` and `apps/web/src/App.css`;
+- Web lint/typecheck/test/build;
+- Edge lint/typecheck/unit/auth-matrix;
+- DB migrations/regression suite;
+- real Supabase CLI stack;
+- targeted regressions for check-in named bulk scope and Concierge correction parsing.
 
-This evidence is equivalent pre-review evidence, not production validation. Production, real LINE, and Google mutation remain explicitly prohibited until independent review GO.
+## Recording rule
+
+After the real iPhone run, update this document with:
+
+1. exact PR head exercised;
+2. date/time and device/browser/PWA mode;
+3. each scenario PASS/FAIL with the visible result;
+4. any failure reproduction steps;
+5. confirmation that no prohibited provider mutation occurred.
+
+Until that evidence exists, **Gate C remains FAIL and release remains NO-GO**.
