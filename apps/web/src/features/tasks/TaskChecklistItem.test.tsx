@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TaskInstance } from '../../lib/types';
+import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import { TaskChecklistItem } from './TaskChecklistItem';
 
 const callEdgeFunction = vi.fn();
@@ -21,6 +21,24 @@ function makeTask(status: 'todo' | 'completed'): TaskInstance {
   } as TaskInstance;
 }
 
+function makeSubtaskTask(): TaskInstance {
+  return {
+    ...makeTask('todo'),
+    id: 'laundry-1',
+    origin: 'recurring',
+    title: '洗濯',
+    category: 'housework',
+    routine_phase: 'evening',
+    completion_mode: 'subtasks',
+  } as TaskInstance;
+}
+
+const laundrySubtasks: TaskSubtaskInstance[] = [
+  { id: 'st-1', household_id: 'household-1', task_instance_id: 'laundry-1', title: '回す', required: true, sort_order: 1, is_completed: false, completed_by: null, completed_at: null },
+  { id: 'st-2', household_id: 'household-1', task_instance_id: 'laundry-1', title: '干す/乾燥', required: true, sort_order: 2, is_completed: false, completed_by: null, completed_at: null },
+  { id: 'st-3', household_id: 'household-1', task_instance_id: 'laundry-1', title: '畳む', required: true, sort_order: 3, is_completed: false, completed_by: null, completed_at: null },
+];
+
 const props = {
   subtasks: [],
   members: [],
@@ -29,7 +47,7 @@ const props = {
   onChanged: vi.fn(),
 };
 
-describe('TaskChecklistItem Q106', () => {
+describe('TaskChecklistItem Q54/Q64/Q106', () => {
   beforeEach(() => {
     callEdgeFunction.mockReset();
     callEdgeFunction.mockResolvedValue({ ok: true });
@@ -49,6 +67,24 @@ describe('TaskChecklistItem Q106', () => {
       complete_remaining_subtasks: false,
     });
     expect(screen.queryByText('完了メモ（任意）')).not.toBeInTheDocument();
+  });
+
+  it('shows fine-grained recurring subtasks immediately and records an individual checkbox', async () => {
+    render(<TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} />);
+
+    expect(screen.getByText('洗濯')).toBeInTheDocument();
+    expect(screen.getByText('回す')).toBeInTheDocument();
+    expect(screen.getByText('干す/乾燥')).toBeInTheDocument();
+    expect(screen.getByText('畳む')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '回す' }));
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', {
+      operation_id: '69000000-0000-4000-8000-000000000001',
+      subtask_instance_id: 'st-1',
+      completed: true,
+      completion_actor: 'self',
+    }));
   });
 
   it('offers evidence only after completion and saves an optional memo separately', async () => {
