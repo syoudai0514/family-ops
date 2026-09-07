@@ -41,7 +41,7 @@ describe('TodayContractPage', () => {
     })).toEqual({ attention: 3, remaining: 2, waiting: 1, tomorrowImpact: 3 });
   });
 
-  it('renders all four summary values and a lightweight Concierge entry', () => {
+  it('renders the literal v11 first-viewport labels and all four summary values', () => {
     render(
       <MemoryRouter initialEntries={['/today']}>
         <Routes>
@@ -50,11 +50,12 @@ describe('TodayContractPage', () => {
         </Routes>
       </MemoryRouter>,
     );
+    expect(screen.getByText('最初にここだけ見ればOK')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '今日の状況' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '要対応 2' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '残り 2' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '待ち 1' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '明日影響 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /返事・担当未定.*要対応 2/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /今日の自分タスク.*残り 2/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /待ち・あとで確認.*待ち 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /明日の予定・準備.*明日影響 2/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /コンシェルジュ/ }));
     expect(screen.getByText('concierge-destination')).toBeInTheDocument();
   });
