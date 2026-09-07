@@ -94,10 +94,11 @@
 }
 
 /* Issue #54 production Gate C — Today material parity.
-   TodayContractPage and Today used to stack two independent .app-shell blocks.
-   The global mobile min-height then made the summary consume almost a full
-   viewport before the real Today body. Keep the contract header/summary in the
-   normal document flow and let the actual Today shell own page height. */
+   The contract wrapper owns the final-v11 information hierarchy. The legacy
+   Today component remains underneath for canonical operational surfaces that
+   are not duplicated here (requests detail, schedule, handover, shopping,
+   tomorrow-preparation), but its old task grouping is suppressed so the user
+   sees one coherent Today instead of two competing layouts. */
 .today-contract-overview {
   min-height: 0;
   padding-bottom: 0.35rem;
@@ -131,7 +132,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.15rem;
 }
 .today-contract-shortcuts button {
   min-width: 0;
@@ -158,6 +159,77 @@
   line-height: 1.25;
 }
 
+.today-contract-section {
+  margin-top: 0.7rem;
+}
+.today-contract-danger {
+  border-color: #efb5b5;
+  background: #fff8f8;
+}
+.today-contract-work {
+  border-color: #f0c36a;
+  background: #fffaf0;
+}
+.today-contract-done,
+.today-contract-success {
+  border-color: #b8dfc9;
+  background: #f6fff9;
+}
+.today-contract-tomorrow {
+  border-color: #b8c9ef;
+  background: #f7f9ff;
+}
+.today-contract-compact-list {
+  display: grid;
+  gap: 0.55rem;
+}
+.today-contract-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(31, 41, 55, 0.08);
+}
+.today-contract-list-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.today-contract-list-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+.today-contract-list-row strong,
+.today-contract-list-row small {
+  overflow-wrap: anywhere;
+}
+.today-contract-list-row small {
+  color: var(--color-text-muted);
+}
+.today-contract-task-list {
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+.today-contract-bulk-input {
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+/* Remove the legacy Today structures that duplicate the final-v11 contract
+   sections above. Keep detailed decision controls, schedule, handover,
+   tomorrow-preparation and shopping available below. */
+.today-contract-flow > .today-contract-overview + .app-shell .today-page-heading,
+.today-contract-flow > .today-contract-overview + .app-shell .today-shortcuts,
+.today-contract-flow > .today-contract-overview + .app-shell .current-input-card,
+.today-contract-flow > .today-contract-overview + .app-shell .next-action-hero,
+.today-contract-flow > .today-contract-overview + .app-shell .waiting-summary,
+.today-contract-flow > .today-contract-overview + .app-shell .task-section,
+.today-contract-flow > .today-contract-overview + .app-shell .partner-summary,
+.today-contract-flow > .today-contract-overview + .app-shell [aria-label="明日の予定"] {
+  display: none;
+}
+
 @media (max-width: 520px) {
   .today-contract-overview {
     padding-top: 0.85rem;
@@ -167,13 +239,6 @@
   .today-contract-overview + .app-shell {
     min-height: 0;
     padding-top: 0.2rem;
-  }
-
-  /* The Today component has its own page heading. The contract wrapper now
-     owns that heading so the hierarchy matches v11: date/Today -> summary ->
-     live daypart content, with no duplicated heading between summary/body. */
-  .today-contract-flow > .app-shell .today-page-heading {
-    display: none;
   }
 
   .today-contract-shortcuts {
@@ -204,5 +269,18 @@
     max-width: 7.5rem;
     text-align: center;
     line-height: 1.25;
+  }
+
+  .today-contract-section {
+    margin-top: 0.55rem;
+  }
+
+  .today-contract-list-row {
+    align-items: flex-start;
+  }
+
+  .today-contract-list-row .secondary-button {
+    flex: 0 0 auto;
+    max-width: 7.5rem;
   }
 }
