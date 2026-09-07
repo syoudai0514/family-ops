@@ -1,9 +1,10 @@
 -- Regression for the production 2026-09-07 morning DailyBrief outage.
--- The pre-fix formatter throws `invalid input syntax for type json` as soon as
--- a non-empty urgent/task/shopping title is rendered because `'・'||x->>'title'`
--- can bind as JSON extraction from the concatenated expression. This test must
--- therefore fail against the old formatter and pass only when extraction is
--- parenthesized before text concatenation.
+-- The pre-fix formatter throws `invalid input syntax for type json` because
+-- `'・'||x->>'title'` can bind as JSON extraction from the concatenated
+-- expression. PostgreSQL then tries to coerce the bullet literal to JSON during
+-- expression evaluation, so the formatter can fail even before any actual title
+-- row is needed. This test must therefore fail against the old formatter and
+-- pass only when extraction is parenthesized before text concatenation.
 \set ON_ERROR_STOP on
 
 do $$
