@@ -33,6 +33,14 @@ function dateInTimeZone(timeZone: string): string {
   return `${pick('year')}-${pick('month')}-${pick('day')}`;
 }
 
+export function conciergeRequestDueAt(candidate: ConciergeCandidate): string | null {
+  const scheduledDate = candidate.intent?.scheduledDate;
+  if (!scheduledDate) return candidate.intent?.desiredDueAt ?? null;
+  const localTime = candidate.intent?.dueLocalTime ?? '23:59';
+  const parsed = new Date(`${scheduledDate}T${localTime}:00+09:00`);
+  return Number.isNaN(parsed.getTime()) ? candidate.intent?.desiredDueAt ?? null : parsed.toISOString();
+}
+
 function resolveTarget(candidate: ConciergeCandidate, context: CommitContext): string | null {
   const direct = candidate.intent?.targetUserId;
   if (direct) return direct;
@@ -73,9 +81,11 @@ export async function commitConciergeCandidate(candidate: ConciergeCandidate, co
     } else if (candidate.kind === 'request') {
       if (!targetUserId) return result(candidate, false, 'お願い先が確定していません。');
       await invoke(EDGE_FUNCTIONS.sendRequest, {
-        operation_id: operationId(), target_user_id: targetUserId, desired_title: candidate.title,
-        desired_due_at: candidate.intent?.desiredDueAt ?? null,
-        desired_priority: candidate.intent?.priority ?? 'normal', desired_request_text: candidate.sourceText,
+        operation_id: operationId(),
+        recipient_user_id: targetUserId,
+        shared_title: candidate.title,
+        shared_message: candidate.intent?.sharedMessage?.trim() || candidate.sourceText,
+        due_at: conciergeRequestDueAt(candidate),
       });
     } else if (candidate.kind === 'actual') {
       await invoke(EDGE_FUNCTIONS.recordUnplannedActual, {
