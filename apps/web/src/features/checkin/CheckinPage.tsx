@@ -11,6 +11,7 @@ type SessionType = 'dropoff' | 'pickup' | 'nonpickup_evening';
 type SessionStatus = 'open' | 'submitted' | 'auto_closed' | 'superseded';
 type ItemAction = 'complete' | 'partner_handled' | 'skip' | 'failed' | 'cancelled' | 'rescheduled' | 'unknown';
 type ReconciliationResponse = 'all_done' | 'mostly_done' | 'individual';
+type TaskExpectation = 'required' | 'normal' | 'optional';
 
 interface SubtaskRow {
   id: string;
@@ -28,6 +29,7 @@ interface SessionItem {
   actual_completed_by_id: string | null;
   outcome_reason?: 'could_not_do' | 'not_needed_this_occurrence' | 'expired_occurrence' | 'rescheduled' | 'unknown' | null;
   rescheduled_to?: string | null;
+  expectation?: TaskExpectation;
   revision?: number;
   display_order: number;
   subtasks: SubtaskRow[];
@@ -64,6 +66,16 @@ export function previousIsoDate(isoDate: string): string {
   const value = new Date(Date.UTC(year, month - 1, day));
   value.setUTCDate(value.getUTCDate() - 1);
   return value.toISOString().slice(0, 10);
+}
+
+export function countCheckinBulkScope(items: Array<{ expectation?: TaskExpectation }>): { eligibleCount: number; optionalCount: number } {
+  let eligibleCount = 0;
+  let optionalCount = 0;
+  for (const item of items) {
+    if ((item.expectation ?? 'normal') === 'optional') optionalCount += 1;
+    else eligibleCount += 1;
+  }
+  return { eligibleCount, optionalCount };
 }
 
 function itemStatusLabel(item: SessionItem): string {
@@ -122,8 +134,12 @@ export function CheckinPage() {
   if (!session) return <div className="app-shell">セッションが見つかりません。</div>;
 
   const activeItems = session.items.filter(isItemActive);
+  const { eligibleCount, optionalCount } = countCheckinBulkScope(activeItems);
   const canAct = session.can_act && session.status === 'open';
-  const canCorrectBulk = Boolean(reconciliationOperationId && session.status === 'submitted');
+  // A bulk receipt is the correction authority. Optional rows can keep the
+  // routine session open, so do not incorrectly hide immediate correction/undo
+  // merely because the session itself has not become submitted.
+  const canCorrectBulk = Boolean(reconciliationOperationId);
   const morningInput = currentInputs.sessions.find((candidate) => candidate.can_act && candidate.session_type === 'dropoff') ?? null;
   const eveningInput = currentInputs.sessions.find((candidate) => candidate.can_act && candidate.session_type === 'nonpickup_evening') ?? null;
   const originState = { originPath: location.pathname, originScrollY: window.scrollY };
@@ -222,13 +238,13 @@ export function CheckinPage() {
     {canAct && activeItems.length > 0 && !individualMode && <section className="card checkin-reconciliation" aria-labelledby="checkin-reconciliation-title">
       <p className="eyebrow">{inputLabel(session.session_type)}</p><h2 id="checkin-reconciliation-title">今日はどうでしたか？</h2>
       <div className="checkin-scope" aria-label="一括操作の対象">
-        <strong>この操作の対象: 必須/通常 {activeItems.length}件</strong>
-        <span className="task-item-meta">余力は一括対象外です。</span>
+        <strong>この操作の対象: 必須/通常 {eligibleCount}件</strong>
+        <span className="task-item-meta">余力 {optionalCount}件は対象外</span>
       </div>
       <p className="empty-hint">細かな入力は例外があるときだけで大丈夫です。「大体やった」では未入力項目や子項目を勝手に完了にしません。</p>
       <div className="checkin-reconciliation-actions">
-        <button type="button" className="hero-primary" disabled={busyAll} onClick={() => runReconciliation('all_done')}>全部やった</button>
-        <button type="button" className="secondary-button" disabled={busyAll} onClick={() => runReconciliation('mostly_done')}>大体やった</button>
+        <button type="button" className="hero-primary" disabled={busyAll || eligibleCount === 0} onClick={() => runReconciliation('all_done')}>全部やった</button>
+        <button type="button" className="secondary-button" disabled={busyAll || eligibleCount === 0} onClick={() => runReconciliation('mostly_done')}>大体やった</button>
         <button type="button" className="text-button" disabled={busyAll} onClick={() => runReconciliation('individual')}>個別に記録</button>
       </div>
     </section>}
