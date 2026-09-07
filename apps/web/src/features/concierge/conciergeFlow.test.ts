@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeConciergeProposal, withActualScheduledDate } from './conciergeFlow';
-import { commitConciergeCandidate } from './conciergeCommit';
+import { commitConciergeCandidate, conciergeRequestDueAt } from './conciergeCommit';
 
 const member = (userId: string, role: 'papa' | 'mama') => ({
   household_id: '00000000-0000-4000-8000-000000000001', user_id: userId,
@@ -46,20 +46,28 @@ describe('Concierge canonical flow', () => {
     } }]);
   });
 
-  it('resolves a role to the household member for requests', async () => {
+  it('preserves the corrected request date and current send-request API contract', async () => {
     const calls: Array<{ name: string; body: Record<string, unknown> }> = [];
     const papa = member('00000000-0000-4000-8000-000000000011', 'papa');
     const mama = member('00000000-0000-4000-8000-000000000012', 'mama');
-    const result = await commitConciergeCandidate({
-      candidateId: 'request-1', kind: 'request', title: '金曜のお迎え', sourceText: '金曜のお迎えお願い', missingFields: [], intent: { targetRole: 'mama' },
-    }, {
+    const candidate = {
+      candidateId: 'request-1', kind: 'request' as const, title: 'お迎え', sourceText: '金曜のお迎えママお願い / 訂正: あ、やっぱ土曜', missingFields: [],
+      intent: { targetRole: 'mama', scheduledDate: '2026-09-12', dueLocalTime: null, sharedMessage: '土曜のお迎えをお願いできますか？' },
+    };
+    expect(conciergeRequestDueAt(candidate)).toBe('2026-09-12T14:59:00.000Z');
+    const result = await commitConciergeCandidate(candidate, {
       members: [papa, mama], me: papa, partner: mama, timeZone: 'Asia/Tokyo',
       operationId: () => '00000000-0000-4000-8000-000000000124',
       invoke: async (name, body) => { calls.push({ name, body: body as Record<string, unknown> }); return {}; },
     });
     expect(result.ok).toBe(true);
-    expect(calls[0]?.name).toBe('send-request');
-    expect(calls[0]?.body.target_user_id).toBe(mama.user_id);
+    expect(calls).toEqual([{ name: 'send-request', body: {
+      operation_id: '00000000-0000-4000-8000-000000000124',
+      recipient_user_id: mama.user_id,
+      shared_title: 'お迎え',
+      shared_message: '土曜のお迎えをお願いできますか？',
+      due_at: '2026-09-12T14:59:00.000Z',
+    } }]);
   });
 
   it('pins the user-selected original target date onto actual candidates', () => {
