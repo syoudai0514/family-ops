@@ -3,7 +3,7 @@
 -- table-specific NEW.calendar_connection_id on task_subtask_instances.
 \set ON_ERROR_STOP on
 
-insert into auth.users (id) values ('63000000-0000-0000-0000-000000000001');
+insert into auth.users (id) values ('63990000-0000-0000-0000-000000000001');
 set role service_role;
 
 do $$
@@ -16,7 +16,7 @@ declare
   v_task_id uuid;
 begin
   v_hh := public.server_tx_create_household(
-    '63000000-0000-0000-0000-000000000001',
+    '63990000-0000-0000-0000-000000000001',
     gen_random_uuid(),
     'Issue63 Recurrence HH',
     'Owner'
@@ -28,7 +28,7 @@ begin
     completion_mode, is_active, sort_order, created_by
   ) values (
     v_def_id, v_hh_id, 'issue63_laundry', '洗濯', 'housework', 'evening',
-    'subtasks', true, 1, '63000000-0000-0000-0000-000000000001'
+    'subtasks', true, 1, '63990000-0000-0000-0000-000000000001'
   );
 
   insert into public.task_subtask_definitions (
@@ -43,8 +43,8 @@ begin
     effective_from, effective_to, active, created_by
   ) values (
     v_rule_id, v_hh_id, v_def_id, 2, 'issue63',
-    'fixed', '63000000-0000-0000-0000-000000000001', '20:00',
-    '2026-09-01', null, true, '63000000-0000-0000-0000-000000000001'
+    'fixed', '63990000-0000-0000-0000-000000000001', '20:00',
+    '2026-09-01', null, true, '63990000-0000-0000-0000-000000000001'
   );
 
   perform private.materialize_recurrence_rule(
