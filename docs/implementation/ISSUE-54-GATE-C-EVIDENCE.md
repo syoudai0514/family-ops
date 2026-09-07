@@ -1,22 +1,30 @@
 # Issue #54 — Gate C real iPhone user acceptance evidence
 
-Status: **FAIL / PENDING REAL IPHONE EXECUTION** after independent review of exact head `2f37e257b15f077940de27ef3821d7a4097b2e54`.
+Status: **PENDING FOR RELEASE ACCEPTANCE / NOT YET EXECUTED**.
 
 The previous version of this document incorrectly treated mobile CSS, jsdom/component tests, and CI as equivalent to Gate C. Issue #54 requires **real iPhone user acceptance using actual user scenarios, not component inspection**. Those deterministic checks remain useful Gate A evidence, but they do not satisfy Gate C.
 
+The independent review NO-GO at exact head `2f37e257b15f077940de27ef3821d7a4097b2e54` correctly identified that gap. Source remediation may be independently re-reviewed before Gate C; physical Gate C remains mandatory before final release/merge approval.
+
+## Sequencing
+
+- **Independent source re-review:** may proceed now after source remediation + full CI. Gate C is not a blocker to reviewing source parity.
+- **Release acceptance:** cannot be GO until the physical iPhone scenarios below are executed and recorded against an exact tested head.
+- No source review result may be misrepresented as physical Gate C evidence.
+
 ## Safety constraints
 
-The real-iPhone pass must remain inside the pre-release safety boundary:
+The real-iPhone pass must remain inside the release safety boundary:
 
-- no main merge before independent GO;
-- no production deployment/mutation performed by this remediation owner;
-- no real LINE send/provider mutation;
-- no Google provider mutation;
-- use existing safe/test-mode or already-available non-provider-mutating PWA paths where the scenario permits it.
+- no main merge before final release GO;
+- no production deployment/mutation performed as part of pre-GO validation unless explicitly authorized for the release step;
+- no real LINE send/provider mutation during the safe Gate C scenarios;
+- no Google provider mutation during the safe Gate C scenarios;
+- use safe/test-mode or an explicitly authorized release-candidate surface when Gate C is executed.
 
 ## Required real-iPhone scenarios
 
-Gate C is PASS only after the following are physically exercised on an iPhone and the observed results are recorded against one exact PR head.
+Gate C is PASS only after the following are physically exercised on an iPhone and the observed results are recorded against one exact tested head.
 
 | Scenario | Required physical interaction and acceptance evidence |
 |---|---|
@@ -29,14 +37,16 @@ Gate C is PASS only after the following are physically exercised on an iPhone an
 
 ## Deterministic support evidence (not Gate C by itself)
 
-The following supports the physical run but cannot replace it:
+The following supports source re-review and the later physical run but cannot replace Gate C:
 
 - mobile/iOS source behavior in `apps/web/src/mobileHotfix.css` and `apps/web/src/App.css`;
 - Web lint/typecheck/test/build;
 - Edge lint/typecheck/unit/auth-matrix;
 - DB migrations/regression suite;
 - real Supabase CLI stack;
-- targeted regressions for check-in named bulk scope and Concierge correction parsing.
+- targeted regressions for Check-in named bulk scope, Today labels, Concierge correction parsing, Results editing, and canonical request payload/date preservation;
+- CI #719 on remediation implementation head `8b66598cd942cb4cdc5dfcd2eb7624e46b8bf51f` — FULL GREEN;
+- CI #720 on remediation verification head `2e2782a27e6bf448b5d3c167a00754927e0ab008` — FULL GREEN.
 
 ## Recording rule
 
@@ -48,4 +58,4 @@ After the real iPhone run, update this document with:
 4. any failure reproduction steps;
 5. confirmation that no prohibited provider mutation occurred.
 
-Until that evidence exists, **Gate C remains FAIL and release remains NO-GO**.
+Until that evidence exists, **Gate C remains pending and final release/merge remains NO-GO**, even if targeted independent source re-review is GO.
