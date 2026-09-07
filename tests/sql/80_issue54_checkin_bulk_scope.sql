@@ -15,14 +15,12 @@ declare
   drop_def uuid;
   required_task uuid;
   optional_task uuid;
-  mostly_required uuid;
-  mostly_optional uuid;
   session_all uuid;
-  session_mostly uuid;
   read_result jsonb;
   bulk_result jsonb;
   required_count int;
   optional_count int;
+  bulk_operation uuid;
 begin
   insert into auth.users(id) values(papa),(mama);
   insert into public.profiles(user_id,display_name)
@@ -78,6 +76,7 @@ begin
   bulk_result := public.server_tx_reconcile_routine_session_v2(
     papa,gen_random_uuid(),session_all,'all_done'
   );
+  bulk_operation := (bulk_result->>'reconciliation_operation_id')::uuid;
   if coalesce((bulk_result->>'completed_count')::int,-1)<>1 then
     raise exception 'FAIL Issue54 checkin: all_done completed_count was not exact: %',bulk_result;
   end if;
@@ -88,46 +87,26 @@ begin
     raise exception 'FAIL Issue54 checkin: optional task was silently completed';
   end if;
   if (select count(*) from public.routine_reconciliation_snapshots
-      where operation_id=(bulk_result->>'reconciliation_operation_id')::uuid)<>1 then
+      where operation_id=bulk_operation)<>1 then
     raise exception 'FAIL Issue54 checkin: undo scope includes unchanged optional task';
   end if;
 
-  -- A second occurrence proves mostly_done is group-level evidence only and
-  -- does not silently turn either required or optional task into completion.
-  insert into public.task_instances(
-    household_id,task_definition_id,origin,title,category,routine_phase,scheduled_date,
-    planned_assignee_id,planned_assignee_actor_ref_id,assignment_mode,assignment_source,
-    completion_mode,status,source,created_by,expectation
-  ) values(
-    hh,drop_def,'recurring','送り（大体やった）','dropoff','morning','2026-11-03',
-    papa,papa_ref,'person','manual','whole','todo','recurring',papa,'required'
-  ) returning id into mostly_required;
-  insert into public.task_instances(
-    household_id,origin,title,category,routine_phase,scheduled_date,
-    planned_assignee_id,planned_assignee_actor_ref_id,assignment_mode,assignment_source,
-    completion_mode,status,source,created_by,expectation
-  ) values(
-    hh,'manual','棚を整える（余力）','cleaning','morning','2026-11-03',
-    papa,papa_ref,'person','manual','whole','todo','manual',papa,'optional'
-  ) returning id into mostly_optional;
-
-  perform public.server_tx_dispatch_routine_automation(
-    ('2026-11-03 07:00:00'::timestamp at time zone 'Asia/Tokyo'),2000
-  );
-  select id into session_mostly
-  from public.routine_checkin_sessions
-  where household_id=hh and session_type='dropoff'
-    and scheduled_date='2026-11-03' and assignee_id=papa;
-  if session_mostly is null then raise exception 'FAIL Issue54 checkin: mostly_done session missing'; end if;
+  -- Reuse the same materialized session after an exact undo. This avoids a
+  -- second-day dispatcher fixture while exercising the same public v2 command.
+  perform public.server_tx_undo_routine_reconciliation(papa,gen_random_uuid(),bulk_operation);
+  if (select count(*) from public.task_instances
+      where id in(required_task,optional_task) and status='todo')<>2 then
+    raise exception 'FAIL Issue54 checkin: all_done undo did not restore fixture';
+  end if;
 
   bulk_result := public.server_tx_reconcile_routine_session_v2(
-    papa,gen_random_uuid(),session_mostly,'mostly_done'
+    papa,gen_random_uuid(),session_all,'mostly_done'
   );
   if coalesce((bulk_result->>'completed_count')::int,-1)<>0 then
     raise exception 'FAIL Issue54 checkin: mostly_done completed tasks: %',bulk_result;
   end if;
   if (select count(*) from public.task_instances
-      where id in(mostly_required,mostly_optional) and status='todo')<>2 then
+      where id in(required_task,optional_task) and status='todo')<>2 then
     raise exception 'FAIL Issue54 checkin: mostly_done mutated canonical task truth';
   end if;
   if (select count(*) from public.routine_reconciliation_snapshots
