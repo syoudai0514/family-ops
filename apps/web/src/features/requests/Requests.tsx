@@ -108,6 +108,19 @@ export function Requests() {
     return raw === 'expired' || raw === 'history' ? raw : 'active';
   });
   const restoredRef = useRef(false);
+  const incoming = requests.filter((r) => r.recipient_id === user?.id);
+  const outgoing = requests.filter((r) => r.requester_id === user?.id);
+  const bucketedIncoming = incoming.filter((r) => requestBucket(r.status, r.due_at) === bucketFilter);
+  const bucketedOutgoing = outgoing.filter((r) => requestBucket(r.status, r.due_at) === bucketFilter);
+  const counts = useMemo(() => (['active', 'expired', 'history'] as RequestBucket[]).reduce<Record<RequestBucket, number>>((acc, bucket) => {
+    acc[bucket] = requests.filter((r) => requestBucket(r.status, r.due_at) === bucket).length;
+    return acc;
+  }, { active: 0, expired: 0, history: 0 }), [requests]);
+  const rowRefresh = useCallback(async () => {
+    const scrollY = window.scrollY;
+    await refresh();
+    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: 'auto' }));
+  }, [refresh]);
 
   useEffect(() => {
     if (restoredRef.current || restoreScrollY == null) return;
@@ -119,7 +132,7 @@ export function Requests() {
     const params = new URLSearchParams(location.search);
     params.set('bucket', bucketFilter);
     navigate(`${location.pathname}?${params.toString()}`, { replace: true, state: location.state });
-  }, [bucketFilter]);
+  }, [bucketFilter, location.pathname, location.search, location.state, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,21 +158,6 @@ export function Requests() {
   }
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
-
-  const incoming = requests.filter((r) => r.recipient_id === user?.id);
-  const outgoing = requests.filter((r) => r.requester_id === user?.id);
-  const bucketedIncoming = incoming.filter((r) => requestBucket(r.status, r.due_at) === bucketFilter);
-  const bucketedOutgoing = outgoing.filter((r) => requestBucket(r.status, r.due_at) === bucketFilter);
-  const counts = useMemo(() => (['active', 'expired', 'history'] as RequestBucket[]).reduce<Record<RequestBucket, number>>((acc, bucket) => {
-    acc[bucket] = requests.filter((r) => requestBucket(r.status, r.due_at) === bucket).length;
-    return acc;
-  }, { active: 0, expired: 0, history: 0 }), [requests]);
-
-  const rowRefresh = useCallback(async () => {
-    const scrollY = window.scrollY;
-    await refresh();
-    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: 'auto' }));
-  }, [refresh]);
 
   return (
     <div className="app-shell">
@@ -236,6 +234,6 @@ function toDateTimeLocal(value: unknown): string { if (typeof value !== 'string'
 function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage = '', initialTitle = '', initialDueDate = '', pendingActionId = null, onSent }: { recipientId: string; initialRawMessage?: string; initialMessage?: string; initialTitle?: string; initialDueDate?: string; pendingActionId?: string | null; onSent: () => void }) {
   const [title, setTitle] = useState(initialTitle); const [rawMessage, setRawMessage] = useState(initialRawMessage); const [message, setMessage] = useState(initialMessage); const [replyDueDate, setReplyDueDate] = useState(''); const [dueDate, setDueDate] = useState(initialDueDate); const [submitting, setSubmitting] = useState(false); const [rewriting, setRewriting] = useState(false); const [rawInputId, setRawInputId] = useState<string | null>(null); const [previewing, setPreviewing] = useState(false); const [error, setError] = useState<string | null>(null);
   async function rewriteMessageWithAi() { const rawText = rawMessage.trim(); if (!rawText) { setError('言い換えたいメッセージを入力してください。'); return; } setError(null); setRewriting(true); try { const proposal = await callEdgeFunction<{ raw_input_id: string; proposed_text: string }>(EDGE_FUNCTIONS.proposeAiDraft, { operation_id: newOperationId(), raw_text: rawText, target_type: 'request' }); setMessage(proposal.proposed_text); setRawInputId(proposal.raw_input_id); } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : 'AIによる言い換えに失敗しました。'); } finally { setRewriting(false); } }
-  async function handleSubmit(event: FormEvent) { event.preventDefault(); setError(null); setSubmitting(true); try { if (!message.trim()) { setError('相手へ共有する文面を入力してください。'); return; } const payload = { operation_id: newOperationId(), recipient_user_id: recipientId, shared_title: title.trim() || 'お願い', due_at: dueDate ? new Date(dueDate).toISOString() : undefined, reply_due_at: replyDueDate ? new Date(replyDueDate).toISOString() : undefined }; if (rawInputId) await callEdgeFunction(EDGE_FUNCTIONS.confirmRequestDraft, { ...payload, raw_input_id: rawInputId, confirmed_message: message.trim() }); else await callEdgeFunction(EDGE_FUNCTIONS.sendRequest, { ...payload, shared_message: message.trim() }); if (pendingActionId) await callEdgeFunction(EDGE_FUNCTIONS.cancelPendingAction, { pending_action_id: pendingActionId }); onSent(); } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '送信に失敗しました。'); } finally { setSubmitting(false); } }
-  return <form onSubmit={handleSubmit} className="stack-form card request-composer"><div className="composer-steps" aria-label="お願い作成の手順"><span className={!previewing ? 'active' : ''}>1 作成</span><span className={previewing ? 'active' : ''}>2 確認</span><span>3 送信</span></div><p className="eyebrow">相手に見えるのは、確認した文面だけです</p><label>タイトル<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="未入力なら「お願い」" /></label><label>まずはそのまま入力<textarea value={rawMessage} onChange={(e) => { setRawMessage(e.target.value); setRawInputId(null); }} placeholder="今日ちょっと遅くなるから、迎えをお願いしたい" /></label><button type="button" className="secondary-button" onClick={rewriteMessageWithAi} disabled={submitting || rewriting || rawMessage.trim().length === 0}>{rewriting ? 'AIが言い換え中…' : 'AIでやわらかく言い換える'}</button><label>相手へ送る文面（確認・編集できます）<textarea value={message} onChange={(e) => setMessage(e.target.value)} required placeholder="AIで言い換えるか、直接入力してください" /></label><label>返事がほしい期限（任意）<input type="datetime-local" value={replyDueDate} onChange={(e) => setReplyDueDate(e.target.value)} /></label><p className="request-deadline-help">返事期限は「いつまでに返事がほしいか」。作業期限は「実際の作業をいつまでに終えるか」です。</p><label>作業期限（任意）<input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label><p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>{error && <p role="alert" className="error-text">{error}</p>}{!previewing ? <button type="button" disabled={submitting || !message.trim()} onClick={() => setPreviewing(true)}>送信内容を確認</button> : <section className="line-sender-preview" aria-label="LINE送信プレビュー"><p className="line-preview-kicker">LINE · 送る側の確認</p><h3>この内容で送りますか？</h3><p className="line-preview-message">{message}</p><p className="line-preview-meta">{replyDueDate ? `返事期限: ${new Date(replyDueDate).toLocaleString('ja-JP')}` : '返事期限なし'} / {dueDate ? `作業期限: ${new Date(dueDate).toLocaleString('ja-JP')}` : '作業期限なし'} / 今回だけ</p><p className="empty-hint">送るまでは、相手に通知されません。</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '送信中…' : 'LINEで送る'}</button></div></section>}</form>;
+  async function handleSubmit(event: FormEvent) { event.preventDefault(); setError(null); setSubmitting(true); try { if (!message.trim()) { setError('相手へ共有する文面を入力してください。'); return; } const payload = { operation_id: newOperationId(), recipient_user_id: recipientId, shared_title: title.trim() || 'お願い', due_at: dueDate ? new Date(dueDate).toISOString() : undefined, reply_due_at: replyDueDate ? new Date(replyDueDate).toISOString() : undefined }; if (rawInputId) await callEdgeFunction(EDGE_FUNCTIONS.confirmRequestDraft, { ...payload, raw_input_id: rawInputId, confirmed_message: message.trim() }); else await callEdgeFunction(EDGE_FUNCTIONS.sendRequest, { ...payload, shared_message: message.trim() }); if (pendingActionId) await callEdgeFunction(EDGE_FUNCTIONS.cancelPendingAction, { pending_action_id: pendingActionId }); onSent(); } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '送信に失敗しました。入力内容はこの画面に残っています。'); } finally { setSubmitting(false); } }
+  return <form onSubmit={handleSubmit} className="stack-form card request-composer"><div className="composer-steps" aria-label="お願い作成の手順"><span className={!previewing ? 'active' : ''}>1 作成</span><span className={previewing ? 'active' : ''}>2 確認</span><span>3 送信</span></div><p className="eyebrow">相手に見えるのは、確認した文面だけです</p><label>タイトル<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="未入力なら「お願い」" /></label><label>まずはそのまま入力<textarea value={rawMessage} onChange={(e) => { setRawMessage(e.target.value); setRawInputId(null); }} placeholder="今日ちょっと遅くなるから、迎えをお願いしたい" /></label><button type="button" className="secondary-button" onClick={rewriteMessageWithAi} disabled={submitting || rewriting || rawMessage.trim().length === 0}>{rewriting ? 'AIが言い換え中…' : 'AIでやわらかく言い換える'}</button><label>相手へ送る文面（確認・編集できます）<textarea value={message} onChange={(e) => setMessage(e.target.value)} required placeholder="AIで言い換えるか、直接入力してください" /></label><div className="request-deadline-grid"><label>返事がほしい期限（任意）<input type="datetime-local" value={replyDueDate} onChange={(e) => setReplyDueDate(e.target.value)} /></label><label>作業期限（任意）<input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label></div><p className="request-scope"><strong>返事期限</strong>は「いつまでに返事がほしいか」、<strong>作業期限</strong>は「いつまでにやるか」です。別々に設定できます。</p><p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>{error && <p role="alert" className="error-text">{error}</p>}{!previewing ? <button type="button" disabled={submitting || !message.trim()} onClick={() => setPreviewing(true)}>送信内容を確認</button> : <section className="line-sender-preview" aria-label="LINE送信プレビュー"><p className="line-preview-kicker">LINE · 送る側の確認</p><h3>この内容で送りますか？</h3><p className="line-preview-message">{message}</p><p className="line-preview-meta">{replyDueDate ? `返事期限: ${new Date(replyDueDate).toLocaleString('ja-JP')}` : '返事期限なし'} / {dueDate ? `作業期限: ${new Date(dueDate).toLocaleString('ja-JP')}` : '作業期限なし'} / 今回だけ</p><p className="empty-hint">送るまでは、相手に通知されません。</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '送信中…' : 'LINEで送る'}</button></div></section>}</form>;
 }
