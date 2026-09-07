@@ -13,6 +13,7 @@ import { GoogleEventReviewPage } from '../features/planning/GoogleEventReviewPag
 import { SettingsHome } from '../features/settings/SettingsHome';
 import { CategorySettings } from '../features/settings/CategorySettings';
 import { HouseholdTerminology } from '../features/settings/HouseholdTerminology';
+import { LineReferencePage } from '../features/settings/LineReferencePage';
 import { QuickAdd } from '../features/tasks/QuickAdd';
 import { TestSimulation } from '../features/testSimulation/TestSimulation';
 import { EventPlanPage } from '../features/events/EventPlanPage';
@@ -81,6 +82,7 @@ export function AppShell() {
         <Route path="/settings/routines" element={<RoutineSettingsPage />} />
         <Route path="/settings/categories" element={<CategorySettings />} />
         <Route path="/settings/terminology" element={<HouseholdTerminology />} />
+        <Route path="/settings/line-reference" element={<LineReferencePage />} />
         <Route path="/settings/test-simulation" element={<TestSimulation />} />
         <Route path="/checkin/:sessionId" element={<CheckinPage />} />
         <Route path="/concierge" element={<ConciergePage />} />
