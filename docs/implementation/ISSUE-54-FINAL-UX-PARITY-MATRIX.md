@@ -8,10 +8,10 @@ Status: implementation closeout in progress. `MATCH` requires CURRENT source + d
 - Product authority: `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` → Appendix A Q1–Q112 → `docs/design/current/` → Accepted ADRs → CURRENT source/schema.
 - UI contract: `family-ops-ux-contract-final-v11-noscript.html`
 - SHA-256: `c1afa191a8e02f86683e886e0c59a60019b7388531dde19f96de690e8b9e2007`
-- Current implementation head before this matrix-only commit: `464157ff086c73268df7ff04c10b8c966d48559e`.
-- Current matrix: **MATCH 30 / PARTIAL 3 / MISSING 1**.
-- Unweighted progress: **88.2%** (`MATCH / 34`).
-- Weighted progress: **92.6%** (`(MATCH + 0.5 × PARTIAL) / 34`).
+- Current implementation head before this matrix-only commit: `b80632278da039b064341e687c445d2816104293`.
+- Current matrix: **MATCH 33 / PARTIAL 0 / MISSING 1**.
+- Unweighted progress: **97.1%** (`MATCH / 34`).
+- Weighted progress: **97.1%** (`(MATCH + 0.5 × PARTIAL) / 34`).
 
 | # | Contract item | CURRENT deterministic evidence | Status | Remaining |
 |---:|---|---|---|---|
@@ -22,8 +22,8 @@ Status: implementation closeout in progress. `MATCH` requires CURRENT source + d
 | 5 | `task_form` | three-step modal + session draft regression | MATCH | Gate C |
 | 6 | `task_detail` | canonical item/detail/edit + return-state regression | MATCH | Gate C |
 | 7 | `groups` | built-in/custom separation + bulk scope regressions | MATCH | Gate C |
-| 8 | `requests` | canonical state machine; active/expired/history bucket semantics regression exists | PARTIAL | Wire visual buckets + response return-state/scroll test |
-| 9 | `request_form` | raw/private vs shared text, work deadline, preview-before-send | PARTIAL | Distinct initial response deadline + literal semantic explanation + regression |
+| 8 | `requests` | `/requests` now has explicit `対応中 / 期限切れ / 履歴` visual buckets, preserves bucket in URL, preserves scroll after response refresh, and keeps received/sent lists distinct. `Requests.contract.test.ts` locks bucket semantics. | MATCH | Gate C request response → same bucket/scroll evidence |
+| 9 | `request_form` | Initial request composer now has distinct `返事がほしい期限` and `作業期限`, literal semantic explanation, preview of both, canonical `request_attempts.reply_due_at` persistence via `server_tx_send_request_v2`, notification payload, and Edge adapter routing. | MATCH | Gate C create → recipient view evidence |
 | 10 | `assignment` | explicit request-vs-agreed endpoint mapping | MATCH | Gate C |
 | 11 | `routine_rules` | period rules/override/conflict tests | MATCH | Gate C |
 | 12 | `handover` | canonical share/ack/correction/history | MATCH | Gate C |
@@ -46,14 +46,14 @@ Status: implementation closeout in progress. `MATCH` requires CURRENT source + d
 | 29 | `test_mode` | simulated identity + side-effect fences | MATCH | Gate C |
 | 30 | `delete_semantics` | cancel/failed/not-needed/reschedule/correction distinctions | MATCH | Gate C |
 | 31 | `settings` | operational links incl. LINE/outcomes/anyone-owner | MATCH | Gate C |
-| 32 | `states` | input preservation already exists on Concierge entry; `ConciergeConfirmPage` now preserves successful results and retries failed candidates only (`failedCandidateIds` regression). Remaining Request surface still needs consistent load retry/return-state treatment. | PARTIAL | Requests retry + stale/return-state closeout |
-| 33 | `non_ui_contract` | canonical Edge/DB/real-stack suites and safety fences | MATCH | Must remain full green |
-| 34 | `coverage` | durable 34-row matrix maintained here | MISSING | exact final SHA, Gate C artifact/evidence, full CI GREEN, zero partial/missing |
+| 32 | `states` | Requests now has explicit loading/error retry/empty states, stale-action errors direct the user to refresh, response refresh restores scroll; Concierge preserves input and partial-success retry state. | MATCH | Gate C state evidence |
+| 33 | `non_ui_contract` | canonical Edge/DB/real-stack suites and safety fences; CI #699 FULL GREEN at `0513b0f...` | MATCH | Must remain full green at final head |
+| 34 | `coverage` | durable 34-row matrix maintained here | MISSING | final exact SHA, Gate C artifact/evidence, full CI GREEN at final head |
 
 ## Gate tracking
 
-- **Gate A — deterministic source/test:** in progress. CI #694 had Web/DB/Edge GREEN and real Supabase CLI RED solely because `20260907000002` was duplicated. The Issue #54 migration has now been renumbered to unique `20260907000003`; next CI must prove the full real-stack path.
-- **Gate B — literal 34-screen conformance:** **30 MATCH / 3 PARTIAL / 1 MISSING**.
+- **Gate A — deterministic source/test:** previous CURRENT baseline `0513b0f6778eaa48047eb3c58bfcd015d80b8a1c` passed CI #699 FULL GREEN after migration timestamp repair. New request parity changes are committed at `b80632278da039b064341e687c445d2816104293`; final CI is pending for that head.
+- **Gate B — literal 34-screen conformance:** **33 MATCH / 0 PARTIAL / 1 MISSING**.
 - **Gate C — real-use iPhone-equivalent scenario evidence:** pending final safe scenario harness/evidence. Route existence alone is not accepted.
 - **Gate D — independent source review:** not started; PR remains Draft.
 
