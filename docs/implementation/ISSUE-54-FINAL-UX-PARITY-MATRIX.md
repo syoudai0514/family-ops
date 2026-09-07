@@ -9,15 +9,15 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 - UI/interaction concretization: `family-ops-ux-contract-final-v11-noscript.html`
 - SHA-256: `c1afa191a8e02f86683e886e0c59a60019b7388531dde19f96de690e8b9e2007`
 - Fixture chores/dates/owners are presentation fixtures only; none are production defaults/seeds.
-- Current matrix after Issue #54 remediation in PR #56: **MATCH 21 / PARTIAL 12 / MISSING 1**.
-- Unweighted progress: **61.8%** (`MATCH / 34`).
-- Weighted progress: **79.4%** (`(MATCH + 0.5 × PARTIAL) / 34`; MISSING = 0 weight).
+- Current matrix after Issue #54 remediation in PR #56: **MATCH 24 / PARTIAL 9 / MISSING 1**.
+- Unweighted progress: **70.6%** (`MATCH / 34`).
+- Weighted progress: **83.8%** (`(MATCH + 0.5 × PARTIAL) / 34`; MISSING = 0 weight).
 
 | # | Contract item | CURRENT source / deterministic evidence | Status | Remaining before release closeout |
 |---:|---|---|---|---|
 | 1 | `today` | `/today` now routes through `TodayContractPage.tsx`: first-viewport `要対応 / 残り / 待ち / 明日影響`, direct-jump/fallback behavior, light Concierge entry; canonical detailed truth remains `Today.tsx`/`TodayTaskItem`; parent/subtask progress and direct completion remain canonical. `TodayContractPage.test.tsx` + existing `Today*.test.tsx`. | MATCH | Gate C iPhone-equivalent evidence. |
 | 2 | `checkin` | `CheckinPage.tsx`: exact target switcher (`今夜 / 朝の未入力 / 昨日分修正 / 予定外実績`), all/mostly/individual, immediate receipt-scoped correction/undo, direct subtask completion, and literal pre-mutation `必須/通常 N件 / 余力 M件は対象外`. `20260907000002_issue54_checkin_bulk_scope_read.sql` exposes canonical `task_instances.expectation`; canonical group reconciliation already excludes `optional`; `80_issue54_checkin_bulk_scope.sql` proves exact read/mutation parity and non-destructive `mostly_done`; `CheckinPage.test.ts` proves count/fallback semantics. | MATCH | Gate C iPhone-equivalent Check-in → canonical truth → Back/state evidence. |
-| 3 | `individual` | `CheckinPage.tsx`: complete/partner/failed/not-needed/cancel/reschedule/unknown, direct subtask completion, `その他の結果`; SQL `76_issue48_q59_q64_literal_regression.sql` preserves seven distinct canonical outcomes across PWA/LINE sources. | PARTIAL | Add literal `回答する場所: PWA / LINE` reference/deep-link surface and Gate C. |
+| 3 | `individual` | `CheckinPage.tsx` + `/settings/line-reference`: complete/partner/failed/not-needed/cancel/reschedule/unknown remain seven distinct canonical outcomes; `LineReferencePage.tsx` adds the literal `回答する場所: PWA / LINE` cross-surface reference and functional PWA destinations. SQL `76_issue48_q59_q64_literal_regression.sql` preserves the same outcome semantics across PWA/LINE; `LineReferencePage.test.tsx` guards the visible contract. | MATCH | Gate C PWA/LINE-equivalent individual-result evidence; no real LINE send. |
 | 4 | `actual_add` | `/actuals/new` uses Concierge actual-only entry; `record-unplanned-actual` + `20260907000001_issue54_unplanned_actual_atomic.sql` creates canonical task/actual atomically with original `scheduled_date`, idempotent operation receipt and participant truth; SQL regression `79_issue54_unplanned_actual_atomic.sql`. | MATCH | Gate C actual-entry → canonical History truth. |
 | 5 | `task_form` | `QuickAdd` → `TaskFormModal.tsx`; title-first canonical create/edit, assignment/date/detail/subtasks/calendar controls exist. | PARTIAL | Literal hierarchy + draft/back-state closeout evidence. |
 | 6 | `task_detail` | `TodayTaskItem` / `TaskChecklistItem`: subtask progress/direct completion, waiting/result/assignment operations; edit uses canonical modal. | PARTIAL | Contract-equivalent origin return/state proof. |
@@ -42,18 +42,18 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 | 25 | `dayagenda` | `DayAgendaSheet`; detail/edit from Month and retained selected-date flow. | MATCH | Gate C same-date/scroll evidence. |
 | 26 | `history` | `/history`: visible actual truth is original `scheduled_date`; performer correction; `completed_at` only inside collapsed `監査情報`; filter/selected-row/scroll/back state retained. `HistoryPage.test.tsx`. | MATCH | Gate C correction → return-state evidence. |
 | 27 | `notifications` | Notification policy/settings + outbox: weekday/weekend/night cadence, meaningful exceptions, bundle/echo fences. | MATCH | No real LINE send; Gate C safe UI evidence only. |
-| 28 | `line_reference` | LINE webhook/interactive adapters reuse canonical commands/read models and side-effect fences. | PARTIAL | Literal fixed menu/deep-link/state cross-surface closeout. |
+| 28 | `line_reference` | `/settings/line-reference` now presents the literal fixed six LINE entries `今日 / 入力 / 追加 / お願い / 共有 / その他`, each with a functional PWA deep link and explicit same-canonical-truth guidance. `process-line-inbox/lineConversation.ts` is the executable source of the same six labels; `LineReferencePage.test.tsx` locks labels/deep links without provider mutation. | MATCH | Gate C cross-surface navigation evidence; real LINE provider mutation remains prohibited. |
 | 29 | `test_mode` | `/settings/test-simulation`; explicit simulated identity and provider/outbox side-effect fences; Web/Edge/DB tests. | MATCH | Gate C only. |
-| 30 | `delete_semantics` | Canonical task/request/event commands preserve not-needed/cancelled/history semantics. | PARTIAL | Literal unified mistaken-existence vs outcome explanation/choice UI. |
-| 31 | `settings` | `/settings`, terminology/routine/categories/notifications/test/calendar links; terminology independent from assignment rules. | MATCH | Gate C only. |
+| 30 | `delete_semantics` | `/settings/outcome-semantics` makes the canonical distinction operationally visible: mistaken existence → cancel; valid occurrence but not done → failed/not-needed; later work → reschedule; mistaken result → History correction. Each choice deep-links to the existing canonical action surface; `OutcomeSemanticsPage.test.tsx` guards the distinction. | MATCH | Gate C choice → operation/history evidence. |
+| 31 | `settings` | `/settings`, terminology/routine/categories/notifications/test/calendar links plus LINE/PWA and outcome-semantics references; terminology independent from assignment rules. | MATCH | Gate C only. |
 | 32 | `states` | Cross-cutting loading/error/empty/realtime/stale handling exists. | PARTIAL | Consistent retry + input-preservation + stale-diff behavior across remaining edited surfaces. |
 | 33 | `non_ui_contract` | Q4/Q14/Q19/Q25/26/39/79/80/81/85/86/88/93/100 plus idempotency/CAS/isolation/provider/test fences are covered by canonical Edge/DB/real-stack suites. | MATCH | Must remain full green. |
 | 34 | `coverage` | This durable 34-row matrix tracks CURRENT implementation and weighted/unweighted progress; exact remediation/evidence is appended as rows move to MATCH. | MISSING | Final exact remediation SHAs, Gate C artifact/evidence, full-CI run and zero PARTIAL/MISSING closeout. |
 
 ## Gate tracking
 
-- **Gate A — deterministic source/test:** in progress. Pre-remediation head `bcf9d41c` is full green on CI #664; the new Check-in remediation head must also finish full green before Gate A is closed.
-- **Gate B — literal 34-screen conformance:** 21 MATCH / 12 PARTIAL / 1 MISSING.
+- **Gate A — deterministic source/test:** in progress. CI #669 has Web/DB/Edge green; its real Supabase CLI job failed during `supabase start`, so that stack-only prerequisite is deferred to final Gate A recheck while implementation continues.
+- **Gate B — literal 34-screen conformance:** 24 MATCH / 9 PARTIAL / 1 MISSING.
 - **Gate C — real-use iPhone-equivalent scenario evidence:** pending final scenario harness/evidence. Route/component existence is not accepted as Gate C.
 - **Gate D — independent source review:** not started; PR remains Draft until A–C satisfy the closeout condition.
 
