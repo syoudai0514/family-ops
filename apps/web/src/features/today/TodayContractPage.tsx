@@ -26,6 +26,7 @@ export function buildTodayContractSummary(args: {
   tasks: Array<{
     status: string;
     planned_assignee_id?: string | null;
+    assignment_mode?: string | null;
     attention_state?: string | null;
     next_check_at?: string | null;
     due_at?: string | null;
@@ -35,16 +36,18 @@ export function buildTodayContractSummary(args: {
 }): TodayContractSummary {
   const activeTasks = args.tasks.filter((task) => task.status === 'todo' || task.status === 'in_progress');
   const waitingTasks = activeTasks.filter((task) => shouldShowWaitingTask(task as never));
-  const unassigned = activeTasks.filter((task) => !task.planned_assignee_id).length;
-  const ownedActive = args.currentUserId
-    ? activeTasks.filter(
-        (task) => task.planned_assignee_id === args.currentUserId && !shouldShowWaitingTask(task as never),
-      )
-    : activeTasks.filter((task) => !shouldShowWaitingTask(task as never));
+  const assignmentNeeded = activeTasks.filter(
+    (task) => !task.planned_assignee_id && task.assignment_mode === 'person',
+  ).length;
+  const actionable = activeTasks.filter((task) => {
+    if (shouldShowWaitingTask(task as never)) return false;
+    if (task.planned_assignee_id) return task.planned_assignee_id === args.currentUserId;
+    return task.assignment_mode !== 'person';
+  });
 
   return {
-    attention: args.incomingRequestCount + args.pendingActionCount + unassigned,
-    remaining: ownedActive.length,
+    attention: args.incomingRequestCount + args.pendingActionCount + assignmentNeeded,
+    remaining: actionable.length,
     waiting: waitingTasks.length,
     tomorrowImpact: args.tomorrowTaskCount + args.tomorrowOccurrenceCount,
   };
@@ -100,6 +103,10 @@ function dedupeTasks(tasks: TaskInstance[]) {
   return [...new Map(tasks.map((task) => [task.id, task])).values()];
 }
 
+function needsAssignment(task: TaskInstance) {
+  return !task.planned_assignee_id && task.assignment_mode === 'person';
+}
+
 export function TodayContractPage() {
   const { user } = useAuth();
   const { household, members, partner } = useHousehold();
@@ -122,12 +129,12 @@ export function TodayContractPage() {
 
   const activeTodayTasks = today.tasks.filter(active);
   const waitingTasks = activeTodayTasks.filter((task) => shouldShowWaitingTask(task));
-  const unassignedTasks = activeTodayTasks.filter((task) => !task.planned_assignee_id);
+  const assignmentNeededTasks = activeTodayTasks.filter(needsAssignment);
   const workTasks = dedupeTasks([
     ...today.carryoverTasks,
     ...today.tasks,
   ]).filter((task) => {
-    if (!active(task) || shouldShowWaitingTask(task)) return false;
+    if (!active(task) || shouldShowWaitingTask(task) || needsAssignment(task)) return false;
     if (task.planned_assignee_id && task.planned_assignee_id !== user?.id) return false;
     if (daypart === 'evening' && isMorningTask(task)) return false;
     return true;
@@ -210,7 +217,7 @@ export function TodayContractPage() {
           </div>
         </div>
 
-        {(today.incomingRequests.length > 0 || pending.pendingActions.length > 0 || unassignedTasks.length > 0) && (
+        {(today.incomingRequests.length > 0 || pending.pendingActions.length > 0 || assignmentNeededTasks.length > 0) && (
           <section className="card today-contract-section today-contract-danger" id="today-contract-attention" aria-label="放置すると困ること">
             <div className="section-heading">
               <div><p className="eyebrow">🔴 まず確認</p><h2>放置すると困ること</h2></div>
@@ -229,7 +236,7 @@ export function TodayContractPage() {
                   <button type="button" className="secondary-button" onClick={() => jumpTo('.decision-card', () => undefined)}>確認する</button>
                 </div>
               ))}
-              {unassignedTasks.map((task) => (
+              {assignmentNeededTasks.map((task) => (
                 <div className="today-contract-list-row" key={`unassigned:${task.id}`}>
                   <div><strong>{task.title}</strong><small>担当未定</small></div>
                   <button type="button" className="secondary-button" onClick={() => navigate('/week')}>担当を決める</button>
