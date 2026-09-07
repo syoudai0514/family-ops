@@ -30,6 +30,7 @@ export function SettingsHome() {
         <Link to="/settings/categories" className="settings-link"><strong>カテゴリ</strong><span>予定追加で選ぶ項目と色</span></Link>
         <Link to="/settings/terminology" className="settings-link"><strong>家庭内用語</strong><span>LINEで使う言い回しと意味</span></Link>
         <Link to="/settings/line-reference" className="settings-link"><strong>LINE / PWA 入力対応表</strong><span>固定入口6つと、個別結果を答える場所</span></Link>
+        <Link to="/settings/outcome-semantics" className="settings-link"><strong>削除・中止・結果の違い</strong><span>項目を消すのか、今回の結果を残すのかを選ぶ</span></Link>
         <Link to="/notifications" className="settings-link"><strong>通知</strong><span>LINEとアプリ内のお知らせ</span></Link>
         <Link to="/handovers" className="settings-link"><strong>引き継ぎ</strong><span>朝・夜の共有メモ</span></Link>
         <Link to="/planning/google-review" className="settings-link"><strong>Google予定の変更確認</strong><span>時間変更・削除・重複候補を確認</span></Link>
