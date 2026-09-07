@@ -40,7 +40,7 @@ describe('task detail return state', () => {
     expect(screen.getByTestId('origin-state')).toHaveTextContent('元画面: 今日・未完了');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+    fireEvent.click(screen.getByText('閉じる'));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByTestId('origin-state')).toHaveTextContent('元画面: 今日・未完了');
