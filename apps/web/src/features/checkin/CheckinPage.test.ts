@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countCheckinBulkScope, previousIsoDate } from './CheckinPage';
+import { checkinBulkScopeNames, countCheckinBulkScope, previousIsoDate } from './CheckinPage';
 
 describe('check-in contract helpers', () => {
   it('keeps yesterday correction on the previous calendar occurrence', () => {
@@ -19,6 +19,17 @@ describe('check-in contract helpers', () => {
       { expectation: 'optional' },
       {},
     ])).toEqual({ eligibleCount: 3, optionalCount: 1 });
+  });
+
+  it('shows the concrete item names immediately before bulk completion', () => {
+    expect(checkinBulkScopeNames([
+      { title: '洗濯：畳む', expectation: 'required' },
+      { title: '明日の着替え準備', expectation: 'normal' },
+      { title: 'フィルター掃除', expectation: 'optional' },
+    ])).toEqual({
+      eligible: ['洗濯：畳む', '明日の着替え準備'],
+      optional: ['フィルター掃除'],
+    });
   });
 
   it('treats legacy null/missing expectation as canonical normal, never optional', () => {
