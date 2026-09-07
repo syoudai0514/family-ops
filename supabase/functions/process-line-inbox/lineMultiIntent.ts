@@ -139,8 +139,12 @@ function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandi
 }
 
 function splitConversation(text: string): string[] {
-  return text.normalize("NFKC")
+  return text
+    // Preserve spoken/typed correction boundaries before NFKC expands `…`
+    // into ASCII dots; then also handle already-expanded ellipsis forms.
     .replace(/…{2,}/g, "。")
+    .normalize("NFKC")
+    .replace(/\.{2,}/g, "。")
     .split(/[。！!\n]+/)
     .map((v) => v.trim())
     .filter(Boolean);
