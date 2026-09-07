@@ -9,9 +9,9 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 - UI/interaction concretization: `family-ops-ux-contract-final-v11-noscript.html`
 - SHA-256: `c1afa191a8e02f86683e886e0c59a60019b7388531dde19f96de690e8b9e2007`
 - Fixture chores/dates/owners are presentation fixtures only; none are production defaults/seeds.
-- Current matrix after Issue #54 remediation in PR #56: **MATCH 29 / PARTIAL 4 / MISSING 1**.
-- Unweighted progress: **85.3%** (`MATCH / 34`).
-- Weighted progress: **91.2%** (`(MATCH + 0.5 × PARTIAL) / 34`; MISSING = 0 weight).
+- Current matrix after this turn: **MATCH 30 / PARTIAL 3 / MISSING 1**.
+- Unweighted progress: **88.2%** (`MATCH / 34`).
+- Weighted progress: **92.6%** (`(MATCH + 0.5 × PARTIAL) / 34`; MISSING = 0 weight).
 
 | # | Contract item | CURRENT source / deterministic evidence | Status | Remaining before release closeout |
 |---:|---|---|---|---|
@@ -22,8 +22,8 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 | 5 | `task_form` | `QuickAdd` → `TaskFormModal.tsx`: literal three-step hierarchy (`基本 / いつ・誰が / チェック内容`), title-first canonical create/edit, assignment/date/detail/subtasks/calendar controls. Create drafts are device-local session state via `taskFormDraft.ts`, survive close/reopen, and clear only after successful canonical save; `taskFormDraft.test.ts` proves round-trip/clear/corrupt-state behavior. | MATCH | Gate C close/reopen draft + save → Today truth. |
 | 6 | `task_detail` | `TodayTaskItem` / `TaskChecklistItem`: subtask progress/direct completion, waiting/result/assignment operations; edit stays in an overlay over the mounted origin. `TaskFormModal.returnState.test.tsx` proves close returns to the same origin/filter state without route replacement/reset. | MATCH | Gate C detail/edit → return-state evidence. |
 | 7 | `groups` | `/settings/routines`, `RoutineSchedule` and `CustomRoutineEditor` keep built-in automatic groups separate from household-created custom groups by durable codes; custom create/edit/delete use canonical commands and Check-in group mutation uses meaningful required/normal scope with optional exclusion. `CustomRoutineEditor.groupContract.test.ts` plus Check-in SQL regression prove separation/scope. | MATCH | Gate C custom group edit → Check-in projection evidence. |
-| 8 | `requests` | `/requests`, Today quick responses and canonical request state machine support received/sent actions, accept/decline/checking/consult. | PARTIAL | Expired/new-proposal/history layout + return-state audit. |
-| 9 | `request_form` | `/requests` composer reuses canonical request commands and separates request semantics from task mutation. | PARTIAL | Response/work deadline and pre-send semantic explanation literal closeout. |
+| 8 | `requests` | `/requests`, Today quick responses and canonical request state machine support received/sent actions, accept/decline/checking/consult. CURRENT source now distinguishes active / expired / history semantics in the same list model rather than silently collapsing overdue pending requests; regression helper added in `Requests.contract.test.ts`. | PARTIAL | Finish visual bucket layout + return-state test around filter/scroll after response. |
+| 9 | `request_form` | `/requests` composer reuses canonical request commands and separates request semantics from task mutation. Existing form already separates raw private input from confirmed shared text, shows work deadline, preview-before-send and explicit semantic note that this is a one-off request. | PARTIAL | Add distinct response deadline field + literal explanation differentiating response deadline from work deadline, with regression. |
 | 10 | `assignment` | `TaskChecklistItem` now exposes one explicit assignment decision surface: if not agreed it calls canonical `create-assignment-change-request`; only `すでに話し合い済み` calls `change-task-assignment` with `already_agreed=true`. `assignmentDecision.ts`/`.test.ts` lock endpoint/body mapping and prevent silent reassignment. | MATCH | Gate C request/agreed branches → canonical state evidence. |
 | 11 | `routine_rules` | `/settings/routines`, `TransportTemplateEditor`, `RoutineSchedule`, occurrence override; non-overlap period templates + future conflict behavior covered by tests. | MATCH | Gate C only. |
 | 12 | `handover` | `/handovers`; share scope/expiry/related ToDo, acknowledge independent from completion, correction/history semantics. | MATCH | Gate C only. |
@@ -33,7 +33,7 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 | 16 | `concierge` | Quick Add first item `✨ おうちコンシェルジュ`, Today light entry, `/concierge`, free text + suggestions + shared semantic proposal layer; proposal is read-only until human confirmation. | MATCH | Gate C only. |
 | 17 | `transcript` | `/concierge/transcript`; browser speech recognition `ja-JP`, editable transcript, same proposal layer as text. | MATCH | Gate C/WebKit evidence. |
 | 18 | `results` | `/concierge/results` + `/concierge/confirm`: multi-intent candidates, selected confirmation, `ここだけ確認`, zero-write read-only path, explicit human confirm, per-candidate success/error/retry; canonical command mapping in `conciergeCommit.ts`. | MATCH | Gate C multi-intent confirmation evidence. |
-| 19 | `duplicate_review` | Google/Nursery explicit duplicate decisions exist. | PARTIAL | Generic Concierge duplicate decision (`use existing / update / separate`) before generic candidate commit. |
+| 19 | `duplicate_review` | Generic Concierge now has an explicit pre-commit duplicate decision gate in `ConciergeConfirmPage.tsx`: likely duplicate candidates require one of `既存を使う / 既存を更新 / 別物として追加` before `登録する` is enabled. `既存を使う` is no-write; other choices remain behind human confirmation and canonical commands. `ConciergeConfirmPage.test.ts` guards duplicate detection. Google/Nursery dedicated duplicate-review flows remain intact. | MATCH | Gate C duplicate branch evidence; no Google provider mutation. |
 | 20 | `nursery` | `/nursery/reviews[/:intakeId]`; Q89–Q106 review/diff/provenance/inference/isolation behavior with Web/Edge/DB tests. | MATCH | Gate C only. |
 | 21 | `google` | `/planning/google-review`; event-centered diff/protected conflict/delete triage/duplicate link-add; provider-fence tests. | MATCH | Gate C safe evidence; real provider mutation prohibited. |
 | 22 | `conflict_review` | Protected current value vs candidates/source, explicit human resolution and authority audit across Google/Nursery. | MATCH | Gate C only. |
@@ -52,8 +52,8 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 
 ## Gate tracking
 
-- **Gate A — deterministic source/test:** in progress. CURRENT Web/DB/Edge suites are green; the real Supabase CLI job is allowed to remain deferred while its failure is only `supabase start`, and must be rerun for final Gate A.
-- **Gate B — literal 34-screen conformance:** 29 MATCH / 4 PARTIAL / 1 MISSING.
+- **Gate A — deterministic source/test:** in progress. Web/DB/Edge were green at CURRENT head `857fc1d...`; real Supabase CLI failed only because two migrations shared timestamp `20260907000002`, so migration identity must be repaired and full CI rerun.
+- **Gate B — literal 34-screen conformance:** 30 MATCH / 3 PARTIAL / 1 MISSING.
 - **Gate C — real-use iPhone-equivalent scenario evidence:** pending final scenario harness/evidence. Route/component existence is not accepted as Gate C.
 - **Gate D — independent source review:** not started; PR remains Draft until A–C satisfy the closeout condition.
 
