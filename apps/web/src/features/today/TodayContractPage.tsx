@@ -40,13 +40,6 @@ function jumpTo(selector: string, fallback: () => void) {
   fallback();
 }
 
-/**
- * Final-v11 first-viewport contract wrapper.
- *
- * The existing Today component remains the canonical detailed read/action surface.
- * This wrapper only adds the approved four-way operational summary and direct
- * entry to Concierge; it does not create a second task/actual/request model.
- */
 export function TodayContractPage() {
   const { user } = useAuth();
   const { household } = useHousehold();
@@ -69,32 +62,18 @@ export function TodayContractPage() {
         <div className="card compact-section">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">まずここだけ</p>
+              <p className="eyebrow">最初にここだけ見ればOK</p>
               <h2>今日の状況</h2>
             </div>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => navigate('/concierge', { state: { originPath: '/today', originScrollY: window.scrollY } })}
-            >
-              ✨ コンシェルジュ
-            </button>
+            <button type="button" className="text-button" onClick={() => navigate('/concierge', { state: { originPath: '/today', originScrollY: window.scrollY } })}>✨ コンシェルジュ</button>
           </div>
           <div className="today-shortcuts" aria-label="今日の要点へ移動">
-            <button type="button" onClick={() => jumpTo('.decision-card', () => navigate('/requests'))}>
-              <strong>要対応 {summary.attention}</strong>
-            </button>
-            <button type="button" onClick={() => jumpTo('.next-action-hero, .task-section', () => undefined)}>
-              <strong>残り {summary.remaining}</strong>
-            </button>
-            <button type="button" onClick={() => jumpTo('.waiting-summary', () => undefined)}>
-              <strong>待ち {summary.waiting}</strong>
-            </button>
-            <button type="button" onClick={() => jumpTo('[aria-label="明日の予定"]', () => navigate('/week'))}>
-              <strong>明日影響 {summary.tomorrowImpact}</strong>
-            </button>
+            <button type="button" onClick={() => jumpTo('.decision-card', () => navigate('/requests'))}><small>返事・担当未定</small><strong>要対応 {summary.attention}</strong></button>
+            <button type="button" onClick={() => jumpTo('.next-action-hero, .task-section', () => undefined)}><small>今日の自分タスク</small><strong>残り {summary.remaining}</strong></button>
+            <button type="button" onClick={() => jumpTo('.waiting-summary', () => undefined)}><small>待ち・あとで確認</small><strong>待ち {summary.waiting}</strong></button>
+            <button type="button" onClick={() => jumpTo('[aria-label="明日の予定"]', () => navigate('/week'))}><small>明日の予定・準備</small><strong>明日影響 {summary.tomorrowImpact}</strong></button>
           </div>
-          <p className="empty-hint">要対応を先に、残り・待ち・明日の影響へそのまま移動できます。</p>
+          <p className="empty-hint">返事・担当未定を先に、今日の自分タスク、待ち、明日の予定・準備へそのまま移動できます。</p>
         </div>
       </section>
       <Today />
