@@ -1,6 +1,6 @@
 # Issue #54 — Final UX Contract → Production Parity Matrix
 
-Status: **independent review NO-GO remediation in progress**. `MATCH` requires CURRENT source + deterministic regression. Release approval additionally requires real-iPhone Gate C evidence and independent Gate D GO.
+Status: **independent review NO-GO remediation complete at source/test level; real-iPhone Gate C remains open**. `MATCH` requires CURRENT source + deterministic regression. Release approval additionally requires real-iPhone Gate C evidence and independent Gate D GO.
 
 ## Authority and exact contract
 
@@ -11,21 +11,22 @@ Status: **independent review NO-GO remediation in progress**. `MATCH` requires C
 - Independently reviewed head: `2f37e257b15f077940de27ef3821d7a4097b2e54`.
 - Independent verdict at that head: **NO-GO — BLOCKER 0 / HIGH 3 / MEDIUM 2 / LOW 0**.
 - Independent source parity at that head: **MATCH 28 / PARTIAL 6 / MISSING 0**.
-- Remediation source is now ahead of the reviewed head; targeted CI/re-review is required before upgrading the six PARTIAL rows.
-- Gate C evidence artifact: `docs/implementation/ISSUE-54-GATE-C-EVIDENCE.md` — corrected to **FAIL / real iPhone pending**.
+- Remediation implementation head: `8b66598cd942cb4cdc5dfcd2eb7624e46b8bf51f`.
+- Remediation CI: **#719 / run 34087110663 — Web, Edge, DB, real Supabase CLI all SUCCESS**.
+- Gate C evidence artifact: `docs/implementation/ISSUE-54-GATE-C-EVIDENCE.md` — **FAIL / real iPhone pending**.
 
 ## Current parity accounting
 
-Until remediation CI and re-review are complete, the independent verdict remains authoritative:
+The five source findings have deterministic remediation and full exact-head CI. Coverage remains PARTIAL because physical Gate C has not been executed.
 
-- Current matrix: **MATCH 28 / PARTIAL 6 / MISSING 0**.
-- Unweighted strict progress: **82.4%** (`MATCH / 34`).
-- Weighted progress: **91.2%** (`(MATCH + 0.5 × PARTIAL) / 34`).
+- Current matrix: **MATCH 33 / PARTIAL 1 / MISSING 0**.
+- Unweighted strict progress: **97.1%** (`MATCH / 34`).
+- Weighted progress: **98.5%** (`(MATCH + 0.5 × PARTIAL) / 34`).
 
 | # | Contract item | CURRENT deterministic evidence / remediation | Status | Remaining |
 |---:|---|---|---|---|
-| 1 | `today` | Remediation adds literal v11 first-viewport copy `最初にここだけ見ればOK` plus meaning labels `返事・担当未定`, `今日の自分タスク`, `待ち・あとで確認`, `明日の予定・準備`. | PARTIAL | targeted CI + re-review + real iPhone Gate C |
-| 2 | `checkin` | Remediation adds concrete included/excluded item names immediately above `全部やった`; helper/test uses `洗濯：畳む`, `明日の着替え準備`, `フィルター掃除`. | PARTIAL | targeted CI + re-review + real iPhone Gate C |
+| 1 | `today` | Literal v11 first-viewport copy `最初にここだけ見ればOK` plus `返事・担当未定`, `今日の自分タスク`, `待ち・あとで確認`, `明日の予定・準備`; targeted Web regression GREEN in CI #719. | MATCH | real iPhone Gate C + re-review |
+| 2 | `checkin` | Concrete included/excluded item names immediately above `全部やった`; regression locks `洗濯：畳む`, `明日の着替え準備`, excluded `フィルター掃除`; Web regression GREEN in CI #719. | MATCH | real iPhone Gate C + re-review |
 | 3 | `individual` | Check-in seven outcomes + LINE/PWA reference regressions | MATCH | Gate C/re-review only |
 | 4 | `actual_add` | atomic `record-unplanned-actual`; SQL 79 | MATCH | Gate C/re-review only |
 | 5 | `task_form` | three-step modal + session draft regression | MATCH | Gate C/re-review only |
@@ -39,9 +40,9 @@ Until remediation CI and re-review are complete, the independent verdict remains
 | 13 | `shopping` | state tabs + claim/release/takeover regressions | MATCH | Gate C/re-review only |
 | 14 | `anyone_owner` | canonical anyone/unassigned/claim UI + tests | MATCH | Gate C/re-review only |
 | 15 | `event` | event project/candidate confirmation flow | MATCH | Gate C/re-review only |
-| 16 | `concierge` | Remediation switches PWA proposal endpoint from deterministic-only to shared AI-first `extractLineIntent()` path with deterministic fallback; explicit correction clauses update the preceding candidate. | PARTIAL | targeted Edge CI + re-review + real iPhone correction scenario |
-| 17 | `transcript` | Existing editable `ja-JP` transcript now feeds the remediated AI-first/correction-aware proposal path. | PARTIAL | targeted Web/Edge CI + real iPhone dictation scenario + re-review |
-| 18 | `results` | Remediation adds candidate `編集` with title/date save before confirmation, while retaining selection/ambiguity flow. | PARTIAL | targeted Web CI + real iPhone edit scenario + re-review |
+| 16 | `concierge` | PWA proposal endpoint now uses existing Gemini-backed AI-first `extractLineIntent()` with deterministic fallback. Explicit correction clauses update the preceding candidate. Unicode ellipsis boundary regression and exact approved scenario pass in Edge tests. | MATCH | real iPhone correction scenario + re-review |
+| 17 | `transcript` | Editable `ja-JP` transcript feeds the same AI-first/correction-aware proposal path; Web/Edge full CI GREEN. | MATCH | real iPhone dictation scenario + re-review |
+| 18 | `results` | Per-candidate `編集` supports title/date save before confirmation. Corrected request date is preserved through the CURRENT `send-request` canonical payload; Web tests GREEN. | MATCH | real iPhone edit scenario + re-review |
 | 19 | `duplicate_review` | generic duplicate decision gate + dedicated Google/Nursery flows | MATCH | Gate C/re-review only |
 | 20 | `nursery` | Q89–Q106 review/diff/provenance/isolation suites | MATCH | Gate C/re-review only |
 | 21 | `google` | protected diff/duplicate triage/provider fences | MATCH | Gate C safe evidence/re-review only |
@@ -56,31 +57,30 @@ Until remediation CI and re-review are complete, the independent verdict remains
 | 30 | `delete_semantics` | cancel/failed/not-needed/reschedule/correction distinctions | MATCH | Gate C/re-review only |
 | 31 | `settings` | operational links incl. LINE/outcomes/anyone-owner | MATCH | Gate C/re-review only |
 | 32 | `states` | Requests retry/loading/empty/stale/scroll; Concierge input preservation and failed-only retry | MATCH | Gate C/re-review only |
-| 33 | `non_ui_contract` | independent review confirmed Q1–Q112 regression PASS at reviewed head; CI #704 FULL GREEN | MATCH | remediation exact-head CI must remain GREEN |
-| 34 | `coverage` | Previous artifact incorrectly claimed equivalent Gate C and stale exact heads. Gate C artifact has been corrected; exact remediation head/CI and real-iPhone observations are not yet complete. | PARTIAL | final exact head + full CI + real iPhone Gate C + re-review |
+| 33 | `non_ui_contract` | Q1–Q112 regression remained green; CI #719 is FULL GREEN across Web/Edge/DB/real Supabase CLI. | MATCH | re-review only |
+| 34 | `coverage` | Exact remediation source/CI is now recorded and stale Gate C claims were withdrawn. Physical real-iPhone observations do not yet exist. | PARTIAL | real iPhone Gate C + exact observation record + re-review |
 
 ## Gate tracking
 
-- **Gate A — deterministic source/test: PASS at reviewed head; remediation exact-head CI pending.** CI #704 at `2f37e257...` was FULL GREEN. New remediation must repeat full CI.
-- **Gate B — literal 34-screen conformance: FAIL under independent review.** Authoritative reviewed accounting remains **28 MATCH / 6 PARTIAL / 0 MISSING** until remediation CI + re-review.
-- **Gate C — real iPhone user acceptance: FAIL / NOT EXECUTED.** CSS, jsdom/component tests, and CI are not substitutes. Physical iPhone scenarios are listed in `ISSUE-54-GATE-C-EVIDENCE.md`.
-- **Gate D — independent review: NO-GO.** Re-review is limited to the five findings plus exact-head regression once remediation is complete.
+- **Gate A — PASS.** CI #719 / run `34087110663` at remediation implementation head `8b66598cd942cb4cdc5dfcd2eb7624e46b8bf51f` is FULL GREEN: Web, Edge (including approved correction regression), DB, and real Supabase CLI all SUCCESS.
+- **Gate B — source parity remediation complete; release gate remains FAIL while row 34 is PARTIAL.** Current matrix **33 MATCH / 1 PARTIAL / 0 MISSING**.
+- **Gate C — FAIL / NOT EXECUTED.** Issue #54 requires real iPhone user acceptance. CSS, jsdom/component tests, and CI are not substitutes. Required physical scenarios are in `ISSUE-54-GATE-C-EVIDENCE.md`.
+- **Gate D — independent review remains NO-GO pending Gate C and targeted re-review.**
 
-## Current remediation commits
+## Remediation completed
 
-The branch now contains remediation for:
-
-1. Today literal/material first-viewport labels.
-2. Check-in concrete bulk target/exclusion names immediately before mutation.
-3. Concierge AI-first proposal path using the existing Gemini-backed extractor.
-4. Explicit correction semantics for `……あ、やっぱ土曜` and separate `牛乳も買って` intent.
-5. Results candidate editing before confirmation.
-6. Targeted regression tests for named Check-in scope and the approved correction scenario.
-7. Corrected Gate C evidence semantics.
+1. Today literal/material first-viewport labels restored.
+2. Check-in concrete bulk target/exclusion names shown immediately before mutation.
+3. Concierge PWA proposal switched to the existing Gemini-backed AI-first extractor with deterministic fallback.
+4. `……あ、やっぱ土曜` correction semantics implemented, including Unicode normalization boundary handling; `牛乳も買って` remains a separate shopping intent.
+5. Results candidate editing added before confirmation.
+6. Corrected request date/assignee now reaches the CURRENT `send-request` canonical payload; stale legacy payload names removed.
+7. Targeted regressions added for named Check-in scope, Today labels, approved Concierge correction, and canonical request commit.
+8. Durable Gate C evidence corrected so it no longer overclaims equivalent-device PASS.
 
 ## Closeout rules
 
-1. No PARTIAL row may be treated as release-ready.
-2. Do not upgrade rows 1/2/16/17/18 until remediation exact-head deterministic CI is GREEN; re-review remains required for Gate D.
-3. Row 34 cannot become MATCH until real-iPhone Gate C is actually executed and exact-head evidence is recorded.
+1. Row 34 cannot become MATCH until real-iPhone Gate C is physically executed and recorded against an exact PR head.
+2. PR remains Draft while Gate C is FAIL and Gate D is NO-GO.
+3. After physical Gate C, update the evidence/matrix to its exact tested head, run final CI, then request targeted independent re-review of the five findings plus exact-head regression.
 4. Production, production Supabase mutation, real LINE send/provider mutation, Google provider mutation, Vercel non-main Preview, and main merge remain prohibited before independent review GO.
