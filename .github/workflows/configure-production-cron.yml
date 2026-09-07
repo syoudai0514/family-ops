@@ -39,12 +39,16 @@ jobs:
             end if;
             perform cron.unschedule(jobid) from cron.job
               where jobname in (
+                'family-ops-materialize-recurring-v1',
                 'family-ops-line-inbox-v1',
                 'family-ops-pending-actions-v1',
                 'family-ops-routine-dispatch-v1',
                 'family-ops-line-delivery-v1',
                 'family-ops-calendar-outbox-v1'
               );
+            -- pg_cron runs in UTC. 15:10 UTC = 00:10 Asia/Tokyo next day.
+            perform cron.schedule('family-ops-materialize-recurring-v1', '10 15 * * *',
+              format($job$select net.http_post(url := 'https://dnlqxjpjpkxnfgculzip.supabase.co/functions/v1/materialize-recurring', headers := jsonb_build_object('Content-Type','application/json','X-Family-Ops-Worker-Token',%L), body := '{}'::jsonb)$job$, worker_token));
             perform cron.schedule('family-ops-line-inbox-v1', '* * * * *',
               format($job$select net.http_post(url := 'https://dnlqxjpjpkxnfgculzip.supabase.co/functions/v1/process-line-inbox', headers := jsonb_build_object('Content-Type','application/json','X-Family-Ops-Worker-Token',%L), body := '{}'::jsonb)$job$, worker_token));
             perform cron.schedule('family-ops-pending-actions-v1', '* * * * *',
