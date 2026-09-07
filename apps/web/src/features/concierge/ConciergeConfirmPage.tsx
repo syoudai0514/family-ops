@@ -13,6 +13,10 @@ export function needsDuplicateDecision(candidate: ConciergeCandidate): boolean {
   return /(?:同じ|重複|既存|すでに|もうある|似た)/.test(text);
 }
 
+export function failedCandidateIds(results: ConciergeCommitResult[] | null): string[] {
+  return (results ?? []).filter((item) => !item.ok).map((item) => item.candidateId);
+}
+
 export function ConciergeConfirmPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -26,23 +30,36 @@ export function ConciergeConfirmPage() {
   const [results, setResults] = useState<ConciergeCommitResult[] | null>(null);
   const duplicateUnresolved = duplicateCandidates.some((candidate) => !duplicateDecisions[candidate.candidateId]);
 
-  async function register() {
-    if (busy || unresolved.length > 0 || duplicateUnresolved || candidates.length === 0) return;
+  async function commit(selectedCandidates: ConciergeCandidate[], priorResults: ConciergeCommitResult[] = []) {
     setBusy(true);
-    const commitCandidates = candidates.filter((candidate) => duplicateDecisions[candidate.candidateId] !== 'existing');
-    const existingResults: ConciergeCommitResult[] = candidates
+    const commitCandidates = selectedCandidates.filter((candidate) => duplicateDecisions[candidate.candidateId] !== 'existing');
+    const existingResults: ConciergeCommitResult[] = selectedCandidates
       .filter((candidate) => duplicateDecisions[candidate.candidateId] === 'existing')
       .map((candidate) => ({ candidateId: candidate.candidateId, kind: candidate.kind, title: candidate.title, ok: true, message: '既存を使うため新規登録しません' }));
     const committed = await commitConciergeCandidates(commitCandidates, {
       members, me, partner, timeZone: household?.timezone ?? 'Asia/Tokyo',
     });
-    const next = [...existingResults, ...committed];
+    const replacement = new Map([...existingResults, ...committed].map((item) => [item.candidateId, item]));
+    const next = candidates.map((candidate) => replacement.get(candidate.candidateId) ?? priorResults.find((item) => item.candidateId === candidate.candidateId)).filter((item): item is ConciergeCommitResult => Boolean(item));
     setResults(next);
     setBusy(false);
     if (next.length === candidates.length && next.every((item) => item.ok)) clearConciergeDraft();
   }
 
+  async function register() {
+    if (busy || unresolved.length > 0 || duplicateUnresolved || candidates.length === 0) return;
+    await commit(candidates);
+  }
+
+  async function retryFailed() {
+    if (busy || !results) return;
+    const failed = new Set(failedCandidateIds(results));
+    if (failed.size === 0) return;
+    await commit(candidates.filter((candidate) => failed.has(candidate.candidateId)), results);
+  }
+
   const allSaved = results?.length === candidates.length && results.every((item) => item.ok);
+  const hasFailures = failedCandidateIds(results).length > 0;
 
   return <div className="app-shell concierge-page">
     <button type="button" className="text-button concierge-back" onClick={() => navigate(-1)}>‹ 戻る</button>
@@ -63,7 +80,7 @@ export function ConciergeConfirmPage() {
       </div>)}
       <p className="meta">「既存を更新」は現時点では同じ canonical command で人確認後に確定し、provider側の勝手な更新は行いません。</p>
     </section>}
-    {results && <section className="card"><b>{allSaved ? '登録完了' : '登録結果'}</b>{results.map((item) => <p key={item.candidateId}>{item.ok ? '✓' : '!'} {item.title}：{item.message}</p>)}</section>}
+    {results && <section className="card"><b>{allSaved ? '登録完了' : '登録結果'}</b>{results.map((item) => <p key={item.candidateId}>{item.ok ? '✓' : '!'} {item.title}：{item.message}</p>)}{hasFailures && <><p className="empty-hint">成功した候補はそのまま保持し、失敗した候補だけ再実行できます。</p><button type="button" className="secondary-button" disabled={busy} onClick={() => void retryFailed()}>{busy ? '再試行中…' : '失敗した候補だけ再試行'}</button></>}</section>}
     {!results && <button type="button" className="concierge-wide" disabled={busy || unresolved.length > 0 || duplicateUnresolved || candidates.length === 0} onClick={() => void register()}>{busy ? '登録中…' : '登録する'}</button>}
     {allSaved && <button type="button" className="concierge-wide" onClick={() => navigate(state.originPath ?? '/today', { replace: true, state: { restoreScrollY: state.originScrollY ?? 0 } })}>元の画面へ戻る</button>}
     {!allSaved && !results && <p className="meta">確認後の登録は既存の canonical Edge command を使います。予定外実績も作成→完了を1つのDB transactionで確定します。</p>}
