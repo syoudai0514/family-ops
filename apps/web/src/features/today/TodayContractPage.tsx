@@ -123,11 +123,12 @@ export function TodayContractPage() {
   const activeTodayTasks = today.tasks.filter(active);
   const waitingTasks = activeTodayTasks.filter((task) => shouldShowWaitingTask(task));
   const unassignedTasks = activeTodayTasks.filter((task) => !task.planned_assignee_id);
-  const ownedTasks = dedupeTasks([
+  const workTasks = dedupeTasks([
     ...today.carryoverTasks,
     ...today.tasks,
   ]).filter((task) => {
-    if (!active(task) || task.planned_assignee_id !== user?.id || shouldShowWaitingTask(task)) return false;
+    if (!active(task) || shouldShowWaitingTask(task)) return false;
+    if (task.planned_assignee_id && task.planned_assignee_id !== user?.id) return false;
     if (daypart === 'evening' && isMorningTask(task)) return false;
     return true;
   });
@@ -251,9 +252,9 @@ export function TodayContractPage() {
         <section className="card today-contract-section today-contract-work" id="today-contract-work" aria-label="今日やること">
           <div className="section-heading">
             <div><p className="eyebrow">{workEyebrow}</p><h2>{workHeading}</h2></div>
-            <span>{ownedTasks.length}件</span>
+            <span>{workTasks.length}件</span>
           </div>
-          {ownedTasks.length > 0 ? renderTaskList(ownedTasks) : <p className="empty-hint">今の時間帯に残っている自分のタスクはありません。</p>}
+          {workTasks.length > 0 ? renderTaskList(workTasks) : <p className="empty-hint">今の時間帯に残っているタスクはありません。</p>}
           {currentInput && (
             <button type="button" className="hero-primary today-contract-bulk-input" onClick={() => navigate(`/checkin/${currentInput.id}`)}>
               {currentInput.remaining_count > 0 ? `${currentInput.remaining_count}件をまとめて入力` : '実績を入力'}
