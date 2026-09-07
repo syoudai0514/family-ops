@@ -14,7 +14,6 @@
 
   .app-shell {
     min-height: calc(100dvh - 64px);
-    /* Fixed bottom nav + iOS/LINE browser chrome need a larger content guard. */
     padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
     scroll-padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
   }
@@ -62,4 +61,34 @@
   .card:last-child {
     margin-bottom: 1rem;
   }
+}
+
+/* Issue #54 request parity */
+.request-bucket-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.9rem;
+}
+.request-bucket-tabs button {
+  min-height: 44px;
+  padding: 0.55rem 0.45rem;
+}
+.request-bucket-tabs .active {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.state-card {
+  border-color: #efb5b5;
+  background: #fff8f8;
+}
+.request-deadline-help {
+  margin: -0.35rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.request-item .task-item-meta {
+  display: block;
+  margin-top: 0.2rem;
 }

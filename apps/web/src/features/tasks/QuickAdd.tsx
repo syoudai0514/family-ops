@@ -1,26 +1,30 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Modal } from '../../components/Modal';
 import { TaskFormModal } from './TaskFormModal';
 
-type QuickAddTarget = 'task' | 'event' | 'request' | 'shopping' | 'handover' | 'routine' | 'preparation' | 'nursery';
+type QuickAddTarget = 'concierge' | 'task' | 'event' | 'request' | 'shopping' | 'handover' | 'routine' | 'preparation' | 'nursery' | 'actual';
 
 export const quickAddOptions: ReadonlyArray<{
   target: QuickAddTarget;
   label: string;
   detail?: string;
 }> = [
-  { target: 'task', label: '単発ToDoを追加', detail: '今日やること・特別な持ち物' },
+  { target: 'concierge', label: '✨ おうちコンシェルジュ', detail: '話しても、書いても。まとめて入力。' },
+  { target: 'task', label: '単発ToDoを追加', detail: 'タイトルだけでも作成可能' },
   { target: 'event', label: 'イベント・予定を追加', detail: '行事と準備ToDoをまとめて確認' },
   { target: 'request', label: 'お願いを送る', detail: '担当変更や依頼' },
   { target: 'shopping', label: '買い物を追加' },
   { target: 'handover', label: '引き継ぎを書く' },
-  { target: 'nursery', label: '園のおたよりを確認', detail: 'LINEで送った画像の登録候補' },
-  { target: 'routine', label: '定例を追加', detail: '送迎・朝夜家事の毎週ルール' },
+  { target: 'nursery', label: '画像から取り込む' },
+  { target: 'routine', label: '定例を追加' },
   { target: 'preparation', label: '朝準備を編集' },
+  { target: 'actual', label: '予定外実績を追加' },
 ];
 
 export function quickAddDestination(target: Exclude<QuickAddTarget, 'task'>) {
+  if (target === 'concierge') return '/concierge';
+  if (target === 'actual') return '/actuals/new';
   if (target === 'event') return '/events/new';
   if (target === 'request') return '/requests';
   if (target === 'shopping') return '/shopping';
@@ -44,11 +48,12 @@ export function QuickAdd({
   const [open, setOpen] = useState(false);
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const isBottomNavAdd = className?.split(/\s+/).includes('bottom-nav-add') ?? false;
   const choose = (target: QuickAddTarget) => {
     setOpen(false);
     if (target === 'task') setTaskFormOpen(true);
-    else navigate(quickAddDestination(target));
+    else navigate(quickAddDestination(target), { state: { originPath: location.pathname + location.search, originScrollY: window.scrollY } });
   };
   return (
     <>
@@ -74,33 +79,10 @@ export function QuickAdd({
         }
       >
         {isBottomNavAdd ? (
-          <svg
-            aria-hidden="true"
-            focusable="false"
-            viewBox="0 0 24 24"
-            width="24"
-            height="24"
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              display: 'block',
-              margin: 0,
-              pointerEvents: 'none',
-            }}
-          >
-            <path
-              d="M12 5v14M5 12h14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-            />
+          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="24" height="24" style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', display: 'block', margin: 0, pointerEvents: 'none' }}>
+            <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
           </svg>
-        ) : (
-          label
-        )}
+        ) : label}
       </button>
       {open && (
         <Modal title="追加するもの" onClose={() => setOpen(false)}>
@@ -108,17 +90,7 @@ export function QuickAdd({
             {quickAddOptions.map((option) => (
               <button key={option.target} type="button" onClick={() => choose(option.target)}>
                 <b>{option.label}</b>
-                {option.detail && (
-                  <small
-                    style={{
-                      color: 'var(--color-accent-text)',
-                      opacity: 0.9,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {option.detail}
-                  </small>
-                )}
+                {option.detail && <small>{option.detail}</small>}
               </button>
             ))}
           </div>

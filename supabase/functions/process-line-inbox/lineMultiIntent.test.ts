@@ -18,6 +18,20 @@ Deno.test("one LINE message retains grouped share/task/shopping/request/actual c
   assertEquals(isMultiIntentMessage(candidates), true);
 });
 
+Deno.test("v11 correction replaces the previous date and keeps the second shopping intent", () => {
+  const candidates = deterministicLineConversationCandidates(
+    "金曜のお迎えママお願い……あ、やっぱ土曜。牛乳も買って。",
+    new Date("2026-09-07T05:00:00Z"),
+  );
+  assertEquals(candidates.length, 2);
+  assertEquals(candidates[0].kind, "request");
+  assertEquals(candidates[0].intent?.targetRole, "mama");
+  assertEquals(candidates[0].intent?.scheduledDate, "2026-09-12");
+  assertEquals(candidates[0].sourceText.includes("訂正"), true);
+  assertEquals(candidates[1].kind, "shopping");
+  assertEquals(candidates[1].title, "牛乳");
+});
+
 Deno.test("only active and structurally complete group candidates are executable", () => {
   const active = activeMultiIntentCandidates([
     { candidate_id: "c1", kind: "task", title: "水着を準備", source_text: "水着準備", status: "draft", missing_fields: [], action_type: "task_create_once", payload: { title: "水着を準備" } },

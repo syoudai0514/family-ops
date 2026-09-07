@@ -1,7 +1,8 @@
 import { NavLink, Route, Routes } from 'react-router-dom';
-import { Today } from '../features/today/Today';
+import { TodayContractPage } from '../features/today/TodayContractPage';
 import { Requests } from '../features/requests/Requests';
 import { Shopping } from '../features/shopping/Shopping';
+import { AnyoneOwnerPage } from '../features/shopping/AnyoneOwnerPage';
 import { Handovers } from '../features/handovers/Handovers';
 import { Notifications } from '../features/notifications/Notifications';
 import { RoutineSettingsPage } from '../features/settings/RoutineSettingsPage';
@@ -13,10 +14,16 @@ import { GoogleEventReviewPage } from '../features/planning/GoogleEventReviewPag
 import { SettingsHome } from '../features/settings/SettingsHome';
 import { CategorySettings } from '../features/settings/CategorySettings';
 import { HouseholdTerminology } from '../features/settings/HouseholdTerminology';
+import { LineReferencePage } from '../features/settings/LineReferencePage';
+import { OutcomeSemanticsPage } from '../features/settings/OutcomeSemanticsPage';
 import { QuickAdd } from '../features/tasks/QuickAdd';
 import { TestSimulation } from '../features/testSimulation/TestSimulation';
 import { EventPlanPage } from '../features/events/EventPlanPage';
 import { NurseryReviewPage } from '../features/nursery/NurseryReviewPage';
+import { ConciergePage } from '../features/concierge/ConciergePage';
+import { TranscriptPage } from '../features/concierge/TranscriptPage';
+import { ConciergeResultsPage } from '../features/concierge/ConciergeResultsPage';
+import { ConciergeConfirmPage } from '../features/concierge/ConciergeConfirmPage';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -54,26 +61,14 @@ export function AppShell() {
   return (
     <div className="app-root">
       <header className="app-nav">
-        <NavLink className="app-nav-brand" to="/today">
-          <span aria-hidden="true">⌂</span> おうちノート
-        </NavLink>
+        <NavLink className="app-nav-brand" to="/today"><span aria-hidden="true">⌂</span> おうちノート</NavLink>
         <nav className="desktop-nav" aria-label="主要メニュー">
-          {PRIMARY_NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          {PRIMARY_NAV_ITEMS.map((item) => <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>{item.label}</NavLink>)}
         </nav>
-        <NavLink to="/settings" className="header-icon" aria-label="設定">
-          ⚙
-        </NavLink>
+        <NavLink to="/settings" className="header-icon" aria-label="設定">⚙</NavLink>
       </header>
       <Routes>
-        <Route path="/today" element={<Today />} />
+        <Route path="/today" element={<TodayContractPage />} />
         <Route path="/week" element={<WeekView />} />
         <Route path="/month" element={<MonthView />} />
         <Route path="/planning/google-review" element={<GoogleEventReviewPage />} />
@@ -82,6 +77,7 @@ export function AppShell() {
         <Route path="/nursery/reviews/:intakeId" element={<NurseryReviewPage />} />
         <Route path="/requests" element={<Requests />} />
         <Route path="/shopping" element={<Shopping />} />
+        <Route path="/shopping/anyone-owner" element={<AnyoneOwnerPage />} />
         <Route path="/handovers" element={<Handovers />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/notifications" element={<Notifications />} />
@@ -89,14 +85,19 @@ export function AppShell() {
         <Route path="/settings/routines" element={<RoutineSettingsPage />} />
         <Route path="/settings/categories" element={<CategorySettings />} />
         <Route path="/settings/terminology" element={<HouseholdTerminology />} />
+        <Route path="/settings/line-reference" element={<LineReferencePage />} />
+        <Route path="/settings/outcome-semantics" element={<OutcomeSemanticsPage />} />
         <Route path="/settings/test-simulation" element={<TestSimulation />} />
         <Route path="/checkin/:sessionId" element={<CheckinPage />} />
-        <Route path="*" element={<Today />} />
+        <Route path="/concierge" element={<ConciergePage />} />
+        <Route path="/concierge/transcript" element={<TranscriptPage />} />
+        <Route path="/concierge/results" element={<ConciergeResultsPage />} />
+        <Route path="/concierge/confirm" element={<ConciergeConfirmPage />} />
+        <Route path="/actuals/new" element={<ConciergePage actualOnly />} />
+        <Route path="*" element={<TodayContractPage />} />
       </Routes>
       <nav className="bottom-nav" aria-label="主要メニュー">
-        {PRIMARY_NAV_ITEMS.map((item) => (
-          <BottomNavLink key={item.to} item={item} />
-        ))}
+        {PRIMARY_NAV_ITEMS.map((item) => <BottomNavLink key={item.to} item={item} />)}
         <QuickAdd className="bottom-nav-add" />
       </nav>
     </div>

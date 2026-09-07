@@ -4,6 +4,7 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
+import { assignmentDecisionCommand, type AssignmentDecision } from './assignmentDecision';
 
 export interface TaskChecklistItemProps {
   task: TaskInstance;
@@ -67,6 +68,10 @@ export function TaskChecklistItem({
   const [evidenceNote, setEvidenceNote] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidenceSaved, setEvidenceSaved] = useState(false);
+  const [editingAssignment, setEditingAssignment] = useState(false);
+  const [assignmentUserId, setAssignmentUserId] = useState(task.planned_assignee_id ?? members[0]?.user_id ?? '');
+  const [assignmentDecision, setAssignmentDecision] = useState<AssignmentDecision>('request');
+  const [assignmentMessage, setAssignmentMessage] = useState('');
   const doneSubtasks = subtasks.filter((item) => item.is_completed).length;
   const requiredSubtasks = subtasks.filter((item) => item.required);
   const optionalOnlyChecklist =
@@ -92,8 +97,6 @@ export function TaskChecklistItem({
   }
 
   function handleComplete() {
-    // Q106: this remains a direct one-tap command. Evidence is never required
-    // and is not collected before or during normal completion.
     void withOperation((operationId) =>
       callEdgeFunction(EDGE_FUNCTIONS.completeTask, {
         operation_id: operationId,
@@ -143,6 +146,25 @@ export function TaskChecklistItem({
       waiting_action: 'resume',
       expected_revision: task.revision ?? 1,
     }));
+  }
+
+  function handleAssignmentSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!assignmentUserId) {
+      setError('担当する人を選んでください。');
+      return;
+    }
+    void withOperation((operationId) => {
+      const command = assignmentDecisionCommand({
+        decision: assignmentDecision,
+        operationId,
+        taskId: task.id,
+        assigneeUserId: assignmentUserId,
+        expectedRevision: task.revision ?? 1,
+        sharedMessage: assignmentMessage,
+      });
+      return callEdgeFunction(command.endpoint, command.body);
+    }).then((succeeded) => { if (succeeded) setEditingAssignment(false); });
   }
 
   async function handleEvidenceSubmit(event: FormEvent) {
@@ -249,6 +271,9 @@ export function TaskChecklistItem({
                 </select>
               </label>
             )}
+            {!completed && members.length > 0 && (
+              <button type="button" onClick={() => setEditingAssignment(true)} disabled={busy}>担当を調整</button>
+            )}
             {editable && (
               <button type="button" onClick={() => onEdit(task)} disabled={busy}>
                 編集
@@ -307,6 +332,18 @@ export function TaskChecklistItem({
             <li className="empty-hint">必要な項目だけチェックして、最後に「完了」を押します。</li>
           )}
         </ul>
+      )}
+
+      {editingAssignment && !completed && (
+        <form className="task-waiting-editor" onSubmit={handleAssignmentSubmit}>
+          <strong>担当をどう変える？</strong>
+          <label>担当する人<select value={assignmentUserId} onChange={(event) => setAssignmentUserId(event.target.value)} required>{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.family_role === 'papa' ? 'パパ' : member.family_role === 'mama' ? 'ママ' : member.profile?.display_name ?? member.user_id}</option>)}</select></label>
+          <label><input type="radio" name={`assignment-${task.id}`} value="request" checked={assignmentDecision === 'request'} onChange={() => setAssignmentDecision('request')} /> まだ合意していないので、お願いを送る</label>
+          <label><input type="radio" name={`assignment-${task.id}`} value="agreed" checked={assignmentDecision === 'agreed'} onChange={() => setAssignmentDecision('agreed')} /> すでに話し合い済みなので、そのまま担当を変更</label>
+          {assignmentDecision === 'request' && <label>相手に見せる一言（任意）<input value={assignmentMessage} onChange={(event) => setAssignmentMessage(event.target.value)} placeholder="例: 今日だけお願いできますか？" /></label>}
+          <p className="empty-hint">お願いを選んだ場合は相手が承認するまで担当を勝手に変えません。話し合い済みを選んだ場合だけ直接変更します。</p>
+          <div className="task-item-actions"><button type="submit" disabled={busy}>{assignmentDecision === 'request' ? 'お願いを送る' : '担当を変更'}</button><button type="button" className="text-button" onClick={() => setEditingAssignment(false)} disabled={busy}>やめる</button></div>
+        </form>
       )}
 
       {editingWaiting && (

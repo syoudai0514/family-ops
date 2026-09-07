@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { createSupabaseFromMock } from '../../test/supabaseMock';
 import { completedNextTokyoMorning, HistoryPage, reassignmentSummary } from './HistoryPage';
@@ -61,7 +62,7 @@ vi.mock('../../app/HouseholdContext', () => ({
 
 describe('HistoryPage', () => {
   it('renders canonical result semantics without score/ranking UI', async () => {
-    render(<HistoryPage />);
+    render(<MemoryRouter><HistoryPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole('heading', { name: '履歴' })).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText('お迎え')).toBeInTheDocument());
     expect(screen.getByText('完了（期限超過）')).toBeInTheDocument();
@@ -69,7 +70,10 @@ describe('HistoryPage', () => {
     expect(screen.getByText('待ち')).toBeInTheDocument();
     expect(screen.getByText(/待ち理由: 園からの回答待ち/)).toBeInTheDocument();
     expect(screen.getByText('担当変更: パパ → ママ')).toBeInTheDocument();
-    expect(screen.getByText(/実績:.*パパ・ママ/)).toBeInTheDocument();
+    const actualRow = screen.getByText(/実績日:\s*2026-08-18/).closest('p');
+    expect(actualRow).toHaveTextContent('実績日: 2026-08-18 · パパ・ママ');
+    expect(screen.getAllByText('監査情報').length).toBeGreaterThan(0);
+    expect(screen.getByText(/登録時刻:/)).toBeInTheDocument();
     expect(screen.queryByText(/スコア|ランキング|ポイント/)).not.toBeInTheDocument();
   });
 
