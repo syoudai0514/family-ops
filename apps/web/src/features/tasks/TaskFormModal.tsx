@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Modal } from '../../components/Modal';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
@@ -7,6 +7,7 @@ import { todayIsoDate } from '../../lib/date';
 import { useHousehold } from '../../app/HouseholdContext';
 import type { CompletionMode, RoutinePhase, TaskInstance } from '../../lib/types';
 import { useTaskCategories } from './useTaskCategories';
+import { clearTaskFormDraft, readTaskFormDraft, saveTaskFormDraft } from './taskFormDraft';
 
 interface SubtaskDraft {
   title: string;
@@ -34,10 +35,11 @@ export function TaskFormModal({
 }: TaskFormModalProps) {
   const { members } = useHousehold();
   const { categories } = useTaskCategories();
-  const [title, setTitle] = useState(task?.title ?? initialTitle ?? '');
-  const [category, setCategory] = useState(task?.category ?? 'other');
+  const draft = useMemo(() => mode === 'create' ? readTaskFormDraft() : null, [mode]);
+  const [title, setTitle] = useState(task?.title ?? initialTitle ?? draft?.title ?? '');
+  const [category, setCategory] = useState(task?.category ?? draft?.category ?? 'other');
   const [scheduledDate, setScheduledDate] = useState(
-    task?.scheduled_date ?? initialScheduledDate ?? todayIsoDate(),
+    task?.scheduled_date ?? initialScheduledDate ?? draft?.scheduledDate ?? todayIsoDate(),
   );
   const formatLocalTime = (value: string | null | undefined) =>
     value
@@ -48,21 +50,21 @@ export function TaskFormModal({
           hour12: false,
         }).format(new Date(value))
       : '';
-  const [dueLocalTime, setDueLocalTime] = useState(formatLocalTime(task?.due_at));
+  const [dueLocalTime, setDueLocalTime] = useState(task?.due_at ? formatLocalTime(task.due_at) : draft?.dueLocalTime ?? '');
   const [calendarEndLocalTime, setCalendarEndLocalTime] = useState(
-    formatLocalTime(task?.calendar_ends_at),
+    task?.calendar_ends_at ? formatLocalTime(task.calendar_ends_at) : draft?.calendarEndLocalTime ?? '',
   );
   const [calendarVisibility, setCalendarVisibility] = useState<'hidden' | 'special'>(
     task?.calendar_visibility === 'special'
       ? 'special'
-      : initialCalendarVisibility ?? 'hidden',
+      : initialCalendarVisibility ?? draft?.calendarVisibility ?? 'hidden',
   );
-  const [assigneeId, setAssigneeId] = useState(task?.planned_assignee_id ?? '');
+  const [assigneeId, setAssigneeId] = useState(task?.planned_assignee_id ?? draft?.assigneeId ?? '');
   const [completionMode, setCompletionMode] = useState<CompletionMode>(
-    task?.completion_mode ?? 'whole',
+    task?.completion_mode ?? draft?.completionMode ?? 'whole',
   );
-  const [routinePhase, setRoutinePhase] = useState<RoutinePhase | ''>('');
-  const [subtasks, setSubtasks] = useState<SubtaskDraft[]>([{ title: '', required: true }]);
+  const [routinePhase, setRoutinePhase] = useState<RoutinePhase | ''>(draft?.routinePhase ?? '');
+  const [subtasks, setSubtasks] = useState<SubtaskDraft[]>(draft?.subtasks?.length ? draft.subtasks : [{ title: '', required: true }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [operationId] = useState(() => newOperationId());
@@ -70,6 +72,22 @@ export function TaskFormModal({
   const isCalendarEvent = calendarVisibility === 'special';
   const modalTitle =
     mode === 'edit' ? '予定・やることを編集' : isCalendarEvent ? '予定を追加' : 'やることを追加';
+
+  useEffect(() => {
+    if (mode !== 'create') return;
+    saveTaskFormDraft({
+      title,
+      category,
+      scheduledDate,
+      dueLocalTime,
+      calendarEndLocalTime,
+      calendarVisibility,
+      assigneeId,
+      completionMode,
+      routinePhase,
+      subtasks,
+    });
+  }, [mode, title, category, scheduledDate, dueLocalTime, calendarEndLocalTime, calendarVisibility, assigneeId, completionMode, routinePhase, subtasks]);
 
   function addSubtaskRow() {
     setSubtasks((prev) => [...prev, { title: '', required: true }]);
@@ -130,6 +148,7 @@ export function TaskFormModal({
           routine_phase: routinePhase || undefined,
           subtasks: completionMode === 'subtasks' ? cleanSubtasks : undefined,
         });
+        clearTaskFormDraft();
       } else if (task) {
         await callEdgeFunction(EDGE_FUNCTIONS.editTask, {
           operation_id: operationId,
@@ -159,6 +178,8 @@ export function TaskFormModal({
   return (
     <Modal title={modalTitle} onClose={onClose} panelClassName="task-form-modal">
       <form onSubmit={handleSubmit} className="stack-form task-form">
+        {mode === 'create' && <p className="form-help">閉じても入力途中の下書きはこの端末内に残ります。保存が完了したときだけ下書きを消します。</p>}
+        <h3 className="form-section-title">1 基本</h3>
         <label>
           何をする？
           <input
@@ -185,6 +206,7 @@ export function TaskFormModal({
           Googleから取り込んだ予定はGoogle側の開始・終了時刻をそのまま使います。ここで作る「予定」は、おうちノートを正としてGoogleへ同期します。
         </p>
 
+        <h3 className="form-section-title">2 いつ・誰が</h3>
         <label>
           日付
           <input
@@ -251,6 +273,7 @@ export function TaskFormModal({
           </select>
         </label>
 
+        {mode === 'create' && !isCalendarEvent && <h3 className="form-section-title">3 チェック内容</h3>}
         {mode === 'create' && !isCalendarEvent && (
           <>
             <label>
@@ -320,7 +343,7 @@ export function TaskFormModal({
             {submitting ? '保存中…' : '保存'}
           </button>
           <button type="button" className="secondary-button" onClick={onClose} disabled={submitting}>
-            キャンセル
+            閉じる
           </button>
         </div>
       </form>
