@@ -78,6 +78,16 @@ export function countCheckinBulkScope(items: Array<{ expectation?: TaskExpectati
   return { eligibleCount, optionalCount };
 }
 
+export function checkinBulkScopeNames(items: Array<{ title: string; expectation?: TaskExpectation }>): { eligible: string[]; optional: string[] } {
+  const eligible: string[] = [];
+  const optional: string[] = [];
+  for (const item of items) {
+    if ((item.expectation ?? 'normal') === 'optional') optional.push(item.title);
+    else eligible.push(item.title);
+  }
+  return { eligible, optional };
+}
+
 function itemStatusLabel(item: SessionItem): string {
   if (item.status === 'completed') return '完了';
   if (item.status === 'cancelled') return '中止';
@@ -135,10 +145,8 @@ export function CheckinPage() {
 
   const activeItems = session.items.filter(isItemActive);
   const { eligibleCount, optionalCount } = countCheckinBulkScope(activeItems);
+  const scopeNames = checkinBulkScopeNames(activeItems);
   const canAct = session.can_act && session.status === 'open';
-  // A bulk receipt is the correction authority. Optional rows can keep the
-  // routine session open, so do not incorrectly hide immediate correction/undo
-  // merely because the session itself has not become submitted.
   const canCorrectBulk = Boolean(reconciliationOperationId);
   const morningInput = currentInputs.sessions.find((candidate) => candidate.can_act && candidate.session_type === 'dropoff') ?? null;
   const eveningInput = currentInputs.sessions.find((candidate) => candidate.can_act && candidate.session_type === 'nonpickup_evening') ?? null;
@@ -153,19 +161,15 @@ export function CheckinPage() {
     setActionError(null); setBusyItemId(taskInstanceId);
     try {
       const rescheduledTo = action === 'rescheduled' ? rescheduleDates[taskInstanceId] : null;
-      if (action === 'rescheduled' && !rescheduledTo) {
-        setActionError('再予定の日を選んでください。'); return;
-      }
+      if (action === 'rescheduled' && !rescheduledTo) { setActionError('再予定の日を選んでください。'); return; }
       await callEdgeFunction(EDGE_FUNCTIONS.routineSessionItemAction, {
         operation_id: newOperationId(), session_id: sessionId, task_instance_id: taskInstanceId, action,
-        rescheduled_to: rescheduledTo,
-        reconciliation_operation_id: canCorrectBulk ? reconciliationOperationId : null,
+        rescheduled_to: rescheduledTo, reconciliation_operation_id: canCorrectBulk ? reconciliationOperationId : null,
       });
       setReconciliationMessage(canCorrectBulk ? '一括完了の例外を修正しました。' : null);
       await refresh();
-    } catch (err) {
-      setActionError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。');
-    } finally { setBusyItemId(null); }
+    } catch (err) { setActionError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。'); }
+    finally { setBusyItemId(null); }
   }
 
   async function runSubtaskAction(subtask: SubtaskRow) {
@@ -202,11 +206,8 @@ export function CheckinPage() {
     if (!reconciliationOperationId) return;
     setBusyAll(true); setActionError(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.reconcileRoutineSession, {
-        action: 'undo', operation_id: newOperationId(), target_operation_id: reconciliationOperationId,
-      });
-      setReconciliationOperationId(null); setIndividualMode(false);
-      setReconciliationMessage('一括完了を元に戻しました。');
+      await callEdgeFunction(EDGE_FUNCTIONS.reconcileRoutineSession, { action: 'undo', operation_id: newOperationId(), target_operation_id: reconciliationOperationId });
+      setReconciliationOperationId(null); setIndividualMode(false); setReconciliationMessage('一括完了を元に戻しました。');
       await refresh();
     } catch (err) { setActionError(err instanceof FamilyOpsApiError ? err.message : '元に戻せませんでした。最新の状態を確認してください。'); }
     finally { setBusyAll(false); }
@@ -227,30 +228,24 @@ export function CheckinPage() {
     {reconciliationMessage && <p role="status" className="success-text">{reconciliationMessage}</p>}
 
     {canCorrectBulk && <section className="card checkin-reconciliation" aria-label="一括完了の直後操作">
-      <h2>一括完了を記録しました</h2>
-      <p className="empty-hint">この操作で変更した項目だけを訂正できます。後から別の更新が入った場合、元に戻す操作は安全のため止まります。</p>
-      <div className="checkin-reconciliation-actions">
-        <button type="button" className="secondary-button" disabled={busyAll} onClick={() => setIndividualMode(true)}>例外を修正</button>
-        <button type="button" className="text-button" disabled={busyAll} onClick={undoReconciliation}>元に戻す</button>
-      </div>
+      <h2>一括完了を記録しました</h2><p className="empty-hint">この操作で変更した項目だけを訂正できます。後から別の更新が入った場合、元に戻す操作は安全のため止まります。</p>
+      <div className="checkin-reconciliation-actions"><button type="button" className="secondary-button" disabled={busyAll} onClick={() => setIndividualMode(true)}>例外を修正</button><button type="button" className="text-button" disabled={busyAll} onClick={undoReconciliation}>元に戻す</button></div>
     </section>}
 
     {canAct && activeItems.length > 0 && !individualMode && <section className="card checkin-reconciliation" aria-labelledby="checkin-reconciliation-title">
       <p className="eyebrow">{inputLabel(session.session_type)}</p><h2 id="checkin-reconciliation-title">今日はどうでしたか？</h2>
       <div className="checkin-scope" aria-label="一括操作の対象">
-        <strong>この操作の対象: 必須/通常 {eligibleCount}件</strong>
+        <strong>「全部やった」で完了にする対象</strong>
+        <ul className="checkin-scope-names">{scopeNames.eligible.map((name) => <li key={`eligible-${name}`}>{name}</li>)}</ul>
+        <span className="task-item-meta">必須/通常 {eligibleCount}件</span>
+        {scopeNames.optional.length > 0 && <><strong className="task-item-meta">対象外（余力）</strong><ul className="checkin-scope-names excluded">{scopeNames.optional.map((name) => <li key={`optional-${name}`}>{name}</li>)}</ul></>}
         <span className="task-item-meta">余力 {optionalCount}件は対象外</span>
       </div>
-      <p className="empty-hint">細かな入力は例外があるときだけで大丈夫です。「大体やった」では未入力項目や子項目を勝手に完了にしません。</p>
-      <div className="checkin-reconciliation-actions">
-        <button type="button" className="hero-primary" disabled={busyAll || eligibleCount === 0} onClick={() => runReconciliation('all_done')}>全部やった</button>
-        <button type="button" className="secondary-button" disabled={busyAll || eligibleCount === 0} onClick={() => runReconciliation('mostly_done')}>大体やった</button>
-        <button type="button" className="text-button" disabled={busyAll} onClick={() => runReconciliation('individual')}>個別に記録</button>
-      </div>
+      <p className="empty-hint">上に名前が出ている項目だけが「全部やった」の対象です。「大体やった」では未入力項目や子項目を勝手に完了にしません。</p>
+      <div className="checkin-reconciliation-actions"><button type="button" className="hero-primary" disabled={busyAll || eligibleCount === 0} onClick={() => runReconciliation('all_done')}>全部やった</button><button type="button" className="secondary-button" disabled={busyAll || eligibleCount === 0} onClick={() => runReconciliation('mostly_done')}>大体やった</button><button type="button" className="text-button" disabled={busyAll} onClick={() => runReconciliation('individual')}>個別に記録</button></div>
     </section>}
 
     {(canAct || canCorrectBulk) && individualMode && <p className="task-item-meta">個別入力中です。完了・相手対応・できなかった・今回不要・中止・再予定・不明を区別して残せます。</p>}
-
     <ul className="handover-list">
       {session.items.map((item) => {
         const canEditItem = (canAct && isItemActive(item)) || (canCorrectBulk && individualMode && item.status === 'completed');
@@ -258,18 +253,7 @@ export function CheckinPage() {
           <div><p>{item.title}</p><span className="task-item-meta">{itemStatusLabel(item)}</span>
             {item.completion_mode === 'subtasks' && item.subtasks.length > 0 && <ul className="subtask-list subtask-checklist checkin-subtask-list">{item.subtasks.map((st) => <li key={st.id}><button type="button" className="subtask-check-row" disabled={!canAct || busyAll || busyItemId === st.id} onClick={() => runSubtaskAction(st)} aria-pressed={st.is_completed}><span className={st.is_completed ? 'subtask-checkbox checked' : 'subtask-checkbox'} aria-hidden="true">{st.is_completed ? '✓' : ''}</span><span className={st.is_completed ? 'checked' : ''}>{st.title}{!st.required && <small>（任意）</small>}</span></button></li>)}</ul>}
           </div>
-          {canEditItem && <div className="checkin-item-actions">
-            <button type="button" className="hero-primary" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'complete')}>完了</button>
-            <details className="task-overflow"><summary aria-label={`${item.title}のその他の結果`}>その他の結果</summary><div>
-              <button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'partner_handled')}>相手が対応</button>
-              <button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'failed')}>できなかった</button>
-              <button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'skip')}>今回は不要</button>
-              <button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'cancelled')}>中止</button>
-              <label>再予定日<input type="date" aria-label={`${item.title}の再予定日`} value={rescheduleDates[item.task_instance_id] ?? ''} onChange={(event) => setRescheduleDates((current) => ({ ...current, [item.task_instance_id]: event.target.value }))} /></label>
-              <button type="button" disabled={busyItemId === item.task_instance_id || busyAll || !rescheduleDates[item.task_instance_id]} onClick={() => runItemAction(item.task_instance_id, 'rescheduled')}>再予定</button>
-              <button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'unknown')}>不明</button>
-            </div></details>
-          </div>}
+          {canEditItem && <div className="checkin-item-actions"><button type="button" className="hero-primary" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'complete')}>完了</button><details className="task-overflow"><summary aria-label={`${item.title}のその他の結果`}>その他の結果</summary><div><button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'partner_handled')}>相手が対応</button><button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'failed')}>できなかった</button><button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'skip')}>今回は不要</button><button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'cancelled')}>中止</button><label>再予定日<input type="date" aria-label={`${item.title}の再予定日`} value={rescheduleDates[item.task_instance_id] ?? ''} onChange={(event) => setRescheduleDates((current) => ({ ...current, [item.task_instance_id]: event.target.value }))} /></label><button type="button" disabled={busyItemId === item.task_instance_id || busyAll || !rescheduleDates[item.task_instance_id]} onClick={() => runItemAction(item.task_instance_id, 'rescheduled')}>再予定</button><button type="button" disabled={busyItemId === item.task_instance_id || busyAll} onClick={() => runItemAction(item.task_instance_id, 'unknown')}>不明</button></div></details></div>}
         </li>;
       })}
       {session.items.length === 0 && <li className="empty-hint">項目はありません。</li>}
