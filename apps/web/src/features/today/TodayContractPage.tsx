@@ -40,6 +40,14 @@ function jumpTo(selector: string, fallback: () => void) {
   fallback();
 }
 
+function todayHeading() {
+  return new Intl.DateTimeFormat('ja-JP', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date());
+}
+
 export function TodayContractPage() {
   const { user } = useAuth();
   const { household } = useHousehold();
@@ -57,8 +65,15 @@ export function TodayContractPage() {
   });
 
   return (
-    <>
+    <div className="today-contract-flow">
       <section className="app-shell today-contract-overview" aria-label="今日の状況">
+        <div className="today-contract-page-head">
+          <div>
+            <p className="eyebrow">{todayHeading()} · 今日の段取り</p>
+            <h1>今日</h1>
+          </div>
+          <span className="today-contract-current-badge">現在時刻で再計算</span>
+        </div>
         <div className="card compact-section">
           <div className="section-heading">
             <div>
@@ -67,7 +82,7 @@ export function TodayContractPage() {
             </div>
             <button type="button" className="text-button" onClick={() => navigate('/concierge', { state: { originPath: '/today', originScrollY: window.scrollY } })}>✨ コンシェルジュ</button>
           </div>
-          <div className="today-shortcuts" aria-label="今日の要点へ移動">
+          <div className="today-contract-shortcuts" aria-label="今日の要点へ移動">
             <button type="button" onClick={() => jumpTo('.decision-card', () => navigate('/requests'))}><small>返事・担当未定</small><strong>要対応 {summary.attention}</strong></button>
             <button type="button" onClick={() => jumpTo('.next-action-hero, .task-section', () => undefined)}><small>今日の自分タスク</small><strong>残り {summary.remaining}</strong></button>
             <button type="button" onClick={() => jumpTo('.waiting-summary', () => undefined)}><small>待ち・あとで確認</small><strong>待ち {summary.waiting}</strong></button>
@@ -77,6 +92,6 @@ export function TodayContractPage() {
         </div>
       </section>
       <Today />
-    </>
+    </div>
   );
 }
