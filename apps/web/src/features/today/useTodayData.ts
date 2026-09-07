@@ -215,6 +215,24 @@ export function useTodayData(householdId: string | null, userId: string | null):
         setBriefSchedule(brief.schedule ?? []);
       }
 
+      // The canonical DailyBrief reader is intentionally actor-focused and can
+      // omit household tasks whose assignee is still unset. Final-v11 Today is
+      // also the household execution checklist, so hydrate the same-date
+      // canonical task truth under the existing household RLS and merge by id.
+      // This is read-only: assignment/claim/completion semantics stay on the
+      // existing command APIs.
+      const { data: householdTaskData, error: householdTaskError } = await supabase
+        .from('task_instances')
+        .select('*')
+        .eq('household_id', householdId)
+        .eq('scheduled_date', today)
+        .in('status', TODAY_TASK_STATUSES)
+        .order('due_at', { ascending: true, nullsFirst: false });
+      if (householdTaskError) throw householdTaskError;
+      taskRows = [...new Map(
+        [...taskRows, ...((householdTaskData ?? []) as TodayTaskInstance[])].map((task) => [task.id, task]),
+      ).values()];
+
       const visibleTaskIds = [...new Set([...taskRows, ...carryoverRows].map((task) => task.id))];
       const subtaskModeTaskIds = [...taskRows, ...carryoverRows]
         .filter((task) => task.completion_mode === 'subtasks')

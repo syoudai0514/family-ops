@@ -69,6 +69,7 @@ export type TaskOutcomeReason =
   | 'unknown'
   | null;
 export type TaskAttentionState = 'active' | 'waiting';
+export type TaskAssignmentMode = 'person' | 'unassigned' | 'anyone';
 
 export interface TaskInstance {
   id: string;
@@ -85,6 +86,7 @@ export interface TaskInstance {
   calendar_visibility?: 'transport' | 'special' | 'hidden' | null;
   task_kind?: TaskKind;
   planned_assignee_id: string | null;
+  assignment_mode?: TaskAssignmentMode | null;
   completion_mode: CompletionMode;
   status: TaskInstanceStatus;
   actual_completed_by_id: string | null;

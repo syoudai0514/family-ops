@@ -21,10 +21,10 @@ vi.mock('./useTodayData', () => ({
   useTodayData: () => ({
     incomingRequests: [{ id: 'request-1', shared_title: 'お迎えの返事', due_at: null }],
     tasks: [
-      { id: 'task-1', title: '洗濯', status: 'todo', planned_assignee_id: 'user-1', attention_state: null, routine_phase: 'evening' },
-      { id: 'task-2', title: '写真館へ確認電話', status: 'in_progress', planned_assignee_id: 'user-1', attention_state: 'waiting', routine_phase: 'anytime' },
-      { id: 'task-3', title: '水着セット', status: 'completed', planned_assignee_id: 'user-1', actual_completed_by_id: 'user-2', attention_state: null, routine_phase: 'anytime' },
-      { id: 'task-4', title: '明日の水着準備', status: 'todo', planned_assignee_id: null, attention_state: null, routine_phase: 'anytime' },
+      { id: 'task-1', title: '洗濯', status: 'todo', planned_assignee_id: 'user-1', assignment_mode: 'person', attention_state: null, routine_phase: 'evening' },
+      { id: 'task-2', title: '写真館へ確認電話', status: 'in_progress', planned_assignee_id: 'user-1', assignment_mode: 'person', attention_state: 'waiting', routine_phase: 'anytime' },
+      { id: 'task-3', title: '水着セット', status: 'completed', planned_assignee_id: 'user-1', assignment_mode: 'person', actual_completed_by_id: 'user-2', attention_state: null, routine_phase: 'anytime' },
+      { id: 'task-4', title: '明日の水着準備', status: 'todo', planned_assignee_id: null, assignment_mode: 'unassigned', attention_state: null, routine_phase: 'anytime' },
     ],
     carryoverTasks: [],
     subtasksByTaskId: new Map(),
@@ -61,17 +61,17 @@ describe('TodayContractPage', () => {
       pendingActionCount: 2,
       currentUserId: 'user-1',
       tasks: [
-        { status: 'todo', planned_assignee_id: 'user-1', attention_state: null },
-        { status: 'in_progress', planned_assignee_id: 'user-1', attention_state: 'waiting' },
-        { status: 'todo', planned_assignee_id: null, attention_state: null },
-        { status: 'completed', planned_assignee_id: 'user-1', attention_state: 'waiting' },
+        { status: 'todo', planned_assignee_id: 'user-1', assignment_mode: 'person', attention_state: null },
+        { status: 'in_progress', planned_assignee_id: 'user-1', assignment_mode: 'person', attention_state: 'waiting' },
+        { status: 'todo', planned_assignee_id: null, assignment_mode: 'unassigned', attention_state: null },
+        { status: 'completed', planned_assignee_id: 'user-1', assignment_mode: 'person', attention_state: 'waiting' },
       ],
       tomorrowTaskCount: 2,
       tomorrowOccurrenceCount: 1,
-    })).toEqual({ attention: 4, remaining: 1, waiting: 1, tomorrowImpact: 3 });
+    })).toEqual({ attention: 3, remaining: 2, waiting: 1, tomorrowImpact: 3 });
   });
 
-  it('renders summary plus the material final-v11 Today sections and actual task names', () => {
+  it('renders summary plus the material final-v11 Today checklist including unassigned household work', () => {
     render(
       <MemoryRouter initialEntries={['/today']}>
         <Routes>
@@ -83,15 +83,15 @@ describe('TodayContractPage', () => {
 
     expect(screen.getByText('最初にここだけ見ればOK')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '今日の状況' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /返事・担当未定.*要対応 3/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /今日の自分タスク.*残り 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /返事・担当未定.*要対応 2/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /今日の自分タスク.*残り 2/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /待ち・あとで確認.*待ち 1/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /明日の予定・準備.*明日影響 2/ })).toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: '放置すると困ること' })).toBeInTheDocument();
     expect(screen.getByText('お迎えの返事')).toBeInTheDocument();
-    expect(screen.getByText('明日の水着準備')).toBeInTheDocument();
     expect(screen.getByText('洗濯')).toBeInTheDocument();
+    expect(screen.getByText('明日の水着準備')).toBeInTheDocument();
     expect(screen.getByText('写真館へ確認電話')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '明日の予定・準備' })).toBeInTheDocument();
     expect(screen.getByText('明日の着替え準備')).toBeInTheDocument();
