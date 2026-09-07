@@ -92,3 +92,117 @@
   display: block;
   margin-top: 0.2rem;
 }
+
+/* Issue #54 production Gate C — Today material parity.
+   TodayContractPage and Today used to stack two independent .app-shell blocks.
+   The global mobile min-height then made the summary consume almost a full
+   viewport before the real Today body. Keep the contract header/summary in the
+   normal document flow and let the actual Today shell own page height. */
+.today-contract-overview {
+  min-height: 0;
+  padding-bottom: 0.35rem;
+}
+
+.today-contract-overview + .app-shell {
+  padding-top: 0.35rem;
+}
+
+.today-contract-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+.today-contract-page-head h1 {
+  margin: 0.1rem 0 0;
+}
+.today-contract-current-badge {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.5rem;
+  border-radius: 999px;
+  background: #eff4ff;
+  color: #174eab;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.today-contract-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+.today-contract-shortcuts button {
+  min-width: 0;
+  min-height: 58px;
+  padding: 0.55rem;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 0.12rem;
+  text-align: left;
+  background: #eff4ff;
+  color: #174eab;
+  white-space: normal;
+}
+.today-contract-shortcuts button small,
+.today-contract-shortcuts button strong {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+@media (max-width: 520px) {
+  .today-contract-overview {
+    padding-top: 0.85rem;
+    padding-bottom: 0.2rem;
+  }
+
+  .today-contract-overview + .app-shell {
+    min-height: 0;
+    padding-top: 0.2rem;
+  }
+
+  /* The Today component has its own page heading. The contract wrapper now
+     owns that heading so the hierarchy matches v11: date/Today -> summary ->
+     live daypart content, with no duplicated heading between summary/body. */
+  .today-contract-flow > .app-shell .today-page-heading {
+    display: none;
+  }
+
+  .today-contract-shortcuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    overflow: visible;
+  }
+
+  .today-contract-shortcuts button {
+    width: 100%;
+    min-height: 68px;
+    padding: 0.6rem 0.55rem;
+  }
+
+  .today-contract-shortcuts button small {
+    font-size: 0.72rem;
+  }
+
+  .today-contract-shortcuts button strong {
+    font-size: 0.88rem;
+  }
+
+  .today-contract-page-head {
+    align-items: center;
+  }
+
+  .today-contract-current-badge {
+    max-width: 7.5rem;
+    text-align: center;
+    line-height: 1.25;
+  }
+}
