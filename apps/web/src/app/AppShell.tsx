@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from 'react-router-dom';
 import { TodayContractPage } from '../features/today/TodayContractPage';
 import { Requests } from '../features/requests/Requests';
 import { Shopping } from '../features/shopping/Shopping';
+import { AnyoneOwnerPage } from '../features/shopping/AnyoneOwnerPage';
 import { Handovers } from '../features/handovers/Handovers';
 import { Notifications } from '../features/notifications/Notifications';
 import { RoutineSettingsPage } from '../features/settings/RoutineSettingsPage';
@@ -76,6 +77,7 @@ export function AppShell() {
         <Route path="/nursery/reviews/:intakeId" element={<NurseryReviewPage />} />
         <Route path="/requests" element={<Requests />} />
         <Route path="/shopping" element={<Shopping />} />
+        <Route path="/shopping/anyone-owner" element={<AnyoneOwnerPage />} />
         <Route path="/handovers" element={<Handovers />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/notifications" element={<Notifications />} />
