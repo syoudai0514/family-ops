@@ -9,9 +9,9 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 - UI/interaction concretization: `family-ops-ux-contract-final-v11-noscript.html`
 - SHA-256: `c1afa191a8e02f86683e886e0c59a60019b7388531dde19f96de690e8b9e2007`
 - Fixture chores/dates/owners are presentation fixtures only; none are production defaults/seeds.
-- Current matrix after Issue #54 remediation in PR #56: **MATCH 26 / PARTIAL 7 / MISSING 1**.
-- Unweighted progress: **76.5%** (`MATCH / 34`).
-- Weighted progress: **86.8%** (`(MATCH + 0.5 × PARTIAL) / 34`; MISSING = 0 weight).
+- Current matrix after Issue #54 remediation in PR #56: **MATCH 29 / PARTIAL 4 / MISSING 1**.
+- Unweighted progress: **85.3%** (`MATCH / 34`).
+- Weighted progress: **91.2%** (`(MATCH + 0.5 × PARTIAL) / 34`; MISSING = 0 weight).
 
 | # | Contract item | CURRENT source / deterministic evidence | Status | Remaining before release closeout |
 |---:|---|---|---|---|
@@ -20,11 +20,11 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 | 3 | `individual` | `CheckinPage.tsx` + `/settings/line-reference`: complete/partner/failed/not-needed/cancel/reschedule/unknown remain seven distinct canonical outcomes; `LineReferencePage.tsx` adds the literal `回答する場所: PWA / LINE` cross-surface reference and functional PWA destinations. SQL `76_issue48_q59_q64_literal_regression.sql` preserves the same outcome semantics across PWA/LINE; `LineReferencePage.test.tsx` guards the visible contract. | MATCH | Gate C PWA/LINE-equivalent individual-result evidence; no real LINE send. |
 | 4 | `actual_add` | `/actuals/new` uses Concierge actual-only entry; `record-unplanned-actual` + `20260907000001_issue54_unplanned_actual_atomic.sql` creates canonical task/actual atomically with original `scheduled_date`, idempotent operation receipt and participant truth; SQL regression `79_issue54_unplanned_actual_atomic.sql`. | MATCH | Gate C actual-entry → canonical History truth. |
 | 5 | `task_form` | `QuickAdd` → `TaskFormModal.tsx`: literal three-step hierarchy (`基本 / いつ・誰が / チェック内容`), title-first canonical create/edit, assignment/date/detail/subtasks/calendar controls. Create drafts are device-local session state via `taskFormDraft.ts`, survive close/reopen, and clear only after successful canonical save; `taskFormDraft.test.ts` proves round-trip/clear/corrupt-state behavior. | MATCH | Gate C close/reopen draft + save → Today truth. |
-| 6 | `task_detail` | `TodayTaskItem` / `TaskChecklistItem`: subtask progress/direct completion, waiting/result/assignment operations; edit uses canonical modal. | PARTIAL | Contract-equivalent origin return/state proof. |
-| 7 | `groups` | Routine/category/custom routine settings and routine-session backend implement grouping semantics. | PARTIAL | Literal auto/custom group management + meaningful-scope bulk UI closeout. |
+| 6 | `task_detail` | `TodayTaskItem` / `TaskChecklistItem`: subtask progress/direct completion, waiting/result/assignment operations; edit stays in an overlay over the mounted origin. `TaskFormModal.returnState.test.tsx` proves close returns to the same origin/filter state without route replacement/reset. | MATCH | Gate C detail/edit → return-state evidence. |
+| 7 | `groups` | `/settings/routines`, `RoutineSchedule` and `CustomRoutineEditor` keep built-in automatic groups separate from household-created custom groups by durable codes; custom create/edit/delete use canonical commands and Check-in group mutation uses meaningful required/normal scope with optional exclusion. `CustomRoutineEditor.groupContract.test.ts` plus Check-in SQL regression prove separation/scope. | MATCH | Gate C custom group edit → Check-in projection evidence. |
 | 8 | `requests` | `/requests`, Today quick responses and canonical request state machine support received/sent actions, accept/decline/checking/consult. | PARTIAL | Expired/new-proposal/history layout + return-state audit. |
 | 9 | `request_form` | `/requests` composer reuses canonical request commands and separates request semantics from task mutation. | PARTIAL | Response/work deadline and pre-send semantic explanation literal closeout. |
-| 10 | `assignment` | Canonical task/request assignment commands cover self/request/anyone and reassignment semantics. | PARTIAL | Single contract-equivalent assignment decision surface/correction affordance. |
+| 10 | `assignment` | `TaskChecklistItem` now exposes one explicit assignment decision surface: if not agreed it calls canonical `create-assignment-change-request`; only `すでに話し合い済み` calls `change-task-assignment` with `already_agreed=true`. `assignmentDecision.ts`/`.test.ts` lock endpoint/body mapping and prevent silent reassignment. | MATCH | Gate C request/agreed branches → canonical state evidence. |
 | 11 | `routine_rules` | `/settings/routines`, `TransportTemplateEditor`, `RoutineSchedule`, occurrence override; non-overlap period templates + future conflict behavior covered by tests. | MATCH | Gate C only. |
 | 12 | `handover` | `/handovers`; share scope/expiry/related ToDo, acknowledge independent from completion, correction/history semantics. | MATCH | Gate C only. |
 | 13 | `shopping` | `/shopping`; state tabs, anyone claim/release/takeover and shopping actual semantics; `shoppingActions.test.ts`. | MATCH | Gate C only. |
@@ -52,8 +52,8 @@ Status: implementation closeout in progress. This is the durable 34-screen matri
 
 ## Gate tracking
 
-- **Gate A — deterministic source/test:** in progress. CI #669 has Web/DB/Edge green; its real Supabase CLI job failed during `supabase start`, so that stack-only prerequisite is deferred to final Gate A recheck while implementation continues.
-- **Gate B — literal 34-screen conformance:** 26 MATCH / 7 PARTIAL / 1 MISSING.
+- **Gate A — deterministic source/test:** in progress. CURRENT Web/DB/Edge suites are green; the real Supabase CLI job is allowed to remain deferred while its failure is only `supabase start`, and must be rerun for final Gate A.
+- **Gate B — literal 34-screen conformance:** 29 MATCH / 4 PARTIAL / 1 MISSING.
 - **Gate C — real-use iPhone-equivalent scenario evidence:** pending final scenario harness/evidence. Route/component existence is not accepted as Gate C.
 - **Gate D — independent source review:** not started; PR remains Draft until A–C satisfy the closeout condition.
 
