@@ -283,4 +283,31 @@
     flex: 0 0 auto;
     max-width: 7.5rem;
   }
+
+  /* Physical-iPhone regression: when a Today task expands to multiple
+     subtasks, let the contract section and its ancestors grow with content.
+     Do not create an inner clipped viewport above the fixed bottom nav. */
+  .today-contract-flow,
+  .today-contract-overview,
+  .today-contract-section,
+  .today-contract-work,
+  .today-contract-task-list,
+  .today-contract-task-list > li {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .today-contract-flow,
+  .today-contract-overview {
+    min-height: 100dvh;
+  }
+
+  .today-contract-work {
+    contain: none;
+  }
+
+  .today-contract-task-list {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
 }
