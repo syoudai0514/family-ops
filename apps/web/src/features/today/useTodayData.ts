@@ -65,6 +65,15 @@ export interface DailyBriefAction {
   agreement_established?: boolean;
 }
 
+export interface DailyBriefException {
+  kind?: string;
+  title?: string | null;
+  message?: string | null;
+  detail?: string | null;
+  task_id?: string;
+  event_id?: string;
+}
+
 export interface DailyBriefWaitingRef {
   task_id: string;
   waiting_note?: string | null;
@@ -139,6 +148,7 @@ interface DailyBriefPayload {
   carryovers?: DailyBriefTaskRef[];
   already_handled?: DailyBriefTaskRef[];
   urgent_actions?: DailyBriefAction[];
+  exceptions?: DailyBriefException[];
   waiting_checks?: DailyBriefWaitingRef[];
   handovers?: Array<{ handover_id: string }>;
   active_infos?: Array<{ handover_id: string }>;
@@ -160,6 +170,7 @@ export interface TodayTaskGroups {
 
 interface TodaySnapshot {
   urgentActions: DailyBriefAction[];
+  exceptions: DailyBriefException[];
   tasks: TodayTaskInstance[];
   taskGroups: TodayTaskGroups;
   waitingTasks: TodayTaskInstance[];
@@ -204,6 +215,7 @@ const EMPTY_MORNING_SUMMARY: DailyBriefMorningSummary = { completedCount: 0, tot
 function emptySnapshot(): TodaySnapshot {
   return {
     urgentActions: [],
+    exceptions: [],
     tasks: [],
     taskGroups: EMPTY_GROUPS,
     waitingTasks: [],
@@ -226,6 +238,7 @@ function emptySnapshot(): TodaySnapshot {
 
 function isSnapshotEmpty(snapshot: TodaySnapshot) {
   return snapshot.urgentActions.length === 0
+    && snapshot.exceptions.length === 0
     && snapshot.tasks.length === 0
     && snapshot.waitingTasks.length === 0
     && snapshot.carryoverTasks.length === 0
@@ -260,9 +273,6 @@ export function useTodayData(householdId: string | null, userId: string | null):
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
 
-    // Missing auth/household context is not evidence that Today is empty.
-    // The parent context can still be resolving, so only a successful
-    // DailyBrief read may transition to Empty.
     if (!householdId || !userId) {
       if (sequence === requestSequence.current) {
         setStatus('loading');
@@ -370,6 +380,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const requestRows = (requestRes.data ?? []) as RequestRow[];
       const nextSnapshot: TodaySnapshot = {
         urgentActions,
+        exceptions: brief.exceptions ?? [],
         tasks: hydrate(taskIds),
         taskGroups: {
           morning: groupHydrate(groupRefs.morning),
