@@ -103,4 +103,8 @@ F1 authors the architecture, harnesses and evidence requirements. It does not fa
 
 Vitest/React Testing Library component interaction tests authored in F1 are useful regression evidence, but they do **not** satisfy the final `browser` or `physical-iphone-manual` evidence classes by themselves.
 
+F1 also runs a real headless Chrome authoring journey (`npm run test:cf14:browser`) for Today Loading/Ready/Stale/Error and Back/return behavior. That run is stronger than jsdom because it executes the real built application DOM and browser HTTP boundary, and it stores screenshots plus `evidence.json`. However, it uses controlled test-only Supabase HTTP responses and explicitly records `physicalDevice: false`.
+
+Therefore the F1 Chrome artifact is a **browser harness/proof-of-execution artifact**, not an automatic final F2 PASS record. F2 must rerun the required browser scenarios against the one converged final HEAD and the final deployment/service boundary required by the scenario. It also cannot substitute the Chrome artifact for physical iPhone/Safari/PWA evidence.
+
 Final F2 execution starts only after implementation lanes converge and the exact final HEAD is known.
