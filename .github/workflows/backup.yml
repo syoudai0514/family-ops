@@ -1,189 +1,61 @@
-name: Backup (daily encrypted logical dump to R2)
+name: Backup (daily household recovery snapshot)
 
-# WP10 (docs/design/v6/10_WORK_PACKAGES.md): daily logical dump, age
-# encryption using ONLY the public key in CI, upload to a private
-# Cloudflare R2 bucket. See docs/BACKUP_RESTORE_RUNBOOK.md for the restore
-# side of this — restore/decryption never happens in CI, only locally with
-# the owner's age private key.
+# CF-11 right-sized by Product Owner decision (ADR 0014).
 #
-# Security property (do not weaken): this workflow must reference only
-# BACKUP_AGE_PUBLIC_KEY (a public key — safe even if CI secrets leak). The
-# matching private key is held by the household owner outside of GitHub
-# entirely (password manager / offline storage) and is NEVER added as a
-# secret here. Do not add any private-key material to CI to automate
-# restores; that defeats the whole point of this design.
+# Current household scale is two people. The recovery objective is to retain
+# durable household/domain data if the Family Ops Supabase project suffers an
+# operator mistake or project-level failure. We intentionally reuse existing
+# infrastructure:
+# - GitHub Actions
+# - existing SUPABASE_ACCESS_TOKEN
+# - existing separate Supabase project app-save-hub (also used by ManaEvo)
 #
-# Restore-compatibility property (do not weaken): production is Supabase,
-# not a vanilla Postgres cluster. Raw pg_dump includes Supabase-managed
-# internals and can produce dumps that fail on restore. Use Supabase CLI's
-# filtered dump path and preserve migration history explicitly.
+# R2, age encryption, owner-local crypto keys, DB passwords and provider
+# credentials are not part of the current requirement. See
+# docs/design/current/10_BACKUP_RECOVERY.md and docs/BACKUP_RESTORE_RUNBOOK.md.
 
 on:
   schedule:
-    # 18:00 UTC = 03:00 JST (household is Asia/Tokyo per v6). Chosen well
-    # after any late-evening app usage (evening routine / LINE automation
-    # windows) and well before the household's morning.
+    # 18:00 UTC = 03:00 JST.
     - cron: "0 18 * * *"
   workflow_dispatch: {}
+  # This gives the right-size implementation one real proof immediately after
+  # protected merge, without needing a separate manual dispatch tool.
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/backup.yml"
+      - ".github/workflows/backup_freshness_alert.yml"
+      - ".github/workflows/recovery-drill.yml"
+      - "scripts/create_household_snapshot.sh"
+      - "scripts/backup_freshness_check.sh"
+      - "scripts/restore_drill.sh"
+      - "scripts/family_ops_recovery_tables.txt"
+      - "docs/BACKUP_RESTORE_RUNBOOK.md"
+      - "docs/design/current/10_BACKUP_RECOVERY.md"
+      - "docs/adr/0014-right-sized-household-backup-recovery.md"
 
 permissions:
   contents: read
 
+concurrency:
+  group: family-ops-household-backup
+  cancel-in-progress: false
+
 jobs:
   backup:
-    name: Dump, encrypt, upload
+    name: Snapshot durable household data
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SOURCE_PROJECT_REF: dnlqxjpjpkxnfgculzip
+      TARGET_PROJECT_REF: wdwbmvpipbdpomqulsrj
+      MAX_BACKUPS: "30"
     steps:
-      # Even with an explicit --db-url, Supabase CLI loads project config.
-      # Checkout ensures the reviewed Postgres major version and project
-      # settings in supabase/config.toml are available to the dump command.
-      - name: Checkout repository config
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install age
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y age
-
-      - name: Install pinned Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          # Match the version already exercised by this repository's real
-          # Supabase integration CI instead of introducing a separate backup-
-          # only CLI version without a product reason.
-          version: 2.115.0
-
-      - name: Compute backup filename
-        id: meta
-        run: |
-          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-          echo "filename=family-ops-backup-$(date -u +%Y-%m-%d).tar.age" >> "$GITHUB_OUTPUT"
-
-      - name: Dump Supabase-compatible logical backup
-        env:
-          # Percent-encoded Postgres connection string from Supabase project
-          # Database settings. Use direct/session connection, never a
-          # transaction-mode pooler endpoint.
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          # supabase/config.toml references these Google values through
-          # env(...). They are irrelevant to db dump, but the CLI parses the
-          # project config before executing. Use the same harmless placeholder
-          # pattern already proven by the repository's Supabase integration CI;
-          # do not pull unrelated provider secrets into the backup job.
-          GOOGLE_SIGNIN_CLIENT_ID: ci-backup-placeholder.apps.googleusercontent.com
-          GOOGLE_SIGNIN_CLIENT_SECRET: ci-backup-placeholder
-          GOOGLE_SIGNIN_CALLBACK_URL: http://127.0.0.1:54321/auth/v1/callback
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_DB_URL:-}" ]; then
-            echo "::error::SUPABASE_DB_URL secret is not set" >&2
-            exit 1
-          fi
-
-          # Supabase CLI wraps pg_dump with Supabase-specific filtering. In the
-          # pinned 2.115.0 implementation, the generic data dump deliberately
-          # includes Auth/Storage data used when migrating to a new project.
-          # Do NOT restore production cron/net operational state, though: those
-          # rows can contain the old project endpoint/worker credential and
-          # transient HTTP requests. Recovery recreates the six reviewed Family
-          # Ops workers explicitly against the NEW project after validation.
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f roles.sql --role-only
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f schema.sql
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f data.sql \
-            --data-only --use-copy \
-            -x "storage.buckets_vectors" \
-            -x "storage.vector_indexes" \
-            -x "cron.job" \
-            -x "cron.job_run_details" \
-            -x "net.http_request_queue" \
-            -x "net._http_response"
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f history_schema.sql \
-            --schema supabase_migrations
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f history_data.sql \
-            --data-only --use-copy --schema supabase_migrations
-
-          for file in roles.sql schema.sql data.sql history_schema.sql history_data.sql; do
-            test -s "$file" || { echo "::error::Supabase dump member $file is empty" >&2; exit 1; }
-          done
-
-          tar -cf logical-backup.tar \
-            roles.sql schema.sql data.sql history_schema.sql history_data.sql
-          test -s logical-backup.tar || { echo "::error::logical backup bundle is empty" >&2; exit 1; }
-          rm -f roles.sql schema.sql data.sql history_schema.sql history_data.sql
-
-      - name: Encrypt backup bundle with age (public key only)
-        env:
-          # age public key (recipient), e.g. "age1..." — generated once by
-          # the owner via `age-keygen`, only the public half is stored here.
-          BACKUP_AGE_PUBLIC_KEY: ${{ secrets.BACKUP_AGE_PUBLIC_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${BACKUP_AGE_PUBLIC_KEY:-}" ]; then
-            echo "::error::BACKUP_AGE_PUBLIC_KEY secret is not set" >&2
-            exit 1
-          fi
-          age -r "$BACKUP_AGE_PUBLIC_KEY" -o "${{ steps.meta.outputs.filename }}" logical-backup.tar
-          test -s "${{ steps.meta.outputs.filename }}" || { echo "::error::age produced an empty encrypted backup" >&2; exit 1; }
-          rm -f logical-backup.tar
-
-      - name: Upload and verify encrypted dump in R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          # Private R2 bucket name, per v6: `family-ops-backups`.
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-        run: |
-          set -euo pipefail
-          for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_BUCKET_NAME; do
-            if [ -z "${!v:-}" ]; then
-              echo "::error::$v secret is not set" >&2
-              exit 1
-            fi
-          done
-          pipx install awscli --quiet 2>/dev/null || pip install --quiet awscli
-          ENDPOINT_URL="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          BACKUP_FILE="${{ steps.meta.outputs.filename }}"
-          aws s3 cp \
-            "$BACKUP_FILE" \
-            "s3://${R2_BUCKET_NAME}/${BACKUP_FILE}" \
-            --endpoint-url "$ENDPOINT_URL" \
-            --storage-class STANDARD
-
-          # Do not advance latest-backup.txt until R2 itself confirms that
-          # the encrypted object exists and is non-empty.
-          OBJECT_SIZE="$(aws s3api head-object \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "$BACKUP_FILE" \
-            --endpoint-url "$ENDPOINT_URL" \
-            --query ContentLength \
-            --output text)"
-          if ! [[ "$OBJECT_SIZE" =~ ^[0-9]+$ ]] || [ "$OBJECT_SIZE" -le 0 ]; then
-            echo "::error::R2 head-object did not confirm a non-empty encrypted backup" >&2
-            exit 1
-          fi
-          echo "Verified encrypted backup object in R2 (${OBJECT_SIZE} bytes)."
-
-      - name: Update latest-backup marker
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-        run: |
-          set -euo pipefail
-          printf '%s\n%s\n' \
-            "${{ steps.meta.outputs.filename }}" \
-            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > latest-backup.txt
-          aws s3 cp latest-backup.txt "s3://${R2_BUCKET_NAME}/latest-backup.txt" \
-            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-
-      - name: Cleanup local artifacts
-        if: always()
-        run: |
-          rm -f logical-backup.tar roles.sql schema.sql data.sql \
-            history_schema.sql history_data.sql \
-            "${{ steps.meta.outputs.filename }}" latest-backup.txt
+      - name: Create, store and read-back verify household snapshot
+        shell: bash
+        run: bash scripts/create_household_snapshot.sh
