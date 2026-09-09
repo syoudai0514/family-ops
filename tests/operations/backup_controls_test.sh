@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FRESHNESS="$ROOT/scripts/backup_freshness_check.sh"
 RESTORE="$ROOT/scripts/restore_drill.sh"
+BACKUP_WORKFLOW="$ROOT/.github/workflows/backup.yml"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin"
@@ -91,6 +92,27 @@ expect_status 1 run_freshness
 # Marker object names are constrained to the backup naming contract.
 write_marker "not-a-backup.sql.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 expect_status 1 run_freshness
+
+# A backup run must verify the encrypted R2 object before it is allowed to
+# advance latest-backup.txt. Keep this ordering mechanical rather than relying
+# on workflow comments/reviewer memory.
+HEAD_OBJECT_LINE="$(grep -n 'aws s3api head-object' "$BACKUP_WORKFLOW" | head -n1 | cut -d: -f1 || true)"
+MARKER_STEP_LINE="$(grep -n 'name: Update latest-backup marker' "$BACKUP_WORKFLOW" | head -n1 | cut -d: -f1 || true)"
+if [ -z "$HEAD_OBJECT_LINE" ] || [ -z "$MARKER_STEP_LINE" ] || [ "$HEAD_OBJECT_LINE" -ge "$MARKER_STEP_LINE" ]; then
+  echo "FAIL: backup.yml must verify R2 head-object before the marker-update step" >&2
+  exit 1
+fi
+
+# CI may hold only the age public recipient. Known private-key identifiers must
+# never creep into workflow files, even as a tempting secret wiring example.
+if grep -REn 'AGE_PRIVATE_KEY|AGE-SECRET-KEY' "$ROOT/.github/workflows" >/dev/null; then
+  echo "FAIL: private age key material/identifier must not appear in CI workflows" >&2
+  exit 1
+fi
+if ! grep -q 'BACKUP_AGE_PUBLIC_KEY' "$BACKUP_WORKFLOW"; then
+  echo "FAIL: backup.yml must encrypt using BACKUP_AGE_PUBLIC_KEY" >&2
+  exit 1
+fi
 
 # Restore drills must stay human/local. CI refusal happens before any secret,
 # R2, age, psql, or network access is attempted.
