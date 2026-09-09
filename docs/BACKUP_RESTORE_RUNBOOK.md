@@ -10,93 +10,135 @@ disagree, v6 wins and this file gets fixed.
 1. `.github/workflows/backup.yml` runs daily (18:00 UTC / 03:00 JST) in
    GitHub Actions: `pg_dump`s the production Supabase Postgres database,
    encrypts the dump with [`age`](https://github.com/FiloSottile/age) using
-   **only the public key**, and uploads the encrypted file to a private
-   Cloudflare R2 bucket. It also writes/overwrites a small `latest-backup.txt`
-   marker object recording the newest backup's filename and timestamp.
-2. `.github/workflows/backup_freshness_alert.yml` runs a few hours later and
-   fails (red CI run = the MVP alert) if the marker's timestamp is more than
-   26 hours old. `scripts/backup_freshness_check.sh` is the script it calls;
-   it can also be run manually or from any other monitoring you set up.
-3. Restoring a backup is a **manual, local, human-operated** procedure —
-   see below. It is intentionally never automatable from CI.
+   **only the public key**, uploads the encrypted file to a private
+   Cloudflare R2 bucket, and then verifies the uploaded R2 object is present
+   and non-empty with `head-object`. Only after that verification succeeds
+   does it write/overwrite `latest-backup.txt` with the verified backup's
+   filename and timestamp.
+2. `.github/workflows/backup_freshness_alert.yml` runs a few hours later.
+   `scripts/backup_freshness_check.sh` fails unless both of these are true:
+   the marker timestamp is within the 26-hour policy and the encrypted R2
+   object named by that marker still exists and is non-empty. A fresh marker
+   pointing at a missing object is RED, not fresh.
+3. Restoring a backup is a **manual, local, human-operated** procedure. It
+   is intentionally never automatable from CI because decryption requires
+   the owner's private age key.
+
+Workflow YAML correctness alone is not operational proof. See **Operational
+PASS evidence** below.
 
 ## The core security property — read this before touching backup.yml
 
 CI holds the `age` **public** key (`BACKUP_AGE_PUBLIC_KEY`) only. A public
 key can encrypt but cannot decrypt. Even if GitHub Actions secrets for this
-repo were ever fully compromised, an attacker could not decrypt a single
-backup with what CI holds.
+repo were compromised, the backup decryption key must remain unavailable to
+CI.
 
 The `age` **private** key is held **only** by the household owner, in their
-own password manager or offline storage (e.g. a printed/engraved backup, a
-hardware-backed secrets manager). It is:
+own password manager or offline storage. It is:
 
 - **never** stored as a GitHub Actions secret (repo or org level),
 - **never** committed to this repository in any form,
 - **never** referenced by name in any workflow file,
 - **never** accepted by `scripts/restore_drill.sh` via an environment
-  variable — only via a local file path argument or an interactive prompt,
-  specifically so it cannot be casually wired into a CI secret later.
+  variable — only via a local file path argument or an interactive prompt.
 
 If a future change proposes adding the private key to CI "to automate
 restores," that is a regression of this design — stop and re-read this
-section, and WP10 in `docs/design/v6/10_WORK_PACKAGES.md`.
+section and WP10 in `docs/design/v6/10_WORK_PACKAGES.md`.
 
 ## One-time setup (human, not automatable)
 
-1. **Generate the age keypair**, on the owner's own machine, once:
+1. **Generate the age keypair** on the owner's own machine, once:
    ```sh
    age-keygen -o family-ops-backup-key.txt
    ```
-   This prints a line like `Public key: age1...` and writes the private key
-   (`AGE-SECRET-KEY-1...`) into `family-ops-backup-key.txt`.
-2. **Store the private key file** in the owner's password manager (e.g. as
-   a secure note/attachment) or another offline location the owner
-   controls. Do not leave a bare copy on a machine that syncs to this repo
-   or to any CI-accessible location. Then delete the local plaintext file.
-3. **Add the public key** as a GitHub Actions secret named
-   `BACKUP_AGE_PUBLIC_KEY` (repo Settings -> Secrets and variables ->
-   Actions). Value is just the `age1...` line.
-4. **Create the R2 bucket** (`family-ops-backups`, Standard storage class,
-   per v6 section 10), private/no public access, in the Cloudflare
-   dashboard.
-5. **Create an R2 API token** (Cloudflare dashboard -> R2 -> Manage API
-   tokens) scoped to that bucket only, with read+write permissions. Add its
-   Account ID, Access Key ID, and Secret Access Key as GitHub Actions
-   secrets: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`.
-   Add the bucket name as `R2_BUCKET_NAME` (a repo variable or secret,
-   either works — value is not sensitive but isn't hardcoded so bucket
-   renames don't require editing workflow YAML).
-6. **Add the production DB connection string** as `SUPABASE_DB_URL` (repo
-   secret) — from the Supabase dashboard, Project Settings -> Database ->
-   Connection string (URI). Use the direct/session connection, not the
-   transaction-mode pgbouncer pooler port, since `pg_dump` needs a plain
-   session-level connection.
-7. Trigger `backup.yml` manually once (`workflow_dispatch`) and confirm a
-   `family-ops-backup-YYYY-MM-DD.sql.age` object and an updated
-   `latest-backup.txt` appear in the R2 bucket.
-8. Run a full restore drill (below) against a scratch database to confirm
-   the whole pipeline actually works end to end, before relying on it.
+   The command prints a public recipient (`age1...`) and writes the private
+   identity to the file.
+2. **Store the private key file** in the owner's password manager or another
+   offline location the owner controls. Do not leave a bare copy on a
+   machine/location that syncs to the repo or CI. Delete unnecessary local
+   plaintext copies.
+3. **Add only the public key** as the GitHub Actions repository secret
+   `BACKUP_AGE_PUBLIC_KEY`.
+4. **Create the private R2 bucket** `family-ops-backups` (Standard storage,
+   no public access) in Cloudflare R2.
+5. **Create a bucket-scoped R2 API token** with read+write access. Add these
+   GitHub Actions repository secrets:
+   - `R2_ACCOUNT_ID`
+   - `R2_ACCESS_KEY_ID`
+   - `R2_SECRET_ACCESS_KEY`
+   - `R2_BUCKET_NAME` (normally `family-ops-backups`; the value is not
+     sensitive, but the current workflows read it from repository secrets)
+6. **Add the production DB connection string** as the repository secret
+   `SUPABASE_DB_URL`, from Supabase project Database connection settings.
+   Use a direct/session connection suitable for `pg_dump`, not a
+   transaction-mode pooler connection.
+7. Trigger `backup.yml` manually once and require the workflow to complete
+   successfully. A successful run proves the dump was non-empty, encryption
+   produced a non-empty artifact, the encrypted object reached R2 and was
+   confirmed by R2, and the marker was advanced only afterward.
+8. Trigger `backup_freshness_alert.yml` and require it to complete
+   successfully. This separately proves the marker age is within policy and
+   the marker still resolves to a non-empty encrypted R2 object.
+9. Run the full local restore drill below against an empty disposable
+   database. Do not rely on the backup until this passes.
 
 ## Restoring a backup
 
-### Locating and downloading the backup
+### Default: use the fail-closed restore drill
 
-Backups live in the R2 bucket named by `R2_BUCKET_NAME`, as objects named
-`family-ops-backup-YYYY-MM-DD.sql.age`. The most recent filename is also
-recorded in `latest-backup.txt` in the same bucket. Download with the AWS
-CLI pointed at R2's S3-compatible endpoint:
+Use a fresh local Postgres database or a disposable hosted database created
+specifically for the drill. `scripts/restore_drill.sh` mechanically refuses
+any target database that already contains non-system tables, which prevents
+a routine drill from being aimed at an existing application database.
+
+Example local scratch database:
+
+```sh
+docker run --rm --name family-ops-restore-drill \
+  -e POSTGRES_PASSWORD=postgres -p 5433:5432 postgres:17
+```
+
+Set the R2 read credentials in the local shell, retrieve the private age key
+from the owner's password manager, and run:
+
+```sh
+scripts/restore_drill.sh \
+  --key-file /path/to/family-ops-backup-key.txt \
+  --scratch-db-url "postgresql://postgres:postgres@localhost:5433/postgres"
+```
+
+The script:
+
+1. refuses to run when `CI` is set;
+2. confirms the scratch database has zero non-system tables before writing;
+3. resolves `latest-backup.txt` (or a named `--backup-file`);
+4. downloads and requires a non-empty encrypted object;
+5. decrypts locally with the owner-held key and requires non-empty SQL;
+6. restores with `psql -v ON_ERROR_STOP=1`;
+7. requires a populated `supabase_migrations.schema_migrations` table;
+8. requires all six core tables to exist;
+9. requires numeric row counts for all six, and non-zero rows for the
+   foundational tables `households`, `household_members`,
+   `task_definitions`, and `task_instances`;
+10. requires a representative `task_instances.updated_at` timestamp.
+
+Only after every hard check passes does it print `RESULT: PASS`. It prints
+counts/timestamps only; it does not dump representative household/user row
+contents into logs.
+
+### Locating/downloading manually
+
+Backups are named `family-ops-backup-YYYY-MM-DD.sql.age`. The current object
+name is line 1 of `latest-backup.txt`.
 
 ```sh
 aws s3 cp s3://<bucket>/family-ops-backup-2026-08-18.sql.age . \
   --endpoint-url https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
 ```
 
-(Any S3-compatible client works — `rclone`, the Cloudflare dashboard's
-object browser, etc. `aws s3` is what `backup.yml` and
-`scripts/restore_drill.sh` use for consistency.)
-
-### Decrypting — always local, never in CI
+### Decrypting manually — always local, never in CI
 
 ```sh
 age -d -i /path/to/family-ops-backup-key.txt \
@@ -104,96 +146,88 @@ age -d -i /path/to/family-ops-backup-key.txt \
   family-ops-backup-2026-08-18.sql.age
 ```
 
-Run this on the owner's own machine, with the private key file retrieved
-from the owner's password manager for this purpose only. Do not paste the
-private key into any shared terminal, CI log, chat tool, or script that
-sends it anywhere. Delete the plaintext `.sql` file once you're done with
-it (it contains full production data).
+Do not paste the private key into a shared terminal, CI log, chat tool, or
+script that transmits it. Delete plaintext SQL after the drill; it contains
+production data.
 
-### Restoring into a database
+### Disaster-recovery case
 
-**Default / drill case — restore into a scratch database.** Use a fresh
-local Postgres (e.g. `docker run --rm -e POSTGRES_PASSWORD=postgres -p
-5433:5432 postgres:16`) or a disposable Supabase/hosted instance created
-specifically for the drill. Never point a routine drill at production.
+A routine drill must never restore directly over production. If production
+data is genuinely lost/corrupted:
 
-```sh
-psql "postgresql://postgres:postgres@localhost:5433/postgres" \
-  -v ON_ERROR_STOP=1 -f family-ops-backup-2026-08-18.sql
-```
+- obtain a second person's confirmation when possible;
+- preserve evidence/current broken state first;
+- restore to a **new** Supabase project or temporary side database first;
+- run the same fail-closed sanity checks there;
+- only then perform a deliberate cutover/recovery action;
+- after cutover, smoke-test sign-in, household loading and recent task data
+  before declaring recovery complete.
 
-`scripts/restore_drill.sh` automates the download + decrypt + restore +
-sanity-check sequence above end to end — see its `--help` output. It
-refuses to run under `CI=true` and never reads the private key from an
-environment variable, by design.
+## Operational PASS evidence
 
-**Disaster-recovery case — restoring into production.** Only do this when
-production data is genuinely lost or corrupted and this is a deliberate
-recovery action, not a drill. Extra caution required:
+CF-11 / WP10 is PASS only when all four evidence groups exist for the
+CURRENT release state. Do not substitute source review or a green unit test
+for these runtime proofs.
 
-- Get a second person's confirmation before running anything against
-  production, if at all possible.
-- Take note of (or freeze) the current broken state first, in case partial
-  data recovery from it is later useful — don't destroy evidence of what
-  went wrong.
-- Restore into a **new** Supabase project or a temporary side database
-  first if you can, verify it there, and only then cut production over —
-  restoring directly on top of a live production database is a last
-  resort, not the default path.
-- After restoring, re-run every sanity check below, then also manually spot
-  check the app itself (sign in, load a household, check recent tasks)
-  before declaring the incident resolved.
+1. **Actual backup SUCCESS**
+   - a current `backup.yml` run completed successfully;
+   - the log reached the R2 `head-object` verification step;
+   - the verified encrypted object is non-empty;
+   - the marker update happened after object verification.
+2. **Actual freshness SUCCESS**
+   - a current `backup_freshness_alert.yml` run completed successfully;
+   - the computed age is within `MAX_BACKUP_AGE_HOURS` (default 26);
+   - the referenced encrypted object exists and is non-empty.
+3. **Recoverable encrypted object evidenced**
+   - the restore drill downloads the object named by the marker and age can
+     decrypt it using the owner-held private key locally.
+4. **Isolated restore drill PASS**
+   - restore targets an empty disposable database;
+   - migration tracking, core schema, foundational rows and representative
+     task timestamp checks all pass;
+   - the script exits 0 and prints `RESULT: PASS`.
 
-### Verifying the restore (sanity checks)
+Record workflow run IDs/results and the restore-drill date/result in the
+release evidence. Never record secret values, the private key, production
+connection strings, or decrypted data in GitHub/CI evidence.
 
-At minimum, after any restore:
+## Release / monthly restore drill
 
-1. **Migration version** — confirm `supabase_migrations.schema_migrations`
-   (or your migration tracking table) shows the expected latest migration
-   version, matching `supabase/migrations/` in this repo at the time the
-   backup was taken.
-2. **Row counts** on core tables — `households`, `household_members`,
-   `task_definitions`, `task_instances`, `handovers`, `user_notifications`
-   — sanity-check counts are non-zero and roughly in line with expectations
-   (not a truncated/partial dump).
-3. **Spot-check a recent row** in `task_instances` or `handovers` and
-   confirm its timestamp is close to the backup's own date — confirms the
-   dump wasn't stale or from the wrong database.
+Per WP10 and the release gate, repeat at least monthly and for release
+readiness:
 
-`scripts/restore_drill.sh` runs (1) and (2) automatically and prints the
-results for review.
+- [ ] Current `backup.yml` run is successful and includes R2 object
+      verification before marker update.
+- [ ] Current `backup_freshness_alert.yml` run is successful; marker age is
+      within policy and points at a non-empty encrypted object.
+- [ ] Run `scripts/restore_drill.sh` against an empty disposable database
+      using the owner-held private key locally.
+- [ ] Require exit 0 and `RESULT: PASS`.
+- [ ] Compare the restored latest migration with the expected migration for
+      the backup/release being exercised.
+- [ ] Record only non-secret evidence (run IDs, timestamps, PASS/FAIL,
+      restored migration version and aggregate counts if appropriate).
+- [ ] Any failure is release-blocking until a fresh backup plus restore drill
+      passes.
 
-## Release / monthly restore drill (recurring checklist item)
+## Regression checks
 
-Per v6 (`docs/design/v6/10_WORK_PACKAGES.md` WP10 "release/monthly restore
-drill" and WP11's production checklist "backup/restore drill green"), this
-must be **rehearsed periodically by a human** — no script can force this to
-happen on its own. Add it to the release checklist and repeat it at least
-monthly in production:
-
-- [ ] Run `scripts/restore_drill.sh` against a scratch database (not
-      production) using the current private key from the owner's password
-      manager.
-- [ ] Confirm the migration version sanity check matches the latest
-      migration in `supabase/migrations/`.
-- [ ] Confirm row counts on core tables look reasonable (non-zero, roughly
-      consistent with known household/task volume).
-- [ ] Confirm `backup_freshness_alert.yml`'s most recent scheduled run is
-      green (backup pipeline is actually producing fresh backups, not just
-      that a restore of an old backup worked).
-- [ ] If anything in this drill fails or looks wrong, treat it as a P1: a
-      backup system nobody has verified restores is not a backup system.
+`tests/operations/backup_controls_test.sh`, run by
+`.github/workflows/operational-safety-ci.yml`, protects the repository-side
+control logic. It tests missing configuration, stale/future/malformed
+markers, missing/empty R2 objects, the success path, and the restore script's
+CI refusal. These tests are necessary but **do not** prove CF-11 operational
+PASS; only the runtime evidence above does.
 
 ## Secrets reference
 
-| Secret name | Purpose | Where it's used |
+| Secret name | Purpose | Where it is used |
 | --- | --- | --- |
-| `SUPABASE_DB_URL` | Production Postgres connection string, for `pg_dump` | `backup.yml` only |
-| `BACKUP_AGE_PUBLIC_KEY` | age public key (recipient) — encrypts backups | `backup.yml` only |
-| `R2_ACCOUNT_ID` | Cloudflare account ID, used to build the R2 S3-compatible endpoint URL | `backup.yml`, `backup_freshness_alert.yml`, `scripts/restore_drill.sh` (local) |
-| `R2_ACCESS_KEY_ID` | R2 API token access key (bucket-scoped) | same as above |
-| `R2_SECRET_ACCESS_KEY` | R2 API token secret | same as above |
-| `R2_BUCKET_NAME` | Target bucket name (`family-ops-backups`) | same as above |
+| `SUPABASE_DB_URL` | Production Postgres connection for `pg_dump` | `backup.yml` only |
+| `BACKUP_AGE_PUBLIC_KEY` | age public recipient used to encrypt | `backup.yml` only |
+| `R2_ACCOUNT_ID` | R2 endpoint account ID | backup/freshness workflows; local restore shell |
+| `R2_ACCESS_KEY_ID` | Bucket-scoped R2 API access key | same |
+| `R2_SECRET_ACCESS_KEY` | Bucket-scoped R2 API secret | same |
+| `R2_BUCKET_NAME` | Private backup bucket (`family-ops-backups`) | same |
 
-The age **private** key is deliberately absent from this table — it is
-never a CI secret. See "The core security property" above.
+The age **private** key is deliberately absent: it is never a CI secret.
