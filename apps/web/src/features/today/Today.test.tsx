@@ -67,7 +67,12 @@ vi.mock('../../lib/supabaseClient', () => ({
       ],
       request_attempts: [
         {
-          ...REQUEST_ATTEMPT,
+          id: 'attempt-1',
+          request_id: 'request-1',
+          state: 'pending',
+          revision: 3,
+          terms_revision: 2,
+          reply_due_at: '2099-09-10T12:00:00Z',
           created_at: '2099-09-09T12:00:00Z',
           test_context_id: null,
         },
