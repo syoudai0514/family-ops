@@ -35,6 +35,10 @@ function workspace(activeClaimantActorRefId: string | null, revision = 3) {
       active: [{ ...baseItem, revision, active_claimant_actor_ref_id: activeClaimantActorRefId }],
     },
     error: null,
+    success: true as const,
+    count: null,
+    status: 200,
+    statusText: 'OK',
   };
 }
 
