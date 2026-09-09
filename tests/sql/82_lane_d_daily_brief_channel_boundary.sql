@@ -48,6 +48,13 @@ begin
     raise exception 'FAIL lane-d-schedule-compat: historical schedule RPC contract changed: %', v_schedule;
   end if;
 
+  -- The temporary renamed copy from the failed adapter detour must not remain
+  -- as a second schedule authority after the public compatibility contract is
+  -- restored.
+  if to_regprocedure('public.server_read_today_schedule_legacy_v1(uuid)') is not null then
+    raise exception 'FAIL lane-d-schedule-compat: duplicate legacy schedule reader still exists';
+  end if;
+
   -- Both server read surfaces are worker/service boundaries, not direct
   -- authenticated-client RPCs.
   if has_function_privilege('authenticated', 'public.server_read_line_today_daily_brief(uuid)', 'EXECUTE') then
