@@ -1,15 +1,17 @@
 # Family Ops Detailed Design — Canonical
 
-- **Status:** Accepted / Canonical Detailed Design
+- **Status:** Accepted / Canonical Detailed Design, with review-candidate governance updates on this branch
 - **Accepted:** 2026-09-02
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 - **Governance:** ADR 0012 Accepted / ADR 0013 Accepted
-- **Review:** Independent Round 5 Final Verification = `GO`
+- **Review:** Independent Round 5 Final Verification = `GO` for the accepted 2026-09-02 detailed-design baseline
 - **Reviewed head:** `5c85bd1468a624b831493e198b0f88b4ef7c574e`
 
 このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**canonical detailed design**である。PR #41は独立Round 5最終検証で `GO` を得たexact reviewed headをmergeし、ADR 0013のAccepted化により本ディレクトリのarchitecture/schema/API evolutionが正式に承認された。
 
 以後、実装者はこの固定pathを正として使用する。`FINAL` / `V2` / `LATEST` の並行設計コピーは作らない。設計変更はこのpathを更新し、product behavior変更ならRequirements Baseline、architecture scope変更ならADRも同時に更新・レビューする。
+
+**CURRENT mainとbranch candidateを混同しない。** 2026-09-09の`impl/lane-e-ux-governance`ではchannel responsibility / approved UX governance / product-outcome acceptanceをこの固定pathへ統合しているが、mergeされるまではmainのaccepted designと区別して扱う。
 
 ---
 
@@ -24,6 +26,8 @@ For **product requirements and UX meaning**, authority is:
 5. code/tests
 
 For an **architecture-specific decision that does not change product requirements/UX**, the accepted ADR governing that exact architecture scope controls the detailed-design realization, subject to the Baseline above. A product-meaning change must update the Baseline through ADR 0012 governance rather than being introduced by a design or ADR side door.
+
+Product/release success is additionally governed by Requirements Baseline §2.1: technical correctness is necessary evidence where applicable but cannot override Family Ops purpose, Requirements, approved UX, or real-use family experience.
 
 Physical schema/cutover detail:
 
@@ -66,12 +70,12 @@ Before Phase 1 migration work, implementation must fresh-read the actual product
 4. `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`
 5. `05_GOOGLE_IMAGE_AI_AUTHORITY_PRIVACY.md`
 6. `06_TEST_MODE_CONCURRENCY_OBSERVABILITY.md`
-7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`
+7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md` — implementation/release gates, including the Baseline §2.1 product-outcome / real-use acceptance gate
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
 10. `09_TRANSPORT_PERIOD_TEMPLATE_AND_MONTH_UX.md` — approved transport/Month refinement realization; subordinate to Requirements Baseline
 11. `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — scenario-level channel responsibility matrix; **PROPOSED / REVIEW-READY until product-owner final approval**
-12. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` — canonical registry for the exact approved final UX source snapshot, Q mapping, and historical supersession
+12. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` — canonical registry for the exact approved final UX source snapshot, Q mapping, historical supersession, and later cross-cutting acceptance guards
 
 `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` being stored at the stable current-design path does not by itself make its pending product-owner classification approval complete. Until that explicit approval, it must not be used to change application behavior. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` is a governance/provenance registry and does not outrank or alter the Requirements Baseline.
 
@@ -88,12 +92,14 @@ Review instruction/history documents remain for audit only:
 
 ## UX contract navigation
 
-For requirements/UX implementation or review, do not select a prototype by filename. Start from the Requirements Baseline, then this README, then `11_APPROVED_FINAL_UX_CANONICALIZATION.md` for the exact pinned approved UX commit/path/blob/render hashes. V3/V4/V5 and older prototype assets are historical/superseded for CURRENT UX implementation.
+For requirements/UX implementation or review, do not select a prototype by filename. Start from the Requirements Baseline, then this README, then `11_APPROVED_FINAL_UX_CANONICALIZATION.md` for the exact pinned approved UX commit/path/blob/render hashes, and `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md` for completion/release judgment. V3/V4/V5 and older prototype assets are historical/superseded for CURRENT UX implementation.
 
 ---
 
 ## Non-negotiable constraints
 
+- **technical GREEN is not product PASS**: a finding/CI/test/schema/architecture improvement is not complete if it materially worsens Family Ops purpose fulfillment, Requirements conformance, approved UX, or real-use family flow.
+- final completion must reconcile `purpose → Requirement → approved UX/CURRENT design → CURRENT implementation → tests/evidence → real-use scenario`.
 - Request is agreement truth until accepted; linked Task owns execution after acceptance.
 - Request legacy status + lifecycle timestamps remain CHECK-valid via one atomic compatibility projection.
 - `大体やった` is group evidence, not child Task status.
@@ -110,6 +116,7 @@ For requirements/UX implementation or review, do not select a prototype by filen
 - aggregate canonical reader+writer activates atomically.
 - after P1, feature-off never restores legacy current truth.
 - no existing migration rewrite / `supabase db reset` / production data delete.
+- technical redesign may not silently alter product behavior; if a Requirement/approved UX change is genuinely needed, update and approve the canonical product source first.
 
 ---
 
@@ -127,7 +134,8 @@ The following remain permanent implementation acceptance expectations:
 
 ### Requirements
 
-Final verdict: `GO`.
+- CURRENT main Baseline v1.1: final independent re-review `GO`, merged under ADR 0012.
+- Branch candidate v1.2 (2026-09-09): Product Owner success criterion integrated; pending normal review/merge and must not be called CURRENT main before merge.
 
 ### Detailed design progression
 
@@ -147,7 +155,7 @@ PR #41 merged that exact head as merge commit `c272b0a1e00491c749e8cc2d76b90b20b
 
 ## Implementation gate
 
-Detailed-design review is complete. Implementation planning may begin.
+Detailed-design review of the accepted 2026-09-02 baseline is complete. Any later candidate requirement/design update must pass its own governance/review before being treated as CURRENT main.
 
 Implementation must follow the work-package ordering and gates in `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`. In particular:
 
@@ -157,4 +165,5 @@ Implementation must follow the work-package ordering and gates in `07_ACCEPTANCE
 - each aggregate read+write cutover is atomic;
 - provider lifecycle overlap/orphan audits must pass before Family Event P1;
 - P1 rollback never restores legacy semantic truth;
-- destructive cleanup remains separately reviewed and deferred.
+- destructive cleanup remains separately reviewed and deferred;
+- no work package/release is product-PASS until Baseline §2.1's purpose/Requirement/approved-UX/real-use gate passes; CI GREEN or finding closure alone is insufficient.
