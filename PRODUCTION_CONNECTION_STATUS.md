@@ -22,48 +22,44 @@ Always fresh-read PR #68 and `main` immediately before a release decision.
 | GitHub Actions | manual dispatch | Supabase Management API | `SUPABASE_ACCESS_TOKEN` | 設定済（実行成功） | 済 | 稼働中 | E2E workflowが`outbox.status=sent`のみ成功にする |
 | Google Calendar OAuth/API/watch | Calendar Edge Functions | Google Calendar API | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URI`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `GOOGLE_CALENDAR_WEBHOOK_URL`, `APP_BASE_URL`, `CRON_WORKER_TOKEN` | 未設定として扱う | 未実施 | 後回し | Google Cloud OAuth client/API/consent screenと監視cronを設定後にE2E |
 | Gemini | `propose-ai-draft` Edge Function | Gemini API | `GEMINI_API_KEY`, `GEMINI_MODEL_REWRITE` | 設定済との既存確認 | 未実施 | 要監査 | PWAのAI言い換えでprovider応答を確認 |
-| Encrypted DB backup | GitHub Actions `backup.yml` | production Supabase → private Cloudflare R2 | `SUPABASE_DB_URL`, `BACKUP_AGE_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも`SUPABASE_DB_URL`空 | 失敗 | **RED** | Secrets/R2を設定し、actual backup SUCCESS・non-empty encrypted object・marker更新を実証 |
-| Backup freshness | GitHub Actions `backup_freshness_alert.yml` | R2 `latest-backup.txt` + referenced encrypted object | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも4項目が空 | 失敗 | **RED** | actual freshness SUCCESS、26h policy内、marker参照object存在/非0byteを実証 |
-| Restore readiness | owner local/manual | R2 encrypted backup → empty disposable PostgreSQL | owner-held age private key + R2 read credentials | private keyは意図的にGitHub/CI外 | 未実施 | **RED / NOT EVIDENCED** | `scripts/restore_drill.sh`をempty disposable DBに実行し、migration/core tables/representative row sanityまで`RESULT: PASS`を取得 |
+| Encrypted DB backup | GitHub Actions `backup.yml` | production Supabase → private Cloudflare R2 | `SUPABASE_DB_URL`, `BACKUP_AGE_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。main上の2026-09-09再実行では`SUPABASE_DB_URL`空。PR #68ではSupabase互換logical bundle方式へ修正済みだが未merge | 失敗 | **RED** | Secrets/R2を設定し、CURRENT mainのactual backup SUCCESS・non-empty encrypted bundle・marker更新を実証 |
+| Backup freshness | GitHub Actions `backup_freshness_alert.yml` | R2 `latest-backup.txt` + referenced encrypted object | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも4項目が空 | 失敗 | **RED** | actual freshness SUCCESS、exact 26h policy内、marker参照object存在/非0byteを実証 |
+| Restore readiness | owner local/manual | R2 encrypted backup → fresh disposable Supabase environment | owner-held age private key + R2 read credentials | private keyは意図的にGitHub/CI外 | 未実施 | **RED / NOT EVIDENCED** | 実際のFamily Ops復旧条件として、`scripts/restore_drill.sh`を新規disposable Supabase環境に実行し、migration/core data sanityまで`RESULT: PASS`を取得 |
 | Repository enforcement | GitHub repository | `main` | active ruleset / branch protection | **未設定**。2026-09-09 fresh-readで`protected=false`, required checks enforcement off, rulesets `[]` | 実効保護なし | **RED** | PR必須、5 checks必須、force-push/delete禁止、bypass actorなしのactive main rulesetを管理者が適用し、privileged verifierで確認 |
 
 ## Lane C evidence — 2026-09-09
 
+- Family Ops / おうちノートの最上位成功条件は、technical completenessそのものではなく、canonical Requirements / approved UXどおりに家族の日常運営が続けられ、障害時にも家庭データを実際に復旧できることである。Lane CはRequest / Concierge / Today / LINE / PWAの利用者向け挙動を変更しない。
+- Requirements & UX Baselineは「家庭で毎日使ったときに本当に回るか」を基準とし、LINEを日常の主導線、PWAを詳細・一括編集・設定・履歴等の補完とする。Lane Cのバックアップ/保護変更はこの主導線へ新しい操作や通知を追加しない。
 - Fresh-read base `main` at the latest Lane C audit remained
   `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected.
 - Lane C work is PR #68 on branch `sol/lane-c-operational-safety`. The exact
   CURRENT PR HEAD must be read from GitHub, not copied from this self-mutating
   status document.
-- Latest completed verification before this status-only commit:
-  - full CI `34311435399` / run #767: Web SUCCESS, DB SUCCESS, Edge SUCCESS,
-    Supabase real CLI integration SUCCESS;
-  - Operational safety CI `34311435387` / run #11: SUCCESS, including both
-    backup/restore regressions and repository-enforcement-verifier regressions.
-  Re-read the workflows after any later code/config commit; these IDs are
-  evidence for their exact tested predecessor HEAD, not permission to reuse a
-  stale GREEN result after source changes.
 - `scripts/verify_repository_enforcement.sh` is the fail-closed CF-15 verifier.
-  It checks the actual target branch/rulesets for PR requirement, all five
-  release-critical status contexts, force-push prevention (`non_fast_forward`),
-  deletion prevention, and zero **visible** bypass actors. If GitHub omits the
-  `bypass_actors` field because the caller lacks sufficient ruleset visibility,
-  verification remains RED instead of guessing zero bypass.
-- `tests/operations/repository_enforcement_test.sh` mechanically covers the
-  good case plus unprotected branch, missing check, missing force-push/delete
-  rule, hidden bypass visibility, configured bypass actor, and main exclusion.
-- Scheduled backup run `34275297279` was re-run on 2026-09-09 and failed at
-  `pg_dump production database` because `SUPABASE_DB_URL` was still unset;
-  encryption and R2 upload were skipped.
-- Freshness run `34288805536` was re-run on 2026-09-09 and failed because the
-  R2 account/access/secret/bucket inputs were still absent.
+  It accepts either a complete active ruleset or equally strong classic branch
+  protection, and never combines incomplete controls into a synthetic PASS.
+- CF-11 source hardening now uses a pinned Supabase CLI logical-backup bundle
+  rather than raw whole-cluster `pg_dump`. This is not a new product feature;
+  it removes a recovery failure mode so the household can actually regain its
+  application data in a fresh Supabase environment after a severe incident.
+- The encrypted bundle contains application roles/schema/data plus migration
+  history. The age private key remains outside GitHub/CI.
+- Scheduled backup run `34275297279` on current `main` failed before dumping
+  because `SUPABASE_DB_URL` was unset. The hardened PR workflow has therefore
+  not yet produced runtime backup evidence.
+- Freshness run `34288805536` was re-run on 2026-09-09 and still failed because
+  the R2 account/access/secret/bucket inputs were absent.
 - Supabase `family-ops` was independently read as `ACTIVE_HEALTHY`; the CF-11
   blocker is backup connectivity/credentials, not a stopped production DB.
-- Vercel production was read as READY on the `main` deployment for
-  `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`; the public production origin
-  returned HTTP 200 and Vercel reported no runtime error cluster in the
-  inspected one-hour window. Later Lane C branch pushes produced no Vercel
-  deployment, so Preview suppression remained effective. This is public-entry
-  smoke, not authenticated family-use evidence.
+- Production schema inspection confirmed the app relies on Supabase-managed
+  `auth`/`storage`, Family Ops `public`/`private`, standard Supabase roles, and
+  populated migration history. For that reason a plain vanilla PostgreSQL
+  restore target is not treated as proof that Family Ops itself can recover.
+- Vercel production remained READY on the `main` deployment for
+  `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`; Lane C branch pushes do not
+  generate preview deployments. This preserves the approved product behavior
+  while release enforcement is remediated.
 
 The PASS authority for backup/recovery is `docs/BACKUP_RESTORE_RUNBOOK.md`.
 The PASS authority for `main` release enforcement is
