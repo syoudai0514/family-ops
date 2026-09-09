@@ -1,9 +1,17 @@
 # ADR 0014 — Right-sized household backup and recovery
 
-- **Status:** Accepted
+- **Status:** Product Owner approved / pending canonical merge
 - **Date:** 2026-09-09
 - **Decision owner:** Product Owner
 - **Scope:** CF-11 backup/recovery only
+
+## Governance state
+
+The Product Owner approved this decision on 2026-09-09. Under ADR 0012 governance,
+this branch copy is **not yet an Accepted/canonical ADR**. It becomes Accepted only
+when the exact reviewed change is merged to protected `main` through the required
+PR/check path. Until that merge, it is the approved proposal being implemented and
+verified on this branch; CURRENT `main` remains canonical.
 
 ## Context
 
@@ -38,10 +46,10 @@ ADR 0012 and ADR 0013 govern this conflict:
 4. `docs/design/v6/` remains historical/normative only where it does not
    conflict with newer accepted authority.
 
-Therefore this ADR **supersedes only the CF-11 backup/recovery implementation
-mechanics** in v6 WP10, v6 observability/backup §5-7, and the v6 WP12
-`restore drill pass` interpretation. The v6 files remain read-only historical
-records and are not rewritten.
+After this ADR is merged and becomes Accepted, it **supersedes only the CF-11
+backup/recovery implementation mechanics** in v6 WP10, v6 observability/backup
+§5-7, and the v6 WP12 `restore drill pass` interpretation. The v6 files remain
+read-only historical records and are not rewritten.
 
 This does not weaken unrelated security, provider-state, queue, idempotency,
 privacy, release-safety or main-protection requirements.
@@ -56,34 +64,48 @@ For the current two-person operating scale:
    `app-save-hub` (`wdwbmvpipbdpomqulsrj`), which is already used for ManaEvo
    save/history. It is a separate project fault domain from Family Ops, while
    intentionally remaining on the existing Supabase service/account.
-3. **Transport/automation** — reuse GitHub Actions and the already configured
+3. **Namespace separation** — Family Ops uses the reserved tuple
+   `app_id='family-ops-recovery-v1'`, `slot_id='household-durable-v1'`, scoped
+   to the single reviewed app-save-hub owner `user_id`. Revision lookup,
+   current-save upsert, retention pruning, read-back and freshness checks all
+   use that exact owner/app/slot tuple. ManaEvo uses `mana-evo/main`; Family Ops
+   retention/deletion must never select another tuple.
+4. **Transport/automation** — reuse GitHub Actions and the already configured
    `SUPABASE_ACCESS_TOKEN` through Supabase Management API. Do not introduce a
    production DB password solely for backup.
-4. **Data scope** — back up only reviewed durable household/domain tables from
+5. **Data scope** — back up only reviewed durable household/domain tables from
    `scripts/family_ops_recovery_tables.txt`, plus minimal old Auth UUID/email
-   references needed to understand user ownership during operator-assisted
-   recovery.
-5. **Explicit exclusions** — never copy passwords, Auth sessions/identities,
+   references needed to rebind restored ownership to newly authenticated users.
+6. **Explicit exclusions** — never copy passwords, Auth sessions/identities,
    OAuth refresh tokens, LINE secrets/tokens, Google credentials, webhook or
    notification queues, cron/pg_net state, provider caches, test/simulation
    data, raw transient AI/image extraction state, or artifact-handoff evidence
    as CF-11 household recovery data.
-6. **Cadence / RPO** — create one snapshot per day and require a latest snapshot
-   no older than 26 hours. Keep the latest 30 Family Ops snapshots in
-   `app-save-hub`; do not add a monthly archive tier at current scale.
-7. **Integrity** — a backup run is PASS only after the snapshot is inserted into
+7. **Cadence / RPO** — create one snapshot per day and require a latest snapshot
+   no older than 26 hours. Keep the latest 30 Family Ops snapshots in the
+   reserved namespace; do not add a monthly archive tier at current scale.
+8. **Integrity** — a backup run is PASS only after the snapshot is inserted into
    `app-save-hub` and the complete JSONB payload is read back and matches the
    source payload. HTTP success alone is not evidence.
-8. **Recovery proof** — after recovery implementation changes, and manually when
+9. **Recovery proof** — after recovery implementation changes, and manually when
    needed, restore the latest snapshot into a disposable Supabase stack built
    from repository migrations. PASS requires typed insertion under normal
    FK/check constraints and exact per-table row-count equality.
-9. **Auth/provider recovery boundary** — the drill proves household data
-   recoverability, not preservation of provider sessions. In a full project
-   rebuild, users reconnect/sign in and external LINE/Google/worker state is
-   reconfigured after household data validation.
-10. **No R2/age obligation now** — Cloudflare R2, age encryption and an
-    owner-local age private key are not CURRENT CF-11 acceptance conditions.
+10. **Usable identity recovery** — Auth/provider sessions are not backed up. On
+    a new Supabase environment, each recovered household user signs in again or
+    is safely recreated/reinvited with the same verified email identity. The
+    recovery process maps the old snapshot user UUID to the new Auth UUID and
+    rewrites only schema-declared user foreign-key columns before restore. PASS
+    requires an actual new Auth sign-in and an authenticated RLS read of the
+    recovered profile, household membership, household and household task data
+    for every identity represented by the current snapshot.
+11. **Provider recovery boundary** — LINE/Google credentials and worker state are
+    separately reconfigured after household-domain recovery. Their absence does
+    not permit declaring recovery complete if the household cannot sign in and
+    reach its restored data.
+12. **No R2/age obligation now** — Cloudflare R2, age encryption and an
+    owner-local age private key are not CURRENT CF-11 acceptance conditions
+    after this ADR becomes canonical.
 
 ## Risk accepted by Product Owner
 
@@ -103,13 +125,20 @@ risk posture.
 
 CF-11 may be marked PASS only when CURRENT evidence proves all of the following:
 
+- this ADR has reached protected `main` and is therefore Accepted/canonical;
 - daily snapshot workflow uses the reviewed allowlist and separate
   `app-save-hub` project;
+- the Family Ops owner/app/slot namespace is isolated from ManaEvo/other apps,
+  including revision, retention pruning, read-back and freshness operations;
 - no R2/age/new backup secret is required;
 - latest stored snapshot is read-back identical and structurally valid;
 - freshness is within 26 hours;
 - an actual disposable-Supabase restore completes with exact row counts and no
   foundational identity/task linkage orphans;
+- every Auth identity represented by the current snapshot can sign in to the
+  disposable recovery environment after old→new UUID rebinding and can read its
+  restored profile/household/membership/task data through normal authenticated
+  RLS/PostgREST access;
 - provider credentials/queues/cron state are absent from the recovery payload;
 - all repository changes reached `main` through the protected PR + five-check
   release path established by CF-15.
