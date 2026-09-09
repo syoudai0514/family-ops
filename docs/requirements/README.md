@@ -14,7 +14,7 @@
 以下はBaselineを置き換える第二の要求文書ではなく、CURRENT main governanceから承認済みUX実体・channel責務・acceptance gateへ迷わず到達するための従属参照である。
 
 - `../design/current/11_APPROVED_FINAL_UX_CANONICALIZATION.md` — 承認済みfinal UXのexact source commit/path/blob/render hash、Q mapping、V3/V4/V5 supersession、後続canonical acceptance guardとの関係を固定するcanonical reference registry。
-- `../design/current/10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — CF-09のscenario-level LINE/PWA責務表。**product-owner final approvalまではPROPOSED / REVIEW-READY**であり、既存product behaviorを変更する根拠にはしない。
+- `../design/current/10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — CF-09のscenario-level LINE/PWA責務表。**M01-M26分類は2026-09-09にProduct Owner承認済み**。ただしbranch review-ready状態であり、実装全体・Release GO・production・main mergeの承認ではない。
 - `../design/current/07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md` — Requirements Baseline §2.1を実装/release gateへ落とし、finding closed / CI GREENだけではproduct PASSにしないacceptance contract。
 
 参照先とBaselineがrequirements / UXの意味で競合する場合はBaselineを優先し、競合を明示的に解消する。prototype名や`FINAL`/`LATEST`というファイル名だけをauthority判定に使わない。
@@ -77,6 +77,13 @@ Family Opsの最終成功条件は技術的完全性単独ではない。Baselin
 - Integrated into Baseline §2.1 and UX principle 11 on `impl/lane-e-ux-governance`.
 - This candidate does not become CURRENT main until reviewed/merged under the normal governance path.
 - No `Q113` was invented; the criterion is a cross-cutting acceptance rule over all existing Requirements/Q decisions.
+
+### 2026-09-09 — CF-09 channel classification approval
+
+- Product Owner explicitly approved all 26 responsibility classifications M01-M26 in `10_LINE_PWA_RESPONSIBILITY_MATRIX.md`.
+- Approval scope is the LINE/PWA responsibility classification only.
+- This approval is **not** implementation-wide approval, Release GO, production approval, or main-merge approval.
+- PR/branch remains review-ready and unmerged until the normal governance/review path completes.
 
 ## Detailed-design carryover from final review
 
