@@ -43,7 +43,7 @@ function request(title: string, sourceText: string, role: string | null, extra: 
 }
 
 async function decompose(raw: string, canned: string) {
-  return await decomposeLineConversationCandidates(raw, NOW, async () => canned);
+  return await decomposeLineConversationCandidates(raw, NOW, () => Promise.resolve(canned));
 }
 
 Deno.test("mandatory corpus: punctuation-free Japanese becomes three semantic candidates", async () => {
