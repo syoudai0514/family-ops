@@ -7,6 +7,15 @@
 - `FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` — 要求・UXの唯一の正（Source of Truth）。
 - `FAMILY-OPS-INDEPENDENT-REVIEW-REQUEST.md` — 上記Baselineを独立レビューするための標準依頼文。
 
+## Approved UX governance references
+
+以下はBaselineを置き換える第二の要求文書ではなく、CURRENT main governanceから承認済みUX実体・channel責務へ迷わず到達するための従属参照である。
+
+- `../design/current/11_APPROVED_FINAL_UX_CANONICALIZATION.md` — 承認済みfinal UXのexact source commit/path/blob/render hash、Q mapping、V3/V4/V5 supersessionを固定するcanonical reference registry。
+- `../design/current/10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — CF-09のscenario-level LINE/PWA責務表。**product-owner final approvalまではPROPOSED / REVIEW-READY**であり、既存product behaviorを変更する根拠にはしない。
+
+参照先とBaselineがrequirements / UXの意味で競合する場合はBaselineを優先し、競合を明示的に解消する。prototype名や`FINAL`/`LATEST`というファイル名だけをauthority判定に使わない。
+
 ## Maintenance policy
 
 1. `main` 上の `FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` を常に最新に保つ。
