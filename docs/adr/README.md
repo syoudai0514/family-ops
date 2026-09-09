@@ -12,6 +12,11 @@ ADR 0013 is **Accepted** after the entire `docs/design/current/` package passed
 independent Round 5 verification with `GO` and PR #41 merged the exact reviewed
 head `5c85bd1468a624b831493e198b0f88b4ef7c574e`.
 
+ADR 0014 is **Accepted by Product Owner** for CF-11. It right-sizes the legacy
+v6 R2/age backup mechanics to the current two-person household by using the
+existing separate `app-save-hub` Supabase project and existing GitHub/Supabase
+credentials, while retaining an actual recovery proof requirement.
+
 ## Index
 
 - [0001](0001-v6-baseline-commitment.md) — Original v6 normative-source
@@ -63,6 +68,11 @@ head `5c85bd1468a624b831493e198b0f88b4ef7c574e`.
   `docs/design/current/` is the reviewed canonical detailed design; request/task
   actual/assignment/Google Authority/notification/test-mode architecture evolves
   where accepted requirements conflict with v6
+- [0014](0014-right-sized-household-backup-recovery.md) — **Accepted by Product
+  Owner:** CURRENT CF-11 uses existing GitHub Actions + existing separate
+  `app-save-hub` Supabase project for durable household snapshots and actual
+  disposable restore proof; legacy v6 R2/age mechanics are superseded for the
+  current two-person operating scale
 
 ## Format
 
