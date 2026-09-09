@@ -35,14 +35,15 @@ describe('NavigationStateManager', () => {
     vi.unstubAllGlobals();
   });
 
-  it('starts PUSH navigation at the top and restores the previous history entry, query state and scroll on Back', async () => {
+  it('starts PUSH navigation at the top and restores tab/filter/group/detail query state plus scroll on Back', async () => {
+    const todayState = '/today?tab=tasks&filter=waiting&group=morning&detail=task-1';
     render(
-      <MemoryRouter initialEntries={['/today?tab=tasks&filter=waiting']}>
+      <MemoryRouter initialEntries={[todayState]}>
         <Harness />
       </MemoryRouter>,
     );
 
-    expect(screen.getByLabelText('current-location')).toHaveTextContent('/today?tab=tasks&filter=waiting');
+    expect(screen.getByLabelText('current-location')).toHaveTextContent(todayState);
     window.scrollY = 420;
     fireEvent.click(screen.getByRole('button', { name: 'detail' }));
     await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 0, behavior: 'auto' }));
@@ -51,6 +52,6 @@ describe('NavigationStateManager', () => {
     window.scrollY = 80;
     fireEvent.click(screen.getByRole('button', { name: 'back' }));
     await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 420, left: 0, behavior: 'auto' }));
-    expect(screen.getByLabelText('current-location')).toHaveTextContent('/today?tab=tasks&filter=waiting');
+    expect(screen.getByLabelText('current-location')).toHaveTextContent(todayState);
   });
 });
