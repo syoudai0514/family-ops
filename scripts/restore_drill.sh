@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # CF-11 right-sized recovery drill.
-#
-# Restores the latest durable household/domain snapshot into an EMPTY disposable
-# Supabase schema. Production Auth secrets/sessions are never copied. Instead,
-# prepare_recovery_auth_smoke.sh first creates new Auth users and this script
-# rebinds old snapshot user UUIDs to those new UUIDs in every schema-declared
-# user foreign-key column before typed insertion with normal constraints active.
+# Restore durable household data into an EMPTY disposable Supabase schema,
+# rebinding old Auth UUIDs to newly authenticated users without copying
+# production passwords, sessions or provider credentials.
 
 set -euo pipefail
 
@@ -27,7 +24,7 @@ Options:
   --scratch-db-url <url>  REQUIRED. Empty disposable Supabase-compatible DB
                           with current Family Ops migrations already applied.
   --identity-map <json>   REQUIRED. Mode-0600 JSON produced by
-                          prepare_recovery_auth_smoke.sh (old_id/new_id/token).
+                          prepare_recovery_auth_smoke.sh.
   --snapshot-file <json>  Optional payload. Otherwise read latest reserved
                           Family Ops snapshot from app-save-hub.
   -h, --help              Show help.
@@ -39,15 +36,9 @@ USAGE
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --scratch-db-url)
-      [ $# -ge 2 ] || { echo "ERROR: --scratch-db-url requires a value" >&2; exit 2; }
-      SCRATCH_DB_URL="$2"; shift 2 ;;
-    --identity-map)
-      [ $# -ge 2 ] || { echo "ERROR: --identity-map requires a value" >&2; exit 2; }
-      IDENTITY_MAP_FILE="$2"; shift 2 ;;
-    --snapshot-file)
-      [ $# -ge 2 ] || { echo "ERROR: --snapshot-file requires a value" >&2; exit 2; }
-      SNAPSHOT_FILE="$2"; shift 2 ;;
+    --scratch-db-url) [ $# -ge 2 ] || exit 2; SCRATCH_DB_URL="$2"; shift 2 ;;
+    --identity-map) [ $# -ge 2 ] || exit 2; IDENTITY_MAP_FILE="$2"; shift 2 ;;
+    --snapshot-file) [ $# -ge 2 ] || exit 2; SNAPSHOT_FILE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage; exit 2 ;;
   esac
@@ -81,10 +72,10 @@ if [ -n "$SNAPSHOT_FILE" ]; then
   cp "$SNAPSHOT_FILE" "$SNAPSHOT"
 else
   command -v curl >/dev/null 2>&1 || { echo "ERROR: curl is required when fetching from app-save-hub" >&2; exit 2; }
-  [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "ERROR: SUPABASE_ACCESS_TOKEN is required when --snapshot-file is omitted" >&2; exit 2; }
+  [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "ERROR: SUPABASE_ACCESS_TOKEN is required" >&2; exit 2; }
   RESPONSE="$WORKDIR/latest.json"
   SQL="select payload from public.app_saves where user_id=(select id from auth.users order by created_at nulls last, id limit 1) and app_id='${APP_ID}' and slot_id='${SLOT_ID}' limit 1;"
-  jq -n --arg query "$SQL" '{query: $query}' \
+  jq -n --arg query "$SQL" '{query:$query}' \
     | curl --fail-with-body --silent --show-error \
         -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
         -H 'Content-Type: application/json' -d @- \
@@ -103,14 +94,10 @@ jq -e --arg source "$SOURCE_PROJECT_REF" --arg app "$APP_ID" --arg slot "$SLOT_I
   (.tables | type) == "object" and (.row_counts | type) == "object"
 ' "$SNAPSHOT" >/dev/null || { echo "ERROR: recovery snapshot metadata is invalid" >&2; exit 1; }
 
-EXPECTED_KEYS="$WORKDIR/expected-keys.txt"
-ACTUAL_KEYS="$WORKDIR/actual-keys.txt"
-printf '%s\n' "${TABLES[@]}" | sort > "$EXPECTED_KEYS"
-jq -r '.tables | keys[]' "$SNAPSHOT" | sort > "$ACTUAL_KEYS"
-cmp -s "$EXPECTED_KEYS" "$ACTUAL_KEYS" || {
-  echo "ERROR: snapshot table set does not exactly match reviewed allowlist" >&2
-  diff -u "$EXPECTED_KEYS" "$ACTUAL_KEYS" >&2 || true
-  exit 1
+printf '%s\n' "${TABLES[@]}" | sort > "$WORKDIR/expected-keys.txt"
+jq -r '.tables | keys[]' "$SNAPSHOT" | sort > "$WORKDIR/actual-keys.txt"
+cmp -s "$WORKDIR/expected-keys.txt" "$WORKDIR/actual-keys.txt" || {
+  echo "ERROR: snapshot table set does not exactly match reviewed allowlist" >&2; exit 1;
 }
 for table in "${TABLES[@]}"; do
   jq -e --arg table "$table" '.tables[$table] | type == "array"' "$SNAPSHOT" >/dev/null || {
@@ -118,11 +105,10 @@ for table in "${TABLES[@]}"; do
   }
 done
 
-# Supabase migration history identifiers are deployment metadata, not a safe
-# schema-compatibility oracle: the same reviewed migration can receive a
-# different remote timestamp when applied through the Management API/tooling.
-# Require both histories to exist, but prove compatibility with the actual
-# typed restore + constraints + source-field content equality below.
+# Migration history IDs can differ when the same reviewed migration was applied
+# through a different deployment path. Both histories must exist; compatibility
+# is proven directly below by typed insertion, constraints, exact counts, exact
+# source-field preservation, graph integrity and authenticated RLS access.
 SCRATCH_MIGRATION="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select version from supabase_migrations.schema_migrations order by version desc limit 1;")"
 SNAPSHOT_MIGRATION="$(jq -r '.source_migration_version // empty' "$SNAPSHOT")"
 [ -n "$SCRATCH_MIGRATION" ] && [ -n "$SNAPSHOT_MIGRATION" ] || {
@@ -140,19 +126,16 @@ done
   echo "ERROR: scratch target already contains household data; refusing restore" >&2; exit 1;
 }
 
-# Validate that the prepared Auth map covers every snapshot identity exactly,
-# maps to NEW UUIDs, and the newly-created Auth user's email matches the
-# snapshot email. This is the safe rebind boundary.
-AUTH_REFS="$WORKDIR/auth-refs.json"
-jq '.auth_user_refs' "$SNAPSHOT" > "$AUTH_REFS"
+# Validate exact old -> new Auth identity mapping and that each NEW Auth row has
+# the same verified recovery email reference as the snapshot.
+jq '.auth_user_refs' "$SNAPSHOT" > "$WORKDIR/auth-refs.json"
 jq '[.[] | {old_id,new_id}]' "$IDENTITY_MAP_FILE" > "$WORKDIR/id-map.json"
-AUTH_COUNT="$(jq 'length' "$AUTH_REFS")"
+AUTH_COUNT="$(jq 'length' "$WORKDIR/auth-refs.json")"
 jq -e --argjson n "$AUTH_COUNT" '
   length == $n and ([.[].old_id] | unique | length) == $n and
   ([.[].new_id] | unique | length) == $n and all(.[]; .old_id != .new_id)
 ' "$WORKDIR/id-map.json" >/dev/null || { echo "ERROR: identity map cardinality/uniqueness is invalid" >&2; exit 1; }
-
-AUTH_B64="$(base64 -w0 "$AUTH_REFS")"
+AUTH_B64="$(base64 -w0 "$WORKDIR/auth-refs.json")"
 MAP_B64="$(base64 -w0 "$WORKDIR/id-map.json")"
 BOUND_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "
 with refs as (
@@ -160,12 +143,12 @@ with refs as (
 ), maps as (
   select * from jsonb_to_recordset(convert_from(decode('${MAP_B64}','base64'),'UTF8')::jsonb) as x(old_id text,new_id text)
 )
-select count(*) from refs r join maps m on m.old_id=r.id join auth.users u on u.id=m.new_id::uuid and lower(u.email)=lower(r.email); ")"
+select count(*) from refs r join maps m on m.old_id=r.id join auth.users u on u.id=m.new_id::uuid and lower(u.email)=lower(r.email);")"
 [ "$BOUND_COUNT" = "$AUTH_COUNT" ] || { echo "ERROR: prepared Auth identities do not exactly match snapshot identity references" >&2; exit 1; }
 
-# Discover exactly which public columns are user identities from CURRENT schema
-# FKs. This avoids brittle name guessing. We rewrite a child column iff its FK
-# position references auth.users.id or household_members.user_id.
+# Discover user identity positions from CURRENT target FKs instead of guessed
+# column names. Rebind only columns that reference auth.users.id or
+# household_members.user_id.
 IDENTITY_COLUMNS="$WORKDIR/identity-columns.tsv"
 psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -F $'\t' -c "
 select 'public.'||child.relname, child_att.attname
@@ -182,18 +165,20 @@ where c.contype='f' and child_ns.nspname='public'
     or (parent_ns.nspname='public' and parent.relname='household_members' and parent_att.attname='user_id'))
 order by 1,2;" > "$IDENTITY_COLUMNS"
 [ -s "$IDENTITY_COLUMNS" ] || { echo "ERROR: no schema-declared user FK columns were discovered" >&2; exit 1; }
+jq 'map({key:.old_id,value:.new_id}) | from_entries' "$WORKDIR/id-map.json" > "$WORKDIR/map-object.json"
 
-MAP_OBJECT="$WORKDIR/map-object.json"
-jq 'map({key:.old_id,value:.new_id}) | from_entries' "$WORKDIR/id-map.json" > "$MAP_OBJECT"
-
-# Restore in reviewed dependency order. User FK values are rebound immediately
-# before typed insertion; other UUID/domain data is preserved as snapshot JSON.
+# Restore parents before children with normal FK/check/trigger behavior active.
+# household_members legitimately fires the CURRENT trigger that creates a
+# minimal real-user domain_actor_ref for a brand-new member. During recovery the
+# snapshot's canonical actor_ref must win (its id is referenced by later domain
+# rows), so verify those are *only* the expected trigger bootstrap rows and
+# remove them before restoring public.domain_actor_refs.
 for table in "${TABLES[@]}"; do
   table_name="${table#public.}"
   COLS="$WORKDIR/cols-${table_name}.json"
   awk -F $'\t' -v t="$table" '$1==t {print $2}' "$IDENTITY_COLUMNS" | jq -Rsc 'split("\n") | map(select(length>0))' > "$COLS"
   TABLE_JSON="$WORKDIR/${table_name}.json"
-  jq --arg table "$table" --slurpfile cols "$COLS" --slurpfile idmap "$MAP_OBJECT" '
+  jq --arg table "$table" --slurpfile cols "$COLS" --slurpfile idmap "$WORKDIR/map-object.json" '
     .tables[$table]
     | map(reduce ($cols[0][]) as $c (.;
         if .[$c] == null then .
@@ -201,18 +186,49 @@ for table in "${TABLES[@]}"; do
           error("unmapped user identity in " + $table + "." + $c)
         else .[$c] = $idmap[0][(.[$c] | tostring)] end))
   ' "$SNAPSHOT" > "$TABLE_JSON"
+
   expected="$(jq 'length' "$TABLE_JSON")"
-  [ "$expected" = "0" ] && continue
-  TABLE_B64="$(base64 -w0 "$TABLE_JSON")"
-  SQL_FILE="$WORKDIR/restore-${table_name}.sql"
-  printf "insert into %s select * from jsonb_populate_recordset(null::%s, convert_from(decode('%s', 'base64'), 'UTF8')::jsonb);\n" "$table" "$table" "$TABLE_B64" > "$SQL_FILE"
-  psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -q -f "$SQL_FILE"
+  if [ "$expected" != "0" ]; then
+    TABLE_B64="$(base64 -w0 "$TABLE_JSON")"
+    printf "insert into %s select * from jsonb_populate_recordset(null::%s, convert_from(decode('%s','base64'),'UTF8')::jsonb);\n" \
+      "$table" "$table" "$TABLE_B64" > "$WORKDIR/restore-${table_name}.sql"
+    psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -q -f "$WORKDIR/restore-${table_name}.sql"
+  fi
+
+  if [ "$table" = "public.household_members" ]; then
+    EXPECTED_BOOTSTRAP="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from (select distinct household_id,user_id from public.household_members) x;")"
+    ACTUAL_BOOTSTRAP="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c 'select count(*) from public.domain_actor_refs;')"
+    INVALID_BOOTSTRAP="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "
+select count(*)
+from public.domain_actor_refs a
+left join public.household_members hm
+  on hm.household_id=a.household_id and hm.user_id=a.real_user_id
+where hm.user_id is null
+   or a.actor_kind <> 'real_user'
+   or a.real_user_id is null
+   or a.test_context_id is not null
+   or a.simulated_role is not null;")"
+    [ "$ACTUAL_BOOTSTRAP" = "$EXPECTED_BOOTSTRAP" ] && [ "$INVALID_BOOTSTRAP" = "0" ] || {
+      echo "ERROR: unexpected rows exist in domain_actor_refs before canonical recovery restore" >&2; exit 1;
+    }
+    psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -q -c "
+      delete from public.domain_actor_refs a
+      using public.household_members hm
+      where a.household_id=hm.household_id
+        and a.real_user_id=hm.user_id
+        and a.actor_kind='real_user'
+        and a.test_context_id is null
+        and a.simulated_role is null;"
+    [ "$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c 'select count(*) from public.domain_actor_refs;')" = "0" ] || {
+      echo "ERROR: generated real-user actor refs were not fully reconciled before restore" >&2; exit 1;
+    }
+    echo "Reconciled ${ACTUAL_BOOTSTRAP} generated real-user actor ref bootstrap row(s) before canonical snapshot restore."
+  fi
 done
 
-# Count equality alone could miss a source field silently dropped by a newer
-# schema. For every non-empty table, compare every source field after UUID
-# rebinding with the restored row JSON. New target-only fields are ignored;
-# all fields that existed in the recovery payload must survive identically.
+# Count equality is not enough. For every non-empty table compare every source
+# field (after UUID rebinding) against restored JSON. Target-only fields may
+# exist, but no field present in the recovery payload may be silently lost.
 for table in "${TABLES[@]}"; do
   table_name="${table#public.}"
   TABLE_JSON="$WORKDIR/${table_name}.json"
@@ -221,31 +237,21 @@ for table in "${TABLES[@]}"; do
   [ "$actual" = "$expected" ] || { echo "ERROR: row-count mismatch for $table (expected=$expected actual=$actual)" >&2; exit 1; }
   [ "$expected" = "0" ] && continue
 
-  KEYS_JSON="$WORKDIR/source-keys-${table_name}.json"
-  jq '.[0] | keys' "$TABLE_JSON" > "$KEYS_JSON"
-  KEYS_B64="$(base64 -w0 "$KEYS_JSON")"
-  RESTORED_JSON="$WORKDIR/restored-${table_name}.json"
+  jq '.[0] | keys' "$TABLE_JSON" > "$WORKDIR/source-keys-${table_name}.json"
+  KEYS_B64="$(base64 -w0 "$WORKDIR/source-keys-${table_name}.json")"
   psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "
 with keys as (
-  select value as key
-  from jsonb_array_elements_text(convert_from(decode('${KEYS_B64}','base64'),'UTF8')::jsonb)
+  select value as key from jsonb_array_elements_text(convert_from(decode('${KEYS_B64}','base64'),'UTF8')::jsonb)
 ), restored as (
-  select (
-    select coalesce(jsonb_object_agg(k.key, to_jsonb(t)->k.key order by k.key), '{}'::jsonb)
-    from keys k
-  ) as row_json
+  select (select coalesce(jsonb_object_agg(k.key,to_jsonb(t)->k.key order by k.key),'{}'::jsonb) from keys k) as row_json
   from ${table} t
 )
-select coalesce(jsonb_agg(row_json order by row_json::text), '[]'::jsonb)::text
-from restored;" > "$RESTORED_JSON"
+select coalesce(jsonb_agg(row_json order by row_json::text),'[]'::jsonb)::text from restored;" > "$WORKDIR/restored-${table_name}.json"
 
-  SOURCE_CANONICAL="$WORKDIR/source-canonical-${table_name}.json"
-  TARGET_CANONICAL="$WORKDIR/target-canonical-${table_name}.json"
-  jq -S 'sort_by(to_entries | sort_by(.key) | map([.key,.value]) | tostring)' "$TABLE_JSON" > "$SOURCE_CANONICAL"
-  jq -S 'sort_by(to_entries | sort_by(.key) | map([.key,.value]) | tostring)' "$RESTORED_JSON" > "$TARGET_CANONICAL"
-  cmp -s "$SOURCE_CANONICAL" "$TARGET_CANONICAL" || {
-    echo "ERROR: restored source-field content mismatch for $table" >&2
-    exit 1
+  jq -S 'sort_by(to_entries | sort_by(.key) | map([.key,.value]) | tostring)' "$TABLE_JSON" > "$WORKDIR/source-canonical-${table_name}.json"
+  jq -S 'sort_by(to_entries | sort_by(.key) | map([.key,.value]) | tostring)' "$WORKDIR/restored-${table_name}.json" > "$WORKDIR/target-canonical-${table_name}.json"
+  cmp -s "$WORKDIR/source-canonical-${table_name}.json" "$WORKDIR/target-canonical-${table_name}.json" || {
+    echo "ERROR: restored source-field content mismatch for $table" >&2; exit 1;
   }
 done
 
@@ -256,7 +262,6 @@ SUBTASK_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select cou
   echo "ERROR: restored household graph has identity/task linkage orphans" >&2; exit 1;
 }
 
-# Prove old production UUIDs no longer remain in any user-FK position.
 OLD_IDS_SQL="$(jq -r '[.[].old_id | "'"'" + . + "'"'"] | join(",")' "$WORKDIR/id-map.json")"
 while IFS=$'\t' read -r table column; do
   [ -n "$table" ] || continue
