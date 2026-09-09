@@ -105,6 +105,26 @@ describe('useTodayData canonical snapshot states', () => {
     expect(result.current.morningSummary).toEqual({ completedCount: 2, totalCount: 2 });
   });
 
+  it('keeps material partner state out of the Empty state even without critical item rows', async () => {
+    rows.task_instances = [];
+    rpc.mockResolvedValueOnce({
+      data: {
+        ...emptyBrief,
+        partner_summary: { open_assigned: 2, waiting: 1, completed_today: 1, critical_items: [] },
+      },
+      error: null,
+    });
+    const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.partnerSummary).toEqual({
+      open_assigned: 2,
+      waiting: 1,
+      completed_today: 1,
+      critical_items: [],
+    });
+  });
+
   it('replaces a stale/ready snapshot atomically when a later successful resync returns empty', async () => {
     rpc.mockResolvedValueOnce({ data: populatedBrief, error: null });
     const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
