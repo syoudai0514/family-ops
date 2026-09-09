@@ -4,6 +4,7 @@ import { AUTHORING_STATUSES, EVIDENCE_CLASSES } from './scenarios.mjs';
 const evidenceClassSet = new Set(EVIDENCE_CLASSES);
 const authoringStatusSet = new Set(AUTHORING_STATUSES);
 const ALL_REQUIREMENTS = new Set(Array.from({ length: 112 }, (_, index) => `Q${index + 1}`));
+const ACCEPTANCE_BLOCKING_STATUSES = new Set(['expected-failing', 'skeleton']);
 
 export function validateScenarioManifest(scenarios) {
   assert.ok(Array.isArray(scenarios) && scenarios.length > 0, 'scenario manifest must not be empty');
@@ -25,6 +26,12 @@ export function validateScenarioManifest(scenarios) {
       assert.ok(evidenceClassSet.has(evidenceClass), `${scenario.scenarioId}: unknown evidence class ${evidenceClass}`);
     }
     assert.ok(authoringStatusSet.has(scenario.status), `${scenario.scenarioId}: F1 status must be authoring/pending, never PASS`);
+    if (ACCEPTANCE_BLOCKING_STATUSES.has(scenario.status)) {
+      assert.ok(
+        typeof scenario.expectedFailureReason === 'string' && scenario.expectedFailureReason.length > 0,
+        `${scenario.scenarioId}: acceptance-blocking status requires an attributable failure reason`,
+      );
+    }
   }
   const missing = [...ALL_REQUIREMENTS].filter((id) => !covered.has(id));
   assert.deepEqual(missing, [], `requirements missing from CF-14 traceability: ${missing.join(', ')}`);
@@ -197,11 +204,19 @@ export function assessEvidence(scenarios, evidenceRecords, { strict = false } = 
     const missingEvidenceClasses = scenario.requiredEvidenceClasses.filter((required) =>
       !records.some((record) => record.scenarioId === scenario.scenarioId && record.evidenceClass === required && record.status === 'PASS'),
     );
+    const acceptanceBlocked = ACCEPTANCE_BLOCKING_STATUSES.has(scenario.status);
+    const result = acceptanceBlocked
+      ? strict ? 'FAIL' : 'PENDING'
+      : missingEvidenceClasses.length === 0
+        ? 'PASS'
+        : strict ? 'FAIL' : 'PENDING';
     return {
       scenarioId: scenario.scenarioId,
       requirementIds: scenario.requirementIds,
-      result: missingEvidenceClasses.length === 0 ? 'PASS' : strict ? 'FAIL' : 'PENDING',
+      result,
       missingEvidenceClasses,
+      acceptanceBlocked,
+      blockingReason: acceptanceBlocked ? scenario.expectedFailureReason : null,
     };
   });
 }
