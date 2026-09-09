@@ -5,12 +5,14 @@ on:
     paths:
       - 'apps/web/**'
       - 'scripts/run_today_navigation_browser_e2e.mjs'
+      - 'scripts/run_today_navigation_browser_e2e_bounded.mjs'
       - '.github/workflows/today-navigation-evidence.yml'
   push:
     branches: [main]
     paths:
       - 'apps/web/**'
       - 'scripts/run_today_navigation_browser_e2e.mjs'
+      - 'scripts/run_today_navigation_browser_e2e_bounded.mjs'
       - '.github/workflows/today-navigation-evidence.yml'
   workflow_dispatch:
 
@@ -69,27 +71,7 @@ jobs:
           echo "CHROME_BIN=$WRAPPER" >> "$GITHUB_ENV"
 
       - name: Real Chrome Today/navigation E2E
-        shell: bash
-        run: |
-          set +e
-          timeout --signal=TERM --kill-after=10s 45s node scripts/run_today_navigation_browser_e2e.mjs
-          status=$?
-          set -e
-          if [[ "$status" -eq 0 ]]; then
-            exit 0
-          fi
-          # The scenario runner writes evidence.json only after every browser
-          # assertion has passed. The historical npm/Vite child can keep the
-          # Node process alive after that point, so a bounded timeout is treated
-          # as success only when the completed PASS artifact proves the scenario
-          # body itself finished. A timeout before evidence exists remains RED.
-          if [[ "$status" -eq 124 ]] \
-            && [[ -s artifacts/today-navigation-browser/evidence.json ]] \
-            && grep -q '"status": "PASS"' artifacts/today-navigation-browser/evidence.json; then
-            echo "Browser assertions passed; bounded cleanup timeout ended the leaked dev-server process tree."
-            exit 0
-          fi
-          exit "$status"
+        run: node scripts/run_today_navigation_browser_e2e_bounded.mjs
 
       - name: Upload browser evidence
         if: always()
