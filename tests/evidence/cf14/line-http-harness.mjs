@@ -35,5 +35,7 @@ export async function runSignedLineWebhookHttpScenario(adapter, input) {
   assert.ok(Number.isInteger(result.httpStatus) && result.httpStatus >= 200 && result.httpStatus < 300, 'LINE webhook must return 2xx');
   assert.ok(result.providerEventId, 'LINE webhook event id required');
   assert.ok(result.canonicalReadback, 'LINE webhook canonical readback required');
+  assert.equal(typeof result.userVisibleResult, 'string', 'LINE transport evidence must include the user-visible reply/result');
+  assert.ok(result.userVisibleResult.trim().length > 0, 'LINE transport evidence must not hide the user-visible reply/result');
   return { envelope, result };
 }
