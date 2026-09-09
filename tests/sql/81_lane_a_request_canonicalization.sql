@@ -52,13 +52,21 @@ begin
        perform public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'consult',null,1,1,channel);
        select a.terms into terms from public.request_attempts a where id=attempt;
        result:=public.server_tx_transition_request_v2(u,gen_random_uuid(),req,attempt,'edit_terms',terms||'{"candidate":"相談確認"}',2,1,channel);
-       if result->>'state'<>'awaiting_confirmation' or (select planned_assignee_actor_ref_id from public.task_instances where id=task_id)<>ar then
-         raise exception 'FAIL one-sided terms confirmation assigned'; end if;
+       if result->>'state'<>'consulting'
+          or (select state from public.request_attempts where id=attempt)<>'consulting'
+          or exists(select 1 from public.request_attempt_confirmations where attempt_id=attempt and terms_revision=2)
+          or (select planned_assignee_actor_ref_id from public.task_instances where id=task_id)<>ar then
+         raise exception 'FAIL proposal silently confirmed or assigned'; end if;
        begin
          perform public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'confirm_terms',null,3,1,channel);
          raise exception 'FAIL stale terms accepted';
        exception when others then if sqlerrm<>'REQUEST_TERMS_REVISION_STALE' then raise; end if; end;
-       result:=public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'confirm_terms',null,3,2,channel);
+       result:=public.server_tx_transition_request_v2(u,gen_random_uuid(),req,attempt,'confirm_terms',null,3,2,channel);
+       if result->>'state'<>'awaiting_confirmation'
+          or (select count(*) from public.request_attempt_confirmations where attempt_id=attempt and terms_revision=2)<>1
+          or (select planned_assignee_actor_ref_id from public.task_instances where id=task_id)<>ar then
+         raise exception 'FAIL first explicit confirmation assigned or lost'; end if;
+       result:=public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'confirm_terms',null,4,2,channel);
      elsif phase='declined' then
        result:=public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'decline',null,1,1,channel);
        if result->>'state'<>'declined' then raise exception 'FAIL decline'; end if;
