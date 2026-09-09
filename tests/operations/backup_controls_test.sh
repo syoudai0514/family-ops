@@ -40,8 +40,9 @@ bash "$RESTORE" --help >/dev/null
 bash "$VERIFY_ACCESS" --help >/dev/null
 
 # CURRENT right-size implementation must not retain the legacy R2/age secret path.
+# Do not match ordinary freshness variables such as MAX_BACKUP_AGE_HOURS.
 for file in "$BACKUP" "$FRESHNESS_WORKFLOW" "$DRILL_WORKFLOW" "$SNAPSHOT" "$FRESHNESS" "$PREPARE_AUTH" "$RESTORE" "$VERIFY_ACCESS"; do
-  if grep -Eq 'R2_(ACCOUNT|ACCESS|SECRET|BUCKET)|BACKUP_AGE|AGE_PRIVATE_KEY|cloudflarestorage\.com|aws s3|age -[rd]' "$file"; then
+  if grep -Eq 'R2_(ACCOUNT|ACCESS|SECRET|BUCKET)|BACKUP_AGE_(PUBLIC|PRIVATE)_KEY|AGE_PRIVATE_KEY|cloudflarestorage\.com|aws s3|age -[rd]' "$file"; then
     fail "legacy R2/age implementation reference remains in $file"
   fi
 done
@@ -103,6 +104,8 @@ grep -Fq "parent_ns.nspname='auth'" "$RESTORE" || fail "auth.users FK discovery 
 grep -Fq "parent.relname='household_members'" "$RESTORE" || fail "household member user-FK discovery missing"
 grep -Fq 'jsonb_populate_recordset' "$RESTORE" || fail "typed restore missing"
 grep -Fq 'row-count mismatch' "$RESTORE" || fail "exact row-count validation missing"
+grep -Fq 'source-field content mismatch' "$RESTORE" || fail "restored source-field equality proof missing"
+grep -Fq 'migration identifiers differ' "$RESTORE" || fail "migration-id drift handling is not explicit"
 grep -Fq 'stale production user UUID remains' "$RESTORE" || fail "old UUID elimination proof missing"
 grep -Fq 'profiles?user_id=eq.' "$VERIFY_ACCESS" || fail "profile RLS proof missing"
 grep -Fq 'household_members?user_id=eq.' "$VERIFY_ACCESS" || fail "membership RLS proof missing"
