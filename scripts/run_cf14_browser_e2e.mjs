@@ -12,6 +12,8 @@ const SOURCE_HEAD = process.env.CF14_SOURCE_HEAD || process.env.GITHUB_HEAD_SHA 
 const TODAY = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date());
+const JST_HOUR = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours();
+const ACTIVE_TASK_GROUP = JST_HOUR < 11 ? 'morning' : JST_HOUR < 17 ? 'daytime' : 'evening';
 
 const membership = {
   household_id: 'household-cf14', user_id: 'user-cf14', member_role: 'adult', family_role: 'papa',
@@ -134,9 +136,11 @@ function noContentResponse() {
 }
 
 function dailyBrief() {
+  const ownTaskGroups = { morning: [], daytime: [], evening: [], optional: [] };
+  ownTaskGroups[ACTIVE_TASK_GROUP] = [{ task_id: task.id, title: task.title, due_at: task.due_at }];
   return {
     tasks: [{ task_id: task.id }], carryover: [], already_handled: [], urgent_actions: [],
-    handovers: [], shopping: [], schedule: [],
+    handovers: [], shopping: [], schedule: [], own_task_groups: ownTaskGroups,
   };
 }
 
@@ -318,11 +322,12 @@ async function main() {
     });
 
     await waitForText(client, task.title, 12_000);
-    await waitForText(client, '今日の状況', 12_000);
+    await waitForText(client, '要対応 0', 12_000);
+    await waitForText(client, '残り 1', 12_000);
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-READY',
       entryBoundary: 'real Chrome rendered Today route after HTTP reads',
-      visibleAssertion: `${task.title} and 今日の状況 are rendered`,
+      visibleAssertion: `${task.title}, 要対応 0, and 残り 1 are rendered from the canonical Today contract`,
       screenshot: await screenshot(client, 'today-ready.png'),
     });
 
