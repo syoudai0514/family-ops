@@ -1,26 +1,23 @@
 name: Backup (daily household recovery snapshot)
 
-# CF-11 right-sized by Product Owner decision (ADR 0014).
+# CF-11 right-size proposal is Product Owner approved and pending canonical
+# merge as ADR 0014. This branch verifies it before protected-main adoption.
 #
 # Current household scale is two people. The recovery objective is to retain
 # durable household/domain data if the Family Ops Supabase project suffers an
-# operator mistake or project-level failure. We intentionally reuse existing
-# infrastructure:
+# operator mistake or project-level failure. Existing infrastructure only:
 # - GitHub Actions
 # - existing SUPABASE_ACCESS_TOKEN
-# - existing separate Supabase project app-save-hub (also used by ManaEvo)
+# - existing separate Supabase project app-save-hub (also used by ManaEvo),
+#   with an exact Family Ops owner/app/slot namespace
 #
-# R2, age encryption, owner-local crypto keys, DB passwords and provider
-# credentials are not part of the current requirement. See
-# docs/design/current/10_BACKUP_RECOVERY.md and docs/BACKUP_RESTORE_RUNBOOK.md.
+# R2, age, owner-local crypto keys, DB passwords and provider credentials are
+# not required by the right-sized proposal.
 
 on:
   schedule:
-    # 18:00 UTC = 03:00 JST.
-    - cron: "0 18 * * *"
+    - cron: "0 18 * * *" # 03:00 JST
   workflow_dispatch: {}
-  # This gives the right-size implementation one real proof immediately after
-  # protected merge, without needing a separate manual dispatch tool.
   push:
     branches:
       - main
@@ -30,7 +27,9 @@ on:
       - ".github/workflows/recovery-drill.yml"
       - "scripts/create_household_snapshot.sh"
       - "scripts/backup_freshness_check.sh"
+      - "scripts/prepare_recovery_auth_smoke.sh"
       - "scripts/restore_drill.sh"
+      - "scripts/verify_recovery_access.sh"
       - "scripts/family_ops_recovery_tables.txt"
       - "docs/BACKUP_RESTORE_RUNBOOK.md"
       - "docs/design/current/10_BACKUP_RECOVERY.md"
@@ -55,7 +54,6 @@ jobs:
       MAX_BACKUPS: "30"
     steps:
       - uses: actions/checkout@v4
-
       - name: Create, store and read-back verify household snapshot
         shell: bash
         run: bash scripts/create_household_snapshot.sh
