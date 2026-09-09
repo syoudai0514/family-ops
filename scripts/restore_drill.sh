@@ -1,296 +1,231 @@
 #!/usr/bin/env bash
-# WP10 restore drill: download the latest (or a named) encrypted logical
-# backup bundle from R2, decrypt it LOCALLY, restore it into a fresh
-# disposable Supabase-compatible Postgres target, and run fail-closed
-# schema/data/identity/worker-isolation sanity checks.
-# See docs/BACKUP_RESTORE_RUNBOOK.md for the release/monthly checklist.
+# CF-11 right-sized recovery drill.
 #
-# ============================================================================
-# SECURITY: this script must NEVER run in CI, and must NEVER accept the age
-# private key via an environment variable. The age private key is a secret
-# CI is not allowed to hold. It only exists in the household owner's own
-# password manager / offline storage. This script only accepts the private
-# key as:
-#   (a) a local file path argument (--key-file <path>), or
-#   (b) an interactive terminal prompt if --key-file is omitted.
-# It deliberately does NOT read private-key environment variables. Do not
-# weaken that boundary to automate the restore in CI.
-# ============================================================================
+# Fetch the latest durable household/domain snapshot from the existing
+# separate app-save-hub Supabase project and restore it into an EMPTY,
+# disposable Supabase-compatible database whose schema has already been
+# created from the Family Ops repository migrations.
 #
-# Usage:
-#   scripts/restore_drill.sh [options]
-#
-# Options:
-#   --key-file <path>       Path to a local age private key file (identity).
-#                            If omitted, you will be prompted to paste the
-#                            key interactively (input is not echoed).
-#   --backup-file <name>    Specific backup object name in R2 to restore,
-#                            e.g. family-ops-backup-2026-09-09.tar.age.
-#                            Defaults to the latest one per latest-backup.txt.
-#   --scratch-db-url <url>  Postgres connection string for a FRESH,
-#                            disposable Supabase project/local stack.
-#                            REQUIRED. Managed auth/storage/cron/net/Vault
-#                            facilities + standard Supabase roles must already
-#                            exist, while Family Ops public/private tables must
-#                            not.
-#   -h, --help              Show this help.
-#
-# Required env (R2 read access only — never age keys):
-#   R2_ACCOUNT_ID, R2_BUCKET_NAME, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# Provider credentials/sessions/queues/cron state are intentionally not part
+# of the snapshot. For FK validation in the disposable drill we create only
+# placeholder auth.users rows carrying the original UUID/email references;
+# this does not claim that Google/LINE/Auth provider sessions were restored.
 
 set -euo pipefail
 
-KEY_FILE=""
-BACKUP_FILE=""
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TABLES_FILE="${RECOVERY_TABLES_FILE:-$ROOT/scripts/family_ops_recovery_tables.txt}"
+TARGET_PROJECT_REF="${TARGET_PROJECT_REF:-wdwbmvpipbdpomqulsrj}"
+SOURCE_PROJECT_REF="${SOURCE_PROJECT_REF:-dnlqxjpjpkxnfgculzip}"
 SCRATCH_DB_URL=""
+SNAPSHOT_FILE=""
 
 usage() {
-  sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'USAGE'
+Usage: scripts/restore_drill.sh --scratch-db-url <url> [--snapshot-file <json>]
+
+Options:
+  --scratch-db-url <url>  REQUIRED. Empty disposable Supabase-compatible DB
+                          with current Family Ops migrations already applied.
+  --snapshot-file <json>  Optional local snapshot payload. If omitted, the
+                          latest Family Ops payload is read from app-save-hub
+                          using SUPABASE_ACCESS_TOKEN.
+  -h, --help              Show help.
+
+Safety:
+  By default the target URL must be localhost/127.0.0.1. A managed target is
+  refused unless ALLOW_MANAGED_RECOVERY_TARGET=1 is explicitly set.
+USAGE
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --key-file)
-      [ $# -ge 2 ] || { echo "ERROR: --key-file requires a value" >&2; exit 2; }
-      KEY_FILE="$2"; shift 2 ;;
-    --backup-file)
-      [ $# -ge 2 ] || { echo "ERROR: --backup-file requires a value" >&2; exit 2; }
-      BACKUP_FILE="$2"; shift 2 ;;
     --scratch-db-url)
       [ $# -ge 2 ] || { echo "ERROR: --scratch-db-url requires a value" >&2; exit 2; }
       SCRATCH_DB_URL="$2"; shift 2 ;;
+    --snapshot-file)
+      [ $# -ge 2 ] || { echo "ERROR: --snapshot-file requires a value" >&2; exit 2; }
+      SNAPSHOT_FILE="$2"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
-      echo "Unknown argument: $1" >&2; usage; exit 2 ;;
+      echo "ERROR: unknown argument: $1" >&2; usage; exit 2 ;;
   esac
 done
 
-if [ -n "${CI:-}" ]; then
-  echo "ERROR: refusing to run in a CI environment. This script decrypts backups with the owner's private key and must only be run by a human, locally." >&2
-  exit 3
-fi
-
 if [ -z "$SCRATCH_DB_URL" ]; then
-  echo "ERROR: --scratch-db-url is required. Point it at a fresh disposable Supabase-compatible database." >&2
+  echo "ERROR: --scratch-db-url is required" >&2
   exit 2
 fi
-
-for v in R2_ACCOUNT_ID R2_BUCKET_NAME AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
-  if [ -z "${!v:-}" ]; then
-    echo "ERROR: required env var $v is not set" >&2
-    exit 2
-  fi
+if [ "${ALLOW_MANAGED_RECOVERY_TARGET:-0}" != "1" ]; then
+  case "$SCRATCH_DB_URL" in
+    *"@127.0.0.1:"*|*"@localhost:"*|*"host=127.0.0.1"*|*"host=localhost"*) ;;
+    *)
+      echo "ERROR: refusing a non-local recovery target without ALLOW_MANAGED_RECOVERY_TARGET=1" >&2
+      exit 3
+      ;;
+  esac
+fi
+if [ ! -s "$TABLES_FILE" ]; then
+  echo "ERROR: recovery table allowlist is missing or empty" >&2
+  exit 2
+fi
+for cmd in jq psql base64 cmp; do
+  command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: required command '$cmd' is missing" >&2; exit 2; }
 done
 
-for cmd in aws age psql tar; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "ERROR: required command '$cmd' not found on PATH" >&2
-    exit 2
-  fi
-done
-
-ENDPOINT_URL="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 WORKDIR="$(mktemp -d)"
 cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
 
-SUPABASE_PREREQS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select
-     to_regnamespace('auth') is not null
-     and to_regnamespace('storage') is not null
-     and to_regrole('anon') is not null
-     and to_regrole('authenticated') is not null
-     and to_regrole('service_role') is not null
-     and to_regclass('cron.job') is not null
-     and to_regclass('net.http_request_queue') is not null
-     and to_regclass('vault.decrypted_secrets') is not null;")"
-if [ "$SUPABASE_PREREQS" != "t" ]; then
-  echo "ERROR: scratch target is not Family Ops recovery-compatible (Supabase auth/storage, standard roles, pg_cron, pg_net and Vault are required)." >&2
-  exit 1
-fi
+mapfile -t TABLES < <(sed -E 's/[[:space:]]+#.*$//' "$TABLES_FILE" | sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d')
+for table in "${TABLES[@]}"; do
+  [[ "$table" =~ ^public\.[a-z][a-z0-9_]*$ ]] || { echo "ERROR: invalid recovery table identifier: $table" >&2; exit 2; }
+done
 
-EXISTING_APP_TABLES="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(*) from pg_catalog.pg_tables where schemaname in ('public','private');")"
-if ! [[ "$EXISTING_APP_TABLES" =~ ^[0-9]+$ ]]; then
-  echo "ERROR: could not verify that Family Ops application schemas are empty." >&2
-  exit 1
-fi
-if [ "$EXISTING_APP_TABLES" -ne 0 ]; then
-  echo "ERROR: scratch target already has ${EXISTING_APP_TABLES} public/private tables. Refusing restore." >&2
-  exit 1
-fi
-
-MIGRATION_TABLE_EXISTS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select to_regclass('supabase_migrations.schema_migrations') is not null;")"
-if [ "$MIGRATION_TABLE_EXISTS" = "t" ]; then
-  EXISTING_MIGRATIONS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-    "select count(*) from supabase_migrations.schema_migrations;")"
-  if ! [[ "$EXISTING_MIGRATIONS" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: could not verify migration-history emptiness." >&2
-    exit 1
-  fi
-  if [ "$EXISTING_MIGRATIONS" -ne 0 ]; then
-    echo "ERROR: scratch target already has ${EXISTING_MIGRATIONS} migration-history rows. Refusing restore." >&2
-    exit 1
-  fi
-fi
-
-EXISTING_FAMILY_OPS_CRON="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(*) from cron.job where jobname like 'family-ops-%';")"
-if ! [[ "$EXISTING_FAMILY_OPS_CRON" =~ ^[0-9]+$ ]] || [ "$EXISTING_FAMILY_OPS_CRON" -ne 0 ]; then
-  echo "ERROR: scratch target already has Family Ops cron jobs. Refusing restore to avoid external side effects." >&2
-  exit 1
-fi
-
-echo "Scratch Supabase environment verified fresh for Family Ops restore."
-
-if [ -z "$BACKUP_FILE" ]; then
-  echo "No --backup-file given; looking up latest-backup.txt marker..."
-  aws s3 cp "s3://${R2_BUCKET_NAME}/latest-backup.txt" "$WORKDIR/latest-backup.txt" --endpoint-url "$ENDPOINT_URL"
-  BACKUP_FILE="$(sed -n '1p' "$WORKDIR/latest-backup.txt")"
-fi
-
-if ! [[ "$BACKUP_FILE" =~ ^family-ops-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}\.tar\.age$ ]]; then
-  echo "ERROR: backup object name is malformed." >&2
-  exit 1
-fi
-
-echo "Resolved encrypted backup object: $BACKUP_FILE"
-aws s3 cp "s3://${R2_BUCKET_NAME}/${BACKUP_FILE}" "$WORKDIR/backup.tar.age" --endpoint-url "$ENDPOINT_URL"
-test -s "$WORKDIR/backup.tar.age" || { echo "ERROR: downloaded encrypted backup is empty." >&2; exit 1; }
-
-if [ -n "$KEY_FILE" ]; then
-  if [ ! -f "$KEY_FILE" ]; then
-    echo "ERROR: --key-file does not exist" >&2
-    exit 2
-  fi
-  IDENTITY_FILE="$KEY_FILE"
+SNAPSHOT="$WORKDIR/snapshot.json"
+if [ -n "$SNAPSHOT_FILE" ]; then
+  [ -s "$SNAPSHOT_FILE" ] || { echo "ERROR: --snapshot-file is missing or empty" >&2; exit 2; }
+  cp "$SNAPSHOT_FILE" "$SNAPSHOT"
 else
-  echo "Paste the age private key and press Enter. Input is not echoed."
-  IDENTITY_FILE="$WORKDIR/identity.txt"
-  read -r -s PASTED_KEY
-  echo
-  printf '%s\n' "$PASTED_KEY" > "$IDENTITY_FILE"
-  chmod 600 "$IDENTITY_FILE"
-  unset PASTED_KEY
+  command -v curl >/dev/null 2>&1 || { echo "ERROR: curl is required when fetching from app-save-hub" >&2; exit 2; }
+  [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "ERROR: SUPABASE_ACCESS_TOKEN is required when --snapshot-file is omitted" >&2; exit 2; }
+  RESPONSE="$WORKDIR/latest.json"
+  SQL="select payload from public.app_saves where app_id='family-ops' and slot_id='household' order by updated_at desc limit 1;"
+  jq -n --arg query "$SQL" '{query: $query}' \
+    | curl --fail-with-body --silent --show-error \
+        -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+        -H 'Content-Type: application/json' \
+        -d @- \
+        "https://api.supabase.com/v1/projects/${TARGET_PROJECT_REF}/database/query" \
+        > "$RESPONSE"
+  jq -e 'length == 1 and (.[0].payload | type) == "object"' "$RESPONSE" >/dev/null || {
+    echo "ERROR: no valid Family Ops snapshot exists in app-save-hub" >&2
+    exit 1
+  }
+  jq '.[0].payload' "$RESPONSE" > "$SNAPSHOT"
 fi
 
-echo "Decrypting locally..."
-age -d -i "$IDENTITY_FILE" -o "$WORKDIR/backup.tar" "$WORKDIR/backup.tar.age"
-test -s "$WORKDIR/backup.tar" || { echo "ERROR: decrypted backup bundle is empty." >&2; exit 1; }
+jq -e --arg source "$SOURCE_PROJECT_REF" '
+  .schema_version == 1 and
+  .source_project_ref == $source and
+  .restore_scope == "durable-household-domain" and
+  (.auth_user_refs | type) == "array" and
+  (.auth_user_refs | length) >= 1 and
+  (.tables | type) == "object" and
+  (.row_counts | type) == "object"
+' "$SNAPSHOT" >/dev/null || {
+  echo "ERROR: recovery snapshot metadata is invalid" >&2
+  exit 1
+}
 
-EXPECTED_MEMBERS="$(printf '%s\n' data.sql history_data.sql history_schema.sql roles.sql schema.sql | sort)"
-ACTUAL_MEMBERS="$(tar -tf "$WORKDIR/backup.tar" | sed 's#^\./##' | sort)"
-if [ "$ACTUAL_MEMBERS" != "$EXPECTED_MEMBERS" ]; then
-  echo "ERROR: decrypted backup bundle members do not match the required logical-backup contract." >&2
+EXPECTED_KEYS="$WORKDIR/expected-keys.txt"
+ACTUAL_KEYS="$WORKDIR/actual-keys.txt"
+printf '%s\n' "${TABLES[@]}" | sort > "$EXPECTED_KEYS"
+jq -r '.tables | keys[]' "$SNAPSHOT" | sort > "$ACTUAL_KEYS"
+if ! cmp -s "$EXPECTED_KEYS" "$ACTUAL_KEYS"; then
+  echo "ERROR: snapshot table set does not exactly match the reviewed recovery allowlist" >&2
+  diff -u "$EXPECTED_KEYS" "$ACTUAL_KEYS" >&2 || true
   exit 1
 fi
-
-mkdir "$WORKDIR/sql"
-tar -xf "$WORKDIR/backup.tar" -C "$WORKDIR/sql"
-for file in roles.sql schema.sql data.sql history_schema.sql history_data.sql; do
-  test -s "$WORKDIR/sql/$file" || { echo "ERROR: logical backup member $file is empty." >&2; exit 1; }
+for table in "${TABLES[@]}"; do
+  jq -e --arg table "$table" '.tables[$table] | type == "array"' "$SNAPSHOT" >/dev/null || {
+    echo "ERROR: snapshot table payload is not an array: $table" >&2
+    exit 1
+  }
 done
 
-echo "Restoring into disposable Supabase environment..."
-psql "$SCRATCH_DB_URL" \
-  --single-transaction \
-  --variable ON_ERROR_STOP=1 \
-  --file "$WORKDIR/sql/roles.sql" \
-  --file "$WORKDIR/sql/schema.sql" \
-  --file "$WORKDIR/sql/history_schema.sql" \
-  --command 'SET session_replication_role = replica' \
-  --file "$WORKDIR/sql/data.sql" \
-  --file "$WORKDIR/sql/history_data.sql" \
-  --command 'SET session_replication_role = origin' \
-  >/dev/null
-
-echo "Running restore sanity checks..."
-
-FAMILY_OPS_CRON_JOBS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(*) from cron.job where jobname like 'family-ops-%';")"
-if ! [[ "$FAMILY_OPS_CRON_JOBS" =~ ^[0-9]+$ ]] || [ "$FAMILY_OPS_CRON_JOBS" -ne 0 ]; then
-  echo "ERROR: restored backup contains Family Ops cron jobs; refusing PASS because old-environment workers must never be activated on the recovery target." >&2
+# The disposable target must already have schema from repository migrations,
+# and no household data. This drill never resets or deletes production.
+SCRATCH_MIGRATION="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select version from supabase_migrations.schema_migrations order by version desc limit 1;")"
+SNAPSHOT_MIGRATION="$(jq -r '.source_migration_version' "$SNAPSHOT")"
+if [ -z "$SCRATCH_MIGRATION" ] || [ "$SCRATCH_MIGRATION" != "$SNAPSHOT_MIGRATION" ]; then
+  echo "ERROR: scratch schema migration version ($SCRATCH_MIGRATION) does not match snapshot ($SNAPSHOT_MIGRATION)" >&2
   exit 1
 fi
 
-echo "Worker isolation verified: no Family Ops cron jobs were restored."
-
-MIGRATION_TABLE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select to_regclass('supabase_migrations.schema_migrations') is not null;")"
-if [ "$MIGRATION_TABLE" != "t" ]; then
-  echo "ERROR: restored migration tracking table is missing." >&2
-  exit 1
-fi
-
-LATEST_MIGRATION="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select version from supabase_migrations.schema_migrations order by version desc limit 1;")"
-if [ -z "$LATEST_MIGRATION" ]; then
-  echo "ERROR: restored migration tracking table has no version rows." >&2
-  exit 1
-fi
-printf 'Latest restored migration: %s\n' "$LATEST_MIGRATION"
-
-CORE_TABLES=(households household_members task_definitions task_instances handovers user_notifications)
-for table in "${CORE_TABLES[@]}"; do
-  EXISTS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-    "select to_regclass('public.${table}') is not null;")"
-  if [ "$EXISTS" != "t" ]; then
-    echo "ERROR: restored core table public.${table} is missing." >&2
-    exit 1
-  fi
-  COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.${table};")"
-  if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: could not obtain a numeric row count for public.${table}." >&2
-    exit 1
-  fi
-  printf 'Restored row count %-24s %s\n' "${table}:" "$COUNT"
-  case "$table" in
-    households|household_members|task_definitions|task_instances)
-      if [ "$COUNT" -le 0 ]; then
-        echo "ERROR: foundational table public.${table} unexpectedly has zero rows." >&2
-        exit 1
-      fi
-      ;;
-  esac
+for table in "${TABLES[@]}"; do
+  EXISTS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select to_regclass('${table}') is not null;")"
+  [ "$EXISTS" = "t" ] || { echo "ERROR: scratch schema is missing $table" >&2; exit 1; }
 done
 
-PROFILE_TABLE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select to_regclass('public.profiles') is not null;")"
-if [ "$PROFILE_TABLE" != "t" ]; then
-  echo "ERROR: restored identity table public.profiles is missing." >&2
+EXISTING_HOUSEHOLDS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c 'select count(*) from public.households;')"
+if [ "$EXISTING_HOUSEHOLDS" != "0" ]; then
+  echo "ERROR: scratch target already contains household data; refusing restore" >&2
   exit 1
 fi
 
-AUTH_USER_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from auth.users;")"
-AUTH_IDENTITY_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from auth.identities;")"
-PROFILE_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.profiles;")"
-MEMBER_AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.household_members hm left join auth.users u on u.id = hm.user_id where u.id is null;")"
-PROFILE_AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.profiles p left join auth.users u on u.id = p.user_id where u.id is null;")"
-MEMBER_IDENTITY_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(distinct hm.user_id) from public.household_members hm where not exists (select 1 from auth.identities i where i.user_id = hm.user_id);")"
+# Insert placeholder Auth rows with triggers disabled so the drill can enforce
+# the real public-table FKs without copying passwords/OAuth identities/sessions.
+AUTH_JSON="$WORKDIR/auth-refs.json"
+jq '.auth_user_refs' "$SNAPSHOT" > "$AUTH_JSON"
+AUTH_B64="$WORKDIR/auth.b64"
+base64 -w0 "$AUTH_JSON" > "$AUTH_B64"
+AUTH_SQL="$WORKDIR/auth.sql"
+cat > "$AUTH_SQL" <<'SQL'
+set session_replication_role = replica;
+insert into auth.users (id, aud, role, email, created_at, updated_at, is_sso_user, is_anonymous)
+select x.id::uuid, 'authenticated', 'authenticated', x.email, now(), now(), false, false
+from jsonb_to_recordset(convert_from(decode('
+SQL
+cat "$AUTH_B64" >> "$AUTH_SQL"
+cat >> "$AUTH_SQL" <<'SQL'
+', 'base64'), 'UTF8')::jsonb) as x(id text, email text)
+on conflict (id) do nothing;
+set session_replication_role = origin;
+SQL
+psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -q -f "$AUTH_SQL"
 
-for value in "$AUTH_USER_COUNT" "$AUTH_IDENTITY_COUNT" "$PROFILE_COUNT" "$MEMBER_AUTH_ORPHANS" "$PROFILE_AUTH_ORPHANS" "$MEMBER_IDENTITY_ORPHANS"; do
-  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: restored identity sanity check returned a non-numeric count." >&2
+# Restore in the reviewed dependency order with normal FK/check constraints
+# active. Any missing dependency or type/schema drift fails the drill.
+for table in "${TABLES[@]}"; do
+  table_name="${table#public.}"
+  TABLE_JSON="$WORKDIR/${table_name}.json"
+  jq --arg table "$table" '.tables[$table]' "$SNAPSHOT" > "$TABLE_JSON"
+  expected="$(jq 'length' "$TABLE_JSON")"
+  if [ "$expected" = "0" ]; then
+    continue
+  fi
+  TABLE_B64="$WORKDIR/${table_name}.b64"
+  base64 -w0 "$TABLE_JSON" > "$TABLE_B64"
+  SQL_FILE="$WORKDIR/restore-${table_name}.sql"
+  printf "insert into %s select * from jsonb_populate_recordset(null::%s, convert_from(decode('" "$table" "$table" > "$SQL_FILE"
+  cat "$TABLE_B64" >> "$SQL_FILE"
+  cat >> "$SQL_FILE" <<'SQL'
+', 'base64'), 'UTF8')::jsonb);
+SQL
+  psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -q -f "$SQL_FILE"
+done
+
+# Exact row-count equality is the minimum recovery proof for every in-scope
+# table. FK/check enforcement was active during inserts, so successful restore
+# also proves the selected domain graph is internally loadable.
+for table in "${TABLES[@]}"; do
+  expected="$(jq -r --arg table "$table" '.row_counts[$table]' "$SNAPSHOT")"
+  actual="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from ${table};")"
+  if [ "$actual" != "$expected" ]; then
+    echo "ERROR: restored row count mismatch for $table (expected=$expected actual=$actual)" >&2
     exit 1
   fi
 done
 
-if [ "$AUTH_USER_COUNT" -le 0 ] || [ "$AUTH_IDENTITY_COUNT" -le 0 ] || [ "$PROFILE_COUNT" -le 0 ]; then
-  echo "ERROR: restored Auth/profile data is incomplete; household users would not be able to resume Family Ops normally." >&2
-  exit 1
-fi
-if [ "$MEMBER_AUTH_ORPHANS" -ne 0 ] || [ "$PROFILE_AUTH_ORPHANS" -ne 0 ] || [ "$MEMBER_IDENTITY_ORPHANS" -ne 0 ]; then
-  echo "ERROR: restored Family Ops user/profile rows are not fully linked to Supabase Auth users/identities." >&2
-  exit 1
-fi
-printf 'Restored identity counts: auth_users=%s auth_identities=%s profiles=%s\n' "$AUTH_USER_COUNT" "$AUTH_IDENTITY_COUNT" "$PROFILE_COUNT"
+AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select (select count(*) from public.household_members hm left join auth.users u on u.id=hm.user_id where u.id is null) + (select count(*) from public.profiles p left join auth.users u on u.id=p.user_id where u.id is null);")"
+TASK_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.task_instances ti left join public.households h on h.id=ti.household_id left join public.task_definitions td on td.id=ti.task_definition_id and td.household_id=ti.household_id where h.id is null or (ti.task_definition_id is not null and td.id is null);")"
+SUBTASK_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.task_subtask_instances si left join public.task_instances ti on ti.id=si.task_instance_id and ti.household_id=si.household_id where ti.id is null;")"
 
-LATEST_TASK_UPDATE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select max(updated_at) from public.task_instances;")"
-if [ -z "$LATEST_TASK_UPDATE" ]; then
-  echo "ERROR: representative task_instances.updated_at sanity check returned no value." >&2
+if [ "$AUTH_ORPHANS" != "0" ] || [ "$TASK_ORPHANS" != "0" ] || [ "$SUBTASK_ORPHANS" != "0" ]; then
+  echo "ERROR: restored household graph has identity/task linkage orphans" >&2
   exit 1
 fi
-printf 'Representative task timestamp: %s\n' "$LATEST_TASK_UPDATE"
 
-echo "RESULT: PASS — encrypted Supabase logical bundle decrypted, restored into a fresh disposable Supabase environment, old worker state stayed isolated, and household identity/schema/data sanity checks passed."
+HOUSEHOLDS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c 'select count(*) from public.households;')"
+MEMBERS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c 'select count(*) from public.household_members;')"
+TASKS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c 'select count(*) from public.task_instances;')"
+SUBTASKS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c 'select count(*) from public.task_subtask_instances;')"
+if [ "$HOUSEHOLDS" -lt 1 ] || [ "$MEMBERS" -lt 1 ] || [ "$TASKS" -lt 1 ]; then
+  echo "ERROR: restored foundational household data is unexpectedly empty" >&2
+  exit 1
+fi
+
+echo "Recovered household graph: households=${HOUSEHOLDS}, members=${MEMBERS}, tasks=${TASKS}, subtasks=${SUBTASKS}"
+echo "RESULT: PASS — latest separate-project snapshot restored into disposable Supabase with typed rows, FK checks and exact row counts"
