@@ -262,10 +262,21 @@ SUBTASK_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select cou
   echo "ERROR: restored household graph has identity/task linkage orphans" >&2; exit 1;
 }
 
-OLD_IDS_SQL="$(jq -r '[.[].old_id | "'"'" + . + "'"'"] | join(",")' "$WORKDIR/id-map.json")"
+# Prove that no production Auth UUID survives in any schema-declared identity
+# FK position. Reuse the base64 identity map rather than interpolating a quoted
+# SQL IN-list in the shell; that keeps UUID values data-only and avoids quoting
+# ambiguity while preserving the same fail-closed check.
 while IFS=$'\t' read -r table column; do
   [ -n "$table" ] || continue
-  stale="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from ${table} where ${column}::text in (${OLD_IDS_SQL});")"
+  stale="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "
+with maps as (
+  select *
+  from jsonb_to_recordset(convert_from(decode('${MAP_B64}','base64'),'UTF8')::jsonb)
+       as x(old_id text,new_id text)
+)
+select count(*)
+from ${table} t
+join maps m on t.${column}::text = m.old_id;")"
   [ "$stale" = "0" ] || { echo "ERROR: stale production user UUID remains in ${table}.${column}" >&2; exit 1; }
 done < "$IDENTITY_COLUMNS"
 
