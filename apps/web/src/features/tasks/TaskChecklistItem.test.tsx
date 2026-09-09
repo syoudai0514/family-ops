@@ -49,6 +49,7 @@ const props = {
 
 describe('TaskChecklistItem Q54/Q64/Q106', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     callEdgeFunction.mockReset();
     callEdgeFunction.mockResolvedValue({ ok: true });
     props.onChanged.mockReset();
@@ -85,6 +86,29 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       completed: true,
       completion_actor: 'self',
     }));
+  });
+
+  it('restores the exact Today checklist detail expansion after leaving and returning', () => {
+    const storageKey = 'today:task-expanded:laundry-1';
+    const first = render(
+      <TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} expandedStorageKey={storageKey} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を閉じる' }));
+    expect(sessionStorage.getItem(storageKey)).toBe('0');
+    expect(screen.queryByText('回す')).not.toBeInTheDocument();
+    first.unmount();
+
+    const second = render(
+      <TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} expandedStorageKey={storageKey} />,
+    );
+    expect(screen.queryByText('回す')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
+    expect(sessionStorage.getItem(storageKey)).toBe('1');
+    second.unmount();
+
+    render(<TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} expandedStorageKey={storageKey} />);
+    expect(screen.getByText('回す')).toBeInTheDocument();
   });
 
   it('offers evidence only after completion and saves an optional memo separately', async () => {
