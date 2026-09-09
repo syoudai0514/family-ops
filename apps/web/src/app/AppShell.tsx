@@ -24,6 +24,7 @@ import { ConciergePage } from '../features/concierge/ConciergePage';
 import { TranscriptPage } from '../features/concierge/TranscriptPage';
 import { ConciergeResultsPage } from '../features/concierge/ConciergeResultsPage';
 import { ConciergeConfirmPage } from '../features/concierge/ConciergeConfirmPage';
+import { NavigationStateManager } from './NavigationStateManager';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -46,9 +47,7 @@ function BottomNavLink({ item }: { item: (typeof PRIMARY_NAV_ITEMS)[number] }) {
         if (isLineInAppBrowser()) {
           event.preventDefault();
           window.location.assign(item.to);
-          return;
         }
-        window.scrollTo(0, 0);
       }}
     >
       <span aria-hidden="true">{item.icon}</span>
@@ -60,6 +59,7 @@ function BottomNavLink({ item }: { item: (typeof PRIMARY_NAV_ITEMS)[number] }) {
 export function AppShell() {
   return (
     <div className="app-root">
+      <NavigationStateManager />
       <header className="app-nav">
         <NavLink className="app-nav-brand" to="/today"><span aria-hidden="true">⌂</span> おうちノート</NavLink>
         <nav className="desktop-nav" aria-label="主要メニュー">
