@@ -1,62 +1,65 @@
 # Family Ops Detailed Design — Canonical
 
-- **Status:** Accepted / Canonical Detailed Design for the existing ADR0013 package; CF-11 right-size delta is pending canonical merge
-- **Accepted:** 2026-09-02 (ADR0013 package)
+- **Status:** Accepted / Canonical Detailed Design on CURRENT `main`, with CF-09/CF-10 governance updates included in the integration candidate and pending final main-merge decision
+- **Accepted baseline:** 2026-09-02 (ADR 0013 package)
+- **CF-11 recovery:** Accepted on CURRENT `main` after PR #73 merge, 2026-09-09
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
-- **Governance:** ADR 0012 Accepted / ADR 0013 Accepted / ADR 0014 Product Owner approved, pending canonical merge
-- **Review:** Independent Round 5 Final Verification = `GO`; CF-11 right-size proposal approved by Product Owner and under protected-PR verification
-- **Reviewed head:** `5c85bd1468a624b831493e198b0f88b4ef7c574e` for the Round 5 package
+- **Governance:** ADR 0012 Accepted / ADR 0013 Accepted / ADR 0014 Accepted
+- **Integration base main:** `06a4e6b1a5aefccb8f9353fad294dd895582bc53`
 
-このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**canonical detailed design**である。PR #41は独立Round 5最終検証で `GO` を得たexact reviewed headをmergeし、ADR 0013のAccepted化により本ディレクトリのarchitecture/schema/API evolutionが正式に承認された。
+このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**canonical detailed design**である。固定pathを正として使用し、`FINAL` / `V2` / `LATEST` の平行コピーを作らない。product behavior変更ならRequirements Baseline、architecture scope変更ならaccepted ADR / current designを同じ変更単位で更新する。
 
-以後、実装者はこの固定pathを正として使用する。`FINAL` / `V2` / `LATEST` の並行設計コピーは作らない。設計変更はこのpathを更新し、product behavior変更ならRequirements Baseline、architecture scope変更ならADRも同時に更新・レビューする。
+CURRENT `main` ではPR #73のmergeによりADR 0014 / `10_BACKUP_RECOVERY.md` がcanonicalとなり、CF-11のright-sized household recovery designが受理済みである。旧R2/age前提はこのscopeではsupersedeされる。provider credential/sessionまで復旧できると誤解してはならない。
 
-CF-11 backup/recoveryのright-size deltaは2026-09-09にProduct Owner承認済みだが、ADR 0012 governance上、**protected mainへmergeされるまではcanonicalではない**。branch上のADR 0014 / `10_BACKUP_RECOVERY.md` は「Product Owner approved / pending canonical merge」の提案・実証物として扱う。merge後に限りLegacy v6 WP10のR2/age mechanicsをこのscopeでsupersedeする。v6ファイル自体は履歴として変更しない。
+今回のintegration candidateでは、Product Owner承認済みCF-09 channel responsibility matrixとCF-10 approved-final-UX canonicalization、およびBaseline v1.2 product-outcome acceptance guardをこの固定pathへ統合している。これらは**integration candidate上では統合済み**だが、mainへmergeされるまではCURRENT main canonicalとは区別する。Release GOやproduction承認を意味しない。
 
 ---
 
 ## Normative hierarchy
 
-1. accepted ADR governing the exact architecture decision
-2. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
+For **product requirements and UX meaning**:
+
+1. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
+2. accepted ADRs within their explicit governance / architecture scope
 3. `docs/design/current/`
 4. `docs/design/v6/` for non-conflicting legacy architecture/provider/security mechanics
 5. code/tests
+
+For an architecture-specific decision that does not change product meaning, the accepted ADR governing that exact scope controls the detailed-design realization, subject to the Baseline above. Product meaning must not be changed through an ADR/design side door.
+
+Product/release success is additionally governed by Requirements Baseline §2.1: technical correctness is necessary evidence where applicable but cannot override Family Ops purpose, Requirements, approved UX, or real-use family experience.
 
 Physical schema/cutover detail:
 
 - `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 - `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
 
-`08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` がolder conceptual documentのphysical schema/cutover assumptionを明示的に修正する場合、physical detailは08を正とする。ただしproduct meaningを変更する権限はない。
+`08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` may correct older conceptual physical assumptions, but cannot change product meaning.
 
 ---
 
 ## Accepted physical baseline at design review
 
-Reviewed CURRENT main baseline:
+Reviewed baseline at the detailed-design acceptance point:
 
 - SHA: `7729c93ee10db29b145592763886cfa5f9a019e0`
-- migration files: 78
 - public tables: **27**
 - private tables: **23**
 - total: **50**
 
-Table enumeration includes `CREATE TABLE` and `CREATE TABLE IF NOT EXISTS` case-insensitively.
+Implementation/release work must still fresh-read CURRENT schema/runtime before material cutover decisions.
 
-Google provider-lifecycle tables that remain explicit implementation scope:
+Google provider-lifecycle tables in scope include:
 
 - `private.family_ops_calendar_mirrors`
 - `private.family_ops_calendar_target_deletions`
 - `private.family_ops_calendar_orphaned_mirrors`
 
-The first two can mutate Google provider state; the orphan table is observation/audit only. Binding ownership/transfer rules are in `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md` §10 and are synchronized into `02_DATA_MODEL_AND_MIGRATION.md` and `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`.
-
-Before Phase 1 migration work, implementation must fresh-read the actual production/current schema and stop for review if it differs materially from the accepted physical assumptions.
+Provider mutation ownership must remain singular; orphan evidence is not a writable provider link.
 
 ---
 
-## Canonical documents
+## Canonical documents and integration-candidate additions
 
 1. `01_ARCHITECTURE_AND_DOMAIN_BOUNDARIES.md`
 2. `02_DATA_MODEL_AND_MIGRATION.md`
@@ -64,27 +67,27 @@ Before Phase 1 migration work, implementation must fresh-read the actual product
 4. `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`
 5. `05_GOOGLE_IMAGE_AI_AUTHORITY_PRIVACY.md`
 6. `06_TEST_MODE_CONCURRENCY_OBSERVABILITY.md`
-7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`
+7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md` — implementation/release gates, including product-outcome / real-use acceptance
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
+10. `09_TRANSPORT_PERIOD_TEMPLATE_AND_MONTH_UX.md`
+11. `10_BACKUP_RECOVERY.md` — ADR 0014 accepted right-sized household recovery contract on CURRENT main
+12. `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — CF-09 M01-M26 classifications Product Owner approved; integration candidate, not Release GO
+13. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` — exact approved UX snapshot/provenance/Q mapping registry; subordinate to Baseline
 
-Pending CF-11 delta (becomes canonical only after protected merge):
+Review instruction/history documents remain audit-only and are not CURRENT requirements/design authorities.
 
-10. `10_BACKUP_RECOVERY.md` — Product Owner approved right-sized household recovery proposal under ADR 0014
+---
 
-Review instruction/history documents remain for audit only:
+## UX contract navigation
 
-- `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
-- `FAMILY-OPS-DETAILED-DESIGN-ROUND1-REREVIEW-REQUEST.md`
-- `FAMILY-OPS-DETAILED-DESIGN-ROUND2-REREVIEW-REQUEST.md`
-- `FAMILY-OPS-DETAILED-DESIGN-ROUND3-REREVIEW-REQUEST.md`
-- `FAMILY-OPS-DETAILED-DESIGN-ROUND4-REREVIEW-REQUEST.md`
-- `FAMILY-OPS-DETAILED-DESIGN-ROUND5-FINAL-VERIFY-REQUEST.md`
+For requirements/UX implementation or review, start from the Requirements Baseline, then this README, then `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` for channel responsibility and `11_APPROVED_FINAL_UX_CANONICALIZATION.md` for the pinned approved UX source. Do not select V3/V4/V5/FINAL/LATEST artifacts by filename heuristics.
 
 ---
 
 ## Non-negotiable constraints
 
+- **technical GREEN is not product PASS**; final completion reconciles `purpose → Requirement → approved UX/CURRENT design → CURRENT implementation → tests/evidence → real-use scenario`.
 - Request is agreement truth until accepted; linked Task owns execution after acceptance.
 - Request legacy status + lifecycle timestamps remain CHECK-valid via one atomic compatibility projection.
 - `大体やった` is group evidence, not child Task status.
@@ -93,25 +96,26 @@ Review instruction/history documents remain for audit only:
 - real/simulated/system actor uses one ActorRef model; simulated actor never uses operator ID/fake member.
 - core test-capable rows have direct `test_context_id`; ordinary production reads/analytics exclude test.
 - shopping remains a separate aggregate with anyone claim/participants/duplicate-safety.
-- Google all-day events are visible but remain excluded from timed assignment conflict.
+- Google all-day events are visible but excluded from timed assignment conflict.
 - Family Event human-protected/external-follow Authority is not silently overwritten by Google/image/AI.
 - provider identityごとにTask mirror / old-target deletion / Family Event writerのprovider mutation ownershipを重複させない。
 - `family_ops_calendar_target_deletions`のDELETEもprovider mutationであり、ownership transfer後のstale DELETEは禁止。
-- `family_ops_calendar_orphaned_mirrors`はwritable linkの証拠にならず、fresh provider access/identity/ETag revalidationなしでFamily Eventへ昇格しない。
+- `family_ops_calendar_orphaned_mirrors`はwritable linkの証拠にならない。
 - aggregate canonical reader+writer activates atomically.
 - after P1, feature-off never restores legacy current truth.
-- no existing migration rewrite / `supabase db reset` / production data delete.
-- Pending CF-11 recovery proposal uses explicit household-domain allowlist and excludes provider credentials/queues/test state; it does not claim provider-session recovery.
+- no existing migration rewrite / production reset / production data delete as an implementation shortcut.
+- ADR 0014 recovery uses an explicit household-domain allowlist and excludes provider credentials/sessions/queues/test state; it does not claim provider-session recovery.
+- technical redesign may not silently alter product behavior; genuine product changes require explicit canonical Requirements/design update first.
 
 ---
 
 ## Requirements Final-GO MEDIUM 3
 
-The following remain permanent implementation acceptance expectations:
+Permanent implementation acceptance expectations:
 
-1. `大体やった` + carryover noise — PASS design retained
-2. duplicate-sensitive neutral completion, including shopping and undo/correction — PASS design retained
-3. one-user synthetic delivery + domain/test-state isolation — PASS design retained
+1. `大体やった` + carryover noise
+2. duplicate-sensitive neutral completion, including shopping and undo/correction
+3. one-user synthetic delivery + domain/test-state isolation
 
 ---
 
@@ -119,34 +123,39 @@ The following remain permanent implementation acceptance expectations:
 
 ### Requirements
 
-Final verdict: `GO`.
+- Baseline v1.1: final independent re-review `GO`, merged under ADR 0012.
+- Integration candidate v1.2: Product Owner success criterion integrated; pending final review/main-merge decision.
 
-### Detailed design progression
+### Detailed design
 
-- Round 1: `NO-GO` — BLOCKER 0 / HIGH 3 / MEDIUM 3
-- CURRENT physical alignment / Round 2: major migration/read-path gaps closed
-- Round 3: `NO-GO` — BLOCKER 0 / HIGH 1
-- Round 4: reviewer A `GO WITH CONDITIONS` with one MEDIUM; reviewer B `GO`; no BLOCKER/HIGH
-- Round 5: **`GO` — BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0 / Requirements contradiction 0**
-- CF-11 right-size: Product Owner approved 2026-09-09; pending canonical merge and operational proof
+- Round 5: **GO — BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0 / Requirements contradiction 0**
+- Round 5 reviewed head: `5c85bd1468a624b831493e198b0f88b4ef7c574e`
+- PR #41 merge commit: `c272b0a1e00491c749e8cc2d76b90b20be8196ae`
 
-Round 5 reviewed head:
+### CF-11 / ADR 0014
 
-`5c85bd1468a624b831493e198b0f88b4ef7c574e`
+- Product Owner approved: 2026-09-09
+- PR #73 merged to CURRENT main as `06a4e6b1a5aefccb8f9353fad294dd895582bc53`
+- backup/freshness/disposable restore/authenticated-use evidence: PASS per reviewed PR #73
+- CF-11 is canonical on CURRENT main and must not be rolled back by older lane branches.
 
-PR #41 merged that exact head as merge commit `c272b0a1e00491c749e8cc2d76b90b20be8196ae`.
+### CF-09 channel responsibility
+
+- Product Owner approved all 26 M01-M26 classifications on 2026-09-09.
+- Approval scope is classification semantics only; not implementation-wide approval, Release GO, production approval, or main merge approval.
 
 ---
 
 ## Implementation gate
 
-Detailed-design review is complete. Implementation must preserve the established work-package ordering/gates. In particular:
+Implementation and integration must preserve the established work-package ordering/gates and the CURRENT accepted operational-safety baseline. In particular:
 
-- schema/catalog constraints are freshly measured before migration;
+- fresh-read actual schema/runtime before material migration/cutover decisions;
 - additive/backfill phases precede new-only semantic writes;
 - test ActorRef/side-effect sandbox foundation precedes actual-household simulation;
 - each aggregate read+write cutover is atomic;
 - provider lifecycle overlap/orphan audits pass before Family Event P1;
 - P1 rollback never restores legacy semantic truth;
 - destructive cleanup remains separately reviewed and deferred;
-- CF-11 can become canonical/PASS only after ADR 0014 + `10_BACKUP_RECOVERY.md` pass protected merge and required actual backup/freshness/disposable restore/authenticated-use evidence.
+- no work package/release is product-PASS until Baseline §2.1's purpose/Requirement/approved-UX/real-use gate passes;
+- CURRENT main CF-11/CF-15 operational safety and repository protection must not be weakened by integration of older branches.
