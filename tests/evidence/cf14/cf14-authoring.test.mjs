@@ -180,3 +180,23 @@ test('strict F2 evidence assessment fails missing provider/device boundaries ins
   const strict = assessEvidence(cf14Scenarios, [], { strict: true });
   assert.ok(strict.every((result) => result.result === 'FAIL'));
 });
+
+test('known Requirement/UX gap blocks F2 even when every technical evidence class is marked PASS', () => {
+  const scenario = cf14Scenarios.find((candidate) => candidate.scenarioId === 'CF14-Q107-Q109-SHOPPING-INTERACTION');
+  assert.ok(scenario);
+  const technicalGreen = scenario.requiredEvidenceClasses.map((evidenceClass) => ({
+    scenarioId: scenario.scenarioId,
+    evidenceClass,
+    status: 'PASS',
+    source: `synthetic-${evidenceClass}`,
+  }));
+  const [blocked] = assessEvidence([scenario], technicalGreen, { strict: true });
+  assert.deepEqual(blocked.missingEvidenceClasses, []);
+  assert.equal(blocked.acceptanceBlocked, true);
+  assert.equal(blocked.result, 'FAIL');
+  assert.match(blocked.blockingReason, /product\/UX gaps/);
+
+  const [cleared] = assessEvidence([{ ...scenario, status: 'runnable', expectedFailureReason: undefined }], technicalGreen, { strict: true });
+  assert.equal(cleared.acceptanceBlocked, false);
+  assert.equal(cleared.result, 'PASS');
+});
