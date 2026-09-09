@@ -4,7 +4,10 @@ import { millisecondsUntilNextTodayBoundary, tokyoDaypart, tokyoLocalDate } from
 export function useTodayClock(onRefresh: () => void | Promise<void>) {
   const [now, setNow] = useState(() => new Date());
   const refreshRef = useRef(onRefresh);
-  refreshRef.current = onRefresh;
+
+  useEffect(() => {
+    refreshRef.current = onRefresh;
+  }, [onRefresh]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
