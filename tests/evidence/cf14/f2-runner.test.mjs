@@ -59,8 +59,10 @@ test('F2 rejects anonymous PASS records without an artifact/source reference', (
   assert.match(result.stderr, /requires a non-empty source/);
 });
 
-test('F2 matching-head payload still fails while required evidence classes are missing', () => {
+test('F2 matching-head payload remains unacceptable while evidence or Requirement/UX blockers remain', () => {
   const result = run({ exactHead: HEAD_A, records: [] });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /scenarios lack required evidence/);
+  assert.match(result.stderr, /scenarios are not acceptable/);
+  assert.match(result.stderr, /known Requirement\/UX blockers/);
+  assert.match(result.stdout, /acceptanceBlocker/);
 });
