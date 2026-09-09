@@ -118,8 +118,8 @@ if ! grep -q 'uses: supabase/setup-cli@v1' "$BACKUP_WORKFLOW"; then
   echo "FAIL: backup.yml must install Supabase CLI via setup-cli" >&2
   exit 1
 fi
-if ! grep -q 'version: 2.117.0' "$BACKUP_WORKFLOW"; then
-  echo "FAIL: backup.yml must pin the reviewed Supabase CLI version" >&2
+if ! grep -q 'version: 2.115.0' "$BACKUP_WORKFLOW"; then
+  echo "FAIL: backup.yml must use the Supabase CLI version already proven by Family Ops integration CI" >&2
   exit 1
 fi
 for required in \
