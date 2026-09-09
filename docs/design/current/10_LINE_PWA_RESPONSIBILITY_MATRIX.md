@@ -73,6 +73,7 @@ Authority: Requirements Baseline §§3, 7.6, 15, 23 and Appendix A Q4, Q36, Q78-
 | M23 | Event project management and preparation review/editing | **PWA ONLY** | Event milestones may notify via LINE, but event/template preparation management is the richer PWA surface; event itself has no whole-event coordinator. | Baseline §17; Q17-Q19, Q58; final UX §10 |
 | M24 | Nursery source detail/privacy management, original-image viewing/deletion, monthly notice review, confirmed preparation rules, recurring candidates/exceptions, URL/QR detail, optional completion evidence | **PWA ONLY** | LINE may alert or deep-link, but these detail/bulk/privacy surfaces live in PWA. Ordinary ToDo completion created from nursery intake still follows M06. | Baseline §§19.6, 19.9-19.17; Q91-Q95, Q100-Q106; final UX §12 |
 | M25 | Registration-error deletion and other destructive/admin correction that is distinct from ordinary occurrence outcomes | **PWA ONLY** | `今回は不要 / 中止 / 不要になった / 再予定` remain ordinary states/results and are not collapsed into delete. True deletion is a deeper registration-error action with history protection. | Baseline §22; Q29, Q82; final UX §15 |
+| M26 | Browse/manage the shopping list and its richer status lifecycle while preserving action-level household actual semantics | **PWA ONLY** | LINE remains able to add shopping needs and handle daily claim/completion, while full list/status browsing belongs to PWA detail. Product checks prevent forgetting items; household actual is the shopping trip/action, not one actual per product. | Baseline §§12, 13.6, 15; Q33, Q77-Q79, Q107-Q109; final UX §9 |
 
 ## 5. Q1-Q112 coverage guard
 
@@ -86,17 +87,17 @@ This guard is not a replacement for Appendix A. It verifies that the scenario ma
 | Q17-Q20 | M11, M19, M23 |
 | Q21-Q24 | M01, M03, M09, M13 |
 | Q25-Q32 | M01, M04, M07-M13, M19 |
-| Q33-Q40 | M01, M02, M04-M06, M11, M22 |
+| Q33-Q40 | M01, M02, M04-M06, M11, M22, M26 |
 | Q41-Q49 | M04-M05, M14 |
 | Q50-Q58 | M03, M07-M08, M13, M20-M23 |
 | Q59-Q64 | M07-M08, M16, M21 |
 | Q60-1 / Q60-2 | M07, M21 |
 | Q65-Q72 | M01-M02, M04, M16, M20 |
-| Q73-Q80 | M01-M02, M08, M11, M16-M17 |
+| Q73-Q80 | M01-M02, M08, M11, M16-M17, M26 |
 | Q81-Q88 | M04, M08, M11, M14, M25 |
 | Q89-Q96 | M14-M15, M24 |
 | Q97-Q106 | M15, M24 |
-| Q107-Q109 | M10, M18 |
+| Q107-Q109 | M10, M18, M26 |
 | Q110-Q112 | M22 |
 
 The canonical full decision text remains in `FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` Appendix A. The approved final UX audit independently mapped all 114 decision rows (Q1-Q112 plus Q60-1/Q60-2); see `11_APPROVED_FINAL_UX_CANONICALIZATION.md`.
@@ -111,6 +112,7 @@ These examples prevent category misreading; they do not add product behavior.
 - **Nursery image:** LINE handles upload/light triage; rich multi-item/source review may hand off; source/privacy/monthly/rule management is PWA-only detail (M15/M24).
 - **Google conflict:** LINE may tell the user action is needed, while side-by-side provider conflict resolution is PWA detail (M22). Protected household values remain effective until resolution on either channel.
 - **Base rule vs one-off assignment:** stable base/period-rule administration is PWA-only (M21); a daily request/assignment negotiation remains LINE-completable (M04).
+- **Shopping:** adding a need and daily execution stay on the LINE operational path; rich list/status browsing is PWA detail (M02/M10/M26).
 
 ## 7. USER DECISION REQUIRED
 
