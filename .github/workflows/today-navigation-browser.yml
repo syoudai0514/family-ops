@@ -1,0 +1,42 @@
+name: Today Navigation Browser
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'scripts/run_today_navigation_browser_e2e.mjs'
+      - '.github/workflows/today-navigation-browser.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'scripts/run_today_navigation_browser_e2e.mjs'
+      - '.github/workflows/today-navigation-browser.yml'
+  workflow_dispatch:
+
+jobs:
+  browser:
+    name: today/navigation (real Chrome mobile viewport)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Real Chrome Today/navigation E2E
+        run: node scripts/run_today_navigation_browser_e2e.mjs
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: today-navigation-browser-${{ github.sha }}
+          path: artifacts/today-navigation-browser
+          if-no-files-found: warn
+          retention-days: 14
