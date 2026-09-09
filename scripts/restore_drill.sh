@@ -2,7 +2,7 @@
 # WP10 restore drill: download the latest (or a named) encrypted logical
 # backup bundle from R2, decrypt it LOCALLY, restore it into a fresh
 # disposable Supabase-compatible Postgres target, and run fail-closed
-# schema/data/identity sanity checks.
+# schema/data/identity/worker-isolation sanity checks.
 # See docs/BACKUP_RESTORE_RUNBOOK.md for the release/monthly checklist.
 #
 # ============================================================================
@@ -29,9 +29,10 @@
 #                            Defaults to the latest one per latest-backup.txt.
 #   --scratch-db-url <url>  Postgres connection string for a FRESH,
 #                            disposable Supabase project/local stack.
-#                            REQUIRED. Managed auth/storage schemas + standard
-#                            Supabase roles must already exist, while Family
-#                            Ops public/private tables must not.
+#                            REQUIRED. Managed auth/storage/cron/net/Vault
+#                            facilities + standard Supabase roles must already
+#                            exist, while Family Ops public/private tables must
+#                            not.
 #   -h, --help              Show this help.
 #
 # Required env (R2 read access only — never age keys):
@@ -44,7 +45,7 @@ BACKUP_FILE=""
 SCRATCH_DB_URL=""
 
 usage() {
-  sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -91,25 +92,21 @@ done
 
 ENDPOINT_URL="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 WORKDIR="$(mktemp -d)"
-cleanup() {
-  rm -rf "$WORKDIR"
-}
+cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
 
-# --- 0. Prove the target is a fresh disposable Supabase environment ---------
-# The backup contains Supabase Auth/Storage data and application SQL that
-# references the standard Supabase roles. A vanilla PostgreSQL database is
-# therefore not a valid recovery target. Conversely, a routine drill must
-# never be aimed at an existing Family Ops environment.
 SUPABASE_PREREQS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
   "select
      to_regnamespace('auth') is not null
      and to_regnamespace('storage') is not null
      and to_regrole('anon') is not null
      and to_regrole('authenticated') is not null
-     and to_regrole('service_role') is not null;")"
+     and to_regrole('service_role') is not null
+     and to_regclass('cron.job') is not null
+     and to_regclass('net.http_request_queue') is not null
+     and to_regclass('vault.decrypted_secrets') is not null;")"
 if [ "$SUPABASE_PREREQS" != "t" ]; then
-  echo "ERROR: scratch target is not Supabase-compatible (auth/storage schemas and standard Supabase roles are required)." >&2
+  echo "ERROR: scratch target is not Family Ops recovery-compatible (Supabase auth/storage, standard roles, pg_cron, pg_net and Vault are required)." >&2
   exit 1
 fi
 
@@ -139,13 +136,18 @@ if [ "$MIGRATION_TABLE_EXISTS" = "t" ]; then
   fi
 fi
 
+EXISTING_FAMILY_OPS_CRON="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select count(*) from cron.job where jobname like 'family-ops-%';")"
+if ! [[ "$EXISTING_FAMILY_OPS_CRON" =~ ^[0-9]+$ ]] || [ "$EXISTING_FAMILY_OPS_CRON" -ne 0 ]; then
+  echo "ERROR: scratch target already has Family Ops cron jobs. Refusing restore to avoid external side effects." >&2
+  exit 1
+fi
+
 echo "Scratch Supabase environment verified fresh for Family Ops restore."
 
-# --- 1. Resolve which backup file to restore --------------------------------
 if [ -z "$BACKUP_FILE" ]; then
   echo "No --backup-file given; looking up latest-backup.txt marker..."
-  aws s3 cp "s3://${R2_BUCKET_NAME}/latest-backup.txt" "$WORKDIR/latest-backup.txt" \
-    --endpoint-url "$ENDPOINT_URL"
+  aws s3 cp "s3://${R2_BUCKET_NAME}/latest-backup.txt" "$WORKDIR/latest-backup.txt" --endpoint-url "$ENDPOINT_URL"
   BACKUP_FILE="$(sed -n '1p' "$WORKDIR/latest-backup.txt")"
 fi
 
@@ -153,15 +155,11 @@ if ! [[ "$BACKUP_FILE" =~ ^family-ops-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}\.tar\.ag
   echo "ERROR: backup object name is malformed." >&2
   exit 1
 fi
-echo "Resolved encrypted backup object: $BACKUP_FILE"
 
-# --- 2. Download the encrypted backup ---------------------------------------
-echo "Downloading encrypted backup from R2..."
-aws s3 cp "s3://${R2_BUCKET_NAME}/${BACKUP_FILE}" "$WORKDIR/backup.tar.age" \
-  --endpoint-url "$ENDPOINT_URL"
+echo "Resolved encrypted backup object: $BACKUP_FILE"
+aws s3 cp "s3://${R2_BUCKET_NAME}/${BACKUP_FILE}" "$WORKDIR/backup.tar.age" --endpoint-url "$ENDPOINT_URL"
 test -s "$WORKDIR/backup.tar.age" || { echo "ERROR: downloaded encrypted backup is empty." >&2; exit 1; }
 
-# --- 3. Obtain the age private key (local only, never from env) -------------
 if [ -n "$KEY_FILE" ]; then
   if [ ! -f "$KEY_FILE" ]; then
     echo "ERROR: --key-file does not exist" >&2
@@ -178,7 +176,6 @@ else
   unset PASTED_KEY
 fi
 
-# --- 4. Decrypt and validate the logical bundle -----------------------------
 echo "Decrypting locally..."
 age -d -i "$IDENTITY_FILE" -o "$WORKDIR/backup.tar" "$WORKDIR/backup.tar.age"
 test -s "$WORKDIR/backup.tar" || { echo "ERROR: decrypted backup bundle is empty." >&2; exit 1; }
@@ -196,7 +193,6 @@ for file in roles.sql schema.sql data.sql history_schema.sql history_data.sql; d
   test -s "$WORKDIR/sql/$file" || { echo "ERROR: logical backup member $file is empty." >&2; exit 1; }
 done
 
-# --- 5. Restore in Supabase's documented logical order ----------------------
 echo "Restoring into disposable Supabase environment..."
 psql "$SCRATCH_DB_URL" \
   --single-transaction \
@@ -210,8 +206,16 @@ psql "$SCRATCH_DB_URL" \
   --command 'SET session_replication_role = origin' \
   >/dev/null
 
-# --- 6. Fail-closed sanity checks -------------------------------------------
 echo "Running restore sanity checks..."
+
+FAMILY_OPS_CRON_JOBS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select count(*) from cron.job where jobname like 'family-ops-%';")"
+if ! [[ "$FAMILY_OPS_CRON_JOBS" =~ ^[0-9]+$ ]] || [ "$FAMILY_OPS_CRON_JOBS" -ne 0 ]; then
+  echo "ERROR: restored backup contains Family Ops cron jobs; refusing PASS because old-environment workers must never be activated on the recovery target." >&2
+  exit 1
+fi
+
+echo "Worker isolation verified: no Family Ops cron jobs were restored."
 
 MIGRATION_TABLE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
   "select to_regclass('supabase_migrations.schema_migrations') is not null;")"
@@ -236,15 +240,12 @@ for table in "${CORE_TABLES[@]}"; do
     echo "ERROR: restored core table public.${table} is missing." >&2
     exit 1
   fi
-
-  COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-    "select count(*) from public.${table};")"
+  COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.${table};")"
   if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
     echo "ERROR: could not obtain a numeric row count for public.${table}." >&2
     exit 1
   fi
   printf 'Restored row count %-24s %s\n' "${table}:" "$COUNT"
-
   case "$table" in
     households|household_members|task_definitions|task_instances)
       if [ "$COUNT" -le 0 ]; then
@@ -255,40 +256,22 @@ for table in "${CORE_TABLES[@]}"; do
   esac
 done
 
-# Family Ops is not operationally recovered if household rows exist but the
-# Supabase Auth identities they depend on are missing. Because the restore
-# data phase intentionally disables triggers/FK enforcement, validate these
-# relationships explicitly after constraints are active again.
-PROFILE_TABLE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select to_regclass('public.profiles') is not null;")"
+PROFILE_TABLE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select to_regclass('public.profiles') is not null;")"
 if [ "$PROFILE_TABLE" != "t" ]; then
   echo "ERROR: restored identity table public.profiles is missing." >&2
   exit 1
 fi
 
-AUTH_USER_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(*) from auth.users;")"
-AUTH_IDENTITY_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(*) from auth.identities;")"
-PROFILE_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(*) from public.profiles;")"
-MEMBER_AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(*) from public.household_members hm left join auth.users u on u.id = hm.user_id where u.id is null;")"
-PROFILE_AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(*) from public.profiles p left join auth.users u on u.id = p.user_id where u.id is null;")"
-MEMBER_IDENTITY_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select count(distinct hm.user_id) from public.household_members hm where not exists (select 1 from auth.identities i where i.user_id = hm.user_id);")"
+AUTH_USER_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from auth.users;")"
+AUTH_IDENTITY_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from auth.identities;")"
+PROFILE_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.profiles;")"
+MEMBER_AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.household_members hm left join auth.users u on u.id = hm.user_id where u.id is null;")"
+PROFILE_AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from public.profiles p left join auth.users u on u.id = p.user_id where u.id is null;")"
+MEMBER_IDENTITY_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(distinct hm.user_id) from public.household_members hm where not exists (select 1 from auth.identities i where i.user_id = hm.user_id);")"
 
-for pair in \
-  "auth.users:$AUTH_USER_COUNT" \
-  "auth.identities:$AUTH_IDENTITY_COUNT" \
-  "public.profiles:$PROFILE_COUNT" \
-  "member-auth-orphans:$MEMBER_AUTH_ORPHANS" \
-  "profile-auth-orphans:$PROFILE_AUTH_ORPHANS" \
-  "member-identity-orphans:$MEMBER_IDENTITY_ORPHANS"; do
-  value="${pair##*:}"
+for value in "$AUTH_USER_COUNT" "$AUTH_IDENTITY_COUNT" "$PROFILE_COUNT" "$MEMBER_AUTH_ORPHANS" "$PROFILE_AUTH_ORPHANS" "$MEMBER_IDENTITY_ORPHANS"; do
   if ! [[ "$value" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: restored identity sanity check returned a non-numeric count (${pair%%:*})." >&2
+    echo "ERROR: restored identity sanity check returned a non-numeric count." >&2
     exit 1
   fi
 done
@@ -301,15 +284,13 @@ if [ "$MEMBER_AUTH_ORPHANS" -ne 0 ] || [ "$PROFILE_AUTH_ORPHANS" -ne 0 ] || [ "$
   echo "ERROR: restored Family Ops user/profile rows are not fully linked to Supabase Auth users/identities." >&2
   exit 1
 fi
-printf 'Restored identity counts: auth_users=%s auth_identities=%s profiles=%s\n' \
-  "$AUTH_USER_COUNT" "$AUTH_IDENTITY_COUNT" "$PROFILE_COUNT"
+printf 'Restored identity counts: auth_users=%s auth_identities=%s profiles=%s\n' "$AUTH_USER_COUNT" "$AUTH_IDENTITY_COUNT" "$PROFILE_COUNT"
 
-LATEST_TASK_UPDATE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
-  "select max(updated_at) from public.task_instances;")"
+LATEST_TASK_UPDATE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select max(updated_at) from public.task_instances;")"
 if [ -z "$LATEST_TASK_UPDATE" ]; then
   echo "ERROR: representative task_instances.updated_at sanity check returned no value." >&2
   exit 1
 fi
 printf 'Representative task timestamp: %s\n' "$LATEST_TASK_UPDATE"
 
-echo "RESULT: PASS — encrypted Supabase logical bundle decrypted, restored into a fresh disposable Supabase environment, and household identity/schema/data sanity checks passed."
+echo "RESULT: PASS — encrypted Supabase logical bundle decrypted, restored into a fresh disposable Supabase environment, old worker state stayed isolated, and household identity/schema/data sanity checks passed."

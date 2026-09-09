@@ -81,16 +81,23 @@ jobs:
             exit 1
           fi
 
-          # Supabase CLI wraps pg_dump with Supabase-specific filtering so
-          # managed schemas/reserved roles are handled portably. Keep schema,
-          # data, roles and migration history as separate members so restore
-          # can apply them in the documented order.
+          # Supabase CLI wraps pg_dump with Supabase-specific filtering. In the
+          # pinned 2.115.0 implementation, the generic data dump deliberately
+          # includes Auth/Storage data used when migrating to a new project.
+          # Do NOT restore production cron/net operational state, though: those
+          # rows can contain the old project endpoint/worker credential and
+          # transient HTTP requests. Recovery recreates the six reviewed Family
+          # Ops workers explicitly against the NEW project after validation.
           supabase db dump --db-url "$SUPABASE_DB_URL" -f roles.sql --role-only
           supabase db dump --db-url "$SUPABASE_DB_URL" -f schema.sql
           supabase db dump --db-url "$SUPABASE_DB_URL" -f data.sql \
             --data-only --use-copy \
             -x "storage.buckets_vectors" \
-            -x "storage.vector_indexes"
+            -x "storage.vector_indexes" \
+            -x "cron.job" \
+            -x "cron.job_run_details" \
+            -x "net.http_request_queue" \
+            -x "net._http_response"
           supabase db dump --db-url "$SUPABASE_DB_URL" -f history_schema.sql \
             --schema supabase_migrations
           supabase db dump --db-url "$SUPABASE_DB_URL" -f history_data.sql \

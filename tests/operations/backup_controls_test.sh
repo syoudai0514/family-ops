@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FRESHNESS="$ROOT/scripts/backup_freshness_check.sh"
 RESTORE="$ROOT/scripts/restore_drill.sh"
 BACKUP_WORKFLOW="$ROOT/.github/workflows/backup.yml"
+RECOVERY_WORKERS="$ROOT/scripts/reconfigure_recovery_workers.sql"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin"
@@ -73,43 +74,29 @@ expect_status() {
   fi
 }
 
-# Missing configuration must fail before any R2 call.
 expect_status 2 env PATH="$BASE_PATH" bash "$FRESHNESS"
 
-# Fresh marker + non-empty referenced object is the only success case.
 write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 FAKE_OBJECT_PRESENT=1 FAKE_OBJECT_SIZE=4096 run_freshness >/dev/null
 
-# The 26-hour policy is exact. A marker just inside the limit passes, while a
-# marker more than 26 hours old must fail even though floor-truncated hours
-# would still display as 26.
 write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(timestamp_seconds_ago $((25 * 3600 + 55 * 60)))"
 run_freshness >/dev/null
 write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(timestamp_seconds_ago $((26 * 3600 + 5 * 60)))"
 expect_status 1 run_freshness
 
-# A fresh marker pointing at a missing object must be RED.
 write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 FAKE_OBJECT_PRESENT=0 expect_status 1 run_freshness
-
-# An empty object must also be RED.
 FAKE_OBJECT_PRESENT=1 FAKE_OBJECT_SIZE=0 expect_status 1 run_freshness
 
-# Stale marker must fail freshness policy.
 write_marker "family-ops-backup-$(date -u -d '2 days ago' +%Y-%m-%d).tar.age" "$(date -u -d '2 days ago' +%Y-%m-%dT%H:%M:%SZ)"
 expect_status 1 run_freshness
 
-# A marker materially in the future must not pass via a negative age.
 write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(date -u -d '2 hours' +%Y-%m-%dT%H:%M:%SZ)"
 expect_status 1 run_freshness
 
-# Marker object names are constrained to the encrypted bundle contract.
 write_marker "not-a-backup.tar.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 expect_status 1 run_freshness
 
-# Supabase production backups must use the Supabase CLI's filtered logical
-# dump path. Raw pg_dump of the whole managed cluster can include Supabase
-# internals and is not the recovery contract.
 if grep -Eq '^[[:space:]]+pg_dump[[:space:]\\]' "$BACKUP_WORKFLOW"; then
   echo "FAIL: backup.yml must not run raw pg_dump against the Supabase managed cluster" >&2
   exit 1
@@ -134,8 +121,17 @@ for required in \
   fi
 done
 
-# A backup run must verify the encrypted R2 object before it is allowed to
-# advance latest-backup.txt.
+for excluded in \
+  '-x "cron.job"' \
+  '-x "cron.job_run_details"' \
+  '-x "net.http_request_queue"' \
+  '-x "net._http_response"'; do
+  if ! grep -Fq -- "$excluded" "$BACKUP_WORKFLOW"; then
+    echo "FAIL: backup.yml must exclude environment-specific worker state: $excluded" >&2
+    exit 1
+  fi
+done
+
 HEAD_OBJECT_LINE="$(grep -n 'aws s3api head-object' "$BACKUP_WORKFLOW" | head -n1 | cut -d: -f1 || true)"
 MARKER_STEP_LINE="$(grep -n 'name: Update latest-backup marker' "$BACKUP_WORKFLOW" | head -n1 | cut -d: -f1 || true)"
 if [ -z "$HEAD_OBJECT_LINE" ] || [ -z "$MARKER_STEP_LINE" ] || [ "$HEAD_OBJECT_LINE" -ge "$MARKER_STEP_LINE" ]; then
@@ -143,8 +139,6 @@ if [ -z "$HEAD_OBJECT_LINE" ] || [ -z "$MARKER_STEP_LINE" ] || [ "$HEAD_OBJECT_L
   exit 1
 fi
 
-# CI may hold only the age public recipient. Known private-key identifiers must
-# never creep into workflow files.
 if grep -REn 'AGE_PRIVATE_KEY|AGE-SECRET-KEY' "$ROOT/.github/workflows" >/dev/null; then
   echo "FAIL: private age key material/identifier must not appear in CI workflows" >&2
   exit 1
@@ -154,13 +148,13 @@ if ! grep -q 'BACKUP_AGE_PUBLIC_KEY' "$BACKUP_WORKFLOW"; then
   exit 1
 fi
 
-# Restore must target a fresh Supabase-compatible environment, validate the
-# bundle members, preserve migration history, and prove the restored household
-# rows remain linked to usable Supabase Auth users/identities.
 for required in \
   "to_regnamespace('auth')" \
   "to_regnamespace('storage')" \
   "to_regrole('service_role')" \
+  "to_regclass('cron.job')" \
+  "to_regclass('net.http_request_queue')" \
+  "to_regclass('vault.decrypted_secrets')" \
   'history_schema.sql' \
   'history_data.sql' \
   'EXPECTED_MEMBERS=' \
@@ -170,21 +164,53 @@ for required in \
   'select count(*) from auth.identities' \
   'MEMBER_AUTH_ORPHANS=' \
   'PROFILE_AUTH_ORPHANS=' \
-  'MEMBER_IDENTITY_ORPHANS='; do
+  'MEMBER_IDENTITY_ORPHANS=' \
+  'FAMILY_OPS_CRON_JOBS='; do
   if ! grep -Fq -- "$required" "$RESTORE"; then
     echo "FAIL: restore drill is missing Supabase-compatible recovery guard: $required" >&2
     exit 1
   fi
 done
 
-# Restore drills must stay human/local. CI refusal happens before any secret,
-# R2, age, psql, or network access is attempted.
+test -s "$RECOVERY_WORKERS" || { echo "FAIL: recovery worker SQL is missing" >&2; exit 1; }
+for required in \
+  'vault.decrypted_secrets' \
+  'family_ops_project_url' \
+  'family_ops_worker_token' \
+  'X-Family-Ops-Worker-Token' \
+  'family-ops-calendar-outbox-v1' \
+  'process-family-ops-calendar-outbox' \
+  'family-ops-line-delivery-v1' \
+  'send-notifications' \
+  'family-ops-line-inbox-v1' \
+  'process-line-inbox' \
+  'family-ops-materialize-recurring-v1' \
+  'materialize-recurring' \
+  'family-ops-pending-actions-v1' \
+  'process-pending-actions' \
+  'family-ops-routine-dispatch-v1' \
+  'dispatch-routine-automation' \
+  '10 15 * * *'; do
+  if ! grep -Fq -- "$required" "$RECOVERY_WORKERS"; then
+    echo "FAIL: recovery worker SQL is missing contract element: $required" >&2
+    exit 1
+  fi
+done
+if [ "$(grep -c 'SELECT cron.schedule(' "$RECOVERY_WORKERS")" -ne 6 ]; then
+  echo "FAIL: recovery worker SQL must define exactly six Family Ops jobs" >&2
+  exit 1
+fi
+if grep -Fq 'dnlqxjpjpkxnfgculzip' "$RECOVERY_WORKERS"; then
+  echo "FAIL: recovery worker SQL must not hardcode the production Supabase project ref" >&2
+  exit 1
+fi
+if grep -Eq 'CRON_WORKER_TOKEN[[:space:]]*=' "$RECOVERY_WORKERS"; then
+  echo "FAIL: recovery worker SQL must not contain a literal worker-token assignment" >&2
+  exit 1
+fi
+
 expect_status 3 env CI=true PATH="$PATH" bash "$RESTORE" --scratch-db-url "postgresql://unused/unused"
-
-# Help remains safe and available without credentials.
 bash "$RESTORE" --help >/dev/null
-
-# Syntax checks catch accidental shell regressions in operational scripts.
 bash -n "$FRESHNESS"
 bash -n "$RESTORE"
 

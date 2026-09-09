@@ -21,8 +21,11 @@ recover usable data rather than merely possess a backup file.
 Lane C therefore adds no Request/Concierge/Today behavior, no new household
 screen or notification, and no normal-user recovery step. Its recovery PASS
 requires coherent Supabase Auth identity linkage and household data after
-restore, because restored rows that the household cannot sign into are not a
-successful Family Ops recovery.
+restore. Production worker state is separated from portable household data:
+a recovery target must not inherit cron commands/HTTP queue state that can
+point at the old project. The six Family Ops workers are recreated only for a
+deliberate disaster cutover using the NEW target URL/token held in target
+Vault.
 
 | サービス | 接続元 | 接続先 | 必要secret / control | production設定済 | live test済 | 状態 | 残作業 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -31,31 +34,35 @@ successful Family Ops recovery.
 | LINE webhook | LINE Developers | `line-webhook-receiver` | `LINE_CHANNEL_SECRET` | 設定済との既存確認 | Webhook verify成功（既存手動確認） | 受信側確認済 | Webhook URL / Use webhook ONを監査ワークフロー実行時に再確認 |
 | LINE Messaging push | `send-notifications` | LINE Messaging API | `LINE_CHANNEL_ACCESS_TOKEN` | 設定済・新tokenへ更新済 | 済（実端末受信、outbox成功1件） | 稼働中 | tokenをログへ出さない運用を継続 |
 | LINE account link | PWA / inbox worker | `private.line_user_links` | `LINE_OA_BASIC_ID`（任意）, `CRON_WORKER_TOKEN` | active link 1件・世帯/設定整合1件 | 済 | 稼働中 | `LINE_OA_BASIC_ID` を設定すればワンタップ連携（Issue #5） |
-| Supabase pg_cron / pg_net | pg_cron | LINE worker Edge Functions | `CRON_WORKER_TOKEN`（Vault） | 3 jobとも有効・毎分 | 済（直近run成功） | 稼働中 | 定期監視を将来追加 |
+| Supabase pg_cron / pg_net | pg_cron | Family Ops worker Edge Functions | `CRON_WORKER_TOKEN` | **CURRENT 6 job有効**。5 jobは毎分、`materialize-recurring`は`10 15 * * *` | production catalog / Edge Function active state確認 | 稼働中 | DR時はproduction cron行をrestoreしない。CURRENT Edge Functionsを新targetへdeployし、新token + target URLをVaultへ設定後、`scripts/reconfigure_recovery_workers.sql`で6 jobを再構成 |
 | GitHub Actions | manual dispatch | Supabase Management API | `SUPABASE_ACCESS_TOKEN` | 設定済（実行成功） | 済 | 稼働中 | E2E workflowが`outbox.status=sent`のみ成功にする |
 | Google Calendar OAuth/API/watch | Calendar Edge Functions | Google Calendar API | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URI`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `GOOGLE_CALENDAR_WEBHOOK_URL`, `APP_BASE_URL`, `CRON_WORKER_TOKEN` | 未設定として扱う | 未実施 | 後回し | Google Cloud OAuth client/API/consent screenと監視cronを設定後にE2E |
 | Gemini | `propose-ai-draft` Edge Function | Gemini API | `GEMINI_API_KEY`, `GEMINI_MODEL_REWRITE` | 設定済との既存確認 | 未実施 | 要監査 | PWAのAI言い換えでprovider応答を確認 |
-| Encrypted DB backup | GitHub Actions `backup.yml` | production Supabase → private Cloudflare R2 | `SUPABASE_DB_URL`, `BACKUP_AGE_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも`SUPABASE_DB_URL`空 | 失敗 | **RED** | Secrets/R2を設定し、actual backup SUCCESS・non-empty encrypted bundle・marker更新を実証 |
-| Backup freshness | GitHub Actions `backup_freshness_alert.yml` | R2 `latest-backup.txt` + referenced encrypted object | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも4項目が空 | 失敗 | **RED** | actual freshness SUCCESS、exact 26h policy内、marker参照object存在/非0byteを実証 |
-| Restore readiness | owner local/manual | R2 encrypted backup → fresh disposable Supabase environment | owner-held age private key + R2 read credentials | private keyは意図的にGitHub/CI外 | 未実施 | **RED / NOT EVIDENCED** | `scripts/restore_drill.sh`でmigration/core rowsに加え`auth.users`/`auth.identities`とmember/profile linkageまで`RESULT: PASS`を取得し、災害復旧時はGoogle Auth設定後に実sign-in smokeを行う |
+| Encrypted DB backup | GitHub Actions `backup.yml` | production Supabase → private Cloudflare R2 | `SUPABASE_DB_URL`, `BACKUP_AGE_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。inspected main attemptで`SUPABASE_DB_URL`空 | 失敗 | **RED** | Secrets/R2を設定し、actual hardened backup SUCCESS・non-empty encrypted bundle・marker更新を実証。backupはAuth/Storage DB dataを保持しつつcron/net operational rowsを除外 |
+| Backup freshness | GitHub Actions `backup_freshness_alert.yml` | R2 `latest-backup.txt` + referenced encrypted object | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09 06:25 UTC再実行でも4項目が空 | 失敗 | **RED** | actual freshness SUCCESS、exact 26h policy内、marker参照object存在/非0byteを実証 |
+| Restore readiness | owner local/manual | R2 encrypted backup → fresh disposable Supabase environment | owner-held age private key + R2 read credentials | private keyは意図的にGitHub/CI外 | 未実施 | **RED / NOT EVIDENCED** | `scripts/restore_drill.sh`でmigration/core rows・Auth linkage・**旧Family Ops cron 0件**まで`RESULT: PASS`。real DR時はprovider/Edge設定後、新target向け6 workerを再構成してsign-in/LINE/通知等をsmoke |
 | Repository enforcement | GitHub repository | `main` | active ruleset / branch protection | **未設定**。2026-09-09 fresh-readで`protected=false`, required checks enforcement off, rulesets `[]` | 実効保護なし | **RED** | PR必須、5 checks必須、force-push/delete禁止、standing bypassなしのpreventive protectionを管理者が適用し、privileged verifierで確認 |
 
 ## Lane C CURRENT evidence — 2026-09-09
 
-- Base `main` remained `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected at the latest fresh-read before this documentation-only sync.
+- Base `main` remained `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected at the latest fresh-read before this recovery-worker-isolation change.
 - Lane C work remains PR #68 on `sol/lane-c-operational-safety`; live GitHub is the authority for its exact current HEAD.
-- Latest repository verification before this documentation-only sync:
-  - full CI `34317378938` / run #847: Web SUCCESS, DB SUCCESS, Edge SUCCESS, real Supabase integration SUCCESS;
-  - Operational safety CI `34317379004` / run #33: SUCCESS, including backup/restore control and repository-enforcement regressions.
-  These runs prove their tested predecessor HEAD; re-read CI after this self-mutating status commit before any release decision.
-- CF-11 current production-state reads found:
+- Last fully verified predecessor HEAD before this change was `397e8547c0b37faec43f7b3a2c150f40ea75f310`:
+  - full CI `34317651372` / run #848: Web SUCCESS, DB SUCCESS, Edge SUCCESS, real Supabase integration SUCCESS;
+  - Operational safety CI `34317651360` / run #34: SUCCESS, including backup/restore control and repository-enforcement regressions.
+  The new recovery-worker-isolation HEAD must get its own CURRENT CI evidence before release review.
+- CF-11 current Supabase/runtime reads found:
+  - project `family-ops` is `ACTIVE_HEALTHY` in `ap-northeast-1` on Postgres 17;
   - Family Ops `household_members` and `profiles` reference `auth.users`;
   - production has one Auth user and one Auth identity, with no current identity gap for that user;
-  - restore drill now rejects missing/orphaned Auth/member/profile linkage rather than treating table presence alone as usable recovery;
+  - pinned Supabase CLI `2.115.0` source confirms its generic data dump includes Auth/Storage data for project migration;
+  - that same generic data dump also includes `cron`/`net` data unless excluded, so Lane C now excludes `cron.job`, `cron.job_run_details`, `net.http_request_queue`, `net._http_response` to prevent old-environment worker/HTTP state from being replayed on a new target;
+  - production currently has exactly six active `family-ops-%` cron jobs covering calendar outbox, LINE delivery, LINE inbox, recurrence materialization, pending actions and routine dispatch;
+  - worker Edge Functions authenticate `X-Family-Ops-Worker-Token` against `CRON_WORKER_TOKEN`; DR reconfiguration therefore uses a NEW token and target-local Vault values, never a copied production command/token;
   - Supabase Storage currently has no object in household-facing `nursery-source`; current non-empty objects are in handoff/evidence-oriented buckets. The DB backup therefore does not claim binary-Storage recovery, and this must be revisited if irreplaceable household binaries begin accumulating.
 - Scheduled backup run `34275297279` still has no successful production dump/R2 evidence because `SUPABASE_DB_URL` was unset on the inspected attempt.
-- Freshness run `34288805536` latest inspected attempt remains FAILURE; logs show the R2 account/access/secret/bucket values empty.
-- Vercel Production remains the existing `main` deployment; Lane C branch pushes have not created new Preview deployments.
+- Freshness run `34288805536` latest read-only rerun job `102361116660` remains FAILURE; logs show R2 account/access/secret/bucket values empty.
+- Vercel Production remains the existing `main` deployment; Lane C branch pushes have not created new Preview deployments. Latest inspected 24h production 5xx query returned no matching logs.
 
 The PASS authority for backup/recovery is `docs/BACKUP_RESTORE_RUNBOOK.md`.
 The PASS authority for `main` release enforcement is
@@ -69,8 +76,8 @@ The final production test selected the active linked recipient, created a
 and explicitly invoked `send-notifications`. The recipient received the LINE
 message on a real device. The quota audit then showed
 `local_counted_success = 1`, a refreshed provider quota timestamp, and no
-active quota reservation. The three minute cron jobs were all enabled and had
-recent `succeeded` run records.
+active quota reservation. The minute-level cron workers were enabled and had
+successful run evidence at the time of the production verification.
 
 Earlier tests failed safely before push because the old access-token secret
 contained header-invalid whitespace. The token was rotated; code now trims
