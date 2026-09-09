@@ -47,9 +47,9 @@ The executable manifest is `tests/evidence/cf14/scenarios.mjs`. It validates tha
 | CF14-PLANNING-ASSIGNMENT | Q10-Q12,Q50,Q52,Q83-Q86 | assignment/rule change | domain, DB, Edge, browser, LINE, concurrency | external-pending |
 | CF14-EVENT-PLANNING | Q17-Q19 | event planning/review | domain, DB, Edge, browser | external-pending |
 | CF14-HISTORY-ACTUALS | Q7,Q20,Q28,Q29,Q32,Q62 | History/actuals UI | domain, DB, browser | external-pending |
-| CF14-NOTIFICATION-SCHEDULE | Q14,Q25,Q26,Q88 | scheduler → LINE delivery | domain, DB, Edge, LINE, whole-day | external-pending |
+| CF14-NOTIFICATION-SCHEDULE | Q14,Q25,Q26,Q88 | scheduler → LINE delivery at explicit JST clock | domain, DB, Edge, LINE, whole-day | external-pending |
 | CF14-LINE-DAILY-ENTRY | Q4,Q39,Q65-Q67,Q72,Q73,Q78-Q80 | actual LINE webhook/postback | domain, DB, Edge, LINE, browser, concurrency | external-pending |
-| CF14-Q27-LINE-WEBHOOK-POSTBACK | Q27 | actual LINE test-mode webhook/postback | DB, Edge, LINE | external-pending |
+| CF14-Q27-LINE-WEBHOOK-POSTBACK | Q27 | signed LINE-compatible HTTP webhook/postback, then actual provider in F2 | DB, Edge, LINE | external-pending |
 | CF14-Q70-RAW-MULTI-INTENT | Q70 | raw LINE text before candidates | domain, Edge, LINE | expected-failing / interpretation owner |
 | CF14-Q71-RAW-AMBIGUITY | Q71 | raw LINE text with one ambiguity | domain, Edge, LINE | expected-failing / interpretation owner |
 | CF14-NAVIGATION-RETURN | Q77 | PWA secondary nav → back/return | browser, iPhone | external-pending |
@@ -57,9 +57,9 @@ The executable manifest is `tests/evidence/cf14/scenarios.mjs`. It validates tha
 | CF14-Q58-DEFERRED-DAG | Q58 | domain/schema/user-surface audit | domain | runnable |
 | CF14-SHOPPING-ACTION | Q33 | PWA shopping completion | domain, DB, Edge, browser | external-pending |
 | CF14-Q107-Q109-SHOPPING-INTERACTION | Q107-Q109 | rendered PWA anyone-owner interaction | DB, Edge, browser | runnable now (browser slice authored) |
-| CF14-NURSERY-ACTUAL-INPUT | Q89-Q106 | actual image bytes before OCR/AI | DB, Edge, LINE, image/OCR/AI, browser | expected-failing / Nursery+provider |
+| CF14-NURSERY-ACTUAL-INPUT | Q89-Q106 | representative image bytes before OCR/AI | DB, Edge, LINE, image/OCR/AI, browser | expected-failing / Nursery+provider |
 | CF14-GOOGLE-BASELINE | Q34 | controlled Google provider response | DB, Edge, Google, browser | external-pending |
-| CF14-Q110-Q112-GOOGLE-PROVIDER | Q110-Q112 | Google change/delete/duplicate response | DB, Edge, Google, browser | external-pending |
+| CF14-Q110-Q112-GOOGLE-PROVIDER | Q110-Q112 | controlled Google change/delete/duplicate response | DB, Edge, Google, browser | controlled harness authored; real provider pending |
 | CF14-LINE-PWA-CONCURRENT-RACE | cross-cuts Q78,Q79,Q81,Q84,Q108,Q109 | concurrent actual LINE + PWA | DB, Edge, browser, LINE, concurrency | external-pending |
 | CF14-WHOLE-DAY-ORCHESTRATION | cross-cuts Q1,Q5,Q9,Q14,Q23,Q25,Q26,Q39,Q40,Q63,Q75,Q87,Q88 | morning → daytime → evening | browser, LINE, iPhone, concurrency, whole-day | skeleton |
 
@@ -67,21 +67,33 @@ The executable manifest, not this compressed table, is the checkable coverage re
 
 ## F1 harnesses authored
 
-`tests/evidence/cf14/harness.mjs` provides reusable boundary drivers rather than copies of production semantics:
+`tests/evidence/cf14/harness.mjs` and the adjacent boundary harnesses provide reusable drivers rather than copies of production business semantics:
 
 - raw-language Q70/Q71 corpus runner; rejects prebuilt `candidateJson`
 - response-loss/retry runner; requires one canonical mutation + replay
 - Request lifecycle/stale/expiry fixture validator
 - browser Loading/Error/Stale observation runner
 - Back/return-state journey runner
-- Nursery actual-image-byte runner; requires classify/OCR/AI/review + provenance + no pre-confirm mutation
-- controlled LINE webhook/postback runner; rejects DB/RPC evidence as LINE transport evidence
-- controlled Google provider runner; rejects DB/RPC evidence as provider evidence
+- explicit JST clock-boundary runner for weekday 06:30, weekend/holiday 09:00, and 20:30 evening edges
+- Nursery actual-image-byte runner; requires classify/OCR/AI/review, provenance, no pre-confirm mutation, and representative OCR/source hints
+- signed LINE HTTP envelope runner using the Messaging API `X-Line-Signature` HMAC-SHA256 contract for text and postback fixtures
+- LINE boundary runner that rejects DB/RPC evidence as LINE transport evidence
+- deterministic Google provider harness for Q110 change, Q111 delete, and Q112 duplicate resolution; rejects DB/RPC-only evidence
 - LINE/PWA concurrency runner with final canonical readback
 - whole-day ordered orchestration runner
 - evidence assessor: missing required evidence is `PENDING` in authoring and `FAIL` in strict F2
 
-Fixtures live in `tests/evidence/cf14/fixtures.mjs`.
+Fixtures live in `tests/evidence/cf14/fixtures.mjs`. Nursery uses a synthetic Japanese nursery-notice PNG containing representative date/class/event/bring-item/submission text, not a 1x1 placeholder and not post-OCR candidate JSON.
+
+## Today actual user-visible state evidence
+
+`apps/web/src/features/today/Today.states.interaction.test.tsx` renders the real `Today` component while controlling its external data hooks. It establishes that:
+
+- Loading renders `読み込み中…` and does not pretend the page has loaded.
+- canonical Today read error remains an explicit user-visible alert rather than becoming empty success.
+- `calendar_stale=true` reaches the real Today surface as `⚠ Google予定を最新化できていません`.
+
+Existing `TodaySchedule.test.tsx` independently covers the stale calendar rendering. Physical-iPhone state and final converged whole-day behavior remain F2 evidence.
 
 ## Q107-Q109 actual interaction
 
@@ -95,11 +107,11 @@ This browser interaction is additive evidence. Q109's time-based “no automatic
 
 ## Tests runnable now
 
-- `npm run test:cf14:authoring` — harness/manifest self-tests. Must be GREEN; it does not claim product acceptance.
-- normal Web Vitest suite includes `AnyoneOwnerPage.interaction.test.tsx`.
+- `npm run test:cf14:authoring` — manifest, boundary harness, clock, signed LINE, controlled Google, Nursery, retry, concurrency, F2-guard self-tests. Must be GREEN; it does not claim product acceptance.
+- normal Web Vitest suite includes `AnyoneOwnerPage.interaction.test.tsx` and `Today.states.interaction.test.tsx`.
 - `npm run test:cf14:f2` — strict final evidence runner. It is expected to FAIL until an evidence payload from one final exact HEAD exists.
 
-The default CI suite must not treat a deliberately absent F2 evidence payload as a product failure during F1 authoring; F2 is invoked explicitly during final convergence.
+The default CI suite runs authoring tests, but deliberately does not run the expected-failing F2 acceptance command during lane development.
 
 ## Expected failures / ownership
 
@@ -107,19 +119,19 @@ The default CI suite must not treat a deliberately absent F2 evidence payload as
 | --- | --- | --- |
 | Q70/Q71 raw natural-language through production LINE interpretation | FAIL/PENDING | LINE/Concierge implementation lane |
 | Request lifecycle against converged Request implementation | FAIL/PENDING | Request lane |
-| Today loading/error/stale + clock/return against converged Today | FAIL/PENDING | Today lane |
-| Nursery actual provider classify/OCR/AI from image bytes | FAIL/PENDING | Nursery/provider integration owner |
+| Today physical-device/whole-day/transport clock behavior after convergence | FAIL/PENDING | Today/notification owner + F2 |
+| Nursery actual provider classify/OCR/AI from representative image bytes | FAIL/PENDING | Nursery/provider integration owner |
 | LINE Messaging API real webhook/postback transcript | FAIL/PENDING | F2 with controlled LINE credentials |
-| Google Calendar controlled-provider response boundary | FAIL/PENDING | Google lane + F2 provider run |
+| Google Calendar real controlled-provider boundary | FAIL/PENDING | Google lane + F2 provider run |
 | actual simultaneous LINE/PWA race | FAIL/PENDING | F2 after convergence |
 | physical iPhone/PWA screenshots/journeys | FAIL/PENDING | F2 manual/device run |
 | full whole-day scenario | FAIL/PENDING | F2 after all lanes converge |
 
 A product defect discovered by these tests is not repaired in F1 unless it is test/evidence infrastructure itself. The defect is attributed to the owning implementation lane.
 
-## F2 evidence payload
+## F2 exact-HEAD evidence payload
 
-The strict runner defaults to `tests/evidence/cf14/evidence/current.json` and requires:
+The strict runner defaults to `tests/evidence/cf14/evidence/current.json` and requires both the payload and every PASS record to be bound to the exact runtime Git HEAD:
 
 ```json
 {
@@ -129,13 +141,16 @@ The strict runner defaults to `tests/evidence/cf14/evidence/current.json` and re
       "scenarioId": "CF14-Q27-LINE-WEBHOOK-POSTBACK",
       "evidenceClass": "line-transport",
       "status": "PASS",
+      "exactHead": "<same 40-char final SHA>",
       "source": "<provider transcript/artifact reference>"
     }
   ]
 }
 ```
 
-Every scenario must have `PASS` evidence for every class it declares. A missing record, skipped provider run, stale artifact from another HEAD, or source-string assertion cannot close CF-14.
+`scripts/run_cf14_f2.mjs` compares `exactHead` to the runtime repository HEAD (or an explicitly supplied `--head` / `CF14_EXACT_HEAD`), rejects PASS records from a different HEAD, and rejects PASS records without a non-empty artifact/source reference. Every scenario must then have PASS evidence for every class it declares.
+
+A missing record, skipped provider run, stale artifact from another HEAD, source-string assertion, or manually relabeled old evidence cannot close CF-14.
 
 ## F1 exit condition
 
