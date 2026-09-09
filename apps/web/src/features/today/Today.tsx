@@ -515,6 +515,12 @@ export function Today() {
           {renderDecisions()}
           {renderTaskSection('まだ残っていること', [...data.carryoverTasks, ...unfinishedBeforeEvening], '今日をしめくくる')}
           {renderTaskSection('夜にやること', eveningTasks, '今日やること')}
+          {data.morningSummary.totalCount > 0 && (
+            <section className="card compact-section" aria-label="朝の完了まとめ">
+              <p className="eyebrow">朝のまとめ</p>
+              <h2>朝 {data.morningSummary.completedCount}/{data.morningSummary.totalCount} 完了</h2>
+            </section>
+          )}
           {renderInput()}
           {renderHandovers()}
           {renderPartnerCritical()}
