@@ -6,6 +6,8 @@
 
 F2 may mark CF-14 PASS only after every implementation lane has converged and all required evidence is executed against **one exact final HEAD**. Missing provider/device evidence must remain FAIL/PENDING; `skip` is never PASS.
 
+**Acceptance priority:** technical completeness is subordinate to Family Ops purpose, Requirements compliance, approved UX, and real family usability. A green unit/DB/Edge/browser/provider suite cannot override a known product or UX mismatch.
+
 ## Authority and source cut
 
 - F1 base HEAD: `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`
@@ -14,7 +16,7 @@ F2 may mark CF-14 PASS only after every implementation lane has converged and al
 - Detailed design: non-conflicting `docs/design/current/`
 - Historical implementation conformance: `docs/implementation/ISSUE-48-Q1-Q112-CONFORMANCE-MATRIX.md`
 
-The Issue #48 matrix is useful implementation history, but its PASS labels are not sufficient CF-14 evidence when the actual requirement entry boundary was not exercised. F1 therefore adds a stricter evidence layer instead of rewriting that historical closeout record.
+The Issue #48 matrix is useful implementation history, but its PASS labels are not sufficient CF-14 evidence when the actual requirement entry boundary or approved user experience was not exercised. F1 therefore adds a stricter evidence layer instead of rewriting that historical closeout record.
 
 `AGENTS.md` was not present in the CURRENT root Contents API at this source cut. A stale/inconsistent tree lookup had exposed an `AGENTS.md` entry, but direct Contents/blob/raw reads returned 404; F1 does not claim it was read.
 
@@ -32,6 +34,8 @@ The Issue #48 matrix is useful implementation history, but its PASS labels are n
 | `physical-iphone-manual` | Real iPhone/PWA behavior that jsdom cannot establish |
 | `cross-channel-concurrency` | Actual LINE and PWA racing the same canonical aggregate |
 | `whole-day-scenario` | Clock-controlled morning → daytime → evening user journey |
+
+No evidence class is inherently sufficient by itself. Every scenario also carries a **user-visible assertion**. If the technical path works but the user-visible result conflicts with the Requirements or approved UX, the scenario remains FAIL/PENDING.
 
 ## Requirement → scenario → boundary traceability
 
@@ -56,7 +60,7 @@ The executable manifest is `tests/evidence/cf14/scenarios.mjs`. It validates tha
 | CF14-DUPLICATE-TERMINAL-GUARDS | Q81,Q82 | Edge duplicate/stale/terminal mutation | domain, DB, Edge, concurrency | external-pending |
 | CF14-Q58-DEFERRED-DAG | Q58 | domain/schema/user-surface audit | domain | runnable |
 | CF14-SHOPPING-ACTION | Q33 | PWA shopping completion | domain, DB, Edge, browser | external-pending |
-| CF14-Q107-Q109-SHOPPING-INTERACTION | Q107-Q109 | rendered PWA anyone-owner interaction | DB, Edge, browser | runnable now (browser slice authored) |
+| CF14-Q107-Q109-SHOPPING-INTERACTION | Q107-Q109 | rendered PWA anyone-owner interaction | DB, Edge, browser | **expected-failing / Shopping UX owner** |
 | CF14-NURSERY-ACTUAL-INPUT | Q89-Q106 | representative image bytes before OCR/AI | DB, Edge, LINE, image/OCR/AI, browser | expected-failing / Nursery+provider |
 | CF14-GOOGLE-BASELINE | Q34 | controlled Google provider response | DB, Edge, Google, browser | external-pending |
 | CF14-Q110-Q112-GOOGLE-PROVIDER | Q110-Q112 | controlled Google change/delete/duplicate response | DB, Edge, Google, browser | controlled harness authored; real provider pending |
@@ -82,6 +86,7 @@ The executable manifest, not this compressed table, is the checkable coverage re
 - LINE/PWA concurrency runner with final canonical readback
 - whole-day ordered orchestration runner
 - evidence assessor: missing required evidence is `PENDING` in authoring and `FAIL` in strict F2
+- acceptance blocker: a scenario still marked `expected-failing` or `skeleton` **cannot become F2 PASS solely because every technical evidence record is green**
 
 Fixtures live in `tests/evidence/cf14/fixtures.mjs`. Nursery uses a synthetic Japanese nursery-notice PNG containing representative date/class/event/bring-item/submission text, not a 1x1 placeholder and not post-OCR candidate JSON.
 
@@ -93,37 +98,67 @@ Fixtures live in `tests/evidence/cf14/fixtures.mjs`. Nursery uses a synthetic Ja
 - canonical Today read error remains an explicit user-visible alert rather than becoming empty success.
 - `calendar_stale=true` reaches the real Today surface as `⚠ Google予定を最新化できていません`.
 
-Existing `TodaySchedule.test.tsx` independently covers the stale calendar rendering. Physical-iPhone state and final converged whole-day behavior remain F2 evidence.
+Existing `TodaySchedule.test.tsx` independently covers the stale calendar rendering. This is useful browser evidence, but it does **not** close the full Today experience: daypart ordering/content, return-state, material first-flow visibility, physical iPhone behavior, and whole-day continuity still require final evidence after the Today implementation lane converges.
 
-## Q107-Q109 actual interaction
+## Q88 clock boundaries
 
-`apps/web/src/features/shopping/AnyoneOwnerPage.interaction.test.tsx` renders the real component and clicks the real user actions while controlling only its external boundaries. It verifies:
+The authoring harness covers explicit JST boundary pairs rather than merely placing 06:30/20:30 timestamps inside a whole-day skeleton:
 
-- Q107/Q108: unclaimed `誰でもOK` item shows no claimant, click `自分がやる`, Edge action=`claim`, canonical workspace reload shows self claimant.
-- Q108: another family claimant shows the takeover disclosure, click `引き継ぐ`, Edge action=`takeover`, canonical reload shows self claimant.
-- Q109: rendering a self-claimed item performs no automatic Edge mutation; click `担当を戻す` is required and sends action=`release`.
+- weekday `06:29:59` → `06:30:00`
+- weekend `08:59:59` → `09:00:00`
+- holiday `08:59:59` → `09:00:00`
+- evening `20:29:59` → `20:30:00`
 
-This browser interaction is additive evidence. Q109's time-based “no automatic release by deadline” still needs its DB/domain evidence at F2; the browser test alone is deliberately not labeled sufficient.
+The harness rejects evidence that loses the explicit `+09:00` clock. Final Q88 acceptance still requires actual scheduler/delivery behavior and user-visible LINE evidence, not just the clock fixture.
+
+## Q107-Q109 interaction — state transition is not UX acceptance
+
+`apps/web/src/features/shopping/AnyoneOwnerPage.interaction.test.tsx` renders the real component and exercises the real claim/takeover/release commands. It proves useful state-transition behavior:
+
+- Q107/Q108: unclaimed `誰でもOK` can be claimed using `自分がやる`, then canonical reload shows the current user as claimant.
+- Q108: `引き継ぐ` sends `takeover` and canonical reload converges on the new claimant.
+- Q109: merely rendering a self-claimed item does not release it; a user action is required before `release` is sent.
+
+However, the Requirements/approved UX are stronger and CURRENT does not yet satisfy them:
+
+1. **Q108:** takeover must show who is currently acting (`現在○○が対応中`) before takeover. CURRENT only says `現在: 家族が対応中`, so the user cannot tell who already owns the work.
+2. **Q109:** the approved claimant release action is `[手放す]`. CURRENT labels it `担当を戻す`.
+3. **Q109:** deadline arrival must not auto-release a claim. The current component interaction proves only “no release on render”; DB/domain + clock evidence is still required.
+4. **Q107:** `誰でもOK` as a formal assignment type still needs domain/DB evidence in addition to the page interaction.
+
+Therefore Q107-Q109 is **expected-failing / FAIL-PENDING**, even though the state-transition test itself is green. The interaction test deliberately accepts either current/future release label only to exercise the transition, and contains `todo` acceptance checks for the approved user-facing conditions so CURRENT wording is not frozen as the product contract.
+
+## F2 acceptance precedence
+
+`assessEvidence(..., { strict: true })` enforces the following:
+
+- required technical evidence missing → `FAIL`
+- every technical evidence class green, but scenario remains `expected-failing` or `skeleton` → **`FAIL`**
+- every required evidence class green and no known acceptance blocker → eligible for `PASS`
+
+This prevents a known Requirement/UX defect from being hidden by adding more tests around the wrong behavior. The owning implementation lane must fix the product gap; only then can the scenario's blocking status/reason be cleared before F2 acceptance.
 
 ## Tests runnable now
 
 - `npm run test:cf14:authoring` — manifest, boundary harness, clock, signed LINE, controlled Google, Nursery, retry, concurrency, F2-guard self-tests. Must be GREEN; it does not claim product acceptance.
 - normal Web Vitest suite includes `AnyoneOwnerPage.interaction.test.tsx` and `Today.states.interaction.test.tsx`.
-- `npm run test:cf14:f2` — strict final evidence runner. It is expected to FAIL until an evidence payload from one final exact HEAD exists.
+- `npm run test:cf14:f2` — strict final evidence runner. It is expected to FAIL until an evidence payload from one final exact HEAD exists **and every known acceptance blocker is cleared**.
 
 The default CI suite runs authoring tests, but deliberately does not run the expected-failing F2 acceptance command during lane development.
 
 ## Expected failures / ownership
 
-| Evidence gap | Expected F1 result | Owner before F2 |
+| Evidence/product gap | Expected F1 result | Owner before F2 |
 | --- | --- | --- |
 | Q70/Q71 raw natural-language through production LINE interpretation | FAIL/PENDING | LINE/Concierge implementation lane |
 | Request lifecycle against converged Request implementation | FAIL/PENDING | Request lane |
-| Today physical-device/whole-day/transport clock behavior after convergence | FAIL/PENDING | Today/notification owner + F2 |
+| Today full daypart/return/iPhone/whole-day experience | FAIL/PENDING | Today/notification owner + F2 |
+| Q107-Q109 claimant identity / `[手放す]` UX / deadline non-release | FAIL/PENDING | Shopping/AnyoneOwner UX implementation owner + F2 |
 | Nursery actual provider classify/OCR/AI from representative image bytes | FAIL/PENDING | Nursery/provider integration owner |
 | LINE Messaging API real webhook/postback transcript | FAIL/PENDING | F2 with controlled LINE credentials |
 | Google Calendar real controlled-provider boundary | FAIL/PENDING | Google lane + F2 provider run |
 | actual simultaneous LINE/PWA race | FAIL/PENDING | F2 after convergence |
+| Q88 actual scheduler → LINE delivery at JST boundary | FAIL/PENDING | scheduler/LINE owner + F2 |
 | physical iPhone/PWA screenshots/journeys | FAIL/PENDING | F2 manual/device run |
 | full whole-day scenario | FAIL/PENDING | F2 after all lanes converge |
 
@@ -150,7 +185,7 @@ The strict runner defaults to `tests/evidence/cf14/evidence/current.json` and re
 
 `scripts/run_cf14_f2.mjs` compares `exactHead` to the runtime repository HEAD (or an explicitly supplied `--head` / `CF14_EXACT_HEAD`), rejects PASS records from a different HEAD, and rejects PASS records without a non-empty artifact/source reference. Every scenario must then have PASS evidence for every class it declares.
 
-A missing record, skipped provider run, stale artifact from another HEAD, source-string assertion, or manually relabeled old evidence cannot close CF-14.
+A missing record, skipped provider run, stale artifact from another HEAD, source-string assertion, manually relabeled old evidence, or known Requirement/UX blocker cannot close CF-14.
 
 ## F1 exit condition
 
@@ -158,8 +193,9 @@ F1 is ready to hand to F2 when:
 
 1. authoring tests are green,
 2. actual-interaction tests added by F1 are green,
-3. expected failures are attributable to implementation/provider/device owners,
-4. no production business semantics were changed,
-5. the final F2 run is still explicitly pending.
+3. known product/UX mismatches remain explicitly FAIL/PENDING and are attributed to an implementation owner,
+4. technical green is prevented from overriding a known Requirement/UX blocker,
+5. no production business semantics were changed,
+6. the final F2 run is still explicitly pending.
 
 **Current verdict remains CF-14 FAIL / PENDING.**
