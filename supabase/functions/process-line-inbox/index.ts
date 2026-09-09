@@ -1,3 +1,4 @@
+import { requestTransitionArgs } from '../_shared/requestTransition.ts';
 // verify_jwt=false — worker class (see supabase/config.toml +
 // EDGE_FUNCTION_AUTH_MATRIX.md "Worker"). docs/design/v6/06_LINE_INTEGRATION.md
 // #3 "Worker process-line-inbox every 1 min handles parse/action."
@@ -1164,33 +1165,24 @@ async function handlePostback(
     return;
   }
 
-  if (fields.action === "accept_assignment_change" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-assignment-accept", item.provider_event_id);
-    const { error } = await client.rpc("server_tx_accept_assignment_change_request", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_request_id: fields.request_id,
-    });
-    if (error) {
-      console.error("process-line-inbox: accept assignment change failed", error.message);
+  if ((fields.action === "accept_assignment_change" || fields.action === "decline_assignment_change") && fields.request_id) {
+    if (!fields.attempt_id || !fields.revision || !fields.terms_revision) {
+      await sendConfirmation(client, item, actor, "このボタンは古い内容です。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
       return;
     }
-    await sendConfirmation(client, item, actor, "✓ 担当を引き受けました");
-    return;
-  }
-
-  if (fields.action === "decline_assignment_change" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-assignment-decline", item.provider_event_id);
-    const { error } = await client.rpc("server_tx_decline_request", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_request_id: fields.request_id,
-    });
+    const operationId = await deterministicOperationId("line-request-transition", item.provider_event_id);
+    const { data, error } = await client.rpc("server_tx_transition_request_v2", requestTransitionArgs(actor.user_id, operationId, {
+      request_id: fields.request_id, attempt_id: fields.attempt_id,
+      action: fields.action === "accept_assignment_change" ? "accept" : "decline",
+      expected_revision: Number(fields.revision), expected_terms_revision: Number(fields.terms_revision),
+    }, 'line'));
     if (error) {
-      console.error("process-line-inbox: decline assignment change failed", error.message);
+      await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
       return;
     }
-    await sendConfirmation(client, item, actor, "変更はありません。");
+    await sendConfirmation(client, item, actor, data?.reproposal_required
+      ? "この依頼は期限切れです。新しい担当変更のお願いとして再提案してください。"
+      : data?.state === 'accepted' ? "✓ 担当を引き受けました" : "変更はありません。", menuQuickReplies());
     return;
   }
 

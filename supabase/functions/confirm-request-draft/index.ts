@@ -36,7 +36,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   const serviceClient = createServiceRoleClient();
   const result = await callServerTx<{ request_id: string }>(
     serviceClient,
-    "server_tx_confirm_request_draft",
+    "server_tx_confirm_request_draft_v2",
     {
       p_actor_id: actorId,
       p_operation_id: operationId,
@@ -44,6 +44,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
       p_recipient_user_id: recipientUserId,
       p_shared_title: sharedTitle,
       p_confirmed_message: confirmedMessage,
+      p_reply_due_at: typeof body["reply_due_at"] === "string" ? body["reply_due_at"] : null,
       p_due_at: typeof body["due_at"] === "string" ? body["due_at"] : null,
     },
   );

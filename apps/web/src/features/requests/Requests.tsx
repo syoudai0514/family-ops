@@ -12,7 +12,7 @@ import type { PendingAction, RequestRow } from '../../lib/types';
 interface RequestAttempt {
   id: string;
   request_id: string;
-  state: 'pending' | 'checking' | 'consulting' | 'awaiting_confirmation' | 'accepted' | 'declined';
+  state: 'pending' | 'checking' | 'consulting' | 'awaiting_confirmation' | 'accepted' | 'declined' | 'expired' | 'cancelled';
   revision: number;
   terms_revision: number;
   terms: Record<string, unknown> | null;
@@ -22,8 +22,9 @@ interface RequestAttempt {
 export type RequestBucket = 'active' | 'expired' | 'history';
 
 export function requestBucket(status: string, dueAt: string | null | undefined, nowMs = Date.now()): RequestBucket {
-  if (['completed', 'cancelled', 'declined'].includes(status)) return 'history';
-  if (dueAt && new Date(dueAt).getTime() < nowMs) return 'expired';
+  if (status === 'expired') return 'expired';
+  if (['accepted', 'completed', 'cancelled', 'declined'].includes(status)) return 'history';
+  if (dueAt && new Date(dueAt).getTime() <= nowMs) return 'expired';
   return 'active';
 }
 
@@ -110,12 +111,12 @@ export function Requests() {
   const restoredRef = useRef(false);
   const incoming = requests.filter((r) => r.recipient_id === user?.id);
   const outgoing = requests.filter((r) => r.requester_id === user?.id);
-  const bucketedIncoming = incoming.filter((r) => requestBucket(r.status, r.due_at) === bucketFilter);
-  const bucketedOutgoing = outgoing.filter((r) => requestBucket(r.status, r.due_at) === bucketFilter);
+  const bucketedIncoming = incoming.filter((r) => requestBucket(attempts.get(r.id)?.state ?? r.status, responseDeadline(attempts.get(r.id))) === bucketFilter);
+  const bucketedOutgoing = outgoing.filter((r) => requestBucket(attempts.get(r.id)?.state ?? r.status, responseDeadline(attempts.get(r.id))) === bucketFilter);
   const counts = useMemo(() => (['active', 'expired', 'history'] as RequestBucket[]).reduce<Record<RequestBucket, number>>((acc, bucket) => {
-    acc[bucket] = requests.filter((r) => requestBucket(r.status, r.due_at) === bucket).length;
+    acc[bucket] = requests.filter((r) => requestBucket(attempts.get(r.id)?.state ?? r.status, responseDeadline(attempts.get(r.id))) === bucket).length;
     return acc;
-  }, { active: 0, expired: 0, history: 0 }), [requests]);
+  }, { active: 0, expired: 0, history: 0 }), [requests, attempts]);
   const rowRefresh = useCallback(async () => {
     const scrollY = window.scrollY;
     await refresh();
@@ -187,7 +188,7 @@ export function Requests() {
 }
 
 function statusLabel(status: RequestRow['status']): string {
-  switch (status) { case 'pending': return '保留中'; case 'accepted': return '引き受け済み'; case 'declined': return '却下'; case 'completed': return '完了'; case 'cancelled': return 'キャンセル済み'; default: return status; }
+  switch (status) { case 'pending': return '保留中'; case 'accepted': return '引き受け済み'; case 'declined': return '難しい'; case 'completed': return '完了'; case 'cancelled': return 'キャンセル済み'; default: return status; }
 }
 
 function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; initialShowOther?: boolean }) {
@@ -196,7 +197,8 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
     setBusy(true); setError(null);
     try {
       const functionName = kind === 'checking' || kind === 'consult' ? EDGE_FUNCTIONS.respondRequest : kind === 'accept' && request.assignment_task_instance_id ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
-      await callEdgeFunction(functionName, { operation_id: newOperationId(), request_id: request.id, ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}) });
+      const result = await callEdgeFunction<{ reproposal_required?: boolean }>(functionName, { operation_id: newOperationId(), request_id: request.id, attempt_id: attempt?.id, expected_revision: attempt?.revision, expected_terms_revision: attempt?.terms_revision, ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}) });
+      if (result.reproposal_required) setError('この依頼は期限切れです。新しい担当変更のお願いを作成してください。');
       await onChanged();
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
@@ -209,17 +211,17 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
   const replyDueAt = responseDeadline(attempt);
-  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {request.assignment_task_instance_id ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{request.status === 'pending' && attempt?.state !== 'consulting' && attempt?.state !== 'awaiting_confirmation' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button><button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button><button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>その他の返答</button></div>}{request.status === 'pending' && showOther && <div className="request-other-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button><CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} /><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button><p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p></div>}{attempt && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms attempt={attempt} busy={busy} onAction={negotiate} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
+  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {request.assignment_task_instance_id ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && attempt?.state !== 'consulting' && attempt?.state !== 'awaiting_confirmation' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button><button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button><button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>その他の返答</button></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && showOther && <div className="request-other-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button><CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} /><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button><p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p></div>}{attempt && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms attempt={attempt} busy={busy} onAction={negotiate} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
 }
 
 function CommentedDecline({ busy, onSubmit }: { busy: boolean; onSubmit: (comment: string) => void }) { const [comment, setComment] = useState(''); return <div className="request-comment-row"><input aria-label="難しい理由（任意）" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="コメント付きで難しい" /><button type="button" className="secondary-button" disabled={busy} onClick={() => onSubmit(comment)}>コメント付きで難しい</button></div>; }
-function ConsultationTerms({ attempt, busy, onAction }: { attempt: RequestAttempt; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) { const [candidate, setCandidate] = useState(typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : ''); return <div className="request-other-actions" aria-label="相談の条件"><p><strong>相談中</strong> — 担当はまだ変わりません。二人が同じ条件を確認してから確定します。</p><input aria-label="合意する条件" value={candidate} onChange={(event) => setCandidate(event.target.value)} placeholder="例：明日は私、金曜は交代" /><button type="button" className="secondary-button" disabled={busy || !candidate.trim()} onClick={() => onAction('edit_terms', { candidate: candidate.trim() })}>この条件を提案</button><button type="button" disabled={busy} onClick={() => onAction('confirm_terms')}>この条件で確認する</button><p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? '相手の確認待ち' : '条件の入力待ち'}（条件版 {attempt.terms_revision}）</p></div>; }
+function ConsultationTerms({ attempt, busy, onAction }: { attempt: RequestAttempt; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) { const [candidate, setCandidate] = useState(typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : ''); return <div className="request-other-actions" aria-label="相談の条件"><p><strong>相談中</strong> — 担当はまだ変わりません。二人が同じ条件を確認してから確定します。</p><input aria-label="合意する条件" value={candidate} onChange={(event) => setCandidate(event.target.value)} placeholder="例：明日は私、金曜は交代" /><button type="button" className="secondary-button" disabled={busy || !candidate.trim()} onClick={() => onAction('edit_terms', { ...attempt.terms, candidate: candidate.trim() })}>この条件を提案</button><button type="button" disabled={busy} onClick={() => onAction('confirm_terms')}>この条件で確認する</button><p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? '相手の確認待ち' : '条件の入力待ち'}（条件版 {attempt.terms_revision}）</p></div>; }
 
 function OutgoingRequestRow({ request, attempt, onChanged }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
   async function cancel() { setBusy(true); setError(null); try { await callEdgeFunction(EDGE_FUNCTIONS.cancelRequest, { operation_id: newOperationId(), request_id: request.id }); await onChanged(); } catch (err) { if (err instanceof FamilyOpsApiError && err.code === 'REQUEST_CANCEL_NOT_ALLOWED') setError('すでに引き受けられているため、キャンセルできません。'); else setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); } }
   const replyDueAt = responseDeadline(attempt);
-  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{request.status === 'pending' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={cancel}>キャンセル</button></div>}{request.status === 'accepted' && <AcceptedRequestFollowup request={request} onChanged={onChanged} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
+  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={cancel}>キャンセル</button></div>}{request.status === 'accepted' && <AcceptedRequestFollowup request={request} onChanged={onChanged} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
 }
 
 function AcceptedRequestFollowup({ request, onChanged }: { request: RequestRow; onChanged: () => Promise<void> | void }) {
