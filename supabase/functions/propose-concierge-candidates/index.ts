@@ -25,24 +25,36 @@ async function householdForActor(client: SupabaseClient, actorId: string): Promi
   return String(data.household_id);
 }
 
+function chooseUniqueTaskMatch(
+  rows: Array<{ id: unknown; revision: unknown; title: unknown; scheduled_date: unknown }>,
+  scheduledDate: string | undefined,
+) {
+  if (rows.length === 1) return rows[0];
+  if (!scheduledDate) return null;
+  const sameDate = rows.filter((row) => row.scheduled_date === scheduledDate);
+  return sameDate.length === 1 ? sameDate[0] : null;
+}
+
 async function attachCanonicalDuplicate(
   client: SupabaseClient,
   householdId: string,
   candidate: LineConversationCandidate,
 ): Promise<LineConversationCandidate> {
-  if (candidate.kind === "task" && candidate.intent?.scheduledDate) {
+  if (candidate.kind === "task") {
+    // Exact canonical title is the duplicate key. Date is used to disambiguate
+    // multiple same-title rows, but a unique same-title row remains selectable
+    // even when the candidate proposes a changed date.
     const { data, error } = await client
       .from("task_instances")
       .select("id,revision,title,scheduled_date")
       .eq("household_id", householdId)
       .eq("title", candidate.title)
-      .eq("scheduled_date", candidate.intent.scheduledDate)
       .is("test_context_id", null)
       .in("status", ["todo", "in_progress"])
-      .limit(2);
+      .limit(5);
     if (error) throw new Error(error.message);
-    if (data?.length === 1) {
-      const row = data[0];
+    const row = chooseUniqueTaskMatch(data ?? [], candidate.intent?.scheduledDate);
+    if (row) {
       return {
         ...candidate,
         duplicateMatch: {
