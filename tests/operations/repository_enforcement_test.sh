@@ -136,6 +136,20 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 expect_fail run_verify
 
+# GitHub may omit bypass_actors for a caller without enough ruleset visibility.
+# Absence must never be interpreted as an empty bypass list.
+write_good_ruleset
+python3 - "$TMP/fixtures/ruleset-1.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+data.pop("bypass_actors", None)
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh)
+PY
+expect_fail run_verify
+
 # A configured routine bypass makes the control non-mechanical for this contract.
 write_good_ruleset
 python3 - "$TMP/fixtures/ruleset-1.json" <<'PY'
