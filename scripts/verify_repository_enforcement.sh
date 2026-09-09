@@ -18,7 +18,8 @@ Environment defaults:
   GITHUB_REPOSITORY                 owner/repo
   REPOSITORY_ENFORCEMENT_BRANCH     main
   GITHUB_API_URL                    https://api.github.com
-  GH_TOKEN or GITHUB_TOKEN          optional bearer token
+  GH_TOKEN or GITHUB_TOKEN          bearer token; privileged ruleset visibility
+                                    is required to prove zero bypass actors
 EOF
 }
 
@@ -71,7 +72,7 @@ api_get() {
   local path="$1"
   local headers=(
     -H "Accept: application/vnd.github+json"
-    -H "X-GitHub-Api-Version: 2022-11-28"
+    -H "X-GitHub-Api-Version: 2026-03-10"
   )
   if [ -n "$TOKEN" ]; then
     headers+=( -H "Authorization: Bearer $TOKEN" )
@@ -149,6 +150,7 @@ found_rules = set()
 found_checks = set()
 matching_rulesets = 0
 bypass_found = []
+bypass_visibility_missing = []
 
 def matches(pattern: str) -> bool:
     if pattern == "~DEFAULT_BRANCH":
@@ -171,9 +173,11 @@ for path in paths:
         continue
 
     matching_rulesets += 1
-    bypass = data.get("bypass_actors") or []
-    if bypass:
-        bypass_found.append(data.get("name") or str(data.get("id")))
+    ruleset_name = data.get("name") or str(data.get("id"))
+    if "bypass_actors" not in data:
+        bypass_visibility_missing.append(ruleset_name)
+    elif data.get("bypass_actors"):
+        bypass_found.append(ruleset_name)
 
     for rule in data.get("rules") or []:
         rule_type = rule.get("type")
@@ -199,6 +203,12 @@ if missing_rules:
     errors.append("missing required rule types: " + ", ".join(missing_rules))
 if missing_checks:
     errors.append("missing required status checks: " + "; ".join(missing_checks))
+if bypass_visibility_missing:
+    errors.append(
+        "cannot prove zero bypass actors because GitHub omitted bypass_actors for: "
+        + ", ".join(bypass_visibility_missing)
+        + "; rerun with credentials that have sufficient ruleset visibility"
+    )
 if bypass_found:
     errors.append("configured bypass actors exist on matching ruleset(s): " + ", ".join(bypass_found))
 
@@ -208,5 +218,5 @@ if errors:
     raise SystemExit(1)
 
 print(f"PASS: {branch} release enforcement is active")
-print("PASS: PR + five release checks + no force push + no deletion + no bypass actors")
+print("PASS: PR + five release checks + no force push + no deletion + zero visible bypass actors")
 PY
