@@ -115,7 +115,7 @@ Independent freshness selects only the reserved owner/app/slot tuple. PASS
 requires correct source project and recovery namespace, valid structure,
 positive foundational counts and exact snapshot age <=26h.
 
-## 7. Usable recovery / identity rebinding
+## 7. Usable identity recovery / identity rebinding
 
 A complete Supabase project loss changes Auth UUIDs when users are recreated or
 reinvited. Preserving old production Auth rows is intentionally not required.
