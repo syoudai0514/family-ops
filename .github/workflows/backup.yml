@@ -35,6 +35,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # Even with an explicit --db-url, Supabase CLI loads project config.
+      # Checkout ensures the reviewed Postgres major version and project
+      # settings in supabase/config.toml are available to the dump command.
+      - name: Checkout repository config
+        uses: actions/checkout@v4
+
       - name: Install age
         run: |
           sudo apt-get update
