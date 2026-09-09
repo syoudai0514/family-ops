@@ -59,7 +59,7 @@ fi
 BACKUP_FILENAME="$(sed -n '1p' "$MARKER_FILE")"
 BACKUP_TIMESTAMP="$(sed -n '2p' "$MARKER_FILE")"
 
-if ! [[ "$BACKUP_FILENAME" =~ ^family-ops-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}\.sql\.age$ ]]; then
+if ! [[ "$BACKUP_FILENAME" =~ ^family-ops-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}\.tar\.age$ ]]; then
   echo "ALERT: latest-backup.txt marker is malformed (invalid backup filename)." >&2
   exit 1
 fi
