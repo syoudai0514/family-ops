@@ -29,6 +29,40 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare stable Chrome DevTools endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          REAL_CHROME="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || command -v chrome)"
+          test -n "$REAL_CHROME"
+          WRAPPER="$RUNNER_TEMP/lane-d-chrome-wrapper.sh"
+          cat > "$WRAPPER" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          user_data_dir=""
+          args=()
+          for arg in "$@"; do
+            case "$arg" in
+              --user-data-dir=*)
+                user_data_dir="${arg#--user-data-dir=}"
+                args+=("$arg")
+                ;;
+              --remote-debugging-port=0)
+                args+=("--remote-debugging-port=9222" "--remote-debugging-address=127.0.0.1")
+                ;;
+              *) args+=("$arg") ;;
+            esac
+          done
+          if [[ -n "$user_data_dir" ]]; then
+            mkdir -p "$user_data_dir"
+            printf '9222\n' > "$user_data_dir/DevToolsActivePort"
+          fi
+          exec "$REAL_CHROME" "${args[@]}"
+          EOF
+          chmod +x "$WRAPPER"
+          echo "REAL_CHROME=$REAL_CHROME" >> "$GITHUB_ENV"
+          echo "CHROME_BIN=$WRAPPER" >> "$GITHUB_ENV"
+
       - name: Real Chrome Today/navigation E2E
         run: node scripts/run_today_navigation_browser_e2e.mjs
 
