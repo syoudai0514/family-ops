@@ -1,15 +1,17 @@
 # Family Ops Detailed Design — Canonical
 
-- **Status:** Accepted / Canonical Detailed Design
-- **Accepted:** 2026-09-02
+- **Status:** Accepted / Canonical Detailed Design for the existing ADR0013 package; CF-11 right-size delta is pending canonical merge
+- **Accepted:** 2026-09-02 (ADR0013 package)
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
-- **Governance:** ADR 0012 Accepted / ADR 0013 Accepted
-- **Review:** Independent Round 5 Final Verification = `GO`
-- **Reviewed head:** `5c85bd1468a624b831493e198b0f88b4ef7c574e`
+- **Governance:** ADR 0012 Accepted / ADR 0013 Accepted / ADR 0014 Product Owner approved, pending canonical merge
+- **Review:** Independent Round 5 Final Verification = `GO`; CF-11 right-size proposal approved by Product Owner and under protected-PR verification
+- **Reviewed head:** `5c85bd1468a624b831493e198b0f88b4ef7c574e` for the Round 5 package
 
 このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**canonical detailed design**である。PR #41は独立Round 5最終検証で `GO` を得たexact reviewed headをmergeし、ADR 0013のAccepted化により本ディレクトリのarchitecture/schema/API evolutionが正式に承認された。
 
 以後、実装者はこの固定pathを正として使用する。`FINAL` / `V2` / `LATEST` の並行設計コピーは作らない。設計変更はこのpathを更新し、product behavior変更ならRequirements Baseline、architecture scope変更ならADRも同時に更新・レビューする。
+
+CF-11 backup/recoveryのright-size deltaは2026-09-09にProduct Owner承認済みだが、ADR 0012 governance上、**protected mainへmergeされるまではcanonicalではない**。branch上のADR 0014 / `10_BACKUP_RECOVERY.md` は「Product Owner approved / pending canonical merge」の提案・実証物として扱う。merge後に限りLegacy v6 WP10のR2/age mechanicsをこのscopeでsupersedeする。v6ファイル自体は履歴として変更しない。
 
 ---
 
@@ -66,6 +68,10 @@ Before Phase 1 migration work, implementation must fresh-read the actual product
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
 
+Pending CF-11 delta (becomes canonical only after protected merge):
+
+10. `10_BACKUP_RECOVERY.md` — Product Owner approved right-sized household recovery proposal under ADR 0014
+
 Review instruction/history documents remain for audit only:
 
 - `FAMILY-OPS-DETAILED-DESIGN-INDEPENDENT-REVIEW-REQUEST.md`
@@ -95,6 +101,7 @@ Review instruction/history documents remain for audit only:
 - aggregate canonical reader+writer activates atomically.
 - after P1, feature-off never restores legacy current truth.
 - no existing migration rewrite / `supabase db reset` / production data delete.
+- Pending CF-11 recovery proposal uses explicit household-domain allowlist and excludes provider credentials/queues/test state; it does not claim provider-session recovery.
 
 ---
 
@@ -121,6 +128,7 @@ Final verdict: `GO`.
 - Round 3: `NO-GO` — BLOCKER 0 / HIGH 1
 - Round 4: reviewer A `GO WITH CONDITIONS` with one MEDIUM; reviewer B `GO`; no BLOCKER/HIGH
 - Round 5: **`GO` — BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0 / Requirements contradiction 0**
+- CF-11 right-size: Product Owner approved 2026-09-09; pending canonical merge and operational proof
 
 Round 5 reviewed head:
 
@@ -132,14 +140,13 @@ PR #41 merged that exact head as merge commit `c272b0a1e00491c749e8cc2d76b90b20b
 
 ## Implementation gate
 
-Detailed-design review is complete. Implementation planning may begin.
-
-Implementation must follow the work-package ordering and gates in `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`. In particular:
+Detailed-design review is complete. Implementation must preserve the established work-package ordering/gates. In particular:
 
 - schema/catalog constraints are freshly measured before migration;
 - additive/backfill phases precede new-only semantic writes;
 - test ActorRef/side-effect sandbox foundation precedes actual-household simulation;
 - each aggregate read+write cutover is atomic;
-- provider lifecycle overlap/orphan audits must pass before Family Event P1;
+- provider lifecycle overlap/orphan audits pass before Family Event P1;
 - P1 rollback never restores legacy semantic truth;
-- destructive cleanup remains separately reviewed and deferred.
+- destructive cleanup remains separately reviewed and deferred;
+- CF-11 can become canonical/PASS only after ADR 0014 + `10_BACKUP_RECOVERY.md` pass protected merge and required actual backup/freshness/disposable restore/authenticated-use evidence.

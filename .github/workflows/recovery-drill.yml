@@ -1,0 +1,140 @@
+name: Household recovery drill
+
+# CF-11 evidence workflow.
+#
+# On a same-repository PR that changes recovery controls, prove the full
+# right-sized path BEFORE merge:
+# production Family Ops read -> isolated app-save-hub write/read-back ->
+# freshness -> disposable Supabase -> new Auth sign-in -> old/new UUID rebind ->
+# typed restore -> authenticated RLS access to recovered household data.
+#
+# Family Ops production is read-only in this workflow. The only persistent
+# write is a new generation in the reserved app-save-hub recovery namespace.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/backup.yml"
+      - ".github/workflows/backup_freshness_alert.yml"
+      - ".github/workflows/recovery-drill.yml"
+      - "scripts/create_household_snapshot.sh"
+      - "scripts/backup_freshness_check.sh"
+      - "scripts/prepare_recovery_auth_smoke.sh"
+      - "scripts/restore_drill.sh"
+      - "scripts/verify_recovery_access.sh"
+      - "scripts/family_ops_recovery_tables.txt"
+      - "tests/operations/backup_controls_test.sh"
+      - "docs/BACKUP_RESTORE_RUNBOOK.md"
+      - "docs/adr/0014-right-sized-household-backup-recovery.md"
+      - "docs/design/current/10_BACKUP_RECOVERY.md"
+  workflow_dispatch: {}
+  workflow_run:
+    workflows:
+      - "Backup (daily household recovery snapshot)"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: family-ops-household-recovery-drill-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    name: actual backup + disposable restore + authenticated access
+    if: >-
+      ${{ (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.full_name == github.repository) ||
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'workflow_run' &&
+           github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SOURCE_PROJECT_REF: dnlqxjpjpkxnfgculzip
+      TARGET_PROJECT_REF: wdwbmvpipbdpomqulsrj
+      MAX_BACKUP_AGE_HOURS: "26"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: >-
+            ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha ||
+                (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) ||
+                'main' }}
+
+      - name: Verify required existing operator credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || {
+            echo "::error::SUPABASE_ACCESS_TOKEN is required for CF-11 evidence"
+            exit 1
+          }
+
+      # On PR/manual evidence, create a real new generation first. A successful
+      # workflow_run already follows backup.yml, so avoid a duplicate generation.
+      - name: Actual Family Ops snapshot to isolated app-save-hub namespace
+        if: ${{ github.event_name != 'workflow_run' }}
+        shell: bash
+        run: bash scripts/create_household_snapshot.sh
+
+      - name: Verify actual snapshot freshness
+        shell: bash
+        run: bash scripts/backup_freshness_check.sh
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+
+      - name: Write safe local Supabase placeholders
+        shell: bash
+        run: |
+          cat > .env <<'EOF'
+          GOOGLE_SIGNIN_CLIENT_ID=ci-recovery-placeholder.apps.googleusercontent.com
+          GOOGLE_SIGNIN_CLIENT_SECRET=ci-recovery-placeholder
+          GOOGLE_SIGNIN_CALLBACK_URL=http://127.0.0.1:54321/auth/v1/callback
+          EOF
+          cat > supabase/functions/.env <<'EOF'
+          LINE_CHANNEL_SECRET=ci-recovery-line-placeholder
+          CRON_WORKER_TOKEN=ci-recovery-worker-token-0123456789abcdef
+          EOF
+          cat .env >> "$GITHUB_ENV"
+
+      - name: Start disposable Supabase stack
+        run: |
+          supabase start \
+            --exclude realtime,storage-api,imgproxy,studio,mailpit,logflare,vector,supavisor,postgres-meta
+
+      - name: Capture disposable Supabase connection and API keys
+        run: supabase status -o json | node scripts/write_supabase_status_env.mjs
+
+      - name: Apply current Family Ops schema from empty
+        run: supabase db reset
+
+      - name: Create NEW recovered Auth identities and prove sign-in
+        shell: bash
+        run: bash scripts/prepare_recovery_auth_smoke.sh --session-file "$RUNNER_TEMP/recovery-sessions.json"
+
+      - name: Restore latest household snapshot with Auth UUID rebinding
+        shell: bash
+        run: >-
+          bash scripts/restore_drill.sh
+          --scratch-db-url "$DB_URL"
+          --identity-map "$RUNNER_TEMP/recovery-sessions.json"
+
+      - name: Prove signed-in users can resume Family Ops through RLS
+        shell: bash
+        run: bash scripts/verify_recovery_access.sh --session-file "$RUNNER_TEMP/recovery-sessions.json"
+
+      - name: Remove temporary recovery sessions
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/recovery-sessions.json"
+
+      - name: Stop disposable stack
+        if: always()
+        run: supabase stop

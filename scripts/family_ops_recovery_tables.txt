@@ -1,0 +1,78 @@
+# CF-11 right-sized recovery allowlist.
+#
+# These are durable household/domain tables that must be recoverable from the
+# separate app-save-hub Supabase project. The order is also the restore order;
+# keep parents before children so normal FK enforcement remains active during
+# the recovery drill.
+#
+# Deliberately excluded:
+# - auth credentials/sessions/provider tokens
+# - private queues, receipts, cron/net state, webhook inboxes
+# - Google/LINE connection state and provider caches
+# - test/simulation data
+# - transient AI/image extraction/review state
+# - artifact handoff/evidence transport data
+#
+# Rows with a test_context_id are filtered out by the snapshot producer.
+
+public.households
+public.profiles
+public.household_members
+public.domain_actor_refs
+public.household_task_categories
+public.household_terminology
+public.notification_preferences
+
+public.family_children
+public.child_school_contexts
+
+public.task_definitions
+public.task_subtask_definitions
+
+public.transport_weekly_templates
+public.transport_weekly_template_days
+public.transport_occurrence_overrides
+public.transport_conflict_review_groups
+
+public.family_events
+public.family_event_field_authorities
+
+public.recurrence_rules
+public.task_instances
+public.task_subtask_instances
+public.task_actual_participants
+public.task_completion_evidence
+public.task_events
+public.task_execution_targets
+public.task_reconciliation_sessions
+public.task_reconciliation_session_items
+
+public.transport_conflict_review_items
+public.transport_conflict_review_responses
+
+public.requests
+public.assignment_change_request_tasks
+public.request_attempts
+public.request_attempt_confirmations
+
+public.shopping_items
+public.shopping_events
+public.shopping_actual_participants
+
+public.handovers
+public.handover_reads
+public.info_acknowledgements
+
+public.household_routine_schedules
+public.household_routine_schedule_overrides
+public.evening_routine_preferences
+public.routine_checkin_sessions
+public.routine_checkin_session_items
+public.routine_reconciliation_operations
+public.routine_reconciliation_snapshots
+public.routine_item_reconciliation_outcomes
+
+public.school_preparation_rules
+public.nursery_confirmed_items
+public.nursery_recurrence_series
+public.nursery_recurrence_exceptions

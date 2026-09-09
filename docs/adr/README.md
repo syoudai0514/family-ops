@@ -12,57 +12,30 @@ ADR 0013 is **Accepted** after the entire `docs/design/current/` package passed
 independent Round 5 verification with `GO` and PR #41 merged the exact reviewed
 head `5c85bd1468a624b831493e198b0f88b4ef7c574e`.
 
+ADR 0014 is **Product Owner approved / pending canonical merge** for CF-11. It
+right-sizes the legacy v6 R2/age backup mechanics to the current two-person
+household by using the existing separate `app-save-hub` Supabase project and
+existing GitHub/Supabase credentials. Under ADR 0012 it is not Accepted/canonical
+until the reviewed proposal reaches protected `main`.
+
 ## Index
 
 - [0001](0001-v6-baseline-commitment.md) — Original v6 normative-source
   commitment; **superseded in part by 0012 for requirements/UX scope**
 - [0002](0002-dropoff-pickup-setup-endpoint.md) — A new `configure-dropoff-pickup`
-  endpoint fills a real v6 gap (WP2 names the capability, no endpoint is
-  named for it)
-- [0003](0003-ai-draft-propose-endpoint.md) — `propose-ai-draft`/
-  `confirm-request-draft`/`confirm-handover-draft` fill a real v6 gap (the
-  AI-draft propose/confirm flow is described in prose, no endpoint names
-  are given)
-- [0004](0004-google-oauth-state-not-mutation-receipt.md) — Google Calendar
-  OAuth start/callback use the design's own single-use state-hash replay
-  guard, not the standard `operation_id`/`mutation_receipts` pattern (no
-  JWT/body exists on Google's own redirect)
-- [0005](0005-google-calendar-new-error-codes.md) — WP7's new error codes
-  temporarily lived in a local `googleCalendar.ts` map during parallel-agent
-  development, then folded into the shared `_shared/errors.ts` catalogue in
-  a follow-up consolidation pass
-- [0006](0006-notification-outbox-delivery-bridge-and-conflict-deferral.md) —
-  A new trigger bridges WP2's in-app notifications into the LINE delivery
-  outbox with bundling; a standalone calendar-conflict notification was
-  deliberately deferred to WP8 rather than guessed at
-- [0007](0007-wp8-routine-session-scope-decisions.md) — WP8 routine-session
-  scope decisions: RPC-layer LINE-postback readiness vs. actual webhook
-  wiring, reused error codes, in-place amendments to two pre-existing
-  functions, and the scope boundary of the reassignment session-supersede
-- [0008](0008-routine-digest-calendar-merge-and-conflict-warning.md) —
-  Sol review fix (P1-1/P1-2, first round): Sunday/non-workday digest Google
-  Calendar merge and assignment/calendar conflict-warning detection design
-  details
-- [0009](0009-line-quick-reply-and-reply-first-delivery.md) — Sol review fix
-  (P1-3/P1-4, first round): LINE routine quick-reply buttons
-  (全部完了/今回は不要) and Reply-API-first delivery for process-line-inbox's
-  own confirmations
-- [0010](0010-line-item-by-item-flow-and-skip-confirmation.md) — Sol
-  re-review fix (P1-1/P1-2, second round): the LINE-native
-  項目ごとに入力 item-by-item flow and the mandatory confirmation step before
-  a top-level 今回は不要 mass-skip
-- [0011](0011-pending-action-review-and-today-schedule.md) — Sol re-review
-  fix (P1-1/P1-2, third round): the PWA pending-action review/confirm/cancel
-  surface (Today Priority 2) and the Today calendar/conflict schedule view
-  (Today Priority 1), both reusing existing backend RPCs/conflict logic with
-  zero re-derivation
-- [0012](0012-requirements-ux-canonical-governance.md) — Establish the
-  canonical Requirements & UX Baseline as the normative product source while
-  retaining v6 for non-conflicting architecture/implementation decisions
-- [0013](0013-current-detailed-design-architecture-evolution.md) — **Accepted:**
-  `docs/design/current/` is the reviewed canonical detailed design; request/task
-  actual/assignment/Google Authority/notification/test-mode architecture evolves
-  where accepted requirements conflict with v6
+  endpoint fills a real v6 gap (WP2 names the capability, no endpoint is named)
+- [0003](0003-ai-draft-propose-endpoint.md) — AI draft endpoints fill a real v6 gap
+- [0004](0004-google-oauth-state-not-mutation-receipt.md) — Google OAuth state replay guard
+- [0005](0005-google-calendar-new-error-codes.md) — shared Google Calendar error catalogue
+- [0006](0006-notification-outbox-delivery-bridge-and-conflict-deferral.md) — notification delivery bridge
+- [0007](0007-wp8-routine-session-scope-decisions.md) — WP8 routine-session scope decisions
+- [0008](0008-routine-digest-calendar-merge-and-conflict-warning.md) — routine digest/calendar merge
+- [0009](0009-line-quick-reply-and-reply-first-delivery.md) — LINE quick-reply/reply-first delivery
+- [0010](0010-line-item-by-item-flow-and-skip-confirmation.md) — LINE item flow/skip confirmation
+- [0011](0011-pending-action-review-and-today-schedule.md) — pending review/Today schedule
+- [0012](0012-requirements-ux-canonical-governance.md) — canonical Requirements & UX governance
+- [0013](0013-current-detailed-design-architecture-evolution.md) — **Accepted:** canonical current detailed design
+- [0014](0014-right-sized-household-backup-recovery.md) — **Product Owner approved / pending canonical merge:** reserved `app-save-hub` namespace, actual backup/read-back/freshness, disposable restore, Auth rebind and authenticated household-access proof; R2/age is superseded only after protected merge
 
 ## Format
 

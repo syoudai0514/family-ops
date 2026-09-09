@@ -1,42 +1,38 @@
 name: Backup freshness alert
 
-# WP10: "backup freshness alert" (also listed again under WP11's
-# production-readiness checklist). Runs independently of backup.yml so a
-# stuck/broken backup job doesn't just silently stop producing files — this
-# job actively checks the R2 marker and FAILS (a legitimate MVP alert
-# mechanism: a red GitHub Actions run notifies whoever watches this repo's
-# Actions tab / has notifications on) if the most recent backup is older
-# than the freshness threshold.
+# Independent CF-11 freshness check for the right-sized separate-Supabase
+# household snapshot. A failed backup is already RED; after a successful
+# backup this workflow verifies the stored snapshot metadata and exact age.
 
 on:
   schedule:
-    # Runs a few hours after the daily backup (18:00 UTC) so a normal daily
-    # backup has had time to land before we check, while still catching a
-    # stale/missing backup well within the same day.
+    # A few hours after the daily 18:00 UTC snapshot.
     - cron: "0 21 * * *"
   workflow_dispatch: {}
+  workflow_run:
+    workflows:
+      - "Backup (daily household recovery snapshot)"
+    types:
+      - completed
 
 permissions:
   contents: read
 
 jobs:
   freshness:
-    name: Check latest backup age
+    name: Check latest household snapshot age
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SOURCE_PROJECT_REF: dnlqxjpjpkxnfgculzip
+      TARGET_PROJECT_REF: wdwbmvpipbdpomqulsrj
+      MAX_BACKUP_AGE_HOURS: "26"
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
-      - name: Install awscli
-        run: pip install --quiet awscli
-
-      - name: Run freshness check
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-          # Optional override; script defaults to 26 hours if unset.
-          MAX_BACKUP_AGE_HOURS: "26"
+      - name: Verify separate-project snapshot freshness
         run: bash scripts/backup_freshness_check.sh
