@@ -87,21 +87,38 @@ test('browser-state and back/return harnesses assert user-observable state, not 
   assert.deepEqual(after, state);
 });
 
-test('Nursery harness requires actual image bytes and classify/OCR/AI/review evidence before mutation', async () => {
+test('Nursery harness requires actual image bytes plus OCR/classify/AI/review evidence before mutation', async () => {
+  const sourceText = nurseryActualImageFixture.expectedSourceHints.join('\n');
   const observed = await runNurseryActualInput(
     {
       ingestImage: async ({ bytes }) => ({
         stages: ['classify', 'ocr', 'ai', 'review'],
         mutatedBeforeConfirm: false,
         provenanceId: `source-${bytes.length}`,
+        sourceText,
       }),
     },
     nurseryActualImageFixture,
   );
   assert.match(observed.provenanceId, /^source-/);
+  assert.ok(nurseryActualImageFixture.expectedSourceHints.every((hint) => observed.sourceText.includes(hint)));
   await assert.rejects(
     () => runNurseryActualInput({ ingestImage: async () => ({}) }, { ...nurseryActualImageFixture, candidateJson: {} }),
     /must not start from candidate JSON/,
+  );
+  await assert.rejects(
+    () => runNurseryActualInput(
+      {
+        ingestImage: async () => ({
+          stages: ['classify', 'ocr', 'ai', 'review'],
+          mutatedBeforeConfirm: false,
+          provenanceId: 'source-without-ocr',
+          sourceText: '',
+        }),
+      },
+      nurseryActualImageFixture,
+    ),
+    /OCR\/source evidence missing hint/,
   );
 });
 
