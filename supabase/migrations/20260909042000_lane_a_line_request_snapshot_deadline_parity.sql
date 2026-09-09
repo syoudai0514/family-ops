@@ -141,21 +141,24 @@ begin
     and action_type = 'request_decline'
     and normalized_payload->>'request_id' = v_request_id::text;
 
-  -- fn_command_create_light_request_v2 already emitted the notification using
-  -- v_reply_due.  Enrich rather than replacing it with the nullable input.
+  -- fn_command_create_light_request_v2 already emitted the canonical semantic
+  -- notification using v_reply_due.  Keep notification_kind=request.received
+  -- as truth while preserving the historical type consumed by legacy clients.
   update public.user_notifications
-  set payload = payload || jsonb_build_object(
-    'request_kind', 'general',
-    'due_at', p_due_at,
-    'reply_due_at', v_reply_due,
-    'attempt_id', v_attempt_id,
-    'revision', v_attempt_revision,
-    'terms_revision', v_terms_revision,
-    'accept_pending_action_id', v_accept_action_id,
-    'decline_pending_action_id', v_decline_action_id
-  )
+  set type = 'request_received',
+      payload = payload || jsonb_build_object(
+        'request_kind', 'general',
+        'due_at', p_due_at,
+        'reply_due_at', v_reply_due,
+        'attempt_id', v_attempt_id,
+        'revision', v_attempt_revision,
+        'terms_revision', v_terms_revision,
+        'accept_pending_action_id', v_accept_action_id,
+        'decline_pending_action_id', v_decline_action_id
+      )
   where recipient_user_id = p_recipient_user_id
-    and dedup_key = 'request:received:' || v_request_id::text;
+    and dedup_key = 'request:received:' || v_request_id::text
+    and notification_kind = 'request.received';
 
   return v_result;
 end;
