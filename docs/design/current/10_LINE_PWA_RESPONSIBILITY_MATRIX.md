@@ -1,6 +1,6 @@
 # 10. LINE / PWA Scenario Responsibility Matrix
 
-- **Status:** PROPOSED / REVIEW-READY — product-owner final approval required before treating this matrix as an accepted product-governance decision
+- **Status:** PRODUCT OWNER APPROVED / REVIEW-READY — 26 scenario classifications approved on 2026-09-09; this is not implementation-wide approval, Release GO, or main-merge approval
 - **Scope:** CF-09 only; channel responsibility, not application implementation
 - **Requirements authority:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 - **Governance:** ADR 0012; this document is subordinate to the Requirements Baseline
@@ -135,10 +135,16 @@ These examples prevent category misreading; they do not add product behavior.
 - **Base rule vs one-off assignment:** stable base/period-rule administration is PWA-only (M21); a daily request/assignment negotiation remains LINE-completable (M04).
 - **Shopping:** adding a need and daily execution stay on the LINE operational path; rich list/status browsing is PWA detail (M02/M10/M26).
 
-## 7. USER DECISION REQUIRED
+## 7. PRODUCT OWNER APPROVAL RECORD
 
-**One genuine unresolved product-governance decision remains:** product-owner final approval of this responsibility matrix.
+On 2026-09-09, the Product Owner explicitly approved **all 26 scenario classifications (M01-M26)** as the CF-09 LINE/PWA responsibility decision.
 
-Until approved, this document is a complete derived proposal and review artifact, not authority to change any existing application behavior. Approval should confirm the scenario classifications as a faithful explicitization of the already-approved Requirements/UX; it must not be used to smuggle unrelated product changes into this lane.
+Approval scope is deliberately narrow:
 
-No other product decision was required to derive the matrix from CURRENT authorities.
+- approved: the `LINE MUST complete` / `PWA MAY hand off` / `PWA ONLY` classification of M01-M26 and the responsibility boundaries expressed by this matrix;
+- not approved by that decision: application implementation correctness or completeness;
+- not approved by that decision: Release GO / production rollout;
+- not approved by that decision: merge to `main`;
+- not approved by that decision: any unrelated product behavior change.
+
+The matrix is therefore **Product Owner approved and review-ready on this branch**, but remains a branch candidate until the normal governance/review process decides whether and when it may be merged to `main`. No application behavior may claim release approval merely from this classification approval.
