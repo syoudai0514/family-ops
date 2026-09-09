@@ -38,10 +38,12 @@ test('F2 rejects PASS records that are not individually bound to the payload exa
       status: 'PASS',
       exactHead: HEAD_B,
       source: 'artifact://stale',
+      capturedAt: '2026-09-09T14:55:00+09:00',
+      details: { entryBoundary: 'domain', assertions: ['fixture invariant'] },
     }],
   });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /PASS evidence is not bound/);
+  assert.match(result.stderr, /PASS evidence must be bound to the payload exactHead/);
 });
 
 test('F2 rejects anonymous PASS records without an artifact/source reference', () => {
@@ -53,10 +55,29 @@ test('F2 rejects anonymous PASS records without an artifact/source reference', (
       status: 'PASS',
       exactHead: HEAD_A,
       source: '',
+      capturedAt: '2026-09-09T14:55:00+09:00',
+      details: { entryBoundary: 'domain', assertions: ['fixture invariant'] },
     }],
   });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /requires a non-empty source/);
+  assert.match(result.stderr, /source\/artifact reference/);
+});
+
+test('F2 rejects browser PASS that supplies only a source string without interaction proof', () => {
+  const result = run({
+    exactHead: HEAD_A,
+    records: [{
+      scenarioId: 'CF14-NAVIGATION-RETURN',
+      evidenceClass: 'browser',
+      status: 'PASS',
+      exactHead: HEAD_A,
+      source: 'artifact://browser/something',
+      capturedAt: '2026-09-09T14:55:00+09:00',
+      details: { entryBoundary: 'PWA route' },
+    }],
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /interactionArtifact/);
 });
 
 test('F2 matching-head payload remains unacceptable while evidence or Requirement/UX blockers remain', () => {
