@@ -632,3 +632,12 @@ Mandatory property/invariant tests:
 - candidate cannot apply over newer target revision
 - simulated actor cannot create production external side effect
 - after semantic point-of-no-return, feature-off cannot restore legacy current-truth mutation/read semantics
+### Lane A implementation contract — CF-01 / CF-12
+
+Request assignment negotiation uses `fn_command_transition_request_attempt_v1` for both channels. The server-issued `terms.assignment_targets` array contains each scoped task ID, observed revision and original assignee ActorRef. Acceptance validates and locks the entire snapshot in task-ID order, then updates every assignment, agreement provenance, linked task and receipt in the same transaction. `assignment_change_request_tasks` is historical input only; new requests do not write or consult it.
+
+Every response carries the observed attempt ID, attempt revision and terms revision. An ID-only legacy acceptance is not upgraded to current consent: it returns stale and asks the person to reopen the current proposal. Expiry closes all four nonterminal states using `RequestAttempt.reply_due_at`, preserving task assignment. A late response returns `reproposal_required`; it cannot revive the old attempt. Periodic expiry uses the same expiry helper as the transition command.
+
+The common reply-deadline proposal rule is: when work lies in the future, propose the earlier of 24 hours after creation or halfway between creation and work; otherwise propose 24 hours after creation. Explicit user-specified future response deadlines take precedence even when later than work. The deadline is proposed once and persisted on the attempt; replay never recalculates it. Work dates remain execution data. This rule implements Q47's configurable automatic proposal; it does not redefine Q30/Q36 agreement semantics.
+
+Implementation verification is tracked in `docs/implementation/LANE-A-REQUEST-CANONICALIZATION.md`. This contract is a review candidate until the independent review gate passes.

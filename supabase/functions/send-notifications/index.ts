@@ -74,6 +74,10 @@ type OutboxItem = {
   session_type?: string;
   payload?: {
     request_id?: string;
+    attempt_id?: string;
+    revision?: number;
+    terms_revision?: number;
+    reply_due_at?: string | null;
     request_kind?: string;
     scope?: 'once' | 'this_week';
     due_at?: string | null;
@@ -164,6 +168,11 @@ function buildRichRequestMessage(
   if (item.payload.request_kind === 'assignment_change') {
     return buildAssignmentRequestFlex({
       requestId: item.payload.request_id,
+      attemptId: item.payload.attempt_id,
+      revision: item.payload.revision,
+      termsRevision: item.payload.terms_revision,
+      replyDueAt: item.payload.reply_due_at,
+      workDueAt: item.payload.due_at,
       title: item.title ?? '担当変更',
       message: item.body ?? '',
       scope: item.payload.scope ?? 'once',

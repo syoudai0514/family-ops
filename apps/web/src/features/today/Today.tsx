@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
@@ -17,6 +17,7 @@ import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
+import { supabase } from '../../lib/supabaseClient';
 import { addDays, tokyoIsoDate } from '../planning/dateHelpers';
 import { usePlanningData } from '../planning/usePlanningData';
 import {
@@ -32,6 +33,69 @@ const INPUT_LABELS: Record<CurrentRoutineSessionType, string> = {
   pickup: 'お迎えの入力',
   nonpickup_evening: '今夜の入力',
 };
+
+type TodayRequestAttemptState =
+  | 'pending'
+  | 'checking'
+  | 'consulting'
+  | 'awaiting_confirmation'
+  | 'accepted'
+  | 'declined'
+  | 'expired'
+  | 'cancelled';
+
+export interface TodayRequestAttempt {
+  id: string;
+  request_id: string;
+  state: TodayRequestAttemptState;
+  revision: number;
+  terms_revision: number;
+  reply_due_at: string | null;
+}
+
+function useTodayRequestAttempts(requests: RequestRow[]) {
+  const [attempts, setAttempts] = useState<Map<string, TodayRequestAttempt>>(new Map());
+  const [error, setError] = useState<string | null>(null);
+  const requestIdsKey = useMemo(
+    () => JSON.stringify(requests.map((request) => request.id).sort()),
+    [requests],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestIds = JSON.parse(requestIdsKey) as string[];
+    if (requestIds.length === 0) {
+      setAttempts((current) => (current.size === 0 ? current : new Map()));
+      setError((current) => (current === null ? current : null));
+      return () => { cancelled = true; };
+    }
+
+    void (async () => {
+      const { data, error: fetchError } = await supabase
+        .from('request_attempts')
+        .select('id, request_id, state, revision, terms_revision, reply_due_at, created_at')
+        .in('request_id', requestIds)
+        .is('test_context_id', null)
+        .order('created_at', { ascending: false });
+      if (cancelled) return;
+      if (fetchError) {
+        setAttempts(new Map());
+        setError(fetchError.message);
+        return;
+      }
+      const latest = new Map<string, TodayRequestAttempt>();
+      for (const attempt of (data ?? []) as TodayRequestAttempt[]) {
+        if (!latest.has(attempt.request_id)) latest.set(attempt.request_id, attempt);
+      }
+      setAttempts(latest);
+      setError(null);
+    })();
+
+    return () => { cancelled = true; };
+  }, [requestIdsKey]);
+
+  return { attempts, error };
+}
 
 function localDaypart(): 'morning' | 'day' | 'evening' {
   const hour = new Date().getHours();
@@ -62,18 +126,42 @@ export function shouldShowWaitingTask(task: TaskInstance, now = new Date()): boo
   return Boolean(task.due_at && new Date(task.due_at) <= now);
 }
 
+export function isTodayRequestAttemptActionable(
+  attempt: TodayRequestAttempt | undefined,
+  nowMs = Date.now(),
+): boolean {
+  if (!attempt || !['pending', 'checking'].includes(attempt.state)) return false;
+  return !attempt.reply_due_at || new Date(attempt.reply_due_at).getTime() > nowMs;
+}
+
+export function todayRequestTransitionPayload(requestId: string, attempt: TodayRequestAttempt) {
+  return {
+    request_id: requestId,
+    attempt_id: attempt.id,
+    expected_revision: attempt.revision,
+    expected_terms_revision: attempt.terms_revision,
+  };
+}
+
 function RequestQuickActions({
   request,
+  attempt,
   onChanged,
 }: {
   request: RequestRow;
-  onChanged: () => void;
+  attempt?: TodayRequestAttempt;
+  onChanged: () => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
+  const actionable = isTodayRequestAttemptActionable(attempt);
 
   async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
+    if (!attempt || !isTodayRequestAttemptActionable(attempt)) {
+      setError('このお願いは最新状態を確認してから返事してください。');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -82,14 +170,17 @@ function RequestQuickActions({
         : kind === 'accept' && request.assignment_task_instance_id
           ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest
           : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
-      await callEdgeFunction(functionName, {
+      const result = await callEdgeFunction<{ reproposal_required?: boolean }>(functionName, {
         operation_id: newOperationId(),
-        request_id: request.id,
+        ...todayRequestTransitionPayload(request.id, attempt),
         ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}),
       });
-      onChanged();
+      if (result.reproposal_required) {
+        setError('返事期限を過ぎています。お願い画面から新しい条件で提案してください。');
+      }
+      await onChanged();
     } catch (err) {
-      setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。');
+      setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。');
     } finally {
       setBusy(false);
     }
@@ -100,27 +191,41 @@ function RequestQuickActions({
       <div>
         <strong>{request.shared_title}</strong>
         {request.shared_message && <p>{request.shared_message}</p>}
+        {attempt?.reply_due_at && (
+          <span className="task-item-meta">返事期限: {formatDateTimeJa(attempt.reply_due_at)}</span>
+        )}
         {request.due_at && (
-          <span className="task-item-meta">期限: {formatDateTimeJa(request.due_at)}</span>
+          <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>
         )}
       </div>
-      <div className="task-item-actions">
-        <button type="button" disabled={busy} onClick={() => respond('accept')}>
-          やる
-        </button>
-        <button type="button" disabled={busy} onClick={() => respond('decline')}>
-          難しい
-        </button>
-        <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>
-          その他の返答
-        </button>
-      </div>
-      {showOther && (
+      {actionable && (
+        <div className="task-item-actions">
+          <button type="button" disabled={busy} onClick={() => respond('accept')}>
+            やる
+          </button>
+          <button type="button" disabled={busy} onClick={() => respond('decline')}>
+            難しい
+          </button>
+          <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>
+            その他の返答
+          </button>
+        </div>
+      )}
+      {actionable && showOther && attempt && (
         <div className="request-other-actions">
-          <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('checking')}>確認してみる</button>
+          {attempt.state === 'pending' && (
+            <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('checking')}>確認してみる</button>
+          )}
           <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('consult')}>相談する</button>
           <p className="task-item-meta">相談では、今の条件を二人で確認してから合意します。担当はこの時点では変わりません。</p>
         </div>
+      )}
+      {!attempt && <p className="task-item-meta">最新の返事状態を確認中です。</p>}
+      {attempt && !actionable && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && (
+        <p className="task-item-meta">相談中です。お願い画面で条件を確認してください。</p>
+      )}
+      {attempt && !actionable && !['consulting', 'awaiting_confirmation'].includes(attempt.state) && (
+        <p className="task-item-meta">このお願いはここから返事できません。お願い画面で最新状態を確認してください。</p>
       )}
       {error && (
         <p role="alert" className="error-text">
@@ -135,6 +240,7 @@ export function Today() {
   const { user } = useAuth();
   const { household, members, me, partner } = useHousehold();
   const data = useTodayData(household?.id ?? null, user?.id ?? null);
+  const requestAttempts = useTodayRequestAttempts(data.incomingRequests);
   const schedule = useTodaySchedule(household?.id ?? null, user?.id ?? null);
   const pending = usePendingActions(household?.id ?? null, user?.id ?? null);
   const currentInputs = useCurrentRoutineSessions(Boolean(household?.id && user?.id));
@@ -350,9 +456,15 @@ export function Today() {
             <span>{data.incomingRequests.length + pending.pendingActions.length}件</span>
           </div>
           {pending.error && <p role="alert" className="error-text">{pending.error}</p>}
+          {requestAttempts.error && <p role="alert" className="error-text">お願いの最新状態を確認できませんでした。{requestAttempts.error}</p>}
           <ul className="request-list">
             {data.incomingRequests.map((request) => (
-              <RequestQuickActions key={request.id} request={request} onChanged={data.refresh} />
+              <RequestQuickActions
+                key={request.id}
+                request={request}
+                attempt={requestAttempts.attempts.get(request.id)}
+                onChanged={data.refresh}
+              />
             ))}
             {pending.pendingActions.map((action) => (
               <PendingActionCard key={action.id} action={action} onConfirm={pending.confirm} onCancel={pending.cancel} onEdit={setEditingPendingAction} onEditAsRequest={handleEditAsRequest} onEditAsTask={handleEditAsTask} />

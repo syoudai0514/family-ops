@@ -5,6 +5,8 @@ describe('request contract semantics', () => {
   it('keeps expired requests visible instead of silently mixing them into active/history', () => {
     const now = new Date('2026-09-07T12:00:00+09:00').getTime();
     expect(requestBucket('pending', '2026-09-06T12:00:00+09:00', now)).toBe('expired');
+    expect(requestBucket('consulting', '2026-09-06T12:00:00+09:00', now)).toBe('expired');
+    expect(requestBucket('awaiting_confirmation', '2026-09-06T12:00:00+09:00', now)).toBe('expired');
     expect(requestBucket('pending', '2026-09-08T12:00:00+09:00', now)).toBe('active');
     expect(requestBucket('cancelled', '2026-09-08T12:00:00+09:00', now)).toBe('history');
   });

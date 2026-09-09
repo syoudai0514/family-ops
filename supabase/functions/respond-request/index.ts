@@ -4,6 +4,7 @@ import { createServiceRoleClient, requireUserActor } from '../_shared/auth.ts';
 import { withUserMutationHandler, jsonResponse } from '../_shared/handler.ts';
 import { callServerTx, readJsonBody, requireOperationId } from '../_shared/rpc.ts';
 import { FamilyOpsError } from '../_shared/errors.ts';
+import { requestTransitionArgs } from '../_shared/requestTransition.ts';
 
 Deno.serve(withUserMutationHandler(async (req: Request) => {
   const actorId = await requireUserActor(req);
@@ -12,8 +13,10 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   if (typeof body.request_id !== 'string' || !['checking', 'consult'].includes(String(body.response_action))) {
     throw new FamilyOpsError('INVALID_INPUT', 'request_id and response_action are required', 400);
   }
-  return jsonResponse(await callServerTx(createServiceRoleClient(), 'server_tx_respond_request', {
-    p_actor_id: actorId, p_operation_id: operationId, p_request_id: body.request_id,
-    p_response_action: body.response_action,
-  }));
+  body.action = body.response_action;
+  return jsonResponse(await callServerTx(
+    createServiceRoleClient(),
+    'server_tx_transition_request_v2',
+    requestTransitionArgs(actorId, operationId, body, 'pwa'),
+  ));
 }));

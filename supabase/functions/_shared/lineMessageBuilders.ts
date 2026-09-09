@@ -3,6 +3,11 @@
 // leave the server.
 export type AssignmentChangeLineData = {
   requestId: string;
+  attemptId?: string;
+  revision?: number;
+  termsRevision?: number;
+  replyDueAt?: string | null;
+  workDueAt?: string | null;
   title: string;
   message: string;
   scope: "once" | "this_week";
@@ -378,12 +383,12 @@ export function buildAssignmentRequestFlex(
       footer: compactActionFooter([
         {
           label: "やる",
-          data: `action=accept_assignment_change&request_id=${data.requestId}`,
+          data: `action=accept_assignment_change&request_id=${data.requestId}&attempt_id=${data.attemptId ?? ""}&revision=${data.revision ?? ""}&terms_revision=${data.termsRevision ?? ""}`,
           primary: true,
         },
         {
           label: "難しい",
-          data: `action=decline_assignment_change&request_id=${data.requestId}`,
+          data: `action=decline_assignment_change&request_id=${data.requestId}&attempt_id=${data.attemptId ?? ""}&revision=${data.revision ?? ""}&terms_revision=${data.termsRevision ?? ""}`,
         },
         ...(data.otherResponseUrl ? [{ label: "その他の返答", uri: data.otherResponseUrl, type: "uri" as const }] : []),
       ]),
