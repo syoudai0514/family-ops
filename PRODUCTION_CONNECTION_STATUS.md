@@ -6,9 +6,14 @@ newer result is stated below. “Live test済” means a real provider response 
 observed; a successful deployment, source test, or queue insert alone is not
 treated as provider delivery.
 
+For mutable GitHub state (PR HEAD, CI, rulesets, branch protection), **live
+GitHub is the authority**. This status file intentionally does not claim its own
+commit SHA as the current PR HEAD because updating this file changes that SHA.
+Always fresh-read PR #68 and `main` immediately before a release decision.
+
 | サービス | 接続元 | 接続先 | 必要secret / control | production設定済 | live test済 | 状態 | 残作業 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Vercel PWA | iPhone Safari | `family-ops-web.vercel.app` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | 設定済（既存デプロイ） | 済 | 稼働中 | `main` が Production Git branch の方針を維持。Lane C PR #68ではPreview deployment発生なしを確認 |
+| Vercel PWA | iPhone Safari | `family-ops-web.vercel.app` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | 設定済（既存デプロイ） | 2026-09-09公開入口HTTP 200 / PWA shell確認 | 稼働中 | `main` が Production Git branch の方針を維持。Lane C PR #68ではPreview deploymentを再有効化しない |
 | Supabase Auth: Google Sign-In | PWA | Supabase Auth / Google | Supabase AuthのGoogle client ID/secret（VITEへは不要） | 未確認・有効化されていない実測あり | 失敗 | ブロック | Supabase DashboardでGoogle providerを有効化し、redirect URLを登録 |
 | LINE webhook | LINE Developers | `line-webhook-receiver` | `LINE_CHANNEL_SECRET` | 設定済との既存確認 | Webhook verify成功（既存手動確認） | 受信側確認済 | Webhook URL / Use webhook ONを監査ワークフロー実行時に再確認 |
 | LINE Messaging push | `send-notifications` | LINE Messaging API | `LINE_CHANNEL_ACCESS_TOKEN` | 設定済・新tokenへ更新済 | 済（実端末受信、outbox成功1件） | 稼働中 | tokenをログへ出さない運用を継続 |
@@ -20,31 +25,44 @@ treated as provider delivery.
 | Encrypted DB backup | GitHub Actions `backup.yml` | production Supabase → private Cloudflare R2 | `SUPABASE_DB_URL`, `BACKUP_AGE_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも`SUPABASE_DB_URL`空 | 失敗 | **RED** | Secrets/R2を設定し、actual backup SUCCESS・non-empty encrypted object・marker更新を実証 |
 | Backup freshness | GitHub Actions `backup_freshness_alert.yml` | R2 `latest-backup.txt` + referenced encrypted object | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも4項目が空 | 失敗 | **RED** | actual freshness SUCCESS、26h policy内、marker参照object存在/非0byteを実証 |
 | Restore readiness | owner local/manual | R2 encrypted backup → empty disposable PostgreSQL | owner-held age private key + R2 read credentials | private keyは意図的にGitHub/CI外 | 未実施 | **RED / NOT EVIDENCED** | `scripts/restore_drill.sh`をempty disposable DBに実行し、migration/core tables/representative row sanityまで`RESULT: PASS`を取得 |
-| Repository enforcement | GitHub repository | `main` | active ruleset / branch protection | **未設定**。`protected=false`, required checks enforcement off, rulesets `[]` | 実効保護なし | **RED** | PR必須、release-critical checks必須、force-push/delete禁止、routine bypassなしのactive main rulesetを管理者が適用しfresh-readで確認 |
+| Repository enforcement | GitHub repository | `main` | active ruleset / branch protection | **未設定**。2026-09-09 fresh-readで`protected=false`, required checks enforcement off, rulesets `[]` | 実効保護なし | **RED** | PR必須、5 checks必須、force-push/delete禁止、bypass actorなしのactive main rulesetを管理者が適用し、privileged verifierで確認 |
 
 ## Lane C evidence — 2026-09-09
 
-- CURRENT base `main` at the Lane C audit: `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`.
-- Lane C PR: #68, branch `sol/lane-c-operational-safety`.
-- Source-control HEAD before this status-document update was
-  `9540a260dd825477e3b5c819a809a8b36af3c94e`.
-- PR CI run `34308738353` succeeded with Web / DB / Edge / real Supabase CLI
-  integration separated as individual jobs.
-- Operational-safety run `34308738339` succeeded for repository-side backup
-  control regressions. This is source/control evidence only, not actual backup
-  or restore evidence.
+- Fresh-read base `main` at the latest Lane C audit remained
+  `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected.
+- Lane C work is PR #68 on branch `sol/lane-c-operational-safety`. The exact
+  CURRENT PR HEAD and CI conclusions must be read from GitHub, not copied from
+  this self-mutating status document.
+- The PR carries separate Web / DB / Edge / real Supabase CLI integration and
+  `operational-safety (backup controls)` checks. Do not summarize those as one
+  global “CI GREEN”.
+- `scripts/verify_repository_enforcement.sh` is the fail-closed CF-15 verifier.
+  It checks the actual target branch/rulesets for PR requirement, all five
+  release-critical status contexts, force-push prevention (`non_fast_forward`),
+  deletion prevention, and zero **visible** bypass actors. If GitHub omits the
+  `bypass_actors` field because the caller lacks sufficient ruleset visibility,
+  verification remains RED instead of guessing zero bypass.
+- `tests/operations/repository_enforcement_test.sh` mechanically covers the
+  good case plus unprotected branch, missing check, missing force-push/delete
+  rule, hidden bypass visibility, configured bypass actor, and main exclusion.
 - Scheduled backup run `34275297279` was re-run on 2026-09-09 and failed at
   `pg_dump production database` because `SUPABASE_DB_URL` was still unset;
   encryption and R2 upload were skipped.
 - Freshness run `34288805536` was re-run on 2026-09-09 and failed because the
   R2 account/access/secret/bucket inputs were still absent.
-- GitHub fresh-read still showed `main` unprotected and repository rulesets
-  empty.
+- Supabase `family-ops` was independently read as `ACTIVE_HEALTHY`; the CF-11
+  blocker is backup connectivity/credentials, not a stopped production DB.
+- Vercel production was read as READY on the `main` deployment for
+  `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`; the public production origin
+  returned HTTP 200 and Vercel reported no runtime error cluster in the
+  inspected one-hour window. This is public-entry smoke, not authenticated
+  family-use evidence.
 
 The PASS authority for backup/recovery is `docs/BACKUP_RESTORE_RUNBOOK.md`.
 The PASS authority for `main` release enforcement is
-`docs/REPOSITORY_RELEASE_ENFORCEMENT.md`. A green source CI run does not override
-RED operational evidence in this file.
+`docs/REPOSITORY_RELEASE_ENFORCEMENT.md`. A green source CI run or a production
+HTTP 200 does not override RED operational evidence in this file.
 
 ## Verified LINE delivery evidence
 
