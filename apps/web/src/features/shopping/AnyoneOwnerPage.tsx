@@ -11,6 +11,7 @@ type AnyoneItem = {
   title: string;
   assignment_mode?: string | null;
   active_claimant_actor_ref_id?: string | null;
+  active_claimant_display_name?: string | null;
   revision?: number | null;
 };
 
@@ -22,7 +23,9 @@ type Workspace = {
 export function claimantDisclosure(item: AnyoneItem, actorRefId: string | null): string {
   if (!item.active_claimant_actor_ref_id) return '現在: まだ誰も対応中ではありません';
   if (actorRefId && item.active_claimant_actor_ref_id === actorRefId) return '現在: 自分が対応中';
-  return '現在: 家族が対応中';
+  return item.active_claimant_display_name
+    ? `現在: ${item.active_claimant_display_name}が対応中`
+    : '現在: 対応者を確認できません';
 }
 
 export function claimantAction(item: AnyoneItem, actorRefId: string | null): 'claim' | 'release' | 'takeover' {
@@ -30,7 +33,7 @@ export function claimantAction(item: AnyoneItem, actorRefId: string | null): 'cl
   return actorRefId && item.active_claimant_actor_ref_id === actorRefId ? 'release' : 'takeover';
 }
 
-const ACTION_LABEL = { claim: '自分がやる', release: '担当を戻す', takeover: '引き継ぐ' } as const;
+const ACTION_LABEL = { claim: '自分がやる', release: '手放す', takeover: '引き継ぐ' } as const;
 
 export function AnyoneOwnerPage() {
   const { household } = useHousehold();
@@ -93,7 +96,7 @@ export function AnyoneOwnerPage() {
               <div>
                 <strong>{item.title}</strong>
                 <p className="task-item-meta">担当ルール: 誰でもOK · {claimantDisclosure(item, actorRefId)}</p>
-                {action === 'takeover' && <p className="empty-hint">家族が対応中です。「引き継ぐ」を押すと現在の担当を自分へ変更します。</p>}
+                {action === 'takeover' && <p className="empty-hint">現在の対応者から引き継ぐ場合だけ「引き継ぐ」を押してください。</p>}
               </div>
               <button type="button" disabled={busyId === item.shopping_item_id} onClick={() => void changeOwner(item)}>{ACTION_LABEL[action]}</button>
             </li>;
