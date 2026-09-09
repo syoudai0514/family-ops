@@ -28,8 +28,31 @@ CURRENT物理制約は `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`、ActorRef
 - orphaned provider identityがFamily Eventのwritable linkへsilent昇格しない
 - aggregate read/write atomic cutover + P1後安全契約が定義済み
 - Final-GO MEDIUM 3がacceptanceに入っている
+- Requirements Baseline §2.1の**Product outcome / real-use success criterion**が全work packageとrelease gateへ適用されている
 
 MEDIUM以下をcarryする場合でも、implementerがproduct/domain truth・consent・migration meaningを発明する状態は禁止。
+
+### 2.1 Product outcome / real-use acceptance gate
+
+技術的完全性はFamily Opsの目的を安全に実現するための手段であり、単独の最終成功条件ではない。work package、finding remediation、PR、releaseのいずれも、以下を満たして初めてproduct/UX PASSとする。
+
+1. **Purpose:** Family Opsが家庭運営を楽にし、今日何をすべきかを分かりやすくし、夫婦の不要な摩擦を増やさないというRequirements Baselineの目的に反しない。
+2. **Requirement:** 対象Requirement/Qを満たし、別のRequirementを局所的に壊していない。
+3. **Approved UX:** approved final UX / CURRENT canonical designの情報階層、通常導線、文言意味、normal-vs-exception disclosure、return-state等を不用意に悪化させていない。
+4. **CURRENT implementation:** 実装がcanonical sourceと一致し、findingを閉じるための別business truthやchannel-specific shortcutを作っていない。
+5. **Evidence:** test/CI/source proofは対象Requirementを本当に証明している。GREENやtest名だけでPASSにしない。
+6. **Real-use scenario:** relevantな実利用flowをCURRENT headで確認し、修正対象のUXが改善し、主要な非対象flowが少なくとも非劣化である。
+
+以下はいずれも**NO-GO**:
+
+- 個別findingを閉じた代わりに、通常日の操作数・認知負荷・通知ノイズが増える。
+- LINE primary flowを、技術都合だけでPWA必須にする。
+- important informationがbelow-the-fold、別画面、count-only等へ後退し、家庭運営上の判断が遅くなる。
+- approved UXにあるmaterial interaction/stateを削り、CI GREENを理由に代替扱いする。
+- architecture/schema/APIをきれいにするために既存Requirementの意味を暗黙変更する。
+- testは通るが、実iPhone/LINE/PWAの主要scenarioで利用体験が悪化する。
+
+技術方式を変えるためproduct behavior変更が必要なら、実装内で黙って変更せず、理由・具体案・影響範囲を提示し、Requirements Baseline / accepted designを先に更新する。
 
 ---
 
@@ -46,6 +69,9 @@ MEDIUM以下をcarryする場合でも、implementerがproduct/domain truth・co
 - test side effectはfail closed
 - provider identityごとに destructive DELETEを含むmutation ownerは1つだけ
 - runtimeがRequirementsを変える場合はcodeより前/同PRでrequirements review
+- **finding closed / CI GREEN / test PASSだけで完了宣言しない**。§2.1のPurpose→Requirement→approved UX/design→implementation→evidence→real-use scenarioを照合する
+- technical improvementを理由に既存purpose/Requirement/approved UXから逸脱しない。product behavior変更が必要なら先にcanonical requirement/designを更新する
+- targeted fixは対象UXを改善し、主要な非対象real-use flowを少なくとも非劣化に保つ
 
 ---
 
@@ -515,6 +541,8 @@ Family Event implementation may be developed earlier, but provider ownership mus
 - queue/outbox lease state understood before queue ownership migration
 - provider deletion/orphan state understood before Family Event ownership transfer
 - deployment/cutover operation recorded
+- relevant primary real-use scenario is rechecked against CURRENT head on the actual target surface (LINE and/or iPhone-class PWA as applicable)
+- no known material regression against Family Ops purpose, Requirements, or approved UX; a material UX regression blocks deploy even when technical checks are green
 
 ---
 
@@ -531,6 +559,11 @@ For each capability release retain:
 - test leakage counts
 - notification/Google side-effect audit
 - rollback class/runbook
+- exact Requirements section/Q trace for the changed behavior
+- approved UX / CURRENT design clause used as the interaction contract where applicable
+- relevant real-use scenario(s), target surface/device class, steps exercised, and observed result
+- evidence that the targeted UX improved and material adjacent flows did not regress
+- unresolved product/UX deviations; any material unresolved deviation means release is not PASS
 
 For Family Event Google ownership also retain:
 
@@ -547,6 +580,12 @@ For Family Event Google ownership also retain:
 
 Do not begin implementation until independent design review returns GO.
 
-After implementation starts, do not advance a work package to production unless its acceptance and production-safety checks are satisfied.
+After implementation starts, do not advance a work package to production unless its acceptance, production-safety checks, **and §2.1 Product outcome / real-use acceptance gate** are satisfied.
 
-Any detected product-truth ambiguity, test identity leakage, Request CHECK incompatibility, unaccounted CURRENT table, or Google provider-mutation ownership ambiguity returns the affected aggregate to design/migration review rather than being decided ad hoc in code.
+**Do not declare completion, GO, GREEN, or release-ready solely because a finding is closed or CI/tests are green.** Final judgment must reconcile:
+
+`Family Ops purpose → Requirements → approved UX / CURRENT design → CURRENT implementation → tests/evidence → real-use scenario`.
+
+If a remediation closes its targeted finding but makes the normal family experience worse, it remains **NO-GO** until the regression is fixed or the product requirement is explicitly changed through canonical governance.
+
+Any detected product-truth ambiguity, test identity leakage, Request CHECK incompatibility, unaccounted CURRENT table, Google provider-mutation ownership ambiguity, or material purpose/Requirement/approved-UX/real-use regression returns the affected aggregate to design/product review rather than being decided ad hoc in code.
