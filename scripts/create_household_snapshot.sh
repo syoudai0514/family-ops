@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Create the right-sized CF-11 household recovery snapshot.
 #
-# This uses only services Family Ops already has:
-# - the existing GitHub Actions SUPABASE_ACCESS_TOKEN
-# - the Family Ops production Supabase project
-# - the separate existing app-save-hub Supabase project used by ManaEvo
+# Existing services only:
+# - GitHub Actions SUPABASE_ACCESS_TOKEN
+# - Family Ops production Supabase
+# - separate existing app-save-hub Supabase
 #
-# No Cloudflare R2, age key, DB password, provider credential, queue, or cron
-# state is required. The snapshot is intentionally limited to durable
-# household/domain data listed in family_ops_recovery_tables.txt.
+# Family Ops is isolated from ManaEvo/other saves by the exact owner/app/slot
+# tuple below. Every revision, retention, read-back and freshness operation must
+# use the same tuple; never prune or update by app_id/slot_id alone.
 
 set -euo pipefail
 
@@ -17,8 +17,8 @@ TABLES_FILE="${RECOVERY_TABLES_FILE:-$ROOT/scripts/family_ops_recovery_tables.tx
 SOURCE_PROJECT_REF="${SOURCE_PROJECT_REF:-dnlqxjpjpkxnfgculzip}"
 TARGET_PROJECT_REF="${TARGET_PROJECT_REF:-wdwbmvpipbdpomqulsrj}"
 MAX_BACKUPS="${MAX_BACKUPS:-30}"
-APP_ID="family-ops"
-SLOT_ID="household"
+APP_ID="family-ops-recovery-v1"
+SLOT_ID="household-durable-v1"
 SCHEMA_VERSION=1
 
 for cmd in curl jq base64 cmp; do
@@ -84,18 +84,18 @@ if [ "$(printf '%s\n' "${TABLES[@]}" | sort | uniq -d | wc -l)" -ne 0 ]; then
   exit 2
 fi
 
-# The snapshot carries only a minimal Auth mapping reference (old UUID/email)
-# for operator-assisted recovery. Passwords, OAuth identities, sessions and
-# tokens are never copied to app-save-hub.
 MIGRATION_RESPONSE="$WORKDIR/migration.json"
 api_query "$SOURCE_PROJECT_REF" \
   "select version from supabase_migrations.schema_migrations order by version desc limit 1;" \
   "$MIGRATION_RESPONSE"
 MIGRATION_VERSION="$(jq -er '.[0].version | tostring' "$MIGRATION_RESPONSE")"
 
+# Minimal identity reference only. No password/session/OAuth identity/token is
+# copied. Email is needed to bind an old household user to a newly authenticated
+# user in a rebuilt Supabase project.
 AUTH_RESPONSE="$WORKDIR/auth-refs.json"
 api_query "$SOURCE_PROJECT_REF" \
-  "select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'email', u.email) order by u.id), '[]'::jsonb) as rows from auth.users u where exists (select 1 from public.household_members hm where hm.user_id = u.id);" \
+  "select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'email', lower(u.email)) order by u.id), '[]'::jsonb) as rows from auth.users u where u.email is not null and exists (select 1 from public.household_members hm where hm.user_id = u.id);" \
   "$AUTH_RESPONSE"
 
 SNAPSHOT="$WORKDIR/snapshot.json"
@@ -104,6 +104,8 @@ jq -n \
   --arg source_project_ref "$SOURCE_PROJECT_REF" \
   --arg source_git_sha "${GITHUB_SHA:-unknown}" \
   --arg source_migration_version "$MIGRATION_VERSION" \
+  --arg recovery_app_id "$APP_ID" \
+  --arg recovery_slot_id "$SLOT_ID" \
   --slurpfile auth "$AUTH_RESPONSE" \
   '{
     schema_version: 1,
@@ -112,6 +114,7 @@ jq -n \
     source_git_sha: $source_git_sha,
     source_migration_version: $source_migration_version,
     restore_scope: "durable-household-domain",
+    recovery_namespace: {app_id: $recovery_app_id, slot_id: $recovery_slot_id},
     auth_user_refs: ($auth[0][0].rows // []),
     tables: {}
   }' > "$SNAPSHOT"
@@ -148,49 +151,67 @@ NEXT="$WORKDIR/snapshot-final.json"
 jq '.row_counts = (.tables | with_entries(.value |= length))' "$SNAPSHOT" > "$NEXT"
 mv "$NEXT" "$SNAPSHOT"
 
-# A snapshot that cannot even represent the currently used household/task
-# backbone is not a valid successful backup.
-jq -e '
+jq -e --arg app "$APP_ID" --arg slot "$SLOT_ID" '
   .schema_version == 1 and
+  .recovery_namespace.app_id == $app and
+  .recovery_namespace.slot_id == $slot and
   (.auth_user_refs | length) >= 1 and
+  ([.auth_user_refs[].email] | unique | length) == (.auth_user_refs | length) and
   .row_counts["public.households"] >= 1 and
   .row_counts["public.profiles"] >= 1 and
   .row_counts["public.household_members"] >= 1 and
   .row_counts["public.task_definitions"] >= 1 and
   .row_counts["public.task_instances"] >= 1
 ' "$SNAPSHOT" >/dev/null || {
-  echo "ERROR: source snapshot failed foundational household-data checks" >&2
+  echo "ERROR: source snapshot failed foundational household/identity checks" >&2
   exit 1
 }
 
-# app-save-hub is an existing personal save project. Validate the exact
-# contract we rely on instead of silently creating or changing its schema.
+# app-save-hub is a shared personal save service. Validate the exact contract,
+# its RLS boundary, single trusted owner, and absence of a conflicting Family
+# Ops namespace owner. The Management API is operator/admin transport; normal
+# app access remains user_id-scoped by RLS.
 TARGET_PREFLIGHT="$WORKDIR/target-preflight.json"
 api_query "$TARGET_PROJECT_REF" \
-  "select (select count(*) from auth.users) as auth_user_count, to_regclass('public.app_saves') is not null as app_saves_exists, to_regclass('public.app_save_backups') is not null as app_save_backups_exists, (select count(*) from information_schema.columns where table_schema='public' and table_name='app_saves' and column_name in ('user_id','app_id','slot_id','revision','schema_version','payload','updated_at')) = 7 as app_saves_contract, (select count(*) from information_schema.columns where table_schema='public' and table_name='app_save_backups' and column_name in ('id','user_id','app_id','slot_id','revision','schema_version','reason','payload','created_at')) = 9 as app_save_backups_contract;" \
+  "select
+     (select count(*) from auth.users) as auth_user_count,
+     (select id from auth.users order by created_at nulls last, id limit 1) as owner_user_id,
+     to_regclass('public.app_saves') is not null as app_saves_exists,
+     to_regclass('public.app_save_backups') is not null as app_save_backups_exists,
+     (select relrowsecurity from pg_class where oid='public.app_saves'::regclass) as app_saves_rls,
+     (select relrowsecurity from pg_class where oid='public.app_save_backups'::regclass) as app_save_backups_rls,
+     (select count(*) from information_schema.columns where table_schema='public' and table_name='app_saves' and column_name in ('user_id','app_id','slot_id','revision','schema_version','payload','updated_at')) = 7 as app_saves_contract,
+     (select count(*) from information_schema.columns where table_schema='public' and table_name='app_save_backups' and column_name in ('id','user_id','app_id','slot_id','revision','schema_version','reason','payload','created_at')) = 9 as app_save_backups_contract,
+     (select count(*) from pg_policies where schemaname='public' and tablename='app_saves' and (coalesce(qual,'') like '%auth.uid()%' or coalesce(with_check,'') like '%auth.uid()%')) >= 3 as app_saves_user_policies,
+     (select count(*) from pg_policies where schemaname='public' and tablename='app_save_backups' and (coalesce(qual,'') like '%auth.uid()%' or coalesce(with_check,'') like '%auth.uid()%')) >= 2 as app_save_backups_user_policies,
+     (select count(*) from public.app_saves s where s.app_id='${APP_ID}' and s.slot_id='${SLOT_ID}' and s.user_id <> (select id from auth.users order by created_at nulls last, id limit 1)) +
+     (select count(*) from public.app_save_backups b where b.app_id='${APP_ID}' and b.slot_id='${SLOT_ID}' and b.user_id <> (select id from auth.users order by created_at nulls last, id limit 1)) as foreign_namespace_rows;" \
   "$TARGET_PREFLIGHT"
 
 jq -e '
   length == 1 and
   .[0].auth_user_count == 1 and
+  .[0].owner_user_id != null and
   .[0].app_saves_exists == true and
   .[0].app_save_backups_exists == true and
+  .[0].app_saves_rls == true and
+  .[0].app_save_backups_rls == true and
   .[0].app_saves_contract == true and
-  .[0].app_save_backups_contract == true
+  .[0].app_save_backups_contract == true and
+  .[0].app_saves_user_policies == true and
+  .[0].app_save_backups_user_policies == true and
+  .[0].foreign_namespace_rows == 0
 ' "$TARGET_PREFLIGHT" >/dev/null || {
-  echo "ERROR: app-save-hub does not match the reviewed personal-save contract" >&2
+  echo "ERROR: app-save-hub does not match the reviewed isolated save contract" >&2
   exit 1
 }
+OWNER_USER_ID="$(jq -er '.[0].owner_user_id' "$TARGET_PREFLIGHT")"
 
-# Base64 is used only as a safe SQL transport encoding for the JSON payload;
-# it is NOT encryption and is never written to logs/artifacts.
 SNAPSHOT_B64="$WORKDIR/snapshot.b64"
 base64 -w0 "$SNAPSHOT" > "$SNAPSHOT_B64"
 TARGET_SQL="$WORKDIR/store.sql"
-cat > "$TARGET_SQL" <<'SQL'
-with owner as (
-  select id from auth.users order by created_at nulls last, id limit 1
-), payload as (
+cat > "$TARGET_SQL" <<SQL
+with payload as (
   select convert_from(decode('
 SQL
 cat "$SNAPSHOT_B64" >> "$TARGET_SQL"
@@ -199,13 +220,13 @@ cat >> "$TARGET_SQL" <<SQL
 ), next_revision as (
   select coalesce(max(revision), 0) + 1 as revision
   from public.app_save_backups
-  where app_id = '${APP_ID}' and slot_id = '${SLOT_ID}'
+  where user_id='${OWNER_USER_ID}'::uuid and app_id='${APP_ID}' and slot_id='${SLOT_ID}'
 ), inserted as (
   insert into public.app_save_backups
     (id, user_id, app_id, slot_id, revision, schema_version, reason, payload, created_at)
-  select gen_random_uuid(), owner.id, '${APP_ID}', '${SLOT_ID}', next_revision.revision,
-         ${SCHEMA_VERSION}, 'daily_household_snapshot', payload.value, now()
-  from owner, payload, next_revision
+  select gen_random_uuid(), '${OWNER_USER_ID}'::uuid, '${APP_ID}', '${SLOT_ID}',
+         next_revision.revision, ${SCHEMA_VERSION}, 'daily_household_snapshot', payload.value, now()
+  from payload, next_revision
   returning id, user_id, revision, created_at
 ), current_save as (
   insert into public.app_saves
@@ -221,13 +242,16 @@ cat >> "$TARGET_SQL" <<SQL
   returning revision, updated_at
 ), pruned as (
   delete from public.app_save_backups b
-  where b.id in (
-    select id
-    from public.app_save_backups
-    where app_id = '${APP_ID}' and slot_id = '${SLOT_ID}'
-    order by created_at desc, revision desc
-    offset ${MAX_BACKUPS}
-  )
+  where b.user_id='${OWNER_USER_ID}'::uuid
+    and b.app_id='${APP_ID}' and b.slot_id='${SLOT_ID}'
+    and b.id in (
+      select id
+      from public.app_save_backups
+      where user_id='${OWNER_USER_ID}'::uuid
+        and app_id='${APP_ID}' and slot_id='${SLOT_ID}'
+      order by created_at desc, revision desc
+      offset ${MAX_BACKUPS}
+    )
   returning id
 )
 select inserted.id as backup_id,
@@ -244,14 +268,16 @@ jq -e 'length == 1 and (.[0].revision | tonumber) >= 1 and (.[0].backup_id | len
   exit 1
 }
 
-# Read the current copy back from the separate project and compare the full
-# JSONB payload. PASS therefore proves both write and independent retrieval,
-# not merely a successful HTTP status.
 VERIFY_RESPONSE="$WORKDIR/verify.json"
 api_query "$TARGET_PROJECT_REF" \
-  "select revision, updated_at, payload from public.app_saves where app_id='${APP_ID}' and slot_id='${SLOT_ID}' order by updated_at desc limit 1;" \
+  "select revision, updated_at, payload from public.app_saves where user_id='${OWNER_USER_ID}'::uuid and app_id='${APP_ID}' and slot_id='${SLOT_ID}' order by updated_at desc limit 1;" \
   "$VERIFY_RESPONSE"
-jq -e 'length == 1 and .[0].payload.schema_version == 1 and .[0].payload.source_project_ref == "dnlqxjpjpkxnfgculzip"' "$VERIFY_RESPONSE" >/dev/null || {
+jq -e --arg app "$APP_ID" --arg slot "$SLOT_ID" '
+  length == 1 and .[0].payload.schema_version == 1 and
+  .[0].payload.source_project_ref == "dnlqxjpjpkxnfgculzip" and
+  .[0].payload.recovery_namespace.app_id == $app and
+  .[0].payload.recovery_namespace.slot_id == $slot
+' "$VERIFY_RESPONSE" >/dev/null || {
   echo "ERROR: stored current snapshot metadata is invalid" >&2
   exit 1
 }
@@ -263,9 +289,19 @@ cmp -s "$WORKDIR/source-canonical.json" "$WORKDIR/target-canonical.json" || {
   exit 1
 }
 
+COUNT_RESPONSE="$WORKDIR/count.json"
+api_query "$TARGET_PROJECT_REF" \
+  "select count(*) as n from public.app_save_backups where user_id='${OWNER_USER_ID}'::uuid and app_id='${APP_ID}' and slot_id='${SLOT_ID}';" \
+  "$COUNT_RESPONSE"
+BACKUP_COUNT="$(jq -er '.[0].n | tonumber' "$COUNT_RESPONSE")"
+if [ "$BACKUP_COUNT" -gt "$MAX_BACKUPS" ]; then
+  echo "ERROR: Family Ops namespace retention exceeded (${BACKUP_COUNT} > ${MAX_BACKUPS})" >&2
+  exit 1
+fi
+
 REVISION="$(jq -r '.[0].revision' "$STORE_RESPONSE")"
 CREATED_AT="$(jq -r '.[0].created_at' "$STORE_RESPONSE")"
 TABLE_COUNT="${#TABLES[@]}"
 TOTAL_ROWS="$(jq '[.row_counts[]] | add' "$SNAPSHOT")"
-echo "Stored Family Ops recovery snapshot: revision=${REVISION}, tables=${TABLE_COUNT}, rows=${TOTAL_ROWS}, at=${CREATED_AT}"
-echo "RESULT: PASS — household snapshot stored and read back from separate app-save-hub Supabase project"
+echo "Stored isolated Family Ops recovery snapshot: revision=${REVISION}, generations=${BACKUP_COUNT}, tables=${TABLE_COUNT}, rows=${TOTAL_ROWS}, at=${CREATED_AT}"
+echo "RESULT: PASS — reserved owner/app/slot snapshot stored and read back identically from app-save-hub"
