@@ -12,14 +12,17 @@ name: Backup (daily encrypted logical dump to R2)
 # entirely (password manager / offline storage) and is NEVER added as a
 # secret here. Do not add any private-key material to CI to automate
 # restores; that defeats the whole point of this design.
+#
+# Restore-compatibility property (do not weaken): production is Supabase,
+# not a vanilla Postgres cluster. Raw pg_dump includes Supabase-managed
+# internals and can produce dumps that fail on restore. Use Supabase CLI's
+# filtered dump path and preserve migration history explicitly.
 
 on:
   schedule:
     # 18:00 UTC = 03:00 JST (household is Asia/Tokyo per v6). Chosen well
     # after any late-evening app usage (evening routine / LINE automation
-    # windows) and well before the household's morning, so a dump running
-    # long or a DB briefly busy with the backup doesn't compete with real
-    # traffic or block the day's morning routine notifications.
+    # windows) and well before the household's morning.
     - cron: "0 18 * * *"
   workflow_dispatch: {}
 
@@ -30,26 +33,29 @@ jobs:
   backup:
     name: Dump, encrypt, upload
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
-      - name: Install age and postgresql-client
+      - name: Install age
         run: |
           sudo apt-get update
-          sudo apt-get install -y age postgresql-client
+          sudo apt-get install -y age
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.117.0
 
       - name: Compute backup filename
         id: meta
         run: |
           echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-          echo "filename=family-ops-backup-$(date -u +%Y-%m-%d).sql.age" >> "$GITHUB_OUTPUT"
+          echo "filename=family-ops-backup-$(date -u +%Y-%m-%d).tar.age" >> "$GITHUB_OUTPUT"
 
-      - name: pg_dump production database
+      - name: Dump Supabase-compatible logical backup
         env:
-          # Postgres connection string for the production Supabase
-          # instance, e.g. from Supabase project settings -> Database ->
-          # Connection string (URI, use the pooler-free/direct connection
-          # or the session-mode pooler; NOT the transaction-mode pgbouncer
-          # port, which does not support pg_dump well).
+          # Percent-encoded Postgres connection string from Supabase project
+          # Database settings. Use direct/session connection, never a
+          # transaction-mode pooler endpoint.
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
@@ -57,15 +63,32 @@ jobs:
             echo "::error::SUPABASE_DB_URL secret is not set" >&2
             exit 1
           fi
-          pg_dump \
-            --format=plain \
-            --no-owner \
-            --no-privileges \
-            --dbname="$SUPABASE_DB_URL" \
-            --file=dump.sql
-          test -s dump.sql || { echo "::error::pg_dump produced an empty dump" >&2; exit 1; }
 
-      - name: Encrypt dump with age (public key only)
+          # Supabase CLI wraps pg_dump with Supabase-specific filtering so
+          # managed schemas/reserved roles are handled portably. Keep schema,
+          # data, roles and migration history as separate members so restore
+          # can apply them in the documented order.
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f roles.sql --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f data.sql \
+            --data-only --use-copy \
+            -x "storage.buckets_vectors" \
+            -x "storage.vector_indexes"
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f history_schema.sql \
+            --schema supabase_migrations
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f history_data.sql \
+            --data-only --use-copy --schema supabase_migrations
+
+          for file in roles.sql schema.sql data.sql history_schema.sql history_data.sql; do
+            test -s "$file" || { echo "::error::Supabase dump member $file is empty" >&2; exit 1; }
+          done
+
+          tar -cf logical-backup.tar \
+            roles.sql schema.sql data.sql history_schema.sql history_data.sql
+          test -s logical-backup.tar || { echo "::error::logical backup bundle is empty" >&2; exit 1; }
+          rm -f roles.sql schema.sql data.sql history_schema.sql history_data.sql
+
+      - name: Encrypt backup bundle with age (public key only)
         env:
           # age public key (recipient), e.g. "age1..." — generated once by
           # the owner via `age-keygen`, only the public half is stored here.
@@ -76,9 +99,9 @@ jobs:
             echo "::error::BACKUP_AGE_PUBLIC_KEY secret is not set" >&2
             exit 1
           fi
-          age -r "$BACKUP_AGE_PUBLIC_KEY" -o "${{ steps.meta.outputs.filename }}" dump.sql
+          age -r "$BACKUP_AGE_PUBLIC_KEY" -o "${{ steps.meta.outputs.filename }}" logical-backup.tar
           test -s "${{ steps.meta.outputs.filename }}" || { echo "::error::age produced an empty encrypted backup" >&2; exit 1; }
-          rm -f dump.sql
+          rm -f logical-backup.tar
 
       - name: Upload and verify encrypted dump in R2
         env:
@@ -106,8 +129,7 @@ jobs:
             --storage-class STANDARD
 
           # Do not advance latest-backup.txt until R2 itself confirms that
-          # the encrypted object exists and is non-empty. A successful CLI
-          # upload command alone is not sufficient operational evidence.
+          # the encrypted object exists and is non-empty.
           OBJECT_SIZE="$(aws s3api head-object \
             --bucket "$R2_BUCKET_NAME" \
             --key "$BACKUP_FILE" \
@@ -129,10 +151,6 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
         run: |
           set -euo pipefail
-          # A tiny marker object recording the filename + ISO timestamp of
-          # the most recent successful and R2-verified backup. This is what
-          # scripts/backup_freshness_check.sh reads, so a freshness check
-          # doesn't need to list/paginate the whole bucket.
           printf '%s\n%s\n' \
             "${{ steps.meta.outputs.filename }}" \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > latest-backup.txt
@@ -141,4 +159,7 @@ jobs:
 
       - name: Cleanup local artifacts
         if: always()
-        run: rm -f dump.sql "${{ steps.meta.outputs.filename }}" latest-backup.txt
+        run: |
+          rm -f logical-backup.tar roles.sql schema.sql data.sql \
+            history_schema.sql history_data.sql \
+            "${{ steps.meta.outputs.filename }}" latest-backup.txt
