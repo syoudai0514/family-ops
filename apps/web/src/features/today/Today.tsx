@@ -298,7 +298,6 @@ export function Today() {
           <div><p className="eyebrow">まず確認</p><h2>先に決めること</h2></div>
           <span>{data.urgentActions.length + pending.pendingActions.length}件</span>
         </div>
-        {pending.error && <p role="alert" className="error-text">{pending.error}</p>}
         <ul className="request-list">
           {data.incomingRequests.map((request) => (
             <RequestQuickActions
@@ -508,6 +507,7 @@ export function Today() {
         <p role="status" className="empty-hint">通信が不安定なため、最後に取得できた内容を表示しています。</p>
       )}
       {data.error && <p role="alert" className="error-text">{data.error}</p>}
+      {pending.error && <p role="alert" className="error-text">確認項目の取得に失敗しました: {pending.error}</p>}
 
       <section className="today-shortcuts" aria-label="よく使う操作">
         {currentInputId && (
@@ -658,7 +658,7 @@ export function Today() {
         />
       )}
 
-      {data.status === 'empty' && !pending.loading && !hasPendingDecisions && (
+      {data.status === 'empty' && !pending.loading && !pending.error && !hasPendingDecisions && (
         <section className="card compact-section" aria-label="今日の空状態">
           <h2>今日は確認が必要な項目はありません</h2>
           <p className="empty-hint">予定やタスクを追加すると、ここに表示されます。</p>
