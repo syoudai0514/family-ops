@@ -42,10 +42,13 @@ begin
   v_completed_morning_id := (v_result->>'task_id')::uuid;
   perform public.server_tx_complete_task(v_user_id, gen_random_uuid(), v_completed_morning_id, 'self', null);
 
+  -- The legacy/manual creation contract only accepts morning/evening/anytime.
+  -- Use anytime here as the non-morning control row; the assertion is that
+  -- completed work outside the morning band never inflates morning_summary.
   v_result := public.server_tx_create_task(
     v_user_id, gen_random_uuid(), 'Q87 daytime completed', 'chore',
     (now() at time zone 'Asia/Tokyo')::date, null, v_user_id,
-    'whole', 'daytime', null
+    'whole', 'anytime', null
   );
   v_completed_day_id := (v_result->>'task_id')::uuid;
   perform public.server_tx_complete_task(v_user_id, gen_random_uuid(), v_completed_day_id, 'self', null);
