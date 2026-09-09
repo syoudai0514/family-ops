@@ -75,7 +75,16 @@ expect_status 2 env PATH="$BASE_PATH" bash "$FRESHNESS"
 write_marker "family-ops-backup-$(date -u +%Y-%m-%d).sql.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 FAKE_OBJECT_PRESENT=1 FAKE_OBJECT_SIZE=4096 run_freshness >/dev/null
 
+# The 26-hour policy is exact. A marker just inside the limit passes, while a
+# marker more than 26 hours old must fail even though floor-truncated hours
+# would still display as 26.
+write_marker "family-ops-backup-$(date -u -d '25 hours 55 minutes ago' +%Y-%m-%d).sql.age" "$(date -u -d '25 hours 55 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+run_freshness >/dev/null
+write_marker "family-ops-backup-$(date -u -d '26 hours 5 minutes ago' +%Y-%m-%d).sql.age" "$(date -u -d '26 hours 5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+expect_status 1 run_freshness
+
 # A fresh marker pointing at a missing object must be RED.
+write_marker "family-ops-backup-$(date -u +%Y-%m-%d).sql.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 FAKE_OBJECT_PRESENT=0 expect_status 1 run_freshness
 
 # An empty object must also be RED.
