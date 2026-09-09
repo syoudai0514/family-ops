@@ -32,11 +32,16 @@ Always fresh-read PR #68 and `main` immediately before a release decision.
 - Fresh-read base `main` at the latest Lane C audit remained
   `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected.
 - Lane C work is PR #68 on branch `sol/lane-c-operational-safety`. The exact
-  CURRENT PR HEAD and CI conclusions must be read from GitHub, not copied from
-  this self-mutating status document.
-- The PR carries separate Web / DB / Edge / real Supabase CLI integration and
-  `operational-safety (backup controls)` checks. Do not summarize those as one
-  global “CI GREEN”.
+  CURRENT PR HEAD must be read from GitHub, not copied from this self-mutating
+  status document.
+- Latest completed verification before this status-only commit:
+  - full CI `34311435399` / run #767: Web SUCCESS, DB SUCCESS, Edge SUCCESS,
+    Supabase real CLI integration SUCCESS;
+  - Operational safety CI `34311435387` / run #11: SUCCESS, including both
+    backup/restore regressions and repository-enforcement-verifier regressions.
+  Re-read the workflows after any later code/config commit; these IDs are
+  evidence for their exact tested predecessor HEAD, not permission to reuse a
+  stale GREEN result after source changes.
 - `scripts/verify_repository_enforcement.sh` is the fail-closed CF-15 verifier.
   It checks the actual target branch/rulesets for PR requirement, all five
   release-critical status contexts, force-push prevention (`non_fast_forward`),
@@ -56,8 +61,9 @@ Always fresh-read PR #68 and `main` immediately before a release decision.
 - Vercel production was read as READY on the `main` deployment for
   `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`; the public production origin
   returned HTTP 200 and Vercel reported no runtime error cluster in the
-  inspected one-hour window. This is public-entry smoke, not authenticated
-  family-use evidence.
+  inspected one-hour window. Later Lane C branch pushes produced no Vercel
+  deployment, so Preview suppression remained effective. This is public-entry
+  smoke, not authenticated family-use evidence.
 
 The PASS authority for backup/recovery is `docs/BACKUP_RESTORE_RUNBOOK.md`.
 The PASS authority for `main` release enforcement is
