@@ -1,0 +1,21 @@
+name: Operational safety CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  operational-safety:
+    name: operational-safety (backup controls)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backup / restore control regressions
+        run: bash tests/operations/backup_controls_test.sh
