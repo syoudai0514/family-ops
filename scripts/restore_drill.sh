@@ -118,11 +118,19 @@ for table in "${TABLES[@]}"; do
   }
 done
 
+# Supabase migration history identifiers are deployment metadata, not a safe
+# schema-compatibility oracle: the same reviewed migration can receive a
+# different remote timestamp when applied through the Management API/tooling.
+# Require both histories to exist, but prove compatibility with the actual
+# typed restore + constraints + source-field content equality below.
 SCRATCH_MIGRATION="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select version from supabase_migrations.schema_migrations order by version desc limit 1;")"
-SNAPSHOT_MIGRATION="$(jq -r '.source_migration_version' "$SNAPSHOT")"
-[ -n "$SCRATCH_MIGRATION" ] && [ "$SCRATCH_MIGRATION" = "$SNAPSHOT_MIGRATION" ] || {
-  echo "ERROR: scratch migration ($SCRATCH_MIGRATION) does not match snapshot ($SNAPSHOT_MIGRATION)" >&2; exit 1;
+SNAPSHOT_MIGRATION="$(jq -r '.source_migration_version // empty' "$SNAPSHOT")"
+[ -n "$SCRATCH_MIGRATION" ] && [ -n "$SNAPSHOT_MIGRATION" ] || {
+  echo "ERROR: source or scratch migration history is missing" >&2; exit 1;
 }
+if [ "$SCRATCH_MIGRATION" != "$SNAPSHOT_MIGRATION" ]; then
+  echo "INFO: migration identifiers differ (snapshot=${SNAPSHOT_MIGRATION}, scratch=${SCRATCH_MIGRATION}); proving data compatibility directly"
+fi
 for table in "${TABLES[@]}"; do
   [ "$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select to_regclass('${table}') is not null;")" = "t" ] || {
     echo "ERROR: scratch schema is missing $table" >&2; exit 1;
@@ -179,7 +187,7 @@ MAP_OBJECT="$WORKDIR/map-object.json"
 jq 'map({key:.old_id,value:.new_id}) | from_entries' "$WORKDIR/id-map.json" > "$MAP_OBJECT"
 
 # Restore in reviewed dependency order. User FK values are rebound immediately
-# before typed insertion; other UUID/domain data is byte-for-byte semantic JSON.
+# before typed insertion; other UUID/domain data is preserved as snapshot JSON.
 for table in "${TABLES[@]}"; do
   table_name="${table#public.}"
   COLS="$WORKDIR/cols-${table_name}.json"
@@ -201,10 +209,44 @@ for table in "${TABLES[@]}"; do
   psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -q -f "$SQL_FILE"
 done
 
+# Count equality alone could miss a source field silently dropped by a newer
+# schema. For every non-empty table, compare every source field after UUID
+# rebinding with the restored row JSON. New target-only fields are ignored;
+# all fields that existed in the recovery payload must survive identically.
 for table in "${TABLES[@]}"; do
+  table_name="${table#public.}"
+  TABLE_JSON="$WORKDIR/${table_name}.json"
   expected="$(jq -r --arg table "$table" '.row_counts[$table]' "$SNAPSHOT")"
   actual="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select count(*) from ${table};")"
   [ "$actual" = "$expected" ] || { echo "ERROR: row-count mismatch for $table (expected=$expected actual=$actual)" >&2; exit 1; }
+  [ "$expected" = "0" ] && continue
+
+  KEYS_JSON="$WORKDIR/source-keys-${table_name}.json"
+  jq '.[0] | keys' "$TABLE_JSON" > "$KEYS_JSON"
+  KEYS_B64="$(base64 -w0 "$KEYS_JSON")"
+  RESTORED_JSON="$WORKDIR/restored-${table_name}.json"
+  psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "
+with keys as (
+  select value as key
+  from jsonb_array_elements_text(convert_from(decode('${KEYS_B64}','base64'),'UTF8')::jsonb)
+), restored as (
+  select (
+    select coalesce(jsonb_object_agg(k.key, to_jsonb(t)->k.key order by k.key), '{}'::jsonb)
+    from keys k
+  ) as row_json
+  from ${table} t
+)
+select coalesce(jsonb_agg(row_json order by row_json::text), '[]'::jsonb)::text
+from restored;" > "$RESTORED_JSON"
+
+  SOURCE_CANONICAL="$WORKDIR/source-canonical-${table_name}.json"
+  TARGET_CANONICAL="$WORKDIR/target-canonical-${table_name}.json"
+  jq -S 'sort_by(to_entries | sort_by(.key) | map([.key,.value]) | tostring)' "$TABLE_JSON" > "$SOURCE_CANONICAL"
+  jq -S 'sort_by(to_entries | sort_by(.key) | map([.key,.value]) | tostring)' "$RESTORED_JSON" > "$TARGET_CANONICAL"
+  cmp -s "$SOURCE_CANONICAL" "$TARGET_CANONICAL" || {
+    echo "ERROR: restored source-field content mismatch for $table" >&2
+    exit 1
+  }
 done
 
 AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "select (select count(*) from public.household_members hm left join auth.users u on u.id=hm.user_id where u.id is null) + (select count(*) from public.profiles p left join auth.users u on u.id=p.user_id where u.id is null);")"
@@ -231,4 +273,4 @@ SUBTASKS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c 'select count(*) f
 }
 
 echo "Recovered household graph with Auth rebinding: households=${HOUSEHOLDS}, members=${MEMBERS}, tasks=${TASKS}, subtasks=${SUBTASKS}, identities=${AUTH_COUNT}"
-echo "RESULT: PASS — typed household restore completed with exact row counts, constraints and old→new Auth UUID rebinding"
+echo "RESULT: PASS — typed household restore preserved all source fields with exact counts, constraints and old→new Auth UUID rebinding"
