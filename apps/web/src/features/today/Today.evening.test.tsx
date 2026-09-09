@@ -1,7 +1,27 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Today } from './Today';
+
+const completedMorning = {
+  id: 'morning-done', household_id: 'household-1', task_definition_id: null, recurrence_rule_id: null,
+  origin: 'recurring', title: '朝の洗濯', category: 'routine', task_kind: 'morning_chore', routine_phase: 'morning',
+  scheduled_date: '2026-09-09', due_at: null, planned_assignee_id: 'user-1', completion_mode: 'whole',
+  status: 'completed', attention_state: 'active', actual_completed_by_id: 'user-1', completed_at: '2026-09-09T07:00:00+09:00',
+};
+const unresolvedMorning = {
+  ...completedMorning,
+  id: 'morning-problem', title: '朝の薬を確認', planned_assignee_id: null,
+  status: 'todo', actual_completed_by_id: null, completed_at: null,
+};
+
+vi.mock('./useTodayClock', () => ({
+  useTodayClock: () => ({
+    now: new Date('2026-09-09T11:00:00Z'),
+    localDate: '2026-09-09',
+    daypart: 'evening' as const,
+  }),
+}));
 
 vi.mock('../../app/AuthContext', () => ({
   useAuth: () => ({ user: { id: 'user-1' }, session: null, loading: false }),
@@ -20,65 +40,39 @@ vi.mock('../../app/HouseholdContext', () => ({
 }));
 
 vi.mock('./useTodayData', () => ({
-  useTodayData: () => {
-    const completedMorning = {
-      id: 'morning-done', household_id: 'household-1', task_definition_id: null, recurrence_rule_id: null,
-      origin: 'recurring', title: '朝の洗濯', category: 'routine', task_kind: 'morning_chore', routine_phase: 'morning',
-      scheduled_date: '2026-09-05', due_at: null, planned_assignee_id: 'user-1', completion_mode: 'whole',
-      status: 'completed', actual_completed_by_id: 'user-1', completed_at: '2026-09-05T07:00:00+09:00',
-    };
-    const unresolvedMorning = {
-      ...completedMorning,
-      id: 'morning-problem', title: '朝の薬を確認', planned_assignee_id: null,
-      status: 'todo', actual_completed_by_id: null, completed_at: null,
-    };
-    return {
-      loading: false,
-      error: null,
-      tasks: [completedMorning, unresolvedMorning],
-      carryoverTasks: [],
-      subtasksByTaskId: new Map(),
-      incomingRequests: [],
-      unreadHandovers: [],
-      openShoppingItems: [],
-      briefSchedule: [],
-      refresh: vi.fn(),
-    };
-  },
+  useTodayData: () => ({
+    status: 'ready', loading: false, refreshing: false, error: null, lastUpdatedAt: Date.now(),
+    urgentActions: [], exceptions: [],
+    tasks: [unresolvedMorning],
+    taskGroups: { morning: [unresolvedMorning], daytime: [], evening: [], optional: [] },
+    waitingTasks: [], waitingRefsByTaskId: new Map(), carryoverTasks: [], alreadyHandledTasks: [completedMorning],
+    subtasksByTaskId: new Map(), executionTargetsByTaskId: new Map(), incomingRequests: [], requestAttemptsByRequestId: new Map(),
+    unreadHandovers: [], openShoppingItems: [], briefSchedule: [], partnerSummary: {},
+    reconciliation: { sessions: [], remaining_count: 0, actionable: false },
+    tomorrowImpact: { task_count: 0, schedule_count: 0, carryover_count: 0, impact_count: 0, tasks: [], schedule: [], carryovers: [] },
+    morningSummary: { completedCount: 1, totalCount: 2 },
+    refresh: vi.fn(),
+  }),
 }));
 
 vi.mock('./usePendingActions', () => ({
-  usePendingActions: () => ({ pendingActions: [], error: null, confirm: vi.fn(), cancel: vi.fn(), update: vi.fn() }),
+  usePendingActions: () => ({ pendingActions: [], loading: false, error: null, confirm: vi.fn(), cancel: vi.fn(), update: vi.fn(), refresh: vi.fn() }),
 }));
-vi.mock('./useTodaySchedule', () => ({
-  useTodaySchedule: () => ({ loading: false, error: null, schedule: null }),
-}));
-vi.mock('../checkin/useCurrentRoutineSessions', () => ({
-  useCurrentRoutineSessions: () => ({ sessions: [], error: null }),
-}));
-vi.mock('../planning/usePlanningData', () => ({
-  usePlanningData: () => ({ loading: true, error: null, tasks: [], occurrences: [], refresh: vi.fn() }),
-}));
-
 vi.mock('./TodayTaskItem', () => ({
   TodayTaskItem: ({ task }: { task: { title: string } }) => <li>{task.title}</li>,
 }));
-vi.mock('./TodaySchedule', () => ({ TodaySchedule: () => null }));
 vi.mock('./TomorrowPreparationCard', () => ({ TomorrowPreparationCard: () => null }));
 vi.mock('./PendingActionCard', () => ({ PendingActionCard: () => null }));
 vi.mock('./PendingActionEditModal', () => ({ PendingActionEditModal: () => null }));
 vi.mock('../tasks/TaskFormModal', () => ({ TaskFormModal: () => null }));
 vi.mock('../tasks/QuickAdd', () => ({ QuickAdd: () => <button type="button">追加</button> }));
 
-// Q87: 夜は朝完了タスクを再掲せず「朝 n/n完了」程度。問題だけ具体表示。
+// Q87: 夜は未済を優先し、朝完了タスクは再掲せず「朝 n/n 完了」程度に畳む。
 describe('Today Q87 evening collapse', () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it('collapses completed morning work to n/n and keeps only unresolved morning problems concrete', () => {
-    vi.spyOn(Date.prototype, 'getHours').mockReturnValue(20);
+  it('shows the server-owned morning completion summary and only the unresolved morning item concretely', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
 
-    expect(screen.getByRole('heading', { name: '朝の定例家事 1/2完了' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '朝 1/2 完了' })).toBeInTheDocument();
     expect(screen.queryByText('朝の洗濯')).not.toBeInTheDocument();
     expect(screen.getByText('朝の薬を確認')).toBeInTheDocument();
   });

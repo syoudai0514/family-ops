@@ -19,8 +19,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Family Ops',
-        short_name: 'FamilyOps',
+        name: 'おうちノート',
+        short_name: 'おうちノート',
+        lang: 'ja',
         description: '家族の予定・家事・お願い・買い物・引き継ぎを共有する家庭運営OS',
         theme_color: '#16171d',
         background_color: '#16171d',

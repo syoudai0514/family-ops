@@ -206,17 +206,44 @@ async function sendLineSchedule(
   actor: LineActor,
   kind: "today" | "tomorrow" | "week",
 ): Promise<void> {
-  const today = jstIsoDateOffset(0);
-  const range = kind === "week" ? jstWeekRange() : kind === "tomorrow"
-    ? { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) }
-    : { start: today, end: today };
-  const { data, error } = kind === "today"
-    ? await client.rpc("server_tx_get_today_schedule", { p_actor_id: actor.user_id })
-    : await client.rpc("server_tx_get_week_schedule", {
+  if (kind === "today") {
+    const { data, error } = await client.rpc("server_read_line_today_daily_brief", {
       p_actor_id: actor.user_id,
-      p_start_date: range.start,
-      p_end_date: range.end,
     });
+    if (error) {
+      console.error("process-line-inbox: DailyBrief read failed", error.message);
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "今日の状況を読み込めませんでした。少し待ってからもう一度送ってください。",
+        menuQuickReplies(),
+      );
+      return;
+    }
+    const text = typeof data === "string" && data.trim()
+      ? data
+      : "今日のおうちノート\n\n確認が必要な項目はありません。";
+    await replyOrEnqueuePush(client, {
+      replyToken: item.payload.replyToken,
+      lineUserId: item.source_external_user_id,
+      householdId: actor.household_id,
+      recipientUserId: actor.user_id,
+      text,
+      quickReplyItems: menuQuickReplies(),
+      dedupKey: `line-daily-brief:${item.provider_event_id}`,
+    });
+    return;
+  }
+
+  const range = kind === "week"
+    ? jstWeekRange()
+    : { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) };
+  const { data, error } = await client.rpc("server_tx_get_week_schedule", {
+    p_actor_id: actor.user_id,
+    p_start_date: range.start,
+    p_end_date: range.end,
+  });
   if (error) {
     console.error("process-line-inbox: schedule read failed", error.message);
     await sendConfirmation(client, item, actor, "予定を読み込めませんでした。少し待ってからもう一度送ってください。", menuQuickReplies());
@@ -241,7 +268,7 @@ async function sendLineSchedule(
     })),
     ...(schedule.occurrences ?? []).map((entry) => ({ title: entry.title ?? "Google Calendar予定", startsAt: entry.starts_at ?? null })),
   ].sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? ""));
-  const title = kind === "today" ? "今日の予定" : kind === "tomorrow" ? "明日の予定" : "今週の予定";
+  const title = kind === "tomorrow" ? "明日の予定" : "今週の予定";
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
     lineUserId: item.source_external_user_id,
