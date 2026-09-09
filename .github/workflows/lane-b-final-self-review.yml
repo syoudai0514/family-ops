@@ -1,0 +1,104 @@
+name: Lane B final repo self-review
+
+on:
+  push:
+    branches: [sol/lane-b-concierge-correctness]
+    paths: [.github/workflows/lane-b-final-self-review.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  self-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/lane-b-concierge-correctness
+          fetch-depth: 0
+      - name: Required repository searches and active-path assertions
+        shell: bash
+        run: |
+          set +e
+          terms=(
+            deterministicLineConversationCandidates
+            aiFirstLineConversationCandidates
+            extractLineIntent
+            multi-intent
+            duplicate
+            operation_id
+            crypto.randomUUID
+            retryFailed
+            commitConciergeCandidate
+            commitConciergeCandidates
+          )
+          for term in "${terms[@]}"; do
+            echo "===== SEARCH: $term ====="
+            git grep -n -F "$term" -- . ':!docs/archive/**' || true
+          done
+
+          fail=0
+          if git grep -n -F 'aiFirstLineConversationCandidates' -- apps supabase ':!supabase/functions/process-line-inbox/*.test.ts'; then
+            echo 'ASSERT_FAIL: legacy aiFirstLineConversationCandidates remains in active source'
+            fail=1
+          else
+            echo 'ASSERT_OK: no legacy aiFirstLineConversationCandidates active source'
+          fi
+
+          if git grep -n -F 'deterministicLineConversationCandidates' -- supabase/functions/process-line-inbox/index.ts supabase/functions/propose-concierge-candidates/index.ts; then
+            echo 'ASSERT_FAIL: deterministic conversation parser is still an active channel gate'
+            fail=1
+          else
+            echo 'ASSERT_OK: deterministic parser is not an active LINE/PWA gate'
+          fi
+
+          if git grep -n -F 'extractLineIntent' -- supabase/functions/process-line-inbox/lineMultiIntent.ts supabase/functions/propose-concierge-candidates/index.ts; then
+            echo 'ASSERT_FAIL: single-intent extractor remains in shared multi-intent decomposition path'
+            fail=1
+          else
+            echo 'ASSERT_OK: shared decomposition does not invoke extractLineIntent'
+          fi
+
+          if git grep -n -F 'crypto.randomUUID' -- apps/web/src/features/concierge/conciergeCommit.ts supabase/functions/process-pending-actions/index.ts; then
+            echo 'ASSERT_FAIL: mutation/retry path still mints a fresh UUID at execution time'
+            fail=1
+          else
+            echo 'ASSERT_OK: commit/retry paths do not mint fresh UUIDs'
+          fi
+
+          if git grep -n -F 'derivedOperationId' -- supabase/functions/process-pending-actions/index.ts; then
+            echo 'ASSERT_FAIL: pending executor still derives retry identity at execution time'
+            fail=1
+          else
+            echo 'ASSERT_OK: pending executor consumes persisted candidate operation_id'
+          fi
+
+          if ! git grep -q -F 'decomposeLineConversationCandidates' -- supabase/functions/process-line-inbox/index.ts supabase/functions/propose-concierge-candidates/index.ts; then
+            echo 'ASSERT_FAIL: LINE/PWA are not both wired to canonical decomposition entry point'
+            fail=1
+          else
+            count=$(git grep -l -F 'decomposeLineConversationCandidates' -- supabase/functions/process-line-inbox/index.ts supabase/functions/propose-concierge-candidates/index.ts | wc -l)
+            if [ "$count" -ne 2 ]; then
+              echo "ASSERT_FAIL: expected canonical decomposition in both LINE/PWA files, got $count"
+              fail=1
+            else
+              echo 'ASSERT_OK: LINE and PWA both consume decomposeLineConversationCandidates'
+            fi
+          fi
+
+          echo "SELF_REVIEW_FAIL=$fail" | tee /tmp/lane-b-self-review-status
+          exit 0
+      - name: Remove one-shot workflow and preserve result
+        shell: bash
+        run: |
+          status=$(cat /tmp/lane-b-self-review-status)
+          rm .github/workflows/lane-b-final-self-review.yml
+          git config user.name "family-ops-lane-b"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/workflows/lane-b-final-self-review.yml
+          git commit -m "chore: remove Lane B final self-review workflow"
+          git push origin HEAD:sol/lane-b-concierge-correctness
+          if [ "$status" != 'SELF_REVIEW_FAIL=0' ]; then
+            echo "$status"
+            exit 1
+          fi
