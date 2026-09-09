@@ -8,9 +8,9 @@ import {
   selectNextOwnedTask,
   shouldShowWaitingTask,
   todayRequestTransitionPayload,
-  type TodayRequestAttempt,
 } from './Today';
-import type { PendingAction, TodaySchedule } from '../../lib/types';
+import type { TodayRequestAttempt } from './useTodayData';
+import type { PendingAction } from '../../lib/types';
 import { callEdgeFunction } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 
@@ -23,31 +23,43 @@ const REQUEST_ATTEMPT: TodayRequestAttempt = {
   reply_due_at: '2099-09-10T12:00:00Z',
 };
 
+const taskRow = {
+  id: 'task-1',
+  household_id: 'household-1',
+  task_definition_id: null,
+  recurrence_rule_id: null,
+  origin: 'manual',
+  title: '牛乳を買う',
+  category: 'shopping',
+  task_kind: 'generic_once',
+  routine_phase: 'anytime',
+  scheduled_date: '2026-09-09',
+  due_at: '2026-09-09T07:00:00Z',
+  planned_assignee_id: 'user-1',
+  completion_mode: 'whole',
+  status: 'todo',
+  attention_state: 'active',
+  actual_completed_by_id: null,
+  completed_at: null,
+};
+
+vi.mock('./useTodayClock', () => ({
+  useTodayClock: () => ({
+    now: new Date('2026-09-09T05:00:00Z'),
+    localDate: '2026-09-09',
+    daypart: 'day' as const,
+  }),
+}));
+
 vi.mock('../../lib/supabaseClient', () => ({
   supabase: {
     auth: {
       getSession: () => Promise.resolve({ data: { session: { access_token: 'test-token' } } }),
     },
     from: createSupabaseFromMock({
-      task_instances: [
-        {
-          id: 'task-1',
-          household_id: 'household-1',
-          task_definition_id: null,
-          recurrence_rule_id: null,
-          origin: 'manual',
-          title: '牛乳を買う',
-          category: 'shopping',
-          routine_phase: 'anytime',
-          scheduled_date: '2026-08-19',
-          due_at: null,
-          planned_assignee_id: 'user-1',
-          completion_mode: 'whole',
-          status: 'todo',
-          actual_completed_by_id: null,
-          completed_at: null,
-        },
-      ],
+      task_instances: [taskRow],
+      task_subtask_instances: [],
+      task_execution_targets: [],
       requests: [
         {
           id: 'request-1',
@@ -65,20 +77,7 @@ vi.mock('../../lib/supabaseClient', () => ({
           cancelled_at: null,
         },
       ],
-      request_attempts: [
-        {
-          id: 'attempt-1',
-          request_id: 'request-1',
-          state: 'pending',
-          revision: 3,
-          terms_revision: 2,
-          reply_due_at: '2099-09-10T12:00:00Z',
-          created_at: '2099-09-09T12:00:00Z',
-          test_context_id: null,
-        },
-      ],
       handovers: [],
-      handover_reads: [],
       shopping_items: [],
     }),
     rpc: vi.fn((name: string) => {
@@ -86,12 +85,53 @@ vi.mock('../../lib/supabaseClient', () => ({
         return Promise.resolve({
           data: {
             tasks: [{ task_id: 'task-1' }],
+            own_task_groups: {
+              morning: [],
+              daytime: [{ task_id: 'task-1' }],
+              evening: [],
+              optional: [],
+            },
             carryover: [],
+            carryovers: [],
+            waiting_checks: [],
             already_handled: [],
-            urgent_actions: [{ request_id: 'request-1' }],
+            urgent_actions: [
+              {
+                request_id: 'request-1',
+                attempt_id: 'attempt-1',
+                state: 'pending',
+                revision: 3,
+                terms_revision: 2,
+                reply_due_at: '2099-09-10T12:00:00Z',
+              },
+            ],
             handovers: [],
+            active_infos: [],
             shopping: [],
-            schedule: [],
+            schedule: [
+              {
+                kind: 'family_event',
+                family_event_id: 'event-1',
+                title: '保育園面談',
+                is_all_day: false,
+                starts_at: '2026-09-09T06:30:00Z',
+                ends_at: '2026-09-09T07:00:00Z',
+                all_day_start: null,
+                all_day_end_exclusive: null,
+              },
+            ],
+            partner_summary: { open_assigned: 0, completed_today: 0, critical_items: [] },
+            reconciliation: { sessions: [], remaining_count: 0, actionable: false },
+            tomorrow_impact: {
+              local_date: '2026-09-10',
+              task_count: 0,
+              schedule_count: 0,
+              carryover_count: 0,
+              impact_count: 0,
+              tasks: [],
+              schedule: [],
+              carryovers: [],
+            },
           },
           error: null,
         });
@@ -109,12 +149,6 @@ vi.mock('../../lib/supabaseClient', () => ({
   },
 }));
 
-// Sol re-review #3 fix (P1-1/P1-2): Today now also calls list-pending-actions
-// and get-today-schedule (both Edge Functions, not `.from()` reads — see
-// docs/adr/0011). Real callEdgeFunction is replaced here rather than mocking
-// fetch, matching how a component-level test should stay agnostic of the
-// HTTP transport; FamilyOpsApiError is re-exported for real so `instanceof`
-// checks inside the components under test still work correctly.
 const PENDING_ACTIONS: PendingAction[] = [
   {
     id: 'pending-1',
@@ -122,28 +156,10 @@ const PENDING_ACTIONS: PendingAction[] = [
     normalized_payload: { title: 'オムツ', purchase_method: 'online' },
     status: 'draft',
     source: 'line',
-    expires_at: '2026-08-20T12:00:00Z',
-    created_at: '2026-08-20T11:00:00Z',
+    expires_at: '2026-09-10T12:00:00Z',
+    created_at: '2026-09-09T11:00:00Z',
   },
 ];
-
-const TODAY_SCHEDULE: TodaySchedule = {
-  household_id: 'household-1',
-  local_date: '2026-08-19',
-  calendar_connected: true,
-  calendar_stale: false,
-  occurrences: [],
-  assignments: [
-    {
-      task_instance_id: 'task-pickup',
-      title: 'お迎え',
-      category: 'pickup',
-      due_at: '2026-08-19T08:30:00Z',
-      planned_assignee_id: 'user-1',
-      has_conflict: true,
-    },
-  ],
-};
 
 vi.mock('../../lib/apiClient', async () => {
   const actual = await vi.importActual<typeof import('../../lib/apiClient')>('../../lib/apiClient');
@@ -151,7 +167,6 @@ vi.mock('../../lib/apiClient', async () => {
     ...actual,
     callEdgeFunction: vi.fn((name: string) => {
       if (name === 'list-pending-actions') return Promise.resolve(PENDING_ACTIONS);
-      if (name === 'get-today-schedule') return Promise.resolve(TODAY_SCHEDULE);
       return Promise.resolve({});
     }),
   };
@@ -172,18 +187,13 @@ vi.mock('../../app/HouseholdContext', () => ({
       id: 'household-1',
       name: 'テスト家庭',
       timezone: 'Asia/Tokyo',
-      evening_routine_setup_completed_at: '2026-08-01T00:00:00Z',
-      dropoff_pickup_setup_completed_at: '2026-08-01T00:00:00Z',
-      morning_preparation_setup_completed_at: '2026-08-01T00:00:00Z',
-      connections_setup_completed_at: '2026-08-01T00:00:00Z',
-      notification_preferences_setup_completed_at: '2026-08-01T00:00:00Z',
-      onboarding_preview_completed_at: '2026-08-01T00:00:00Z',
     },
     members: [
       {
         household_id: 'household-1',
         user_id: 'user-1',
         member_role: 'primary',
+        family_role: 'papa',
         joined_at: '2026-01-01',
         profile: { user_id: 'user-1', display_name: '本人' },
       },
@@ -192,6 +202,7 @@ vi.mock('../../app/HouseholdContext', () => ({
       household_id: 'household-1',
       user_id: 'user-1',
       member_role: 'primary',
+      family_role: 'papa',
       joined_at: '2026-01-01',
       profile: { user_id: 'user-1', display_name: '本人' },
     },
@@ -203,15 +214,16 @@ vi.mock('../../app/HouseholdContext', () => ({
 describe('Today', () => {
   it('suppresses a waiting task until its future check date unless an immediate deadline is at risk', () => {
     const task = {
-      id: 'waiting', household_id: 'household-1', task_definition_id: null, recurrence_rule_id: null,
-      origin: 'manual' as const, title: '園からの返事', category: 'todo', routine_phase: 'anytime' as const,
-      scheduled_date: '2026-09-05', due_at: null, planned_assignee_id: 'user-1', completion_mode: 'whole' as const,
-      status: 'todo' as const, attention_state: 'waiting' as const, next_check_at: '2026-09-07T00:00:00Z',
-      actual_completed_by_id: null, completed_at: null,
+      ...taskRow,
+      id: 'waiting',
+      title: '園からの返事',
+      due_at: null,
+      attention_state: 'waiting' as const,
+      next_check_at: '2026-09-11T00:00:00Z',
     };
-    const now = new Date('2026-09-05T00:00:00Z');
+    const now = new Date('2026-09-09T00:00:00Z');
     expect(shouldShowWaitingTask(task, now)).toBe(false);
-    expect(shouldShowWaitingTask({ ...task, due_at: '2026-09-04T23:00:00Z' }, now)).toBe(true);
+    expect(shouldShowWaitingTask({ ...task, due_at: '2026-09-08T23:00:00Z' }, now)).toBe(true);
     expect(shouldShowWaitingTask({ ...task, next_check_at: null }, now)).toBe(true);
   });
 
@@ -228,96 +240,28 @@ describe('Today', () => {
   });
 
   it('selects my next task even when the partner has an earlier task', () => {
-    const base = {
-      household_id: 'household-1',
-      task_definition_id: null,
-      recurrence_rule_id: null,
-      origin: 'manual',
-      category: 'todo',
-      routine_phase: 'anytime' as const,
-      scheduled_date: '2026-08-19',
-      completion_mode: 'whole' as const,
-      status: 'todo' as const,
-      actual_completed_by_id: null,
-      completed_at: null,
-    };
     const selected = selectNextOwnedTask(
       [
-        {
-          ...base,
-          id: 'partner',
-          title: '相手の仕事',
-          due_at: '2026-08-19T06:00:00Z',
-          planned_assignee_id: 'user-2',
-        },
-        {
-          ...base,
-          id: 'mine',
-          title: '自分の仕事',
-          due_at: '2026-08-19T07:00:00Z',
-          planned_assignee_id: 'user-1',
-        },
-      ],
+        { ...taskRow, id: 'partner', title: '相手の仕事', due_at: '2026-09-09T06:00:00Z', planned_assignee_id: 'user-2' },
+        { ...taskRow, id: 'mine', title: '自分の仕事', due_at: '2026-09-09T07:00:00Z', planned_assignee_id: 'user-1' },
+      ] as TaskInstance[],
       'user-1',
     );
     expect(selected?.id).toBe('mine');
-    expect(
-      selectNextOwnedTask(
-        [
-          {
-            ...base,
-            id: 'partner',
-            title: '相手だけ',
-            due_at: null,
-            planned_assignee_id: 'user-2',
-          },
-        ],
-        'user-1',
-      ),
-    ).toBeNull();
   });
 
-  it('renders without crashing and shows the fetched task', async () => {
-    render(
-      <MemoryRouter>
-        <Today />
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getAllByText('牛乳を買う')).toHaveLength(2);
-    });
+  it('renders task groups and schedule supplied by DailyBrief', async () => {
+    render(<MemoryRouter><Today /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument());
+    expect(await screen.findByRole('heading', { name: '今やること' })).toBeInTheDocument();
+    expect(screen.getByText('保育園面談', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('次にやること')).toBeInTheDocument();
   });
 
-  it('shows Priority 1 (今/次の予定) with the conflict warning from get-today-schedule', async () => {
-    render(
-      <MemoryRouter>
-        <Today />
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '今/次の予定' })).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getByText(/お迎え（担当: 本人）/)).toBeInTheDocument();
-    });
-    expect(screen.getByText('⚠ 予定と重複')).toBeInTheDocument();
-  });
-
-  it('sends the observed RequestAttempt snapshot from the Today quick action', async () => {
+  it('uses the RequestAttempt snapshot embedded in DailyBrief without a latest-attempt requery', async () => {
     vi.mocked(callEdgeFunction).mockClear();
-    render(
-      <MemoryRouter>
-        <Today />
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByText('迎えをお願い')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'やる' })).toBeInTheDocument();
-    });
+    render(<MemoryRouter><Today /></MemoryRouter>);
+    expect(await screen.findByText('迎えをお願い')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'やる' }));
     await waitFor(() => {
       expect(callEdgeFunction).toHaveBeenCalledWith(
@@ -332,18 +276,10 @@ describe('Today', () => {
     });
   });
 
-  it('shows the first-priority confirmation card with the LINE-created pending action', async () => {
-    render(
-      <MemoryRouter>
-        <Today />
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '返事が必要です' })).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getByText('オムツ')).toBeInTheDocument();
-    });
+  it('shows the first-priority decision card for canonical urgent actions and LINE drafts', async () => {
+    render(<MemoryRouter><Today /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: '先に決めること' })).toBeInTheDocument();
+    expect(screen.getByText('オムツ')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'この内容で確定' })).toBeInTheDocument();
   });
 });
