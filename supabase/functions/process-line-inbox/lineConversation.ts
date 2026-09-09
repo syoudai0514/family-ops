@@ -38,9 +38,6 @@ function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | n
   const kind = match[1] === "今日" ? "today" : match[1] === "明日" ? "tomorrow" : "week";
   const rest = match[2];
 
-  // Preserve the existing one-word shortcuts while expanding natural
-  // questions. These must be caught before the AI mutation classifier;
-  // otherwise a harmless query can become a bogus registration draft.
   if (rest === "") return kind;
   if (/^(?:の)?予定(?:は|を|が)?(?:教えて|知りたい|見たい|確認したい|何(?:が)?ある|どうなってる)?(?:だけ)?$/u.test(rest)) {
     return kind;
@@ -51,9 +48,6 @@ function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | n
 
 export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
   const value = normalized(text);
-  // These are the literal six LINE entry labels from Q73. They deliberately
-  // remain short, so the fixed menu is usable without making people learn a
-  // second vocabulary. Each is routed by the worker to a concrete surface.
   if (/^(?:入力|今日の入力|朝の入力|夜の入力)$/.test(value)) return "input";
   if (/^(?:追加|追加したい|登録)$/.test(value)) return "add";
   if (/^(?:共有|引き継ぎ|共有したい)$/.test(value)) return "share";
@@ -122,10 +116,26 @@ export type CompactScheduleEntry = {
   conflict?: boolean;
 };
 
+/**
+ * The legacy LINE worker still calls the historical today-schedule RPC.
+ * Lane D turns only that RPC into a presentation adapter over DailyBrief.
+ * This marker-free shape check lets existing tomorrow/week schedule rendering
+ * stay untouched while today's canonical text passes through verbatim.
+ */
+export function canonicalDailyBriefText(entries: CompactScheduleEntry[]): string | null {
+  if (entries.length !== 1 || entries[0].startsAt !== null) return null;
+  const text = entries[0].title;
+  return /^(?:朝|今日|夜)のおうちノート(?:\n|$)/u.test(text) ? text : null;
+}
+
 export function formatScheduleReply(
   title: string,
   entries: CompactScheduleEntry[],
 ): string {
+  if (title === "今日の予定") {
+    const canonical = canonicalDailyBriefText(entries);
+    if (canonical) return canonical;
+  }
   if (entries.length === 0) return `${title}\n\n予定はありません。`;
   const rendered = entries.slice(0, 8).map((entry) => {
     const time = entry.startsAt
