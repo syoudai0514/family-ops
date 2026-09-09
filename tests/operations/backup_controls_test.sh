@@ -155,8 +155,8 @@ if ! grep -q 'BACKUP_AGE_PUBLIC_KEY' "$BACKUP_WORKFLOW"; then
 fi
 
 # Restore must target a fresh Supabase-compatible environment, validate the
-# bundle members, preserve migration history, and disable triggers only for
-# the data phase as recommended by Supabase's logical restore procedure.
+# bundle members, preserve migration history, and prove the restored household
+# rows remain linked to usable Supabase Auth users/identities.
 for required in \
   "to_regnamespace('auth')" \
   "to_regnamespace('storage')" \
@@ -165,9 +165,14 @@ for required in \
   'history_data.sql' \
   'EXPECTED_MEMBERS=' \
   'SET session_replication_role = replica' \
-  '--single-transaction'; do
+  '--single-transaction' \
+  'select count(*) from auth.users' \
+  'select count(*) from auth.identities' \
+  'MEMBER_AUTH_ORPHANS=' \
+  'PROFILE_AUTH_ORPHANS=' \
+  'MEMBER_IDENTITY_ORPHANS='; do
   if ! grep -Fq -- "$required" "$RESTORE"; then
-    echo "FAIL: restore drill is missing Supabase-compatible restore guard: $required" >&2
+    echo "FAIL: restore drill is missing Supabase-compatible recovery guard: $required" >&2
     exit 1
   fi
 done
