@@ -1,7 +1,7 @@
 # 11. Approved Final UX — Canonical Reference and Traceability
 
-- **Status:** CANONICAL REFERENCE REGISTRY / no product-meaning change
-- **Scope:** CF-10 only; approved UX provenance, discoverability, supersession, and Q traceability
+- **Status:** CANONICAL REFERENCE REGISTRY / no independent product authority
+- **Scope:** CF-10; approved UX provenance, discoverability, supersession, Q traceability, and later canonical acceptance guards
 - **Requirements authority:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` remains the single requirements/UX Source of Truth
 - **Governance:** ADR 0012
 
@@ -37,7 +37,7 @@ Tracked contract files at that exact commit:
 | Role | Pinned path | Git blob SHA | Status |
 |---|---|---|---|
 | Final UI / interaction specification | `docs/prototypes/ouchi-concierge/UX-CONTRACT-FINAL-SPEC.md` | `ea579ce2877303292d236db3770a61fece5a2176` | **APPROVED implementation-facing contract**, subordinate to Baseline |
-| Final Q trace / audit | `docs/prototypes/ouchi-concierge/UX-CONTRACT-FINAL-AUDIT.md` | `5e6c4bca258c08d8bc5f9f1793e251c9689c46ac` | **APPROVED audit evidence**, 114/114 decision rows mapped |
+| Final Q trace / audit | `docs/prototypes/ouchi-concierge/UX-CONTRACT-FINAL-AUDIT.md` | `5e6c4bca258c08d8bc5f9f1793e251c9689c46ac` | **APPROVED audit evidence**, 114/114 decision rows mapped against the fresh-read v1.1 Baseline blob recorded by that audit |
 | Approved post-audit refinements | `docs/prototypes/ouchi-concierge/UX-CONTRACT-APPROVED-DELTAS.md` | `08dad2719f3cedf7f3f757e6a1f02b6b9e68ab8a` | **APPROVED delta evidence**, subordinate to Baseline; concrete transport/Month realization is integrated in current design 09 |
 | Prototype branch status/index | `docs/prototypes/ouchi-concierge/README.md` | `faead2e0b1a4e5efff3e0bb826a8fb4cc82d1d93` | Provenance/index only |
 
@@ -68,9 +68,30 @@ These are already represented in canonical detailed design at:
 
 Design 09 remains subordinate to the Requirements Baseline and explicitly preserves rule-derived-future-only recalculation, protected individual agreements/overrides, structured assignment data, and the shared LINE/PWA product model.
 
+### 4.1 2026-09-09 Baseline v1.2 cross-cutting success criterion
+
+After the approved UX snapshot above, the Product Owner explicitly added a cross-cutting success criterion to the canonical Baseline candidate at §2.1:
+
+- Family Ops purpose / Requirements / approved UX / real-use family experience outrank technical completeness as the final success judgment;
+- a finding is not complete when its remediation worsens the family experience;
+- CI/test/architecture GREEN is necessary evidence where applicable, but never sufficient by itself;
+- technical improvement may not silently alter existing purpose, Requirement, or approved UX;
+- final acceptance must reconcile `purpose → Requirement → approved UX/CURRENT design → CURRENT implementation → evidence → real-use scenario`.
+
+This is a **global acceptance guard**, not a new screen flow or a new independent product decision row. Therefore:
+
+- it does not create `Q113`;
+- it does not invalidate or renumber the 114 historical Q decisions audited by the pinned final UX artifact;
+- it does not require a prototype rerender merely to restate the acceptance hierarchy;
+- it **does** change how implementation/review completion is judged: an implementation that technically matches an isolated clause but materially degrades the approved real-use UX is NO-GO.
+
+If a future technical change genuinely requires different product behavior, the Baseline must be explicitly changed first and the affected UX clause must be re-approved rather than treating §2.1 as permission to improvise.
+
 ## 5. Material UX clause → Q mapping
 
-The final audit already proves literal 114/114 mapping of Q1-Q112 plus Q60-1/Q60-2. The table below is the **main-governance material-clause index** so an implementer can navigate from the approved final UX contract back to canonical decisions without treating the prototype as a second requirements document.
+The pinned final audit proves literal 114/114 mapping of Q1-Q112 plus Q60-1/Q60-2 against the fresh-read Baseline version/blob recorded by that audit. The current Baseline may later add cross-cutting governance/acceptance requirements such as §2.1; those are tracked explicitly rather than retroactively pretending the old rendered artifact audited text that did not yet exist.
+
+The table below is the **main-governance material-clause index** so an implementer can navigate from the approved final UX contract back to canonical decisions without treating the prototype as a second requirements document.
 
 | Approved final UX material clause | Canonical Q / Baseline trace |
 |---|---|
@@ -91,6 +112,7 @@ The final audit already proves literal 114/114 mapping of Q1-Q112 plus Q60-1/Q60
 | Operational Loading/Empty/Error/Stale states and stale/concurrent safe resolution | Baseline UX principles 6-8 and §23; final audit correctly classifies runtime/source proof separately from UI evidence |
 | One-user test mode, history/analysis, correction, deletion-vs-outcome semantics | Q20, Q27-Q29, Q62-Q63, Q82; Baseline §§20-22 |
 | Approved post-audit transport/Month refinements | Q10-Q12, Q34, Q50-Q52, Q78 plus Baseline §§6, 15, 18; concrete non-conflicting realization in design 09 |
+| Cross-cutting completion judgment | Baseline §2.1 and UX principle 11; applied to every clause/Q as an acceptance gate, not a replacement Q mapping |
 
 For literal decision text, always read Appendix A in the current Baseline. Do not copy this mapping into a competing requirements list.
 
@@ -121,22 +143,16 @@ Start in this order:
 1. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 2. `docs/adr/0012-requirements-ux-canonical-governance.md`
 3. `docs/design/current/README.md`
-4. relevant current design file(s), including `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` for channel responsibility after product-owner approval
+4. relevant current design file(s), including `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` for channel responsibility after product-owner approval and `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md` for the product-outcome acceptance gate
 5. this registry for the exact approved UX snapshot and Q mapping
 6. pinned SPEC/AUDIT/APPROVED-DELTAS source when screen wording, interaction hierarchy, state disclosure, or trace evidence is needed
 7. CURRENT source/tests/runtime — which must conform to the authorities above and never silently redefine them
+8. relevant real-use scenario on the actual target surface before declaring product/UX completion
 
 ## 8. Scope statement
 
-This canonicalization changes **governance/discoverability only**. It does not:
+This registry does not independently change Request, Concierge, Today, notification, provider, or other application behavior. Product meaning comes only from the Requirements Baseline and approved canonical changes under ADR 0012.
 
-- change Request behavior;
-- change Concierge behavior;
-- change Today behavior;
-- add a new command/state/business truth;
-- change notification semantics;
-- change provider mutation ownership;
-- make prototype fixture chores/dates/assignees into product defaults;
-- merge anything to `main` by itself.
+The 2026-09-09 update records the later Baseline §2.1 acceptance hierarchy so the approved UX is not reduced to a checkbox during implementation review. It does **not** authorize redesigning the approved UX without a separate explicit product decision.
 
 Any future product-meaning change still requires an explicit Baseline update under ADR 0012.
