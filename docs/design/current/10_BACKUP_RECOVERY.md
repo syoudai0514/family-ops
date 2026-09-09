@@ -132,11 +132,20 @@ Safe recovery is:
 6. rewrite only FK positions that reference `auth.users.id` or
    `household_members.user_id`;
 7. typed-insert the household snapshot with normal FK/check constraints active;
-8. verify no old production UUID remains in those identity-FK positions;
-9. sign in as every recovered identity and use its JWT against normal public
-   PostgREST/RLS reads;
-10. require access to that user's profile, household membership, household and
+8. verify every source field survives the restore after UUID rebinding; target-
+   only fields may exist, but source fields may not be silently discarded;
+9. verify no old production UUID remains in those identity-FK positions;
+10. sign in as every recovered identity and use its JWT against normal public
+    PostgREST/RLS reads;
+11. require access to that user's profile, household membership, household and
     at least one restored household task.
+
+Supabase migration history IDs are recorded as diagnostic evidence, not treated
+as a schema-compatibility identity. The same reviewed migration can receive a
+different remote timestamp depending on deployment path. Recovery compatibility
+is therefore proven directly by required-table presence, typed insertion under
+CURRENT constraints, exact row counts, exact preservation of all source fields,
+and authenticated RLS use.
 
 The disposable drill creates one-time local Auth users with the same snapshot
 emails and random temporary passwords, signs in via GoTrue, then performs the
@@ -163,7 +172,8 @@ For same-repository PR changes to recovery controls,
 6. creation of NEW Auth users + real GoTrue sign-in for every snapshot identity;
 7. old→new UUID rebinding derived from actual target FKs;
 8. typed restore under normal constraints;
-9. exact per-table row counts and graph/orphan checks;
+9. exact per-table row counts, all source-field content equality and graph/orphan
+   checks;
 10. authenticated PostgREST/RLS access to profile/membership/household/task;
 11. cleanup of temporary sessions and disposable stack.
 
@@ -210,7 +220,7 @@ binary data, or Product Owner risk posture changes.
 | Backup | actual snapshot stored in separate app-save-hub project |
 | Integrity | complete read-back equals source; <=30 Family Ops generations |
 | Freshness | independent check PASS, exact age <=26h |
-| Restore | disposable Supabase typed restore + exact counts + no linkage orphans |
+| Restore | disposable Supabase typed restore + exact counts + all source-field content equality + no linkage orphans |
 | Identity | every snapshot identity gets a NEW Auth UUID, signs in, is rebound, and reads restored profile/membership/household/task through normal RLS |
 | Isolation | no R2/age/private key and no provider credentials/queues/cron/test rows in payload |
 | Release | five protected checks and merge through CF-15 main ruleset |
