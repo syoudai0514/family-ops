@@ -123,6 +123,16 @@ export interface DailyBriefTomorrowImpact {
   carryovers: DailyBriefTaskRef[];
 }
 
+export interface DailyBriefMorningSummary {
+  completedCount: number;
+  totalCount: number;
+}
+
+interface DailyBriefMorningSummaryPayload {
+  completed_count?: number;
+  total_count?: number;
+}
+
 interface DailyBriefPayload {
   tasks?: DailyBriefTaskRef[];
   carryover?: DailyBriefTaskRef[];
@@ -138,6 +148,7 @@ interface DailyBriefPayload {
   partner_summary?: DailyBriefPartnerSummary;
   reconciliation?: DailyBriefReconciliation;
   tomorrow_impact?: DailyBriefTomorrowImpact;
+  morning_summary?: DailyBriefMorningSummaryPayload;
 }
 
 export interface TodayTaskGroups {
@@ -165,6 +176,7 @@ interface TodaySnapshot {
   partnerSummary: DailyBriefPartnerSummary;
   reconciliation: DailyBriefReconciliation;
   tomorrowImpact: DailyBriefTomorrowImpact;
+  morningSummary: DailyBriefMorningSummary;
 }
 
 export interface TodayData extends TodaySnapshot {
@@ -187,6 +199,7 @@ const EMPTY_TOMORROW: DailyBriefTomorrowImpact = {
   schedule: [],
   carryovers: [],
 };
+const EMPTY_MORNING_SUMMARY: DailyBriefMorningSummary = { completedCount: 0, totalCount: 0 };
 
 function emptySnapshot(): TodaySnapshot {
   return {
@@ -207,6 +220,7 @@ function emptySnapshot(): TodaySnapshot {
     partnerSummary: {},
     reconciliation: EMPTY_RECONCILIATION,
     tomorrowImpact: EMPTY_TOMORROW,
+    morningSummary: EMPTY_MORNING_SUMMARY,
   };
 }
 
@@ -377,6 +391,10 @@ export function useTodayData(householdId: string | null, userId: string | null):
         partnerSummary: brief.partner_summary ?? {},
         reconciliation: brief.reconciliation ?? EMPTY_RECONCILIATION,
         tomorrowImpact: brief.tomorrow_impact ?? EMPTY_TOMORROW,
+        morningSummary: {
+          completedCount: brief.morning_summary?.completed_count ?? 0,
+          totalCount: brief.morning_summary?.total_count ?? 0,
+        },
       };
 
       if (sequence !== requestSequence.current) return;
