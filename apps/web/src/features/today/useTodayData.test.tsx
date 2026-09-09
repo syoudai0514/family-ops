@@ -76,7 +76,7 @@ describe('useTodayData canonical snapshot states', () => {
     await act(async () => { await result.current.refresh(); });
 
     expect(result.current.status).toBe('stale');
-    expect(result.current.error).toBe('network down');
+    expect(result.current.error).toBe('読み込みに失敗しました。');
     expect(result.current.tasks.map((item) => item.id)).toEqual(['task-1']);
   });
 
