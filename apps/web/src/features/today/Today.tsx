@@ -439,6 +439,10 @@ export function Today() {
   const eveningTasks = data.taskGroups.evening;
   const optionalTasks = data.taskGroups.optional;
   const unfinishedBeforeEvening = [...morningResidual, ...daytimeResidual];
+  const remainingCount = new Set(
+    [...data.carryoverTasks, ...morningResidual, ...daytimeResidual, ...eveningTasks].map((task) => task.id),
+  ).size;
+  const attentionCount = data.urgentActions.length + pending.pendingActions.length;
 
   return (
     <div className="app-shell">
@@ -463,6 +467,13 @@ export function Today() {
         )}
         <button type="button" onClick={() => navigate('/requests')}><span aria-hidden="true">🙏</span> お願い</button>
         <button type="button" onClick={() => navigate('/handovers')}><span aria-hidden="true">💬</span> 共有</button>
+      </section>
+
+      <section className="today-contract-shortcuts" aria-label="今日の重要サマリー">
+        <div><small>返事・担当・確認</small><strong>要対応 {attentionCount}</strong></div>
+        <div><small>今日の自分の残件</small><strong>残り {remainingCount}</strong></div>
+        <div><small>確認日・期限リスク</small><strong>待ち {data.waitingTasks.length}</strong></div>
+        <div><small>明日の予定・準備</small><strong>明日影響 {data.tomorrowImpact.impact_count}</strong></div>
       </section>
 
       {clock.daypart === 'morning' && (
@@ -513,8 +524,10 @@ export function Today() {
       {clock.daypart === 'evening' && (
         <>
           {renderDecisions()}
+          {renderWaiting()}
           {renderTaskSection('まだ残っていること', [...data.carryoverTasks, ...unfinishedBeforeEvening], '今日をしめくくる')}
           {renderTaskSection('夜にやること', eveningTasks, '今日やること')}
+          {renderTomorrowImpact()}
           {data.morningSummary.totalCount > 0 && (
             <section className="card compact-section" aria-label="朝の完了まとめ">
               <p className="eyebrow">朝のまとめ</p>
@@ -524,7 +537,6 @@ export function Today() {
           {renderInput()}
           {renderHandovers()}
           {renderPartnerCritical()}
-          {renderTomorrowImpact()}
           {renderShopping()}
           {data.reconciliation.remaining_count > 0 && !currentInput && (
             <section className="card compact-section" aria-label="まとめ入力">
@@ -551,7 +563,7 @@ export function Today() {
         />
       )}
 
-      {data.status === 'empty' && !hasPendingDecisions && (
+      {data.status === 'empty' && !pending.loading && !hasPendingDecisions && (
         <section className="card compact-section" aria-label="今日の空状態">
           <h2>今日は確認が必要な項目はありません</h2>
           <p className="empty-hint">予定やタスクを追加すると、ここに表示されます。</p>
