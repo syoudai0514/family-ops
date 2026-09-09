@@ -1,184 +1,165 @@
 # Backup / Restore Runbook
 
 - **CF:** CF-11
-- **CURRENT authority:** ADR 0014 + `docs/design/current/10_BACKUP_RECOVERY.md`
-- **Legacy note:** v6 WP10's R2/age mechanics are superseded for CURRENT
-  two-person operation. Do not edit the historical v6 files.
+- **Proposal status:** Product Owner approved / pending canonical merge
+- **Authority after merge:** ADR 0014 + `docs/design/current/10_BACKUP_RECOVERY.md`
+- **Legacy note:** v6 WP10 R2/age mechanics are superseded only after the protected merge that makes ADR 0014 canonical.
 
-## 1. What this runbook protects
+## 1. Recovery objective
 
-The goal is not iPhone replacement: Family Ops data already lives in Supabase.
-This runbook covers loss/corruption of durable household data caused by a
-Family Ops Supabase-side mistake or project-level failure.
+Protect durable household data from Family Ops Supabase-side mistake/project-level loss and restore **actual family usability**, not merely database rows.
 
-CURRENT recovery is intentionally right-sized. It uses only existing services:
+Existing services only:
 
-- Family Ops Supabase: `dnlqxjpjpkxnfgculzip`
-- existing separate Supabase `app-save-hub`: `wdwbmvpipbdpomqulsrj`
+- Family Ops Supabase `dnlqxjpjpkxnfgculzip`
+- separate existing `app-save-hub` `wdwbmvpipbdpomqulsrj`
 - GitHub Actions
-- existing GitHub secret `SUPABASE_ACCESS_TOKEN`
+- existing `SUPABASE_ACCESS_TOKEN`
 
-There is no current Cloudflare R2 bucket, age key, backup-only database URL, or
-owner-local decryption key requirement.
+No R2, age key, backup-only DB URL or new backup provider is required by the right-sized proposal.
 
-## 2. Data that is recoverable
+## 2. app-save-hub isolation
 
-The exact allowlist is `scripts/family_ops_recovery_tables.txt`.
+ManaEvo and Family Ops share the generic save tables but not a namespace.
 
-It covers durable household/domain state: household/member/profile references,
-tasks/subtasks/recurrence/history, requests, shopping, handovers, routines,
-transport templates/overrides, family events, child/school and confirmed
-nursery data.
+- ManaEvo CURRENT tuple: `owner / mana-evo / main`
+- Family Ops reserved tuple: `owner / family-ops-recovery-v1 / household-durable-v1`
 
-The snapshot deliberately does **not** copy:
+Every Family Ops revision lookup, insert/upsert, generation prune, read-back,
+freshness and restore selection MUST include the exact owner `user_id`, app_id
+and slot_id. Never prune/delete by app/slot without owner scope.
 
-- Auth passwords, identities, sessions, recovery/OAuth tokens;
-- Google refresh tokens/credentials or provider write/sync queues;
-- LINE secrets/link tokens/provider delivery queues;
-- webhook/pending-action/notification queues or worker receipts;
-- pg_cron / pg_net environment commands/requests;
-- test/simulation rows;
-- transient raw AI/image extraction/review state;
-- Storage object bytes.
+`app_saves`/`app_save_backups` RLS remains enabled and user-scoped. The backup
+script preflights the single trusted app-save-hub owner, RLS and namespace owner
+before writing. This is operational namespace isolation inside one personal
+save service, not a claim of adversarial tenant isolation between the owner's
+own apps.
 
-Only old household Auth UUID/email references are retained for operator mapping;
-they are not credentials.
+## 3. Recoverable data
 
-## 3. Daily backup operation
+Exact allowlist: `scripts/family_ops_recovery_tables.txt`.
 
-Workflow: `.github/workflows/backup.yml`
+Included: durable household/member/profile, task/subtask/recurrence/history,
+request, shopping, handover, routine, transport, family-event, child/school,
+confirmed nursery and household-setting data.
 
-Normal schedule: daily 03:00 JST.
+Excluded:
 
-A PASS run does all of the following:
+- Auth passwords/hashes, identities, sessions, recovery/OAuth tokens;
+- Google/LINE credentials and provider queues;
+- webhook/pending/notification/worker queues and receipts;
+- cron/pg_net state;
+- provider caches/write/sync/mirror operational state;
+- test/simulation and transient AI/image/raw state;
+- artifact-handoff rows and Storage object bytes.
 
-1. reads every reviewed allowlist table from Family Ops through Supabase
-   Management API using the existing `SUPABASE_ACCESS_TOKEN`;
-2. filters `test_context_id` rows where applicable;
-3. records production migration version and non-secret Auth ownership refs;
-4. writes one immutable `family-ops / household` history row into
-   `app-save-hub.public.app_save_backups`;
-5. updates `app-save-hub.public.app_saves` as the current copy;
-6. keeps only the latest 30 Family Ops history rows;
-7. reads the complete current payload back from `app-save-hub`;
-8. compares full canonical JSON equality;
-9. prints `RESULT: PASS` only after equality.
+Only old household Auth UUID + lower-cased email are retained for safe identity
+rebinding. They are not credentials.
 
-The workflow must never upload the household snapshot as a GitHub artifact or
-print the payload in logs.
+## 4. Actual backup
 
-### Backup failure
+Workflow: `.github/workflows/backup.yml`; normal schedule 03:00 JST.
 
-A red backup run is operational failure, not a successful backup with a warning.
-Do not create a new backup service/secret as an ad-hoc fix. Investigate:
+A PASS backup:
 
-- is `SUPABASE_ACCESS_TOKEN` still configured and valid;
-- can it access both existing Supabase projects;
-- do `app_saves` and `app_save_backups` still match the reviewed app-save-hub
-  contract;
-- did a new durable domain table require an explicit recovery allowlist review;
-- did source schema/migration change incompatibly.
+1. reads production through Management API with existing token;
+2. reads migration version and every allowlisted table;
+3. excludes non-null test contexts;
+4. validates foundational household/profile/member/task data;
+5. validates app-save-hub schema/RLS/single owner/namespace;
+6. writes one generation to the exact Family Ops owner/app/slot tuple;
+7. updates only that tuple's current save;
+8. prunes only that tuple to latest 30;
+9. reads complete payload back from app-save-hub;
+10. canonical JSON compares equal to source;
+11. prints `RESULT: PASS` only after equality.
 
-## 4. Freshness
+Never upload household payload or recovery sessions as Actions artifacts or log contents.
 
-Workflow: `.github/workflows/backup_freshness_alert.yml`
+## 5. Freshness
 
-The independent check reads only latest snapshot metadata from app-save-hub.
-PASS requires the payload to be structurally valid and no older than exactly
-26 hours.
+Workflow: `.github/workflows/backup_freshness_alert.yml`.
 
-Do not treat a current timestamp with missing/invalid household data as fresh.
+PASS requires the reserved tuple, correct source and namespace, structurally
+valid household payload, positive foundational counts and exact age <=26h.
 
-## 5. Recovery drill
+## 6. Pre-merge recovery evidence
 
-Workflow: `.github/workflows/recovery-drill.yml`
+For a same-repository PR changing CF-11 controls,
+`.github/workflows/recovery-drill.yml` performs the full proof before merge:
 
-The drill automatically runs after a **main-push-triggered** backup, which gives
-a real proof after CF-11 implementation changes. Daily scheduled backups do not
-start a disposable Supabase every day. The workflow may also be manually
-dispatched.
+1. **Actual backup**: read production and write a real isolated app-save-hub generation.
+2. **Read-back equality**: included in snapshot script.
+3. **Freshness PASS**.
+4. Start a disposable real Supabase CLI stack.
+5. Apply repository migrations from empty.
+6. For every snapshot Auth reference, create a **NEW** confirmed disposable Auth
+   user with the same email and a random temporary password.
+7. Sign in each new user through GoTrue; no production password/session is used.
+8. Build old UUID → new UUID mapping.
+9. Discover identity columns from target FK catalog (`auth.users.id` or
+   `household_members.user_id` parents), never by guessed names.
+10. Rewrite only those FK positions and typed-restore every allowlisted table
+    with normal constraints active.
+11. Require exact per-table counts, zero identity/task linkage orphans and no
+    old production UUID remaining in identity-FK positions.
+12. Use each signed-in user's JWT through normal PostgREST/RLS to read its
+    profile, household membership, household and at least one restored task.
+13. Remove temporary session material and stop disposable stack even on failure.
 
-The drill must:
+A green unit test or table-count-only restore is not CF-11 proof.
 
-1. start a disposable local Supabase stack;
-2. apply repository migrations from empty;
-3. fetch the latest app-save-hub Family Ops snapshot;
-4. require source migration version = scratch migration version;
-5. require snapshot table keys = exact reviewed allowlist;
-6. create non-login placeholder `auth.users` references only for FK checking;
-7. restore every non-empty allowlisted table with normal FK/check enforcement;
-8. verify exact row-count equality for every allowlisted table;
-9. verify household/profile/member and task/subtask linkage has no orphan;
-10. stop the disposable stack even on failure;
-11. print `RESULT: PASS` only at the end.
+## 7. Complete project recreation procedure
 
-A script/test green without a real stored snapshot and real disposable restore
-is not CF-11 PASS evidence.
+If the original Family Ops project is lost:
 
-## 6. Real incident — repaired/original project with Auth intact
+1. Create new Supabase project and apply reviewed Family Ops migrations.
+2. Configure the approved Auth provider/domain settings.
+3. Have each spouse sign in again, or securely create/reinvite the same verified
+   email identity. Do not restore old passwords/sessions.
+4. Match each new authenticated email to exactly one snapshot Auth reference.
+   Ambiguous/missing identity blocks recovery; never guess ownership.
+5. Run the same schema-derived old→new UUID rebinding before household restore.
+6. Restore durable household data under normal constraints.
+7. **Before reopening Family Ops**, sign in as each recovered household user and
+   confirm normal authenticated access to profile, membership, household and
+   tasks. This is the minimum "family can resume use" gate.
+8. Configure CURRENT Edge secrets/functions.
+9. Reconnect LINE/Google; do not import old OAuth sessions/tokens/queues.
+10. Recreate reviewed workers only against the new target.
+11. Smoke Today/household use and then LINE/Google operational paths.
 
-Use this path when household/domain rows were accidentally deleted/corrupted but
-the project/Auth users still exist.
+Provider/account cutover automation beyond this is outside current right-sized CF-11.
 
-1. Stop normal Family Ops household mutations and scheduled/provider workers.
-2. Identify the last known-good Family Ops snapshot revision in app-save-hub.
-3. Ensure the target schema is at the snapshot-compatible repository migration.
-4. Ensure the affected household/domain tables are empty or use a separately
-   reviewed incident-specific cleanup plan. Never overwrite live mixed state.
-5. Run the reviewed restore tooling against the managed target only with the
-   explicit safety flag:
+### Original/repaired project with Auth intact
 
-   `ALLOW_MANAGED_RECOVERY_TARGET=1 scripts/restore_drill.sh --scratch-db-url '<target connection>'`
-
-   Do not paste the real connection string into chat or logs.
-6. Require exact row counts and zero foundational linkage orphan.
-7. Re-enable provider/worker paths only after household data validation.
-8. Smoke real sign-in, household load, Today/tasks and then LINE/Google paths.
-
-## 7. Real incident — entire Family Ops project recreated
-
-CURRENT CF-11 accepts operator-assisted reconstruction rather than preserving
-old provider/Auth sessions.
-
-1. Create a fresh Supabase project and apply Family Ops migrations from GitHub.
-2. Have the household users sign in normally so new Supabase Auth identities are
-   created.
-3. Read the snapshot's old `{id,email}` Auth references and map the at-most-two
-   old household users to the new identities.
-4. Restore household/domain rows using a reviewed incident-specific user-ID
-   mapping. Do not invent or guess user ownership.
-5. Deploy CURRENT Edge Functions and configure CURRENT server secrets.
-6. Reconnect LINE/Google; do not restore old OAuth sessions/tokens/queues.
-7. Recreate the reviewed six Family Ops workers only against the new target
-   using `scripts/reconfigure_recovery_workers.sql` after new target-local
-   worker values are configured.
-8. Smoke sign-in, household data, Today, LINE notification and routine flow.
-
-Automating account/provider cutover beyond this is not required for current
-CF-11 and must not be added solely for technical completeness.
+If Auth survives, preserve the existing Auth IDs and use an incident-specific
+restore plan; do not create replacement users unnecessarily. Pause mutations,
+select a known-good generation, restore only into a reviewed clean/isolated
+state, then prove real authenticated household access before reopening.
 
 ## 8. CF-11 PASS checklist
 
-CF-11 is PASS only when CURRENT evidence shows:
+CF-11 remains FAIL until every item has CURRENT evidence:
 
-- [ ] ADR 0014 and CURRENT design/runbook are merged through protected main.
-- [ ] Daily backup workflow SUCCESS on CURRENT main.
-- [ ] `app-save-hub` has a current `family-ops / household` save and history.
-- [ ] Complete stored payload was read back identical to the source snapshot.
-- [ ] Family Ops history retention is bounded to 30 without changing ManaEvo.
-- [ ] Freshness workflow SUCCESS at <=26h.
-- [ ] Actual disposable recovery drill SUCCESS with exact per-table row counts.
-- [ ] Provider credentials/queues/cron/test data are not in the snapshot scope.
-- [ ] No R2/age/new key-management dependency exists.
-- [ ] Repository release path remains protected by CF-15.
+- [ ] ADR 0014 reached protected main and therefore became Accepted/canonical.
+- [ ] Required five protected PR checks passed on the exact merge head.
+- [ ] app-save-hub isolation verified: exact owner + `family-ops-recovery-v1` + `household-durable-v1`; ManaEvo/other tuples untouched.
+- [ ] Actual Family Ops backup stored in app-save-hub.
+- [ ] Full payload read-back equals source.
+- [ ] Family Ops generation count <=30 with tuple-scoped pruning.
+- [ ] Freshness PASS <=26h.
+- [ ] Actual disposable Supabase restore PASS with constraints + exact counts.
+- [ ] NEW Auth identity sign-in succeeds for every identity represented in the snapshot.
+- [ ] Old→new UUID rebind leaves no identity-FK orphan/stale old UUID.
+- [ ] Every recovered signed-in identity reads profile/membership/household/task through normal RLS.
+- [ ] Provider credentials/queues/cron/test data absent from recovery scope.
+- [ ] No R2/age/new key-management dependency.
 
-After all boxes have live evidence, update `PRODUCTION_CONNECTION_STATUS.md`
-with the exact workflow run IDs and mark CF-11 PASS / Lane C COMPLETE through a
-normal protected PR.
+Only then may CF-11 = PASS / Lane C = COMPLETE. Record exact workflow run IDs and tested identity count; do not claim two identities if CURRENT production contains only one registered member.
 
-## 9. When to revisit independent/offsite DR
+## 9. When to revisit stronger DR
 
-Reopen the stronger backup design if Family Ops becomes commercial, materially
-expands its users, gains contractual recovery obligations, starts retaining
-irreplaceable binary household source data, or the Product Owner no longer
-accepts same-account Supabase residual risk.
+Reopen independent encrypted/offsite DR if commercialization, materially larger
+usage, contractual recovery requirements, irreplaceable durable binaries, or
+Product Owner risk posture changes.
