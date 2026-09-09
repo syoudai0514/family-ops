@@ -1,7 +1,8 @@
 -- WP-DD4: legacy public adapters route through canonical Attempts, and an
 -- accepted Request remains accepted while post-accept Task changes/cancel are
 -- negotiated and applied only after the other party confirms the same terms.
-
+-- Reply deadlines are intentionally relative so this lifecycle regression does
+-- not become an expiry test as wall-clock time advances.
 do $$
 declare
   v_owner uuid := '10000000-0000-0000-0000-000000000044';
@@ -70,7 +71,7 @@ begin
     'change', jsonb_build_object(
       'scheduled_date','2026-09-06',
       'due_at','2026-09-06T09:00:00+09:00'
-    ), '日程変更', '2026-09-05 20:00+09'::timestamptz,
+    ), '日程変更', now() + interval '1 hour',
     v_request_revision, v_task_revision
   );
 
@@ -100,7 +101,7 @@ begin
   select revision into v_task_revision from public.task_instances where id=v_task;
   v_cancel := public.server_tx_start_request_followup(
     v_owner, '20000000-0000-0000-0000-000000000544', v_request,
-    'cancel', null, '予定がなくなった', '2026-09-05 21:00+09'::timestamptz,
+    'cancel', null, '予定がなくなった', now() + interval '2 hours',
     v_request_revision, v_task_revision
   );
   if (select status from public.task_instances where id=v_task) <> 'todo' then
