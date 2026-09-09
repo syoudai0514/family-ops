@@ -74,10 +74,10 @@ Before Phase 1 migration work, implementation must fresh-read the actual product
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
 10. `09_TRANSPORT_PERIOD_TEMPLATE_AND_MONTH_UX.md` — approved transport/Month refinement realization; subordinate to Requirements Baseline
-11. `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — scenario-level channel responsibility matrix; **PROPOSED / REVIEW-READY until product-owner final approval**
+11. `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — scenario-level channel responsibility matrix; **M01-M26 classifications Product Owner approved on 2026-09-09 / branch review-ready / not Release GO or main-merge approval**
 12. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` — canonical registry for the exact approved final UX source snapshot, Q mapping, historical supersession, and later cross-cutting acceptance guards
 
-`10_LINE_PWA_RESPONSIBILITY_MATRIX.md` being stored at the stable current-design path does not by itself make its pending product-owner classification approval complete. Until that explicit approval, it must not be used to change application behavior. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` is a governance/provenance registry and does not outrank or alter the Requirements Baseline.
+`10_LINE_PWA_RESPONSIBILITY_MATRIX.md` records an explicit Product Owner approval of the 26 channel-responsibility classifications. That approval is intentionally limited to CF-09 classification semantics: it does **not** approve application implementation completeness, Release GO, production rollout, or merge to `main`. Until this branch passes the normal governance/review path and is merged, CURRENT main remains unchanged. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` is a governance/provenance registry and does not outrank or alter the Requirements Baseline.
 
 Review instruction/history documents remain for audit only:
 
@@ -136,6 +136,12 @@ The following remain permanent implementation acceptance expectations:
 
 - CURRENT main Baseline v1.1: final independent re-review `GO`, merged under ADR 0012.
 - Branch candidate v1.2 (2026-09-09): Product Owner success criterion integrated; pending normal review/merge and must not be called CURRENT main before merge.
+
+### CF-09 channel responsibility
+
+- 2026-09-09: Product Owner explicitly approved all 26 M01-M26 LINE/PWA responsibility classifications.
+- Approval scope is classification only; it is **not** implementation-wide approval, Release GO, production approval, or main-merge approval.
+- Branch remains review-ready candidate until normal governance/review is complete.
 
 ### Detailed design progression
 
