@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Today } from './Today';
@@ -44,7 +44,8 @@ function data(overrides: Record<string, unknown> = {}) {
     taskGroups: { morning: [morning], daytime: [], evening: [evening], optional: [] },
     waitingTasks: [waiting], waitingRefsByTaskId: new Map(), carryoverTasks: [], alreadyHandledTasks: [],
     subtasksByTaskId: new Map(), executionTargetsByTaskId: new Map(), incomingRequests: [], requestAttemptsByRequestId: new Map(),
-    unreadHandovers: [], openShoppingItems: [], briefSchedule: [],
+    unreadHandovers: [{ id: 'handover-1', period: '今日', shared_text: '水筒を玄関へ' }],
+    openShoppingItems: [], briefSchedule: [],
     partnerSummary: { open_assigned: 2, completed_today: 1, critical_items: [] },
     reconciliation: { sessions: [], remaining_count: 0, actionable: false },
     tomorrowImpact: {
@@ -76,7 +77,15 @@ describe('Today first-flow priority contract', () => {
     mockClock.mockReturnValue({ now: new Date('2026-09-09T11:00:00Z'), localDate: '2026-09-09', daypart: 'evening' });
   });
 
-  it('keeps 要対応 / 残り / 待ち / 明日影響 visible and material DailyBrief semantics in priority order', () => {
+  it('keeps 要対応 / 残り / 待ち / 明日影響 linked and material DailyBrief semantics in approved priority order', () => {
+    const scrolledIds: string[] = [];
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: function scrollIntoView(this: HTMLElement) {
+        scrolledIds.push(this.id);
+      },
+    });
+
     render(<MemoryRouter><Today /></MemoryRouter>);
 
     const summary = screen.getByRole('region', { name: '今日の重要サマリー' });
@@ -85,26 +94,37 @@ describe('Today first-flow priority contract', () => {
     expect(summary).toHaveTextContent('待ち 1');
     expect(summary).toHaveTextContent('明日影響 2');
 
+    fireEvent.click(screen.getByRole('button', { name: '要対応 2件を確認' }));
+    fireEvent.click(screen.getByRole('button', { name: '残り 2件を確認' }));
+    fireEvent.click(screen.getByRole('button', { name: '待ち 1件を確認' }));
+    fireEvent.click(screen.getByRole('button', { name: '明日影響 2件を確認' }));
+    expect(scrolledIds).toEqual(['today-attention', 'today-remaining', 'today-waiting', 'today-tomorrow']);
+
     const decisionSection = screen.getByRole('region', { name: 'まず確認' });
     const exceptionSection = screen.getByRole('region', { name: 'いつもと違う' });
+    const handoverSection = screen.getByRole('region', { name: '引き継ぎ・共有' });
+    const morningSummary = screen.getByRole('region', { name: '朝の完了まとめ' });
     const waitingSection = screen.getByRole('region', { name: '待ち・確認' });
     const remainingHeading = screen.getByRole('heading', { name: 'まだ残っていること' });
     const tomorrowSection = screen.getByRole('region', { name: '明日に影響' });
-    const morningSummary = screen.getByRole('region', { name: '朝の完了まとめ' });
 
     expect(exceptionSection).toHaveTextContent('保育園が短縮');
+    expect(handoverSection).toHaveTextContent('水筒を玄関へ');
+    expect(morningSummary).toHaveTextContent('朝 1/2 完了');
     expect(screen.getByRole('region', { name: '相手の今日' })).toHaveTextContent('残り 2件・完了 1件');
     expect(decisionSection.compareDocumentPosition(exceptionSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(exceptionSection.compareDocumentPosition(waitingSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(exceptionSection.compareDocumentPosition(handoverSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(handoverSection.compareDocumentPosition(morningSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(morningSummary.compareDocumentPosition(waitingSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(waitingSection.compareDocumentPosition(remainingHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(tomorrowSection.compareDocumentPosition(morningSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(remainingHeading.compareDocumentPosition(tomorrowSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('does not render the Empty success surface while the separate pending-action controller is still loading', () => {
     mockToday.mockReturnValue(data({
       status: 'empty', urgentActions: [], exceptions: [], tasks: [],
       taskGroups: { morning: [], daytime: [], evening: [], optional: [] }, waitingTasks: [],
-      partnerSummary: {},
+      unreadHandovers: [], partnerSummary: {},
       tomorrowImpact: { task_count: 0, schedule_count: 0, carryover_count: 0, impact_count: 0, tasks: [], schedule: [], carryovers: [] },
       morningSummary: { completedCount: 0, totalCount: 0 },
     }));
