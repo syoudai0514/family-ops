@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
+  canonicalDailyBriefText,
   formatScheduleReply,
   lineCreationStarterKind,
   menuQuickReplies,
@@ -70,4 +71,12 @@ Deno.test("schedule reply remains compact", () => {
   );
   assertStringIncludes(text, "10:30 予定1（P）");
   assertStringIncludes(text, "ほか1件");
+});
+
+Deno.test("LINE today adapter preserves canonical DailyBrief text verbatim", () => {
+  const brief = "夜のおうちノート\n\nまず確認\n・返事が必要\n\n明日に影響\n・2件あります";
+  const entries = [{ title: brief, startsAt: null, roleLabel: null, conflict: false }];
+  assertEquals(canonicalDailyBriefText(entries), brief);
+  assertEquals(formatScheduleReply("今日の予定", entries), brief);
+  assertEquals(formatScheduleReply("明日の予定", entries).startsWith("明日の予定"), true);
 });
