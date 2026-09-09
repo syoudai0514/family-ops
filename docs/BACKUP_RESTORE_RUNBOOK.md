@@ -8,8 +8,10 @@ disagree, v6 wins and this file gets fixed.
 ## How the backup system works
 
 1. `.github/workflows/backup.yml` runs daily (18:00 UTC / 03:00 JST).
-2. It uses pinned Supabase CLI `2.117.0`, rather than raw `pg_dump`, to build
-   a Supabase-compatible logical backup. The bundle contains exactly:
+2. It uses pinned Supabase CLI `2.115.0`, matching the version already proven
+   by this repository's real Supabase integration CI, rather than raw
+   `pg_dump`, to build a Supabase-compatible logical backup. The bundle
+   contains exactly:
    - `roles.sql`
    - `schema.sql`
    - `data.sql`
