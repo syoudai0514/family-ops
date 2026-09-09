@@ -16,6 +16,8 @@
     "typecheck": "npm run typecheck -w apps/web",
     "test": "npm run test -w apps/web",
     "test:sql": "bash scripts/run_sql_tests.sh",
+    "test:cf14:authoring": "node --test tests/evidence/cf14/*.test.mjs",
+    "test:cf14:f2": "node scripts/run_cf14_f2.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
