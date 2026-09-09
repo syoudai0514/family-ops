@@ -224,15 +224,41 @@ export function buildLineAddFlex(): Record<string, unknown> {
 
 export function buildMultiIntentPreviewFlex(data: {
   pendingActionId: string;
-  candidates: Array<{ candidateId: string; kind: string; title: string; missingFields: string[] }>;
+  candidates: Array<{
+    candidateId: string;
+    kind: string;
+    title: string;
+    missingFields: string[];
+    duplicateMatch?: boolean;
+    duplicateDecision?: "existing" | "update" | "separate" | null;
+  }>;
 }): Record<string, unknown> {
   const label = (kind: string): string => ({ share: "共有", task: "タスク", shopping: "買い物", request: "お願い", actual: "実績" }[kind] ?? "候補");
+  const duplicateButton = (candidateId: string, labelText: string, decision: string) => ({
+    type: "button", style: "secondary", height: "sm",
+    action: {
+      type: "postback", label: labelText,
+      data: `action=resolve_multi_duplicate&pending_action_id=${data.pendingActionId}&candidate_id=${candidateId}&decision=${decision}`,
+      displayText: labelText,
+    },
+  });
   const lines: Record<string, unknown>[] = data.candidates.slice(0, 5).flatMap((candidate) => [
     row(label(candidate.kind), candidate.title),
     ...(candidate.missingFields.length > 0 ? [{
       type: "text", size: "xxs", color: "#B54708", wrap: true,
       text: `確認が必要: ${candidate.missingFields.join("・")}`,
     }] : []),
+    ...(candidate.duplicateMatch ? [
+      { type: "text", size: "xxs", color: "#B54708", wrap: true,
+        text: candidate.duplicateDecision
+          ? `重複の扱い: ${candidate.duplicateDecision === "existing" ? "既存を使う" : candidate.duplicateDecision === "update" ? "既存を更新" : "別物として追加"}`
+          : "既存データと一致しています。扱いを選んでください。" },
+      { type: "box", layout: "vertical", spacing: "xs", contents: [
+        duplicateButton(candidate.candidateId, "既存を使う", "existing"),
+        duplicateButton(candidate.candidateId, "既存を更新", "update"),
+        duplicateButton(candidate.candidateId, "別物として追加", "separate"),
+      ] },
+    ] : []),
     {
       type: "button", style: "link", height: "sm",
       action: {
@@ -243,6 +269,7 @@ export function buildMultiIntentPreviewFlex(data: {
     },
   ]);
   const hasMissing = data.candidates.some((candidate) => candidate.missingFields.length > 0);
+  const hasUndecidedDuplicate = data.candidates.some((candidate) => candidate.duplicateMatch && !candidate.duplicateDecision);
   return {
     type: "flex",
     altText: "読み取った内容を確認してください",
@@ -254,7 +281,10 @@ export function buildMultiIntentPreviewFlex(data: {
       ] },
       body: { type: "box", layout: "vertical", spacing: "xs", paddingAll: "10px", contents: lines },
       footer: { type: "box", layout: "vertical", spacing: "xs", paddingAll: "5px", contents: [
-        ...(hasMissing ? [{ type: "text", size: "xs", color: "#B54708", wrap: true, text: "不明な箇所だけ教えてください。理解できている内容は残ります。" }] : [{
+        ...((hasMissing || hasUndecidedDuplicate) ? [{
+          type: "text", size: "xs", color: "#B54708", wrap: true,
+          text: hasUndecidedDuplicate ? "重複候補の扱いだけ選んでください。ほかの候補は残ります。" : "不明な箇所だけ教えてください。理解できている内容は残ります。",
+        }] : [{
           type: "button", style: "primary", color: LINE_GREEN, height: "sm",
           action: { type: "postback", label: "まとめて登録", data: `action=confirm_pending&pending_action_id=${data.pendingActionId}`, displayText: "まとめて登録" },
         }]),

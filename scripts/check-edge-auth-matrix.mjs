@@ -22,6 +22,9 @@ const GAP_FILL_FUNCTIONS = new Set([
   // Issue #54 PWA Concierge proposal surface. Authenticated and read-only with
   // respect to business objects; it reuses the reviewed LINE semantic parser.
   'propose-concierge-candidates',
+  // Lane B CF-06 human-confirmed duplicate update. Authenticated and CAS-only;
+  // the Edge adapter delegates to one service-role-only transactional RPC.
+  'commit-concierge-duplicate',
   // Issue #54 human-confirmed unplanned actual. Authenticated and atomic; the
   // Edge adapter delegates to one service-role-only transactional RPC.
   'record-unplanned-actual',
