@@ -40,6 +40,11 @@ write_marker() {
   printf '%s\n%s\n' "$filename" "$timestamp" > "$TMP/marker.txt"
 }
 
+timestamp_seconds_ago() {
+  local seconds="$1"
+  date -u -d "@$(( $(date -u +%s) - seconds ))" +%Y-%m-%dT%H:%M:%SZ
+}
+
 run_freshness() {
   env \
     PATH="$BASE_PATH" \
@@ -77,10 +82,11 @@ FAKE_OBJECT_PRESENT=1 FAKE_OBJECT_SIZE=4096 run_freshness >/dev/null
 
 # The 26-hour policy is exact. A marker just inside the limit passes, while a
 # marker more than 26 hours old must fail even though floor-truncated hours
-# would still display as 26.
-write_marker "family-ops-backup-$(date -u -d '25 hours 55 minutes ago' +%Y-%m-%d).sql.age" "$(date -u -d '25 hours 55 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+# would still display as 26. Build timestamps from epoch arithmetic so the
+# test does not depend on GNU date's natural-language relative-time parser.
+write_marker "family-ops-backup-$(date -u +%Y-%m-%d).sql.age" "$(timestamp_seconds_ago $((25 * 3600 + 55 * 60)))"
 run_freshness >/dev/null
-write_marker "family-ops-backup-$(date -u -d '26 hours 5 minutes ago' +%Y-%m-%d).sql.age" "$(date -u -d '26 hours 5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+write_marker "family-ops-backup-$(date -u +%Y-%m-%d).sql.age" "$(timestamp_seconds_ago $((26 * 3600 + 5 * 60)))"
 expect_status 1 run_freshness
 
 # A fresh marker pointing at a missing object must be RED.
