@@ -108,6 +108,12 @@ export async function runNurseryActualInput(adapter, fixture) {
   assert.deepEqual(result.stages, ['classify', 'ocr', 'ai', 'review'], 'actual input evidence must traverse classify/OCR/AI/review stages in order');
   assert.equal(result.mutatedBeforeConfirm, false, 'nursery intake must not finalize household data before confirmation');
   assert.ok(result.provenanceId, 'source provenance must be retained');
+  if (Array.isArray(fixture.expectedSourceHints) && fixture.expectedSourceHints.length > 0) {
+    assert.equal(typeof result.sourceText, 'string', `${fixture.id}: OCR/source text evidence required for representative image`);
+    for (const hint of fixture.expectedSourceHints) {
+      assert.ok(result.sourceText.includes(hint), `${fixture.id}: OCR/source evidence missing hint: ${hint}`);
+    }
+  }
   return result;
 }
 
