@@ -28,11 +28,16 @@ const baseItem = {
   revision: 3,
 };
 
-function workspace(activeClaimantActorRefId: string | null, revision = 3) {
+function workspace(activeClaimantActorRefId: string | null, revision = 3, displayName?: string | null) {
   return {
     data: {
       actor_ref_id: 'me',
-      active: [{ ...baseItem, revision, active_claimant_actor_ref_id: activeClaimantActorRefId }],
+      active: [{
+        ...baseItem,
+        revision,
+        active_claimant_actor_ref_id: activeClaimantActorRefId,
+        active_claimant_display_name: displayName ?? null,
+      }],
     },
     error: null,
     success: true as const,
@@ -75,14 +80,15 @@ describe('Q107-Q109 anyone-owner state-transition interaction evidence', () => {
       });
     });
     expect(await screen.findByText(/現在: 自分が対応中/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /手放す|担当を戻す/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '手放す' })).toBeInTheDocument();
   });
 
-  it('Q108 sends takeover only after the user presses the takeover action and converges after canonical reload', async () => {
-    rpc.mockResolvedValueOnce(workspace('partner')).mockResolvedValueOnce(workspace('me', 4));
+  it('Q108 identifies the current claimant and sends takeover only after explicit action', async () => {
+    rpc.mockResolvedValueOnce(workspace('partner', 3, 'ママ')).mockResolvedValueOnce(workspace('me', 4));
     renderPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: '引き継ぐ' }));
+    expect(await screen.findByText(/現在: ママが対応中/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '引き継ぐ' }));
 
     await waitFor(() => {
       expect(callEdgeFunction).toHaveBeenCalledWith(EDGE_FUNCTIONS.claimShoppingItem, {
@@ -95,14 +101,14 @@ describe('Q107-Q109 anyone-owner state-transition interaction evidence', () => {
     expect(await screen.findByText(/現在: 自分が対応中/)).toBeInTheDocument();
   });
 
-  it('Q109 does not release on render; release requires an explicit claimant action', async () => {
+  it('Q109 does not release on render; release requires the exact explicit 手放す action', async () => {
     rpc.mockResolvedValueOnce(workspace('me')).mockResolvedValueOnce(workspace(null, 4));
     renderPage();
 
     expect(await screen.findByText(/現在: 自分が対応中/)).toBeInTheDocument();
     expect(callEdgeFunction).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /手放す|担当を戻す/ }));
+    fireEvent.click(screen.getByRole('button', { name: '手放す' }));
 
     await waitFor(() => {
       expect(callEdgeFunction).toHaveBeenCalledWith(EDGE_FUNCTIONS.claimShoppingItem, {
@@ -115,19 +121,12 @@ describe('Q107-Q109 anyone-owner state-transition interaction evidence', () => {
     expect(await screen.findByText(/現在: まだ誰も対応中ではありません/)).toBeInTheDocument();
   });
 
-  it.fails('Q108 approved UX identifies the actual current claimant instead of generic 家族 before takeover', async () => {
+  it('fails closed when a non-self claimant cannot be identified', async () => {
     rpc.mockResolvedValueOnce(workspace('partner'));
     renderPage();
 
-    const status = await screen.findByText(/現在:/);
-    expect(status).not.toHaveTextContent('家族が対応中');
+    expect(await screen.findByText(/現在: 対応者を確認できません/)).toBeInTheDocument();
+    expect(screen.queryByText(/家族が対応中/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '引き継ぐ' })).toBeInTheDocument();
-  });
-
-  it.fails('Q109 approved UX labels the explicit claimant release action 手放す', async () => {
-    rpc.mockResolvedValueOnce(workspace('me'));
-    renderPage();
-
-    expect(await screen.findByRole('button', { name: '手放す' })).toBeInTheDocument();
   });
 });
