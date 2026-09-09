@@ -65,6 +65,11 @@ Before Phase 1 migration work, implementation must fresh-read the actual product
 7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
+10. `09_TRANSPORT_PERIOD_TEMPLATE_AND_MONTH_UX.md` — approved transport/Month refinement realization; subordinate to Requirements Baseline
+11. `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — scenario-level channel responsibility matrix; **PROPOSED / REVIEW-READY until product-owner final approval**
+12. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` — canonical registry for the exact approved final UX source snapshot, Q mapping, and historical supersession
+
+`10_LINE_PWA_RESPONSIBILITY_MATRIX.md` being stored at the stable current-design path does not by itself make its pending product-owner classification approval complete. Until that explicit approval, it must not be used to change application behavior. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` is a governance/provenance registry and does not outrank or alter the Requirements Baseline.
 
 Review instruction/history documents remain for audit only:
 
@@ -74,6 +79,12 @@ Review instruction/history documents remain for audit only:
 - `FAMILY-OPS-DETAILED-DESIGN-ROUND3-REREVIEW-REQUEST.md`
 - `FAMILY-OPS-DETAILED-DESIGN-ROUND4-REREVIEW-REQUEST.md`
 - `FAMILY-OPS-DETAILED-DESIGN-ROUND5-FINAL-VERIFY-REQUEST.md`
+
+---
+
+## UX contract navigation
+
+For requirements/UX implementation or review, do not select a prototype by filename. Start from the Requirements Baseline, then this README, then `11_APPROVED_FINAL_UX_CANONICALIZATION.md` for the exact pinned approved UX commit/path/blob/render hashes. V3/V4/V5 and older prototype assets are historical/superseded for CURRENT UX implementation.
 
 ---
 
