@@ -1,7 +1,7 @@
 # おうちノート / Family Ops
 ## Requirements & UX Baseline v1.1
 
-- **Status:** Proposed Canonical / Independent Review Round 1 Remediated / Re-review Candidate / NO IMPLEMENTATION
+- **Status:** Active Canonical / Final independent re-review GO / merged to main under ADR 0012
 - **Date:** 2026-09-02
 - **Repository:** `syoudai0514/family-ops`
 - **Canonical branch:** `main`
