@@ -152,6 +152,27 @@ export async function runCrossChannelRace({ line, pwa, readCanonical }) {
   return { settled, canonical, observations };
 }
 
+export async function runClockBoundaryScenario(adapter, fixtures) {
+  assert.equal(typeof adapter?.evaluateClock, 'function', 'clock adapter.evaluateClock required');
+  const evidence = [];
+  for (const fixture of fixtures) {
+    assert.match(fixture.at ?? '', /\+09:00$/, `${fixture.id}: clock fixture must use explicit JST offset`);
+    assert.ok(['weekday', 'weekend', 'holiday'].includes(fixture.dayType), `${fixture.id}: invalid day type`);
+    assert.ok(['morning', 'evening'].includes(fixture.deliveryKind), `${fixture.id}: invalid delivery kind`);
+    assert.equal(typeof fixture.expectedShouldDeliver, 'boolean', `${fixture.id}: expected delivery boolean required`);
+    const observed = await adapter.evaluateClock({
+      at: fixture.at,
+      dayType: fixture.dayType,
+      deliveryKind: fixture.deliveryKind,
+    });
+    assert.equal(observed.localAt, fixture.at, `${fixture.id}: adapter must preserve explicit local clock evidence`);
+    assert.equal(observed.deliveryKind, fixture.deliveryKind, `${fixture.id}: delivery kind mismatch`);
+    assert.equal(observed.shouldDeliver, fixture.expectedShouldDeliver, `${fixture.id}: boundary result mismatch`);
+    evidence.push({ id: fixture.id, observed });
+  }
+  return evidence;
+}
+
 export async function runWholeDayScenario(steps, adapters) {
   const evidence = [];
   for (const step of steps) {
