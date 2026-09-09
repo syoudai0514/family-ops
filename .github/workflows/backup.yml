@@ -10,9 +10,8 @@ name: Backup (daily encrypted logical dump to R2)
 # BACKUP_AGE_PUBLIC_KEY (a public key — safe even if CI secrets leak). The
 # matching private key is held by the household owner outside of GitHub
 # entirely (password manager / offline storage) and is NEVER added as a
-# secret here. If you ever find yourself tempted to add an
-# "AGE_PRIVATE_KEY" secret to make restores "more convenient" from CI —
-# don't. That defeats the whole point of this design.
+# secret here. Do not add any private-key material to CI to automate
+# restores; that defeats the whole point of this design.
 
 on:
   schedule:
@@ -64,6 +63,7 @@ jobs:
             --no-privileges \
             --dbname="$SUPABASE_DB_URL" \
             --file=dump.sql
+          test -s dump.sql || { echo "::error::pg_dump produced an empty dump" >&2; exit 1; }
 
       - name: Encrypt dump with age (public key only)
         env:
@@ -77,9 +77,10 @@ jobs:
             exit 1
           fi
           age -r "$BACKUP_AGE_PUBLIC_KEY" -o "${{ steps.meta.outputs.filename }}" dump.sql
+          test -s "${{ steps.meta.outputs.filename }}" || { echo "::error::age produced an empty encrypted backup" >&2; exit 1; }
           rm -f dump.sql
 
-      - name: Upload encrypted dump to R2
+      - name: Upload and verify encrypted dump in R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -96,11 +97,28 @@ jobs:
             fi
           done
           pipx install awscli --quiet 2>/dev/null || pip install --quiet awscli
+          ENDPOINT_URL="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          BACKUP_FILE="${{ steps.meta.outputs.filename }}"
           aws s3 cp \
-            "${{ steps.meta.outputs.filename }}" \
-            "s3://${R2_BUCKET_NAME}/${{ steps.meta.outputs.filename }}" \
-            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            "$BACKUP_FILE" \
+            "s3://${R2_BUCKET_NAME}/${BACKUP_FILE}" \
+            --endpoint-url "$ENDPOINT_URL" \
             --storage-class STANDARD
+
+          # Do not advance latest-backup.txt until R2 itself confirms that
+          # the encrypted object exists and is non-empty. A successful CLI
+          # upload command alone is not sufficient operational evidence.
+          OBJECT_SIZE="$(aws s3api head-object \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "$BACKUP_FILE" \
+            --endpoint-url "$ENDPOINT_URL" \
+            --query ContentLength \
+            --output text)"
+          if ! [[ "$OBJECT_SIZE" =~ ^[0-9]+$ ]] || [ "$OBJECT_SIZE" -le 0 ]; then
+            echo "::error::R2 head-object did not confirm a non-empty encrypted backup" >&2
+            exit 1
+          fi
+          echo "Verified encrypted backup object in R2 (${OBJECT_SIZE} bytes)."
 
       - name: Update latest-backup marker
         env:
@@ -112,7 +130,7 @@ jobs:
         run: |
           set -euo pipefail
           # A tiny marker object recording the filename + ISO timestamp of
-          # the most recent successful backup. This is what
+          # the most recent successful and R2-verified backup. This is what
           # scripts/backup_freshness_check.sh reads, so a freshness check
           # doesn't need to list/paginate the whole bucket.
           printf '%s\n%s\n' \
