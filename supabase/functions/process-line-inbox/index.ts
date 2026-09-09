@@ -41,11 +41,9 @@ import {
 import { attachCanonicalConciergeDuplicate } from "../_shared/conciergeDuplicateMatch.ts";
 import { jsonResponse, withServiceHandler } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { parseLineText } from "./parser.ts";
 import {
   daypartLabel,
   daypartToLocalTime,
-  extractLineIntent,
 } from "./lineIntent.ts";
 import {
   buildIntentClarificationFlex,
@@ -58,7 +56,6 @@ import {
 } from "./lineUxBuilders.ts";
 import {
   decomposeLineConversationCandidates,
-  isMultiIntentMessage,
   type LineMultiIntentPendingCandidate,
 } from "./lineMultiIntent.ts";
 import { replyOrEnqueuePush } from "../_shared/lineMessaging.ts";
@@ -517,7 +514,6 @@ async function buildMultiIntentPendingCandidates(
   // Whole-utterance AI decomposition is the normal semantic path.
   // The shared helper alone owns deterministic availability fallback.
   const interpreted = await decomposeLineConversationCandidates(text);
-  if (!isMultiIntentMessage(interpreted)) return [];
   const identified = await Promise.all(interpreted.map(async (candidate) => ({
     ...candidate,
     operationId: candidate.operationId ?? await deterministicOperationId(
@@ -601,8 +597,8 @@ async function tryCreateMultiIntentReview(
   item: WebhookInboxItem,
   actor: LineActor,
   text: string,
+  candidates: LineMultiIntentPendingCandidate[],
 ): Promise<boolean> {
-  const candidates = await buildMultiIntentPendingCandidates(client, item, actor, text);
   if (candidates.length === 0) return false;
   const operationId = await deterministicOperationId("line-text", item.provider_event_id);
   const { data, error } = await client.rpc("server_tx_create_pending_action", {
@@ -862,7 +858,8 @@ async function tryApplyLineTextEdit(
       await sendConfirmation(client, item, actor, "追加する内容を短く教えてください。例「皮膚科の準備」「ゴミ出し」「牛乳」");
       return true;
     }
-    const inferred = await extractLineIntent(text);
+    const inferredCandidates = await decomposeLineConversationCandidates(text);
+    const inferred = inferredCandidates.length === 1 ? inferredCandidates[0].intent : null;
     const payload = { ...pending.normalized_payload };
     payload.title = inferred?.title ?? value;
     if (inferred) {
@@ -1433,13 +1430,20 @@ async function handleText(
   if (await tryHandleReadOnlyText(client, item, actor, text)) return;
   if (await tryHandlePendingReferent(client, item, actor, text)) return;
   if (await tryApplyLineTextEdit(client, item, actor, text)) return;
-  if (await tryCreateMultiIntentReview(client, item, actor, text)) return;
 
   const starterKind = lineCreationStarterKind(text);
-  const parsed = starterKind ? null : parseLineText(text);
+  const semanticCandidates = starterKind
+    ? []
+    : await buildMultiIntentPendingCandidates(client, item, actor, text);
+  const semanticCandidate = semanticCandidates.length === 1 ? semanticCandidates[0] : null;
+  const needsCandidateReview = semanticCandidates.length > 1 || semanticCandidates.some((candidate) =>
+    candidate.missing_fields.length > 0 || Boolean(candidate.duplicate_match)
+  );
+  if (needsCandidateReview && await tryCreateMultiIntentReview(client, item, actor, text, semanticCandidates)) return;
+
   let assignmentPayload: Record<string, unknown> | null = null;
 
-  if (!parsed && /(?:迎え.*お願い|お願い.*迎え)/.test(text)) {
+  if (!starterKind && /(?:迎え.*お願い|お願い.*迎え)/.test(text)) {
     const scheduledDate = resolveJapanesePickupDate(text);
     const { data: definition } = await client.from("task_definitions").select("id").eq("household_id", actor.household_id).eq("code", "pickup").maybeSingle();
     const { data: task } = definition && scheduledDate
@@ -1475,81 +1479,21 @@ async function handleText(
       due_local_time: due === undefined ? null : due,
       daypart: /朝/.test(text) ? "morning" : /夕方/.test(text) ? "evening" : /夜/.test(text) ? "night" : null,
     };
-  } else if (parsed) {
-    actionType = parsed.actionType;
-    payload = { ...parsed.payload, raw_text: text };
-    if (actionType === "task_create_once" && !payload.planned_assignee_user_id) {
-      payload.planned_assignee_user_id = actor.user_id;
-      payload.target_label = "自分";
-    }
+  } else if (semanticCandidate) {
+    actionType = semanticCandidate.action_type;
+    payload = { ...semanticCandidate.payload, raw_text: text };
   } else {
-    const intent = await extractLineIntent(text);
-    if (!intent) {
-      actionType = "needs_pwa_review";
-      payload = {
-        raw_text: text,
-        scheduled_date: correctionDate(text) ?? jstIsoDateOffset(0),
-        due_local_time: correctionTime(text) ?? null,
-      };
-    } else {
-      const targetUser = intent.targetRole ? await householdUserForRole(client, actor.household_id, intent.targetRole) : null;
-      const dueLocalTime = intent.dueLocalTime ?? daypartToLocalTime(intent.daypart);
-      const roleLabel = intent.targetRole === "papa" ? "パパ" : intent.targetRole === "mama" ? "ママ" : null;
-      if (intent.kind === "shopping") {
-        actionType = "shopping_item_add";
-        payload = {
-          raw_text: text,
-          title: intent.title,
-          purchase_method: /amazon|アマゾン/i.test(text) ? "amazon" : "store",
-          assignee_user_id: targetUser,
-          scheduled_date: intent.scheduledDate,
-          due_local_time: dueLocalTime,
-          daypart: intent.daypart,
-          context: intent.context,
-          calendar_visibility: intent.calendarVisibility,
-          target_label: roleLabel ?? "買い物リスト",
-          parse_source: intent.source,
-        };
-      } else {
-        const recipient = intent.kind === "request" ? (targetUser ?? (await partnerUserId(client, actor))) : null;
-        if (recipient && recipient !== actor.user_id) {
-          actionType = "request_create";
-          payload = {
-            raw_text: text,
-            title: intent.title,
-            shared_message: intent.sharedMessage ?? `${intent.title}をお願いできますか？`,
-            recipient_user_id: recipient,
-            scheduled_date: intent.scheduledDate,
-            due_local_time: dueLocalTime,
-            daypart: intent.daypart,
-            context: intent.context,
-            calendar_visibility: intent.calendarVisibility,
-            target_label: roleLabel ?? "パートナー",
-            parse_source: intent.source,
-          };
-        } else {
-          actionType = "task_create_once";
-          payload = {
-            raw_text: text,
-            title: intent.title,
-            category: "todo",
-            scheduled_date: intent.scheduledDate,
-            due_local_time: dueLocalTime,
-            planned_assignee_user_id: targetUser ?? actor.user_id,
-            routine_phase: "anytime",
-            daypart: intent.daypart,
-            subtasks: intent.subtasks,
-            context: intent.context,
-            calendar_visibility: intent.calendarVisibility,
-            target_label: roleLabel ?? "自分",
-            parse_source: intent.source,
-          };
-        }
-      }
-    }
+    actionType = "needs_pwa_review";
+    payload = {
+      raw_text: text,
+      scheduled_date: correctionDate(text) ?? jstIsoDateOffset(0),
+      due_local_time: correctionTime(text) ?? null,
+    };
   }
 
-  const operationId = await deterministicOperationId("line-text", item.provider_event_id);
+  const operationId = semanticCandidate && !assignmentPayload && !starterKind
+    ? semanticCandidate.operation_id
+    : await deterministicOperationId("line-text", item.provider_event_id);
   const { data: pendingData, error } = await client.rpc("server_tx_create_pending_action", {
     p_actor_id: actor.user_id,
     p_household_id: actor.household_id,

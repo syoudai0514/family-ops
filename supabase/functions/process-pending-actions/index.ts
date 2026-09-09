@@ -8,11 +8,11 @@ import { buildPendingActionPreviewFlex } from '../_shared/lineMessageBuilders.ts
 import {
   daypartLabel,
   daypartToLocalTime,
-  extractLineIntent,
   toTaskSubtasks,
 } from '../process-line-inbox/lineIntent.ts';
 import {
   activeMultiIntentCandidates,
+  decomposeLineConversationCandidates,
 } from '../process-line-inbox/lineMultiIntent.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
@@ -144,7 +144,8 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
 
   const rawText = typeof original.raw_text === 'string' ? original.raw_text.trim() : '';
   if (!rawText) return null;
-  const intent = await extractLineIntent(rawText);
+  const semanticCandidates = await decomposeLineConversationCandidates(rawText);
+  const intent = semanticCandidates.length === 1 ? semanticCandidates[0].intent : null;
   if (!intent) return null;
 
   const roleUser = intent.targetRole
