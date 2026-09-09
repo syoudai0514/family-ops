@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assessEvidence, validateScenarioManifest } from '../tests/evidence/cf14/harness.mjs';
+import { validateEvidenceRecords } from '../tests/evidence/cf14/evidence-records.mjs';
 import { cf14Scenarios } from '../tests/evidence/cf14/scenarios.mjs';
 
 function argumentValue(name) {
@@ -41,14 +42,10 @@ if (!fs.existsSync(evidencePath)) {
     fail(`evidence HEAD ${payload.exactHead} does not match runtime HEAD ${runtimeHead}`);
   }
 
-  for (const [index, record] of payload.records.entries()) {
-    if (record.status !== 'PASS') continue;
-    if (record.exactHead !== payload.exactHead) {
-      fail(`records[${index}] PASS evidence is not bound to payload exactHead ${payload.exactHead}`);
-    }
-    if (typeof record.source !== 'string' || record.source.trim().length === 0) {
-      fail(`records[${index}] PASS evidence requires a non-empty source/artifact reference`);
-    }
+  try {
+    validateEvidenceRecords(cf14Scenarios, payload.records, { exactHead: payload.exactHead });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
 
   if (!process.exitCode) {
