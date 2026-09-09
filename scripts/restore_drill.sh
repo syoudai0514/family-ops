@@ -2,7 +2,7 @@
 # WP10 restore drill: download the latest (or a named) encrypted logical
 # backup bundle from R2, decrypt it LOCALLY, restore it into a fresh
 # disposable Supabase-compatible Postgres target, and run fail-closed
-# schema/data sanity checks.
+# schema/data/identity sanity checks.
 # See docs/BACKUP_RESTORE_RUNBOOK.md for the release/monthly checklist.
 #
 # ============================================================================
@@ -255,6 +255,55 @@ for table in "${CORE_TABLES[@]}"; do
   esac
 done
 
+# Family Ops is not operationally recovered if household rows exist but the
+# Supabase Auth identities they depend on are missing. Because the restore
+# data phase intentionally disables triggers/FK enforcement, validate these
+# relationships explicitly after constraints are active again.
+PROFILE_TABLE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select to_regclass('public.profiles') is not null;")"
+if [ "$PROFILE_TABLE" != "t" ]; then
+  echo "ERROR: restored identity table public.profiles is missing." >&2
+  exit 1
+fi
+
+AUTH_USER_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select count(*) from auth.users;")"
+AUTH_IDENTITY_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select count(*) from auth.identities;")"
+PROFILE_COUNT="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select count(*) from public.profiles;")"
+MEMBER_AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select count(*) from public.household_members hm left join auth.users u on u.id = hm.user_id where u.id is null;")"
+PROFILE_AUTH_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select count(*) from public.profiles p left join auth.users u on u.id = p.user_id where u.id is null;")"
+MEMBER_IDENTITY_ORPHANS="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
+  "select count(distinct hm.user_id) from public.household_members hm where not exists (select 1 from auth.identities i where i.user_id = hm.user_id);")"
+
+for pair in \
+  "auth.users:$AUTH_USER_COUNT" \
+  "auth.identities:$AUTH_IDENTITY_COUNT" \
+  "public.profiles:$PROFILE_COUNT" \
+  "member-auth-orphans:$MEMBER_AUTH_ORPHANS" \
+  "profile-auth-orphans:$PROFILE_AUTH_ORPHANS" \
+  "member-identity-orphans:$MEMBER_IDENTITY_ORPHANS"; do
+  value="${pair##*:}"
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: restored identity sanity check returned a non-numeric count (${pair%%:*})." >&2
+    exit 1
+  fi
+done
+
+if [ "$AUTH_USER_COUNT" -le 0 ] || [ "$AUTH_IDENTITY_COUNT" -le 0 ] || [ "$PROFILE_COUNT" -le 0 ]; then
+  echo "ERROR: restored Auth/profile data is incomplete; household users would not be able to resume Family Ops normally." >&2
+  exit 1
+fi
+if [ "$MEMBER_AUTH_ORPHANS" -ne 0 ] || [ "$PROFILE_AUTH_ORPHANS" -ne 0 ] || [ "$MEMBER_IDENTITY_ORPHANS" -ne 0 ]; then
+  echo "ERROR: restored Family Ops user/profile rows are not fully linked to Supabase Auth users/identities." >&2
+  exit 1
+fi
+printf 'Restored identity counts: auth_users=%s auth_identities=%s profiles=%s\n' \
+  "$AUTH_USER_COUNT" "$AUTH_IDENTITY_COUNT" "$PROFILE_COUNT"
+
 LATEST_TASK_UPDATE="$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c \
   "select max(updated_at) from public.task_instances;")"
 if [ -z "$LATEST_TASK_UPDATE" ]; then
@@ -263,4 +312,4 @@ if [ -z "$LATEST_TASK_UPDATE" ]; then
 fi
 printf 'Representative task timestamp: %s\n' "$LATEST_TASK_UPDATE"
 
-echo "RESULT: PASS — encrypted Supabase logical bundle decrypted, restored into a fresh disposable Supabase environment, and schema/data sanity checks passed."
+echo "RESULT: PASS — encrypted Supabase logical bundle decrypted, restored into a fresh disposable Supabase environment, and household identity/schema/data sanity checks passed."
