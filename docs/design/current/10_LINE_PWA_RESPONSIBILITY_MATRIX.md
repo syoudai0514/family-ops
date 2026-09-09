@@ -18,6 +18,8 @@ The Requirements Baseline already fixes the product direction:
 
 This matrix makes that existing direction explicit at **material user-scenario level**. It does not invent a new flow and it does not authorize channel-specific business semantics.
 
+The proposed Baseline v1.2 §2.1 product-outcome rule applies across this matrix: channel classification exists to improve actual family operation, not to make implementation easier. A technically convenient hand-off that makes a normal family flow slower, harder to understand, or dependent on PWA contrary to approved UX is a regression, not a valid implementation of this matrix.
+
 ## 2. Responsibility labels
 
 ### `LINE MUST complete`
@@ -28,9 +30,13 @@ The normal material scenario must be completable in LINE without forcing the use
 
 LINE may surface, initiate, or collect state for the scenario, but may deep-link to the **concrete PWA target** when richer review/editing is appropriate. The hand-off must preserve the exact household/entity/attempt/candidate/context and must reuse the same canonical command semantics. It must not dump the user at a generic PWA home screen.
 
+`MAY hand off` does not mean “LINE implementation may be omitted.” Where the row or its authority preserves a valid LINE path, that path remains required. PWA is used because richer review genuinely helps the user, not because the LINE implementation is unfinished or technically inconvenient.
+
 ### `PWA ONLY`
 
 The material management/detail scenario belongs to PWA. LINE may show a summary, warning, notification, or deep link, but does not need a duplicate full editing UI. `PWA ONLY` is a **surface responsibility**, never permission for PWA-only business truth.
+
+A scenario must not drift into `PWA ONLY` merely because a current implementation does not yet support its approved LINE responsibility. Reclassification is a product-governance change and requires explicit review against the Requirements Baseline and approved UX.
 
 ## 3. Cross-channel invariant — applies to every row
 
@@ -41,8 +47,23 @@ The material management/detail scenario belongs to PWA. LINE may show a summary,
 5. LINE-to-PWA hand-off uses a concrete deep link and preserves entered state.
 6. PWA save success stays in PWA; it does not self-echo a generic success message to the same user's LINE.
 7. Current protected human values are not silently replaced by Google/image/AI candidates on either channel.
+8. Channel implementation must preserve the approved normal-case UX. A finding fix, technical limitation, or architecture preference must not increase routine steps, notification noise, cognitive load, or PWA dependence unless the canonical product requirements are explicitly changed first.
 
-Authority: Requirements Baseline §§3, 7.6, 15, 23 and Appendix A Q4, Q36, Q78-Q79; `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`; approved final UX contract §§5, 7, 11, 13-16.
+Authority: Requirements Baseline §§2.1, 3, 7.6, 15, 23 and Appendix A Q4, Q36, Q78-Q79; `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`; approved final UX contract §§1-5, 7, 11, 13-16.
+
+### 3.1 Real-use acceptance guard
+
+Before any row is considered implemented, verify the relevant family flow end-to-end:
+
+`Family Ops purpose → Requirement/Q → approved UX/current design → current implementation → test/evidence → real LINE/PWA use`
+
+The result is **NO-GO** if the technical implementation matches a command/schema/test contract but the family experience regresses. In particular:
+
+- a `LINE MUST complete` row cannot silently become “LINE starts, PWA finishes”;
+- a `PWA MAY hand off` row cannot use PWA as a fallback for missing required LINE behavior;
+- a `PWA ONLY` row cannot absorb an ordinary daily operation that the Baseline or approved UX keeps on LINE;
+- a deep link cannot replace required LINE information by hiding it behind a count or generic destination;
+- a channel split cannot create two business truths, two parsers, or inconsistent correction/history semantics.
 
 ## 4. Scenario matrix
 
