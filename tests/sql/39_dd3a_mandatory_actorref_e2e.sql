@@ -151,8 +151,9 @@ begin
     raise exception 'FAIL mandatory e2e: audit actor is not semantic test mama';
   end if;
 
-  -- 7. Consultation confirms exact terms once as real papa ActorRef and once as
-  -- simulated mama ActorRef. Authentication operator remains the same user.
+  -- 7. Consultation stores proposed terms without silently confirming them.
+  -- Papa then explicitly confirms the exact revision; only after simulated mama
+  -- confirms the same revision does the agreement become accepted.
   v_result := private.fn_command_create_light_request_v1(
     v_household, v_operator, v_papa, v_context, v_mama,
     '相談テスト', null, now() + interval '1 day', gen_random_uuid(), 'pwa'
@@ -165,26 +166,38 @@ begin
     v_consult_request, v_consult_attempt, 'consult', null,
     1, 1, gen_random_uuid(), 'pwa'
   );
-  perform private.fn_command_transition_request_attempt_v1(
+  v_result := private.fn_command_transition_request_attempt_v1(
     v_household, v_operator, v_papa, v_context,
     v_consult_request, v_consult_attempt, 'edit_terms', v_terms,
     2, 1, gen_random_uuid(), 'pwa'
   );
 
-  if not exists (
-    select 1 from public.request_attempt_confirmations c
-    where c.attempt_id = v_consult_attempt
-      and c.terms_revision = 2
-      and c.actor_ref_id = v_papa
-      and c.test_context_id = v_context
-  ) then
-    raise exception 'FAIL mandatory e2e: proposer papa confirmation missing';
+  if v_result->>'state' <> 'consulting'
+     or (select count(*) from public.request_attempt_confirmations c
+         where c.attempt_id = v_consult_attempt and c.terms_revision = 2) <> 0 then
+    raise exception 'FAIL mandatory e2e: proposal silently confirmed terms';
+  end if;
+
+  v_result := private.fn_command_transition_request_attempt_v1(
+    v_household, v_operator, v_papa, v_context,
+    v_consult_request, v_consult_attempt, 'confirm_terms', null,
+    3, 2, gen_random_uuid(), 'pwa'
+  );
+  if v_result->>'state' <> 'awaiting_confirmation'
+     or not exists (
+       select 1 from public.request_attempt_confirmations c
+       where c.attempt_id = v_consult_attempt
+         and c.terms_revision = 2
+         and c.actor_ref_id = v_papa
+         and c.test_context_id = v_context
+     ) then
+    raise exception 'FAIL mandatory e2e: explicit papa confirmation missing';
   end if;
 
   v_result := private.fn_command_transition_request_attempt_v1(
     v_household, v_operator, v_mama, v_context,
     v_consult_request, v_consult_attempt, 'confirm_terms', null,
-    3, 2, gen_random_uuid(), 'line'
+    4, 2, gen_random_uuid(), 'line'
   );
   v_consult_task := (v_result->>'linked_task_id')::uuid;
 
@@ -195,7 +208,7 @@ begin
   end if;
   if (select state from public.request_attempts where id = v_consult_attempt) <> 'accepted'
      or v_consult_task is null then
-    raise exception 'FAIL mandatory e2e: both confirmations did not establish agreement once';
+    raise exception 'FAIL mandatory e2e: both explicit confirmations did not establish agreement once';
   end if;
 
   -- 8. Test delivery and semantic labels say 🧪 mama; they never say the real
