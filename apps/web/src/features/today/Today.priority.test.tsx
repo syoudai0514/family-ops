@@ -39,11 +39,13 @@ function data(overrides: Record<string, unknown> = {}) {
   return {
     status: 'ready', loading: false, refreshing: false, error: null, lastUpdatedAt: Date.now(),
     urgentActions: [{ kind: 'assignment_needed', task_id: 'urgent-1', title: '担当を決める' }],
+    exceptions: [{ kind: 'schedule_change', event_id: 'exception-1', title: '保育園が短縮' }],
     tasks: [morning, evening],
     taskGroups: { morning: [morning], daytime: [], evening: [evening], optional: [] },
     waitingTasks: [waiting], waitingRefsByTaskId: new Map(), carryoverTasks: [], alreadyHandledTasks: [],
     subtasksByTaskId: new Map(), executionTargetsByTaskId: new Map(), incomingRequests: [], requestAttemptsByRequestId: new Map(),
-    unreadHandovers: [], openShoppingItems: [], briefSchedule: [], partnerSummary: {},
+    unreadHandovers: [], openShoppingItems: [], briefSchedule: [],
+    partnerSummary: { open_assigned: 2, completed_today: 1, critical_items: [] },
     reconciliation: { sessions: [], remaining_count: 0, actionable: false },
     tomorrowImpact: {
       local_date: '2026-09-10', task_count: 1, schedule_count: 1, carryover_count: 0, impact_count: 2,
@@ -74,7 +76,7 @@ describe('Today first-flow priority contract', () => {
     mockClock.mockReturnValue({ now: new Date('2026-09-09T11:00:00Z'), localDate: '2026-09-09', daypart: 'evening' });
   });
 
-  it('keeps 要対応 / 残り / 待ち / 明日影響 visible before the detailed flow and preserves evening priority', () => {
+  it('keeps 要対応 / 残り / 待ち / 明日影響 visible and material DailyBrief semantics in priority order', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
 
     const summary = screen.getByRole('region', { name: '今日の重要サマリー' });
@@ -83,18 +85,26 @@ describe('Today first-flow priority contract', () => {
     expect(summary).toHaveTextContent('待ち 1');
     expect(summary).toHaveTextContent('明日影響 2');
 
+    const decisionSection = screen.getByRole('region', { name: 'まず確認' });
+    const exceptionSection = screen.getByRole('region', { name: 'いつもと違う' });
     const waitingSection = screen.getByRole('region', { name: '待ち・確認' });
     const remainingHeading = screen.getByRole('heading', { name: 'まだ残っていること' });
     const tomorrowSection = screen.getByRole('region', { name: '明日に影響' });
     const morningSummary = screen.getByRole('region', { name: '朝の完了まとめ' });
+
+    expect(exceptionSection).toHaveTextContent('保育園が短縮');
+    expect(screen.getByRole('region', { name: '相手の今日' })).toHaveTextContent('残り 2件・完了 1件');
+    expect(decisionSection.compareDocumentPosition(exceptionSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(exceptionSection.compareDocumentPosition(waitingSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(waitingSection.compareDocumentPosition(remainingHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tomorrowSection.compareDocumentPosition(morningSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('does not render the Empty success surface while the separate pending-action controller is still loading', () => {
     mockToday.mockReturnValue(data({
-      status: 'empty', urgentActions: [], tasks: [],
+      status: 'empty', urgentActions: [], exceptions: [], tasks: [],
       taskGroups: { morning: [], daytime: [], evening: [], optional: [] }, waitingTasks: [],
+      partnerSummary: {},
       tomorrowImpact: { task_count: 0, schedule_count: 0, carryover_count: 0, impact_count: 0, tasks: [], schedule: [], carryovers: [] },
       morningSummary: { completedCount: 0, totalCount: 0 },
     }));
