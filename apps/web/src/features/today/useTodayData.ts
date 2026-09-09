@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { todayIsoDate } from '../../lib/date';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type {
   Handover,
@@ -9,6 +8,7 @@ import type {
   TaskInstance,
   TaskSubtaskInstance,
 } from '../../lib/types';
+import { tokyoLocalDate } from './todayClock';
 
 export interface TaskExecutionTarget {
   id: string;
@@ -48,18 +48,111 @@ export interface DailyBriefScheduleItem {
   all_day_end_exclusive: string | null;
 }
 
+export interface DailyBriefAction {
+  kind?: string;
+  request_id?: string;
+  attempt_id?: string;
+  attempt_kind?: string;
+  state?: TodayRequestAttempt['state'];
+  title?: string | null;
+  message?: string | null;
+  task_id?: string;
+  revision?: number;
+  request_revision?: number;
+  terms_revision?: number;
+  reply_due_at?: string | null;
+  due_at?: string | null;
+  agreement_established?: boolean;
+}
+
+export interface DailyBriefWaitingRef {
+  task_id: string;
+  waiting_note?: string | null;
+  next_check_at?: string | null;
+  hard_due_at?: string | null;
+  hard_due_risk?: boolean;
+}
+
+interface DailyBriefTaskRef {
+  task_id: string;
+  title?: string | null;
+  due_at?: string | null;
+}
+
+interface DailyBriefTaskGroups {
+  morning?: DailyBriefTaskRef[];
+  daytime?: DailyBriefTaskRef[];
+  evening?: DailyBriefTaskRef[];
+  optional?: DailyBriefTaskRef[];
+}
+
+export interface DailyBriefPartnerCriticalItem {
+  task_id: string;
+  title: string;
+  task_kind?: string;
+  due_at?: string | null;
+  revision?: number;
+}
+
+export interface DailyBriefPartnerSummary {
+  open_assigned?: number;
+  waiting?: number;
+  completed_today?: number;
+  critical_items?: DailyBriefPartnerCriticalItem[];
+}
+
+export interface DailyBriefReconciliation {
+  sessions: Array<{
+    session_id?: string;
+    session_type?: string;
+    status?: string;
+    remaining_count?: number;
+  }>;
+  remaining_count: number;
+  actionable: boolean;
+}
+
+export interface DailyBriefTomorrowImpact {
+  local_date?: string;
+  task_count: number;
+  schedule_count: number;
+  carryover_count: number;
+  impact_count: number;
+  tasks: DailyBriefTaskRef[];
+  schedule: DailyBriefScheduleItem[];
+  carryovers: DailyBriefTaskRef[];
+}
+
 interface DailyBriefPayload {
-  tasks?: Array<{ task_id: string }>;
-  carryover?: Array<{ task_id: string }>;
-  already_handled?: Array<{ task_id?: string }>;
-  urgent_actions?: Array<{ request_id: string }>;
+  tasks?: DailyBriefTaskRef[];
+  carryover?: DailyBriefTaskRef[];
+  carryovers?: DailyBriefTaskRef[];
+  already_handled?: DailyBriefTaskRef[];
+  urgent_actions?: DailyBriefAction[];
+  waiting_checks?: DailyBriefWaitingRef[];
   handovers?: Array<{ handover_id: string }>;
+  active_infos?: Array<{ handover_id: string }>;
   shopping?: Array<{ shopping_item_id: string }>;
   schedule?: DailyBriefScheduleItem[];
+  own_task_groups?: DailyBriefTaskGroups;
+  partner_summary?: DailyBriefPartnerSummary;
+  reconciliation?: DailyBriefReconciliation;
+  tomorrow_impact?: DailyBriefTomorrowImpact;
+}
+
+export interface TodayTaskGroups {
+  morning: TodayTaskInstance[];
+  daytime: TodayTaskInstance[];
+  evening: TodayTaskInstance[];
+  optional: TodayTaskInstance[];
 }
 
 interface TodaySnapshot {
+  urgentActions: DailyBriefAction[];
   tasks: TodayTaskInstance[];
+  taskGroups: TodayTaskGroups;
+  waitingTasks: TodayTaskInstance[];
+  waitingRefsByTaskId: Map<string, DailyBriefWaitingRef>;
   carryoverTasks: TodayTaskInstance[];
   alreadyHandledTasks: TodayTaskInstance[];
   subtasksByTaskId: Map<string, TaskSubtaskInstance[]>;
@@ -69,6 +162,9 @@ interface TodaySnapshot {
   unreadHandovers: Handover[];
   openShoppingItems: ShoppingItem[];
   briefSchedule: DailyBriefScheduleItem[];
+  partnerSummary: DailyBriefPartnerSummary;
+  reconciliation: DailyBriefReconciliation;
+  tomorrowImpact: DailyBriefTomorrowImpact;
 }
 
 export interface TodayData extends TodaySnapshot {
@@ -80,35 +176,66 @@ export interface TodayData extends TodaySnapshot {
   refresh: () => Promise<void>;
 }
 
-const EMPTY_SNAPSHOT: TodaySnapshot = {
+const EMPTY_GROUPS: TodayTaskGroups = { morning: [], daytime: [], evening: [], optional: [] };
+const EMPTY_RECONCILIATION: DailyBriefReconciliation = { sessions: [], remaining_count: 0, actionable: false };
+const EMPTY_TOMORROW: DailyBriefTomorrowImpact = {
+  task_count: 0,
+  schedule_count: 0,
+  carryover_count: 0,
+  impact_count: 0,
   tasks: [],
-  carryoverTasks: [],
-  alreadyHandledTasks: [],
-  subtasksByTaskId: new Map(),
-  executionTargetsByTaskId: new Map(),
-  incomingRequests: [],
-  requestAttemptsByRequestId: new Map(),
-  unreadHandovers: [],
-  openShoppingItems: [],
-  briefSchedule: [],
+  schedule: [],
+  carryovers: [],
 };
 
+function emptySnapshot(): TodaySnapshot {
+  return {
+    urgentActions: [],
+    tasks: [],
+    taskGroups: EMPTY_GROUPS,
+    waitingTasks: [],
+    waitingRefsByTaskId: new Map(),
+    carryoverTasks: [],
+    alreadyHandledTasks: [],
+    subtasksByTaskId: new Map(),
+    executionTargetsByTaskId: new Map(),
+    incomingRequests: [],
+    requestAttemptsByRequestId: new Map(),
+    unreadHandovers: [],
+    openShoppingItems: [],
+    briefSchedule: [],
+    partnerSummary: {},
+    reconciliation: EMPTY_RECONCILIATION,
+    tomorrowImpact: EMPTY_TOMORROW,
+  };
+}
+
 function isSnapshotEmpty(snapshot: TodaySnapshot) {
-  return snapshot.tasks.length === 0
+  return snapshot.urgentActions.length === 0
+    && snapshot.tasks.length === 0
+    && snapshot.waitingTasks.length === 0
     && snapshot.carryoverTasks.length === 0
     && snapshot.alreadyHandledTasks.length === 0
     && snapshot.incomingRequests.length === 0
     && snapshot.unreadHandovers.length === 0
     && snapshot.openShoppingItems.length === 0
-    && snapshot.briefSchedule.length === 0;
+    && snapshot.briefSchedule.length === 0
+    && (snapshot.partnerSummary.critical_items?.length ?? 0) === 0
+    && snapshot.reconciliation.remaining_count === 0
+    && snapshot.tomorrowImpact.impact_count === 0;
 }
 
 function unique(values: Array<string | undefined>) {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
+function orderedRows<T extends { id: string }>(ids: string[], rows: T[]) {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return ids.map((id) => byId.get(id)).filter((row): row is T => Boolean(row));
+}
+
 export function useTodayData(householdId: string | null, userId: string | null): TodayData {
-  const [snapshot, setSnapshot] = useState<TodaySnapshot>(EMPTY_SNAPSHOT);
+  const [snapshot, setSnapshot] = useState<TodaySnapshot>(() => emptySnapshot());
   const [status, setStatus] = useState<TodayLoadState>('loading');
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,10 +245,13 @@ export function useTodayData(householdId: string | null, userId: string | null):
 
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
+
+    // Missing auth/household context is not evidence that Today is empty.
+    // The parent context can still be resolving, so only a successful
+    // DailyBrief read may transition to Empty.
     if (!householdId || !userId) {
       if (sequence === requestSequence.current) {
-        setSnapshot(EMPTY_SNAPSHOT);
-        setStatus('empty');
+        setStatus('loading');
         setRefreshing(false);
         setError(null);
       }
@@ -134,54 +264,55 @@ export function useTodayData(householdId: string | null, userId: string | null):
 
     try {
       const { data: briefData, error: briefError } = await supabase.rpc('get_my_daily_brief', {
-        p_local_date: todayIsoDate(),
+        p_local_date: tokyoLocalDate(new Date()),
       });
       if (briefError) throw briefError;
       const brief = (briefData ?? {}) as DailyBriefPayload;
 
       const taskIds = unique((brief.tasks ?? []).map((item) => item.task_id));
-      const carryoverIds = unique((brief.carryover ?? []).map((item) => item.task_id));
+      const waitingRefs = brief.waiting_checks ?? [];
+      const waitingIds = unique(waitingRefs.map((item) => item.task_id));
+      const carryoverRefs = brief.carryovers ?? brief.carryover ?? [];
+      const carryoverIds = unique(carryoverRefs.map((item) => item.task_id));
       const handledIds = unique((brief.already_handled ?? []).map((item) => item.task_id));
-      const allTaskIds = unique([...taskIds, ...carryoverIds, ...handledIds]);
-      const requestIds = unique((brief.urgent_actions ?? []).map((item) => item.request_id));
-      const handoverIds = unique((brief.handovers ?? []).map((item) => item.handover_id));
+      const groupRefs = brief.own_task_groups ?? {};
+      const groupedIds = unique([
+        ...(groupRefs.morning ?? []).map((item) => item.task_id),
+        ...(groupRefs.daytime ?? []).map((item) => item.task_id),
+        ...(groupRefs.evening ?? []).map((item) => item.task_id),
+        ...(groupRefs.optional ?? []).map((item) => item.task_id),
+      ]);
+      const allTaskIds = unique([...taskIds, ...waitingIds, ...carryoverIds, ...handledIds, ...groupedIds]);
+
+      const urgentActions = brief.urgent_actions ?? [];
+      const requestActions = urgentActions.filter((item) => Boolean(item.request_id && item.attempt_id));
+      const requestIds = unique(requestActions.map((item) => item.request_id));
+      const handoverRefs = brief.active_infos ?? brief.handovers ?? [];
+      const handoverIds = unique(handoverRefs.map((item) => item.handover_id));
       const shoppingIds = unique((brief.shopping ?? []).map((item) => item.shopping_item_id));
 
-      const [taskRes, requestRes, attemptRes, handoverRes, shoppingRes] = await Promise.all([
+      const [taskRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
         allTaskIds.length
           ? supabase.from('task_instances').select('*').in('id', allTaskIds)
           : Promise.resolve({ data: [] as TodayTaskInstance[], error: null }),
         requestIds.length
-          ? supabase.from('requests').select('*').in('id', requestIds).order('due_at', { ascending: true, nullsFirst: false })
+          ? supabase.from('requests').select('*').in('id', requestIds)
           : Promise.resolve({ data: [] as RequestRow[], error: null }),
-        requestIds.length
-          ? supabase.from('request_attempts')
-              .select('id, request_id, state, revision, terms_revision, reply_due_at, created_at')
-              .in('request_id', requestIds)
-              .is('test_context_id', null)
-              .order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] as TodayRequestAttempt[], error: null }),
         handoverIds.length
-          ? supabase.from('handovers').select('*').in('id', handoverIds).order('created_at', { ascending: false })
+          ? supabase.from('handovers').select('*').in('id', handoverIds)
           : Promise.resolve({ data: [] as Handover[], error: null }),
         shoppingIds.length
-          ? supabase.from('shopping_items').select('*').in('id', shoppingIds).order('due_at', { ascending: true, nullsFirst: false })
+          ? supabase.from('shopping_items').select('*').in('id', shoppingIds)
           : Promise.resolve({ data: [] as ShoppingItem[], error: null }),
       ]);
 
-      for (const result of [taskRes, requestRes, attemptRes, handoverRes, shoppingRes]) {
+      for (const result of [taskRes, requestRes, handoverRes, shoppingRes]) {
         if (result.error) throw result.error;
       }
 
-      const taskById = new Map(((taskRes.data ?? []) as TodayTaskInstance[]).map((task) => [task.id, task]));
-      const latestAttemptByRequestId = new Map<string, TodayRequestAttempt>();
-      for (const attempt of (attemptRes.data ?? []) as TodayRequestAttempt[]) {
-        if (!latestAttemptByRequestId.has(attempt.request_id)) latestAttemptByRequestId.set(attempt.request_id, attempt);
-      }
-
-      const visibleTasks = unique([...taskIds, ...carryoverIds, ...handledIds])
-        .map((id) => taskById.get(id))
-        .filter((task): task is TodayTaskInstance => Boolean(task));
+      const taskRows = (taskRes.data ?? []) as TodayTaskInstance[];
+      const taskById = new Map(taskRows.map((task) => [task.id, task]));
+      const visibleTasks = allTaskIds.map((id) => taskById.get(id)).filter((task): task is TodayTaskInstance => Boolean(task));
       const subtaskTaskIds = visibleTasks.filter((task) => task.completion_mode === 'subtasks').map((task) => task.id);
 
       const [subtaskRes, targetRes] = await Promise.all([
@@ -207,18 +338,45 @@ export function useTodayData(householdId: string | null, userId: string | null):
         .map((id) => taskById.get(id))
         .filter((task): task is TodayTaskInstance => Boolean(task))
         .map((task) => ({ ...task, execution_target: targetMap.get(task.id) ?? null }));
+      const groupHydrate = (refs?: DailyBriefTaskRef[]) => hydrate(unique((refs ?? []).map((item) => item.task_id)));
 
+      const attemptMap = new Map<string, TodayRequestAttempt>();
+      for (const item of requestActions) {
+        if (!item.request_id || !item.attempt_id || !item.state) continue;
+        attemptMap.set(item.request_id, {
+          id: item.attempt_id,
+          request_id: item.request_id,
+          state: item.state,
+          revision: item.revision ?? 0,
+          terms_revision: item.terms_revision ?? 0,
+          reply_due_at: item.reply_due_at ?? null,
+        });
+      }
+
+      const requestRows = (requestRes.data ?? []) as RequestRow[];
       const nextSnapshot: TodaySnapshot = {
+        urgentActions,
         tasks: hydrate(taskIds),
+        taskGroups: {
+          morning: groupHydrate(groupRefs.morning),
+          daytime: groupHydrate(groupRefs.daytime),
+          evening: groupHydrate(groupRefs.evening),
+          optional: groupHydrate(groupRefs.optional),
+        },
+        waitingTasks: hydrate(waitingIds),
+        waitingRefsByTaskId: new Map(waitingRefs.map((item) => [item.task_id, item])),
         carryoverTasks: hydrate(carryoverIds),
         alreadyHandledTasks: hydrate(handledIds),
         subtasksByTaskId: groupedSubtasks,
         executionTargetsByTaskId: targetMap,
-        incomingRequests: (requestRes.data ?? []) as RequestRow[],
-        requestAttemptsByRequestId: latestAttemptByRequestId,
-        unreadHandovers: (handoverRes.data ?? []) as Handover[],
-        openShoppingItems: (shoppingRes.data ?? []) as ShoppingItem[],
+        incomingRequests: orderedRows(requestIds, requestRows),
+        requestAttemptsByRequestId: attemptMap,
+        unreadHandovers: orderedRows(handoverIds, (handoverRes.data ?? []) as Handover[]),
+        openShoppingItems: orderedRows(shoppingIds, (shoppingRes.data ?? []) as ShoppingItem[]),
         briefSchedule: brief.schedule ?? [],
+        partnerSummary: brief.partner_summary ?? {},
+        reconciliation: brief.reconciliation ?? EMPTY_RECONCILIATION,
+        tomorrowImpact: brief.tomorrow_impact ?? EMPTY_TOMORROW,
       };
 
       if (sequence !== requestSequence.current) return;
@@ -238,7 +396,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
 
   useEffect(() => {
     hasSuccessfulSnapshot.current = false;
-    setSnapshot(EMPTY_SNAPSHOT);
+    setSnapshot(emptySnapshot());
     setLastUpdatedAt(null);
     void load();
   }, [load]);
