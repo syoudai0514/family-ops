@@ -115,6 +115,19 @@ describe('Q107-Q109 anyone-owner state-transition interaction evidence', () => {
     expect(await screen.findByText(/現在: まだ誰も対応中ではありません/)).toBeInTheDocument();
   });
 
-  it.todo('Q108 approved UX identifies the current claimant (現在○○が対応中) before takeover; CURRENT only says 家族が対応中');
-  it.todo('Q109 approved UX labels the claimant release action 手放す and separately proves deadline arrival never auto-releases the claim');
+  it.fails('Q108 approved UX identifies the actual current claimant instead of generic 家族 before takeover', async () => {
+    rpc.mockResolvedValueOnce(workspace('partner'));
+    renderPage();
+
+    const status = await screen.findByText(/現在:/);
+    expect(status).not.toHaveTextContent('家族が対応中');
+    expect(screen.getByRole('button', { name: '引き継ぐ' })).toBeInTheDocument();
+  });
+
+  it.fails('Q109 approved UX labels the explicit claimant release action 手放す', async () => {
+    rpc.mockResolvedValueOnce(workspace('me'));
+    renderPage();
+
+    expect(await screen.findByRole('button', { name: '手放す' })).toBeInTheDocument();
+  });
 });
