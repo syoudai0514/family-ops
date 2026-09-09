@@ -54,13 +54,15 @@ if (!fs.existsSync(evidencePath)) {
   if (!process.exitCode) {
     const results = assessEvidence(cf14Scenarios, payload.records, { strict: true });
     const failed = results.filter((result) => result.result !== 'PASS');
+    const blocked = results.filter((result) => result.acceptanceBlocked);
     console.table(results.map((result) => ({
       scenario: result.scenarioId,
       result: result.result,
       missing: result.missingEvidenceClasses.join(','),
+      acceptanceBlocker: result.acceptanceBlocked ? result.blockingReason : '',
     })));
     if (failed.length > 0) {
-      fail(`${failed.length}/${results.length} scenarios lack required evidence at ${payload.exactHead}`);
+      fail(`${failed.length}/${results.length} scenarios are not acceptable at ${payload.exactHead}; ${blocked.length} still have known Requirement/UX blockers`);
     } else {
       console.log(`CF-14 F2 evidence complete for exact HEAD ${payload.exactHead}.`);
     }
