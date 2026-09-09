@@ -38,12 +38,16 @@ begin
   v_household_id := (v_context->>'household_id')::uuid;
   v_actor_ref_id := (v_context->>'actor_ref_id')::uuid;
 
+  if p_recipient_user_id = p_actor_id then
+    raise exception 'INVALID_INPUT';
+  end if;
+
   select a.id into v_recipient_actor_ref_id
   from public.domain_actor_refs a
   where a.household_id = v_household_id
     and a.actor_kind = 'real_user'
     and a.real_user_id = p_recipient_user_id;
-  if v_recipient_actor_ref_id is null or p_recipient_user_id = p_actor_id then
+  if v_recipient_actor_ref_id is null then
     raise exception 'CROSS_HOUSEHOLD_RESOURCE';
   end if;
 
