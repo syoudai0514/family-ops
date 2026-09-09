@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TomorrowPreparationCard } from './TomorrowPreparationCard';
 import { callEdgeFunction } from '../../lib/apiClient';
@@ -30,13 +30,14 @@ describe('TomorrowPreparationCard', () => {
     );
 
     fireEvent.change(screen.getByRole('textbox', { name: '明日の準備' }), { target: { value: '水着' } });
-    fireEvent.click(screen.getByRole('button', { name: '明日に追加' }));
-
-    await waitFor(() => {
-      expect(callEdgeFunction).toHaveBeenCalledWith(
-        EDGE_FUNCTIONS.createHandover,
-        expect.objectContaining({ title: '水着', scheduled_date: '2026-09-10' }),
-      );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '明日に追加' }));
+      await Promise.resolve();
     });
+
+    expect(callEdgeFunction).toHaveBeenCalledWith(
+      EDGE_FUNCTIONS.createHandover,
+      expect.objectContaining({ title: '水着', scheduled_date: '2026-09-10' }),
+    );
   });
 });
