@@ -26,8 +26,7 @@ jobs:
           from pathlib import Path
           import re
 
-          # 1) LINE presentation: duplicates get the approved three choices and
-          # the group cannot be confirmed until every matched candidate decides.
+          # LINE presentation: approved duplicate three-choice UX.
           builder_path = Path('supabase/functions/process-line-inbox/lineUxBuilders.ts')
           builder = builder_path.read_text()
           pattern = re.compile(r'export function buildMultiIntentPreviewFlex\(data: \{.*?\n\}\n\nexport function buildIntentClarificationFlex', re.S)
@@ -108,37 +107,37 @@ jobs:
           assert count == 1, f'buildMultiIntentPreviewFlex replacement count={count}'
           builder_path.write_text(builder)
 
-          # 2) LINE pending creation/review: persist decision, render it, and
-          # provide a postback handler that only changes sender-private draft data.
+          # Persist and render duplicate decisions in sender-private LINE draft.
           line_path = Path('supabase/functions/process-line-inbox/index.ts')
           line = line_path.read_text()
-          old = '      duplicate_match: candidate.duplicateMatch,\n      status: "draft" as const,'
-          assert line.count(old) == 1, f'duplicate base count={line.count(old)}'
-          line = line.replace(old, '      duplicate_match: candidate.duplicateMatch,\n      duplicate_decision: null,\n      status: "draft" as const,')
+          line, count = re.subn(
+            r'(\s+duplicate_match: candidate\.duplicateMatch,\n)(\s+status: "draft" as const,)',
+            r'\1      duplicate_decision: null,\n\2', line, count=1,
+          )
+          assert count == 1, f'duplicate base count={count}'
 
-          old_map = '''        missingFields: candidate.missing_fields,
-              })),'''
-          new_map = '''        missingFields: candidate.missing_fields,
+          initial_pat = re.compile(
+            r'(candidates: candidates\.map\(\(candidate\) => \(\{\n\s+candidateId: candidate\.candidate_id,\n\s+kind: candidate\.kind,\n\s+title: candidate\.title,\n\s+missingFields: candidate\.missing_fields,)(\n\s+\}\)\),)', re.S)
+          line, count = initial_pat.subn(
+            r'''\1
                 duplicateMatch: Boolean(candidate.duplicate_match),
-                duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
-              })),'''
-          map_count = line.count(old_map)
-          assert map_count == 1, f'initial preview map count={map_count}'
-          line = line.replace(old_map, new_map)
+                duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,\2''',
+            line, count=1,
+          )
+          assert count == 1, f'initial preview map count={count}'
 
-          old_cancel_map = '''        candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
-                missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
-              })),'''
-          new_cancel_map = '''        candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
-                missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+          cancel_pat = re.compile(
+            r'(candidateId: String\(candidate\.candidate_id\), kind: String\(candidate\.kind\), title: String\(candidate\.title\),\n\s+missingFields: Array\.isArray\(candidate\.missing_fields\).*?: \[\],)(\n\s+\}\)\),)', re.S)
+          line, count = cancel_pat.subn(
+            r'''\1
                 duplicateMatch: Boolean(candidate.duplicate_match),
-                duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
-              })),'''
-          assert line.count(old_cancel_map) == 1, f'cancel preview map count={line.count(old_cancel_map)}'
-          line = line.replace(old_cancel_map, new_cancel_map)
+                duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,\2''',
+            line, count=1,
+          )
+          assert count == 1, f'cancel preview map count={count}'
 
           marker = '\nfunction correctionRole(text: string): "papa" | "mama" | "self" | null {'
-          assert line.count(marker) == 1, f'correctionRole marker count={line.count(marker)}'
+          assert line.count(marker) == 1
           resolver = r'''
           async function resolveMultiIntentDuplicate(
             client: SupabaseClient,
@@ -168,8 +167,7 @@ jobs:
               return;
             }
             const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
-              ...pending.normalized_payload,
-              candidates,
+              ...pending.normalized_payload, candidates,
             });
             if (!updated) return;
             const active = candidates.filter((row): row is Record<string, unknown> =>
@@ -196,35 +194,26 @@ jobs:
           '''
           line = line.replace(marker, resolver + marker)
 
-          postback_marker = '''  if (fields.action === "cancel_multi_candidate" && fields.pending_action_id && fields.candidate_id) {
-            await cancelMultiIntentCandidate(client, item, actor, fields.pending_action_id, fields.candidate_id);
+          postback_pat = re.compile(
+            r'(  if \(fields\.action === "cancel_multi_candidate".*?\n  \}\n)', re.S)
+          postback_add = r'''\1
+          if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && fields.candidate_id &&
+              (fields.decision === "existing" || fields.decision === "update" || fields.decision === "separate")) {
+            await resolveMultiIntentDuplicate(client, item, actor, fields.pending_action_id, fields.candidate_id, fields.decision);
             return;
           }
           '''
-          assert line.count(postback_marker) == 1, f'cancel postback marker count={line.count(postback_marker)}'
-          duplicate_postback = postback_marker + '''
-            if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && fields.candidate_id &&
-                (fields.decision === "existing" || fields.decision === "update" || fields.decision === "separate")) {
-              await resolveMultiIntentDuplicate(client, item, actor, fields.pending_action_id, fields.candidate_id, fields.decision);
-              return;
-            }
-          '''
-          line = line.replace(postback_marker, duplicate_postback)
+          line, count = postback_pat.subn(postback_add, line, count=1)
+          assert count == 1, f'duplicate postback insertion count={count}'
           line_path.write_text(line)
 
-          # 3) Execution: unresolved duplicate is fail-closed. Existing is no
-          # write, update calls the CAS-only canonical RPC, separate uses create.
+          # Execution: unresolved is fail-closed; existing=no write; update=CAS;
+          # separate=normal canonical create. No update->create fallback exists.
           pending_path = Path('supabase/functions/process-pending-actions/index.ts')
           pending = pending_path.read_text()
-          old_loop = '''      for (const candidate of candidates) {
-                await execute(client, {
-                  ...item,
-                  action_type: candidate.action_type,
-                  normalized_payload: candidate.payload,
-                  operation_id: candidate.operation_id,
-                });
-              }'''
-          new_loop = '''      for (const candidate of candidates) {
+          loop_pat = re.compile(
+            r'''      for \(const candidate of candidates\) \{\n\s+await execute\(client, \{\n\s+\.\.\.item,\n\s+action_type: candidate\.action_type,\n\s+normalized_payload: candidate\.payload,\n\s+operation_id: candidate\.operation_id,\n\s+\}\);\n\s+\}''')
+          loop_repl = '''      for (const candidate of candidates) {
                 const duplicate = candidate.duplicate_match;
                 const decision = (candidate as typeof candidate & { duplicate_decision?: "existing" | "update" | "separate" | null }).duplicate_decision ?? null;
                 if (duplicate && !decision) throw new Error('multi-intent duplicate still needs a decision');
@@ -251,8 +240,8 @@ jobs:
                   operation_id: candidate.operation_id,
                 });
               }'''
-          assert pending.count(old_loop) == 1, f'multi execution loop count={pending.count(old_loop)}'
-          pending = pending.replace(old_loop, new_loop)
+          pending, count = loop_pat.subn(loop_repl, pending, count=1)
+          assert count == 1, f'multi execution loop count={count}'
           pending_path.write_text(pending)
 
           Path('.github/workflows/lane-b-duplicate-selfpatch.yml').unlink()
