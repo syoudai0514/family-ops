@@ -1,9 +1,8 @@
 // verify_jwt=true (see supabase/config.toml + EDGE_FUNCTION_AUTH_MATRIX.md).
-// Compatibility read for callers that still need the former detailed
-// occurrence/assignment schedule shape. PWA Today no longer calls this Edge
-// function; its semantic source is get_my_daily_brief. The historical
-// server_tx_get_today_schedule name is intentionally reserved for the LINE
-// 「今日」 compatibility adapter over canonical DailyBrief (Lane D CF-02).
+// Compatibility read for callers that still need the established detailed
+// occurrence/assignment schedule shape. PWA Today itself now consumes the
+// canonical DailyBrief; this Edge remains only for callers of the historical
+// schedule contract and therefore delegates to server_tx_get_today_schedule.
 import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { withUserMutationHandler, jsonResponse } from "../_shared/handler.ts";
 import { callServerTx } from "../_shared/rpc.ts";
@@ -14,7 +13,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   const serviceClient = createServiceRoleClient();
   const result = await callServerTx(
     serviceClient,
-    "server_read_today_schedule_legacy_v1",
+    "server_tx_get_today_schedule",
     { p_actor_id: actorId },
   );
 
