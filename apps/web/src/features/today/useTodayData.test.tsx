@@ -93,6 +93,18 @@ describe('useTodayData canonical snapshot states', () => {
     expect(second.result.current.error).toBeNull();
   });
 
+  it('keeps a server-owned morning completion summary out of the Empty state', async () => {
+    rows.task_instances = [];
+    rpc.mockResolvedValueOnce({
+      data: { ...emptyBrief, morning_summary: { completed_count: 2, total_count: 2 } },
+      error: null,
+    });
+    const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.morningSummary).toEqual({ completedCount: 2, totalCount: 2 });
+  });
+
   it('replaces a stale/ready snapshot atomically when a later successful resync returns empty', async () => {
     rpc.mockResolvedValueOnce({ data: populatedBrief, error: null });
     const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
