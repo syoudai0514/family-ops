@@ -83,11 +83,20 @@ if [ "$BACKUP_EPOCH" -gt $((NOW_EPOCH + 300)) ]; then
   exit 1
 fi
 
-AGE_HOURS=$(( (NOW_EPOCH - BACKUP_EPOCH) / 3600 ))
-echo "Latest backup: $BACKUP_FILENAME (age: ${AGE_HOURS}h, threshold: ${MAX_BACKUP_AGE_HOURS}h)"
+AGE_SECONDS=$((NOW_EPOCH - BACKUP_EPOCH))
+# Small accepted future skew is operationally equivalent to age zero.
+if [ "$AGE_SECONDS" -lt 0 ]; then
+  AGE_SECONDS=0
+fi
+MAX_AGE_SECONDS=$((MAX_BACKUP_AGE_HOURS * 3600))
+AGE_HOURS=$((AGE_SECONDS / 3600))
+AGE_MINUTES=$(((AGE_SECONDS % 3600) / 60))
+echo "Latest backup: $BACKUP_FILENAME (age: ${AGE_HOURS}h ${AGE_MINUTES}m, threshold: ${MAX_BACKUP_AGE_HOURS}h)"
 
-if [ "$AGE_HOURS" -gt "$MAX_BACKUP_AGE_HOURS" ]; then
-  echo "ALERT: latest backup is ${AGE_HOURS}h old, exceeding the ${MAX_BACKUP_AGE_HOURS}h freshness threshold." >&2
+# Compare exact elapsed seconds, not floor-truncated hours. Otherwise a backup
+# 26h59m old would incorrectly report age=26h and pass a 26-hour policy.
+if [ "$AGE_SECONDS" -gt "$MAX_AGE_SECONDS" ]; then
+  echo "ALERT: latest backup exceeds the ${MAX_BACKUP_AGE_HOURS}h freshness threshold." >&2
   exit 1
 fi
 
