@@ -69,9 +69,10 @@ jobs:
           s = s[:start] + replacement + s[end:]
 
           old = '  const operationId = await deterministicOperationId("line-text", item.provider_event_id);'
+          idx = s.rfind(old)
+          assert idx >= 0, 'handleText operation id not found'
           new = '''  const operationId = semanticCandidate && !assignmentPayload && !starterKind\n    ? semanticCandidate.operation_id\n    : await deterministicOperationId("line-text", item.provider_event_id);'''
-          assert s.count(old) == 1, ('operation id', s.count(old))
-          s = s.replace(old, new)
+          s = s[:idx] + new + s[idx + len(old):]
 
           p.write_text(s)
 
