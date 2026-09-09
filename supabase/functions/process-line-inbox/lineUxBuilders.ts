@@ -111,7 +111,8 @@ export function buildLineMenuFlex(appBaseUrl: string): Record<string, unknown> {
           },
           {
             type: "text",
-            text: "追加は文章でそのまま送れます。例「牛乳なくなりそう」「金曜のお迎えお願い」",
+            text:
+              "追加は文章でそのまま送れます。例「牛乳なくなりそう」「金曜のお迎えお願い」",
             size: "xxs",
             color: MUTED,
             wrap: true,
@@ -143,7 +144,9 @@ export function buildLineMenuFlex(appBaseUrl: string): Record<string, unknown> {
  * or changed.  It is source/builder-only until provider menu publication is
  * explicitly approved; no provider mutation is performed here.
  */
-export function buildLineManagementFlex(appBaseUrl: string): Record<string, unknown> {
+export function buildLineManagementFlex(
+  appBaseUrl: string,
+): Record<string, unknown> {
   const base = appBaseUrl.replace(/\/$/, "");
   const link = (label: string, path: string): Record<string, unknown> => ({
     type: "button",
@@ -162,7 +165,12 @@ export function buildLineManagementFlex(appBaseUrl: string): Record<string, unkn
         layout: "vertical",
         paddingAll: "11px",
         backgroundColor: "#F2FBF7",
-        contents: [{ type: "text", text: "その他・管理", weight: "bold", color: TEXT }],
+        contents: [{
+          type: "text",
+          text: "その他・管理",
+          weight: "bold",
+          color: TEXT,
+        }],
       },
       body: {
         type: "box",
@@ -170,9 +178,33 @@ export function buildLineManagementFlex(appBaseUrl: string): Record<string, unkn
         spacing: "xs",
         paddingAll: "9px",
         contents: [
-          { type: "box", layout: "horizontal", spacing: "xs", contents: [link("家族の予定", "/month"), link("イベント・準備", "/week")] },
-          { type: "box", layout: "horizontal", spacing: "xs", contents: [link("買い物", "/shopping"), link("担当・曜日ルール", "/settings/routines")] },
-          { type: "box", layout: "horizontal", spacing: "xs", contents: [link("履歴・実績", "/history"), link("設定", "/settings")] },
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "xs",
+            contents: [
+              link("家族の予定", "/month"),
+              link("イベント・準備", "/week"),
+            ],
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "xs",
+            contents: [
+              link("買い物", "/shopping"),
+              link("担当・曜日ルール", "/settings/routines"),
+            ],
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "xs",
+            contents: [
+              link("履歴・実績", "/history"),
+              link("設定", "/settings"),
+            ],
+          },
         ],
       },
       footer: {
@@ -199,23 +231,47 @@ export function buildLineAddFlex(): Record<string, unknown> {
         spacing: "sm",
         paddingAll: "12px",
         contents: [
-          { type: "text", text: "追加", weight: "bold", size: "lg", color: TEXT },
           {
             type: "text",
-            text: "まずは文章でそのまま送れます。例「牛乳なくなりそう」「金曜のお迎えお願い」",
-            size: "sm", color: TEXT, wrap: true,
+            text: "追加",
+            weight: "bold",
+            size: "lg",
+            color: TEXT,
+          },
+          {
+            type: "text",
+            text:
+              "まずは文章でそのまま送れます。例「牛乳なくなりそう」「金曜のお迎えお願い」",
+            size: "sm",
+            color: TEXT,
+            wrap: true,
           },
           { type: "separator", color: BORDER },
-          { type: "text", text: "種類を先に選ぶこともできます", size: "xs", color: MUTED },
-          { type: "box", layout: "horizontal", spacing: "xs", contents: [
-            messageButton("予定", "予定を追加したい"),
-            messageButton("タスク", "タスクを追加したい"),
-          ] },
-          { type: "box", layout: "horizontal", spacing: "xs", contents: [
-            messageButton("買い物", "買い物を追加したい"),
-            messageButton("共有", "共有"),
-            messageButton("お願い", "お願いを送りたい"),
-          ] },
+          {
+            type: "text",
+            text: "種類を先に選ぶこともできます",
+            size: "xs",
+            color: MUTED,
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "xs",
+            contents: [
+              messageButton("予定", "予定を追加したい"),
+              messageButton("タスク", "タスクを追加したい"),
+            ],
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "xs",
+            contents: [
+              messageButton("買い物", "買い物を追加したい"),
+              messageButton("共有", "共有"),
+              messageButton("お願い", "お願いを送りたい"),
+            ],
+          },
         ],
       },
     },
@@ -233,63 +289,173 @@ export function buildMultiIntentPreviewFlex(data: {
     duplicateDecision?: "existing" | "update" | "separate" | null;
   }>;
 }): Record<string, unknown> {
-  const label = (kind: string): string => ({ share: "共有", task: "タスク", shopping: "買い物", request: "お願い", actual: "実績" }[kind] ?? "候補");
-  const duplicateButton = (candidateId: string, labelText: string, decision: string) => ({
-    type: "button", style: "secondary", height: "sm",
+  const label = (
+    kind: string,
+  ): string => ({
+    share: "共有",
+    task: "タスク",
+    shopping: "買い物",
+    request: "お願い",
+    actual: "実績",
+  }[kind] ?? "候補");
+  const duplicateButton = (
+    candidateId: string,
+    labelText: string,
+    decision: string,
+  ) => ({
+    type: "button",
+    style: "secondary",
+    height: "sm",
     action: {
-      type: "postback", label: labelText,
-      data: `action=resolve_multi_duplicate&pending_action_id=${data.pendingActionId}&candidate_id=${candidateId}&decision=${decision}`,
+      type: "postback",
+      label: labelText,
+      data:
+        `action=resolve_multi_duplicate&pending_action_id=${data.pendingActionId}&candidate_id=${candidateId}&decision=${decision}`,
       displayText: labelText,
     },
   });
-  const lines: Record<string, unknown>[] = data.candidates.slice(0, 5).flatMap((candidate) => [
+  const lines: Record<string, unknown>[] = data.candidates.slice(0, 5).flatMap((
+    candidate,
+  ) => [
     row(label(candidate.kind), candidate.title),
-    ...(candidate.missingFields.length > 0 ? [{
-      type: "text", size: "xxs", color: "#B54708", wrap: true,
-      text: `確認が必要: ${candidate.missingFields.join("・")}`,
-    }] : []),
-    ...(candidate.duplicateMatch ? [
-      { type: "text", size: "xxs", color: "#B54708", wrap: true,
-        text: candidate.duplicateDecision
-          ? `重複の扱い: ${candidate.duplicateDecision === "existing" ? "既存を使う" : candidate.duplicateDecision === "update" ? "既存を更新" : "別物として追加"}`
-          : "既存データと一致しています。扱いを選んでください。" },
-      { type: "box", layout: "vertical", spacing: "xs", contents: [
-        duplicateButton(candidate.candidateId, "既存を使う", "existing"),
-        duplicateButton(candidate.candidateId, "既存を更新", "update"),
-        duplicateButton(candidate.candidateId, "別物として追加", "separate"),
-      ] },
-    ] : []),
+    ...(candidate.missingFields.length > 0
+      ? [{
+        type: "text",
+        size: "xxs",
+        color: "#B54708",
+        wrap: true,
+        text: `確認が必要: ${candidate.missingFields.join("・")}`,
+      }]
+      : []),
+    ...(candidate.duplicateMatch
+      ? [
+        {
+          type: "text",
+          size: "xxs",
+          color: "#B54708",
+          wrap: true,
+          text: candidate.duplicateDecision
+            ? `重複の扱い: ${
+              candidate.duplicateDecision === "existing"
+                ? "既存を使う"
+                : candidate.duplicateDecision === "update"
+                ? "既存を更新"
+                : "別物として追加"
+            }`
+            : "既存データと一致しています。扱いを選んでください。",
+        },
+        {
+          type: "box",
+          layout: "vertical",
+          spacing: "xs",
+          contents: [
+            duplicateButton(candidate.candidateId, "既存を使う", "existing"),
+            duplicateButton(candidate.candidateId, "既存を更新", "update"),
+            duplicateButton(
+              candidate.candidateId,
+              "別物として追加",
+              "separate",
+            ),
+          ],
+        },
+      ]
+      : []),
     {
-      type: "button", style: "link", height: "sm",
+      type: "button",
+      style: "link",
+      height: "sm",
       action: {
-        type: "postback", label: `${candidate.title}を取り消す`,
-        data: `action=cancel_multi_candidate&pending_action_id=${data.pendingActionId}&candidate_id=${candidate.candidateId}`,
+        type: "postback",
+        label: `${candidate.title}を取り消す`,
+        data:
+          `action=cancel_multi_candidate&pending_action_id=${data.pendingActionId}&candidate_id=${candidate.candidateId}`,
         displayText: `${candidate.title}を取り消す`,
       },
     },
   ]);
-  const hasMissing = data.candidates.some((candidate) => candidate.missingFields.length > 0);
-  const hasUndecidedDuplicate = data.candidates.some((candidate) => candidate.duplicateMatch && !candidate.duplicateDecision);
+  const hasMissing = data.candidates.some((candidate) =>
+    candidate.missingFields.length > 0
+  );
+  const hasUndecidedDuplicate = data.candidates.some((candidate) =>
+    candidate.duplicateMatch && !candidate.duplicateDecision
+  );
   return {
     type: "flex",
     altText: "読み取った内容を確認してください",
     contents: {
-      type: "bubble", size: "mega",
-      header: { type: "box", layout: "vertical", paddingAll: "11px", backgroundColor: "#F2FBF7", contents: [
-        { type: "text", text: "この内容でよいですか？", weight: "bold", color: TEXT },
-        { type: "text", text: "候補ごとに取り消せます。不明な項目だけ確認します。", size: "xs", color: MUTED, margin: "xs" },
-      ] },
-      body: { type: "box", layout: "vertical", spacing: "xs", paddingAll: "10px", contents: lines },
-      footer: { type: "box", layout: "vertical", spacing: "xs", paddingAll: "5px", contents: [
-        ...((hasMissing || hasUndecidedDuplicate) ? [{
-          type: "text", size: "xs", color: "#B54708", wrap: true,
-          text: hasUndecidedDuplicate ? "重複候補の扱いだけ選んでください。ほかの候補は残ります。" : "不明な箇所だけ教えてください。理解できている内容は残ります。",
-        }] : [{
-          type: "button", style: "primary", color: LINE_GREEN, height: "sm",
-          action: { type: "postback", label: "まとめて登録", data: `action=confirm_pending&pending_action_id=${data.pendingActionId}`, displayText: "まとめて登録" },
-        }]),
-        { type: "button", style: "secondary", height: "sm", action: { type: "postback", label: "全部取り消す", data: `action=cancel_pending&pending_action_id=${data.pendingActionId}`, displayText: "全部取り消す" } },
-      ] },
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "11px",
+        backgroundColor: "#F2FBF7",
+        contents: [
+          {
+            type: "text",
+            text: "この内容でよいですか？",
+            weight: "bold",
+            color: TEXT,
+          },
+          {
+            type: "text",
+            text: "候補ごとに取り消せます。不明な項目だけ確認します。",
+            size: "xs",
+            color: MUTED,
+            margin: "xs",
+          },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "xs",
+        paddingAll: "10px",
+        contents: lines,
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "xs",
+        paddingAll: "5px",
+        contents: [
+          ...((hasMissing || hasUndecidedDuplicate)
+            ? [{
+              type: "text",
+              size: "xs",
+              color: "#B54708",
+              wrap: true,
+              text: hasUndecidedDuplicate
+                ? "重複候補の扱いだけ選んでください。ほかの候補は残ります。"
+                : "不明な箇所だけ教えてください。理解できている内容は残ります。",
+            }]
+            : [{
+              type: "button",
+              style: "primary",
+              color: LINE_GREEN,
+              height: "sm",
+              action: {
+                type: "postback",
+                label: "まとめて登録",
+                data:
+                  `action=confirm_pending&pending_action_id=${data.pendingActionId}`,
+                displayText: "まとめて登録",
+              },
+            }]),
+          {
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: {
+              type: "postback",
+              label: "全部取り消す",
+              data:
+                `action=cancel_pending&pending_action_id=${data.pendingActionId}`,
+              displayText: "全部取り消す",
+            },
+          },
+        ],
+      },
     },
   };
 }

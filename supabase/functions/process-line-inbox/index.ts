@@ -128,23 +128,33 @@ async function deterministicOperationId(...parts: string[]): Promise<string> {
       new TextEncoder().encode(parts.join("|")),
     ),
   );
-  const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+  const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join(
+    "",
+  );
   return [
     hex.slice(0, 8),
     hex.slice(8, 12),
     "4" + hex.slice(13, 16),
-    ((parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0") + hex.slice(18, 20),
+    ((parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(
+      2,
+      "0",
+    ) + hex.slice(18, 20),
     hex.slice(20, 32),
   ].join("-");
 }
 
 function parsePostbackData(data: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [key, value] of new URLSearchParams(data).entries()) out[key] = value;
+  for (const [key, value] of new URLSearchParams(data).entries()) {
+    out[key] = value;
+  }
   return out;
 }
 
-async function resolveActor(client: SupabaseClient, lineUserId: string | null): Promise<LineActor | null> {
+async function resolveActor(
+  client: SupabaseClient,
+  lineUserId: string | null,
+): Promise<LineActor | null> {
   if (!lineUserId) return null;
   const { data, error } = await client.rpc("server_tx_resolve_line_actor", {
     p_source_external_user_id: lineUserId,
@@ -167,7 +177,12 @@ async function tryClaimLinkToken(
     p_source_external_user_id: sourceExternalUserId,
     p_raw_token: trimmed,
   });
-  if (error) console.warn("process-line-inbox: link token claim rejected", error.message);
+  if (error) {
+    console.warn(
+      "process-line-inbox: link token claim rejected",
+      error.message,
+    );
+  }
   return true;
 }
 
@@ -188,7 +203,10 @@ async function sendConfirmation(
     dedupKey: `line-reply-fallback:${item.provider_event_id}`,
   });
   if (result === "no_channel") {
-    console.warn("process-line-inbox: confirmation reply/push both unavailable", { id: item.id });
+    console.warn(
+      "process-line-inbox: confirmation reply/push both unavailable",
+      { id: item.id },
+    );
   }
 }
 
@@ -199,7 +217,10 @@ function jstWeekRange(): { start: string; end: string } {
   date.setUTCDate(date.getUTCDate() + (day === 0 ? -6 : 1 - day));
   const end = new Date(date);
   end.setUTCDate(end.getUTCDate() + 6);
-  return { start: date.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  return {
+    start: date.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
 }
 
 async function sendLineSchedule(
@@ -209,11 +230,15 @@ async function sendLineSchedule(
   kind: "today" | "tomorrow" | "week",
 ): Promise<void> {
   const today = jstIsoDateOffset(0);
-  const range = kind === "week" ? jstWeekRange() : kind === "tomorrow"
+  const range = kind === "week"
+    ? jstWeekRange()
+    : kind === "tomorrow"
     ? { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) }
     : { start: today, end: today };
   const { data, error } = kind === "today"
-    ? await client.rpc("server_tx_get_today_schedule", { p_actor_id: actor.user_id })
+    ? await client.rpc("server_tx_get_today_schedule", {
+      p_actor_id: actor.user_id,
+    })
     : await client.rpc("server_tx_get_week_schedule", {
       p_actor_id: actor.user_id,
       p_start_date: range.start,
@@ -221,36 +246,64 @@ async function sendLineSchedule(
     });
   if (error) {
     console.error("process-line-inbox: schedule read failed", error.message);
-    await sendConfirmation(client, item, actor, "予定を読み込めませんでした。少し待ってからもう一度送ってください。", menuQuickReplies());
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "予定を読み込めませんでした。少し待ってからもう一度送ってください。",
+      menuQuickReplies(),
+    );
     return;
   }
-  const { data: members } = await client.from("household_members").select("user_id,family_role").eq("household_id", actor.household_id);
+  const { data: members } = await client.from("household_members").select(
+    "user_id,family_role",
+  ).eq("household_id", actor.household_id);
   const roles = new Map<string, string>();
   for (const member of members ?? []) {
     if (member.family_role === "papa") roles.set(member.user_id, "P");
     if (member.family_role === "mama") roles.set(member.user_id, "M");
   }
   const schedule = (data ?? {}) as {
-    assignments?: Array<{ title?: string; due_at?: string | null; planned_assignee_id?: string | null; has_conflict?: boolean }>;
+    assignments?: Array<
+      {
+        title?: string;
+        due_at?: string | null;
+        planned_assignee_id?: string | null;
+        has_conflict?: boolean;
+      }
+    >;
     occurrences?: Array<{ title?: string; starts_at?: string | null }>;
   };
   const entries: CompactScheduleEntry[] = [
     ...(schedule.assignments ?? []).map((entry) => ({
       title: entry.title ?? "タスク",
       startsAt: entry.due_at ?? null,
-      roleLabel: entry.planned_assignee_id ? (roles.get(entry.planned_assignee_id) ?? null) : null,
+      roleLabel: entry.planned_assignee_id
+        ? (roles.get(entry.planned_assignee_id) ?? null)
+        : null,
       conflict: Boolean(entry.has_conflict),
     })),
-    ...(schedule.occurrences ?? []).map((entry) => ({ title: entry.title ?? "Google Calendar予定", startsAt: entry.starts_at ?? null })),
+    ...(schedule.occurrences ?? []).map((entry) => ({
+      title: entry.title ?? "Google Calendar予定",
+      startsAt: entry.starts_at ?? null,
+    })),
   ].sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? ""));
-  const title = kind === "today" ? "今日の予定" : kind === "tomorrow" ? "明日の予定" : "今週の予定";
+  const title = kind === "today"
+    ? "今日の予定"
+    : kind === "tomorrow"
+    ? "明日の予定"
+    : "今週の予定";
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
     lineUserId: item.source_external_user_id,
     householdId: actor.household_id,
     recipientUserId: actor.user_id,
     text: formatScheduleReply(title, entries),
-    message: buildScheduleSummaryFlex(title, entries, Deno.env.get("APP_BASE_URL") ?? ""),
+    message: buildScheduleSummaryFlex(
+      title,
+      entries,
+      Deno.env.get("APP_BASE_URL") ?? "",
+    ),
     dedupKey: `line-schedule:${item.provider_event_id}`,
   });
 }
@@ -275,7 +328,14 @@ async function tryHandleReadOnlyText(
     });
   } else if (intent === "input") {
     const base = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
-    await sendConfirmation(client, item, actor, base ? `今日の入力はこちらです。\n${base}/today?entry=checkin` : "今日の入力を開いてください。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      base
+        ? `今日の入力はこちらです。\n${base}/today?entry=checkin`
+        : "今日の入力を開いてください。",
+    );
   } else if (intent === "add") {
     await replyOrEnqueuePush(client, {
       replyToken: item.payload.replyToken,
@@ -288,7 +348,14 @@ async function tryHandleReadOnlyText(
     });
   } else if (intent === "share") {
     const base = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
-    await sendConfirmation(client, item, actor, base ? `引き継ぎ・共有はこちらです。\n${base}/handovers` : "引き継ぎ・共有を開いてください。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      base
+        ? `引き継ぎ・共有はこちらです。\n${base}/handovers`
+        : "引き継ぎ・共有を開いてください。",
+    );
   } else if (intent === "other") {
     const base = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
     await replyOrEnqueuePush(client, {
@@ -314,10 +381,20 @@ interface RoutineSessionRead {
   items: RoutineSessionItem[];
 }
 
-async function getRoutineSession(client: SupabaseClient, actorId: string, sessionId: string): Promise<RoutineSessionRead | null> {
-  const { data, error } = await client.rpc("server_tx_get_routine_session", { p_actor_id: actorId, p_session_id: sessionId });
+async function getRoutineSession(
+  client: SupabaseClient,
+  actorId: string,
+  sessionId: string,
+): Promise<RoutineSessionRead | null> {
+  const { data, error } = await client.rpc("server_tx_get_routine_session", {
+    p_actor_id: actorId,
+    p_session_id: sessionId,
+  });
   if (error) {
-    console.error("process-line-inbox: get_routine_session failed", error.message);
+    console.error(
+      "process-line-inbox: get_routine_session failed",
+      error.message,
+    );
     return null;
   }
   return data as RoutineSessionRead;
@@ -331,8 +408,16 @@ async function sendItemPrompt(
   nextItem: RoutineSessionItem,
   prefixText?: string,
 ): Promise<void> {
-  const text = prefixText ? `${prefixText}\n\n${buildItemPromptText(sessionId, nextItem)}` : buildItemPromptText(sessionId, nextItem);
-  await sendConfirmation(client, item, actor, text, buildItemQuickReply(sessionId, nextItem.task_instance_id));
+  const text = prefixText
+    ? `${prefixText}\n\n${buildItemPromptText(sessionId, nextItem)}`
+    : buildItemPromptText(sessionId, nextItem);
+  await sendConfirmation(
+    client,
+    item,
+    actor,
+    text,
+    buildItemQuickReply(sessionId, nextItem.task_instance_id),
+  );
 }
 
 async function sendStaleSessionReply(
@@ -342,7 +427,12 @@ async function sendStaleSessionReply(
   sessionId: string,
   currentSessionId: string | null,
 ): Promise<void> {
-  await sendConfirmation(client, item, actor, buildStaleSessionText(currentSessionId, sessionId));
+  await sendConfirmation(
+    client,
+    item,
+    actor,
+    buildStaleSessionText(currentSessionId, sessionId),
+  );
 }
 
 type EditablePendingAction = {
@@ -364,7 +454,9 @@ function jstIsoDateOffset(offsetDays: number): string {
   const month = Number(parts.find((p) => p.type === "month")?.value ?? "1");
   const day = Number(parts.find((p) => p.type === "day")?.value ?? "1");
   const d = new Date(Date.UTC(year, month - 1, day + offsetDays));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  return `${d.getUTCFullYear()}-${
+    String(d.getUTCMonth() + 1).padStart(2, "0")
+  }-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
 async function householdUserForRole(
@@ -372,23 +464,45 @@ async function householdUserForRole(
   householdId: string,
   role: "papa" | "mama",
 ): Promise<string | null> {
-  const { data } = await client.from("household_members").select("user_id").eq("household_id", householdId).eq("family_role", role).maybeSingle();
+  const { data } = await client.from("household_members").select("user_id").eq(
+    "household_id",
+    householdId,
+  ).eq("family_role", role).maybeSingle();
   return data?.user_id ?? null;
 }
 
-async function partnerUserId(client: SupabaseClient, actor: LineActor): Promise<string | null> {
-  const { data } = await client.from("household_members").select("user_id").eq("household_id", actor.household_id).neq("user_id", actor.user_id).limit(1).maybeSingle();
+async function partnerUserId(
+  client: SupabaseClient,
+  actor: LineActor,
+): Promise<string | null> {
+  const { data } = await client.from("household_members").select("user_id").eq(
+    "household_id",
+    actor.household_id,
+  ).neq("user_id", actor.user_id).limit(1).maybeSingle();
   return data?.user_id ?? null;
 }
 
-async function getEditablePending(client: SupabaseClient, actor: LineActor, id: string): Promise<EditablePendingAction | null> {
-  const { data, error } = await client.rpc("server_tx_get_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: id });
+async function getEditablePending(
+  client: SupabaseClient,
+  actor: LineActor,
+  id: string,
+): Promise<EditablePendingAction | null> {
+  const { data, error } = await client.rpc("server_tx_get_pending_action", {
+    p_actor_id: actor.user_id,
+    p_pending_action_id: id,
+  });
   if (error) return null;
   return data as EditablePendingAction;
 }
 
-async function getLineTextEditPending(client: SupabaseClient, actor: LineActor): Promise<EditablePendingAction | null> {
-  const { data, error } = await client.rpc("server_tx_get_line_pending_text_edit", { p_actor_id: actor.user_id });
+async function getLineTextEditPending(
+  client: SupabaseClient,
+  actor: LineActor,
+): Promise<EditablePendingAction | null> {
+  const { data, error } = await client.rpc(
+    "server_tx_get_line_pending_text_edit",
+    { p_actor_id: actor.user_id },
+  );
   if (error || !data) return null;
   return data as EditablePendingAction;
 }
@@ -399,14 +513,19 @@ async function getLineConversationPending(
   lineUserId: string | null,
 ): Promise<EditablePendingAction | null> {
   if (!lineUserId) return null;
-  const { data, error } = await client.rpc("server_tx_get_line_conversation_pending", { p_actor_id: actor.user_id, p_line_user_id: lineUserId });
+  const { data, error } = await client.rpc(
+    "server_tx_get_line_conversation_pending",
+    { p_actor_id: actor.user_id, p_line_user_id: lineUserId },
+  );
   if (error || !data) return null;
   return data as EditablePendingAction;
 }
 
 function pendingTitle(pending: EditablePendingAction): string {
   const title = pending.normalized_payload.title;
-  return typeof title === "string" && title.trim() ? title.trim() : "さきほどの入力";
+  return typeof title === "string" && title.trim()
+    ? title.trim()
+    : "さきほどの入力";
 }
 
 function isPendingReferentQuestion(text: string): boolean {
@@ -415,19 +534,26 @@ function isPendingReferentQuestion(text: string): boolean {
 }
 
 function isPendingCorrection(text: string): boolean {
-  return /(?:だった|じゃなくて|ではなくて|に変更|にして|だけやめて|取り消|キャンセル)/.test(text);
+  return /(?:だった|じゃなくて|ではなくて|に変更|にして|だけやめて|取り消|キャンセル)/
+    .test(text);
 }
 
 function pendingStateLabel(status: string): string {
   switch (status) {
-    case "draft": return "確認待ち";
+    case "draft":
+      return "確認待ち";
     case "confirmed":
     case "queued":
-    case "executing": return "確定済み（処理中）";
-    case "succeeded": return "登録済み";
-    case "cancelled": return "取り消し済み";
-    case "expired": return "期限切れ";
-    default: return "現在は操作できません";
+    case "executing":
+      return "確定済み（処理中）";
+    case "succeeded":
+      return "登録済み";
+    case "cancelled":
+      return "取り消し済み";
+    case "expired":
+      return "期限切れ";
+    default:
+      return "現在は操作できません";
   }
 }
 
@@ -437,41 +563,93 @@ async function tryHandlePendingReferent(
   actor: LineActor,
   text: string,
 ): Promise<boolean> {
-  if (!isPendingReferentQuestion(text) && !isPendingCorrection(text)) return false;
-  const pending = await getLineConversationPending(client, actor, item.source_external_user_id);
+  if (!isPendingReferentQuestion(text) && !isPendingCorrection(text)) {
+    return false;
+  }
+  const pending = await getLineConversationPending(
+    client,
+    actor,
+    item.source_external_user_id,
+  );
   if (!pending) return false;
 
   if (isPendingReferentQuestion(text)) {
-    await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」の件です。${pendingStateLabel(pending.status)}です。`);
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      `「${pendingTitle(pending)}」の件です。${
+        pendingStateLabel(pending.status)
+      }です。`,
+    );
     return true;
   }
 
   if (pending.status !== "draft") {
-    await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」は${pendingStateLabel(pending.status)}です。変更は新しい入力として扱ってください。`);
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      `「${pendingTitle(pending)}」は${
+        pendingStateLabel(pending.status)
+      }です。変更は新しい入力として扱ってください。`,
+    );
     return true;
   }
 
   if (pending.action_type === "line_multi_intent_review") {
     const candidates = Array.isArray(pending.normalized_payload.candidates)
-      ? pending.normalized_payload.candidates.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft")
+      ? pending.normalized_payload.candidates.filter((
+        row,
+      ): row is Record<string, unknown> =>
+        Boolean(row) && typeof row === "object" &&
+        (row as Record<string, unknown>).status === "draft"
+      )
       : [];
     if (/だけやめて|取り消|キャンセル/.test(text)) {
       const matched = candidates.filter((candidate) => {
-        const title = typeof candidate.title === "string" ? candidate.title : "";
+        const title = typeof candidate.title === "string"
+          ? candidate.title
+          : "";
         return title.length > 0 && text.includes(title);
       });
       if (matched.length === 1) {
-        await cancelMultiIntentCandidate(client, item, actor, pending.id, String(matched[0].candidate_id));
+        await cancelMultiIntentCandidate(
+          client,
+          item,
+          actor,
+          pending.id,
+          String(matched[0].candidate_id),
+        );
         return true;
       }
-      await sendConfirmation(client, item, actor, "どの内容を取り消すかだけ教えてください。ほかの候補は残します。");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "どの内容を取り消すかだけ教えてください。ほかの候補は残します。",
+      );
       return true;
     }
     if (isPendingReferentQuestion(text)) {
-      await sendConfirmation(client, item, actor, `確認待ちは${candidates.map((candidate) => `「${String(candidate.title)}」`).join("、")}です。`);
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        `確認待ちは${
+          candidates.map((candidate) => `「${String(candidate.title)}」`).join(
+            "、",
+          )
+        }です。`,
+      );
       return true;
     }
-    await sendConfirmation(client, item, actor, "どの内容を直すかだけ添えてください。理解できている候補はそのまま残します。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "どの内容を直すかだけ添えてください。理解できている候補はそのまま残します。",
+    );
     return true;
   }
 
@@ -481,7 +659,12 @@ async function tryHandlePendingReferent(
       p_pending_action_id: pending.id,
     });
     if (!error) {
-      await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」を取り消しました。`);
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        `「${pendingTitle(pending)}」を取り消しました。`,
+      );
       return true;
     }
     return false;
@@ -490,21 +673,49 @@ async function tryHandlePendingReferent(
   const role = correctionRole(text);
   const date = correctionDate(text);
   if (!role && !date) return false;
-  const payload: Record<string, unknown> = { ...pending.normalized_payload, line_edit_mode: false };
+  const payload: Record<string, unknown> = {
+    ...pending.normalized_payload,
+    line_edit_mode: false,
+  };
   if (date) payload.scheduled_date = date;
   if (role) {
-    const assignee = role === "self" ? actor.user_id : await householdUserForRole(client, actor.household_id, role);
+    const assignee = role === "self"
+      ? actor.user_id
+      : await householdUserForRole(client, actor.household_id, role);
     if (!assignee) {
-      await sendConfirmation(client, item, actor, "担当にする家族が見つかりません。誰にするかだけ教えてください。");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "担当にする家族が見つかりません。誰にするかだけ教えてください。",
+      );
       return true;
     }
-    if (pending.action_type === "request_create") payload.recipient_user_id = assignee;
-    else payload.planned_assignee_user_id = assignee;
-    payload.target_label = role === "papa" ? "パパ" : role === "mama" ? "ママ" : "自分";
+    if (pending.action_type === "request_create") {
+      payload.recipient_user_id = assignee;
+    } else payload.planned_assignee_user_id = assignee;
+    payload.target_label = role === "papa"
+      ? "パパ"
+      : role === "mama"
+      ? "ママ"
+      : "自分";
   }
-  const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload);
+  const updated = await updateEditablePending(
+    client,
+    actor,
+    pending.id,
+    pending.action_type,
+    payload,
+  );
   if (!updated) return false;
-  await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
+  await sendPendingActionPreview(
+    client,
+    item,
+    actor,
+    updated.id,
+    updated.action_type,
+    updated.normalized_payload,
+  );
   return true;
 }
 
@@ -521,18 +732,26 @@ async function buildMultiIntentPendingCandidates(
   const identified = await Promise.all(interpreted.map(async (candidate) => ({
     ...candidate,
     operationId: candidate.operationId ?? await deterministicOperationId(
-      "line-candidate", item.provider_event_id, candidate.candidateId,
+      "line-candidate",
+      item.provider_event_id,
+      candidate.candidateId,
     ),
   })));
-  const candidates = await Promise.all(identified.map((candidate) =>
-    attachCanonicalConciergeDuplicate(client, actor.household_id, candidate)
-  ));
+  const candidates = await Promise.all(
+    identified.map((candidate) =>
+      attachCanonicalConciergeDuplicate(client, actor.household_id, candidate)
+    ),
+  );
   const partner = await partnerUserId(client, actor);
   return Promise.all(candidates.map(async (candidate) => {
     const intent = candidate.intent;
     const base = {
       candidate_id: candidate.candidateId,
-      operation_id: candidate.operationId,
+      operation_id: candidate.operationId ?? await deterministicOperationId(
+        "line-candidate",
+        item.provider_event_id,
+        candidate.candidateId,
+      ),
       kind: candidate.kind,
       title: candidate.title,
       source_text: candidate.sourceText,
@@ -545,10 +764,26 @@ async function buildMultiIntentPendingCandidates(
       missing_fields: [...candidate.missingFields],
     };
     if (candidate.kind === "share") {
-      return { ...base, action_type: "handover_create" as const, payload: { shared_text: candidate.title, period: "today", categories: ["general"] } };
+      return {
+        ...base,
+        action_type: "handover_create" as const,
+        payload: {
+          shared_text: candidate.title,
+          period: "today",
+          categories: ["general"],
+        },
+      };
     }
     if (candidate.kind === "actual") {
-      return { ...base, action_type: "actual_record" as const, missing_fields: [...base.missing_fields, "実績にする作業"], payload: { title: candidate.title, scheduled_date: jstIsoDateOffset(0) } };
+      return {
+        ...base,
+        action_type: "actual_record" as const,
+        missing_fields: [...base.missing_fields, "実績にする作業"],
+        payload: {
+          title: candidate.title,
+          scheduled_date: jstIsoDateOffset(0),
+        },
+      };
     }
     if (candidate.kind === "shopping") {
       return {
@@ -556,8 +791,16 @@ async function buildMultiIntentPendingCandidates(
         action_type: "shopping_item_add" as const,
         payload: {
           title: candidate.title,
-          purchase_method: /amazon|アマゾン/i.test(candidate.sourceText) ? "amazon" : "store",
-          assignee_user_id: intent?.targetRole ? await householdUserForRole(client, actor.household_id, intent.targetRole) : null,
+          purchase_method: /amazon|アマゾン/i.test(candidate.sourceText)
+            ? "amazon"
+            : "store",
+          assignee_user_id: intent?.targetRole
+            ? await householdUserForRole(
+              client,
+              actor.household_id,
+              intent.targetRole,
+            )
+            : null,
           scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
           due_local_time: intent?.dueLocalTime ?? null,
         },
@@ -567,10 +810,13 @@ async function buildMultiIntentPendingCandidates(
       return {
         ...base,
         action_type: "request_create" as const,
-        missing_fields: partner ? base.missing_fields : [...base.missing_fields, "お願いする相手"],
+        missing_fields: partner
+          ? base.missing_fields
+          : [...base.missing_fields, "お願いする相手"],
         payload: {
           title: candidate.title,
-          shared_message: intent?.sharedMessage ?? `${candidate.title}をお願いできますか？`,
+          shared_message: intent?.sharedMessage ??
+            `${candidate.title}をお願いできますか？`,
           recipient_user_id: partner,
           scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
           due_local_time: intent?.dueLocalTime ?? null,
@@ -585,7 +831,13 @@ async function buildMultiIntentPendingCandidates(
         category: "todo",
         scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
         due_local_time: intent?.dueLocalTime ?? null,
-        planned_assignee_user_id: intent?.targetRole ? await householdUserForRole(client, actor.household_id, intent.targetRole) : actor.user_id,
+        planned_assignee_user_id: intent?.targetRole
+          ? await householdUserForRole(
+            client,
+            actor.household_id,
+            intent.targetRole,
+          )
+          : actor.user_id,
         routine_phase: "anytime",
         calendar_visibility: intent?.calendarVisibility ?? "hidden",
         subtasks: intent?.subtasks ?? [],
@@ -600,9 +852,17 @@ async function tryCreateMultiIntentReview(
   actor: LineActor,
   text: string,
 ): Promise<boolean> {
-  const candidates = await buildMultiIntentPendingCandidates(client, item, actor, text);
+  const candidates = await buildMultiIntentPendingCandidates(
+    client,
+    item,
+    actor,
+    text,
+  );
   if (candidates.length === 0) return false;
-  const operationId = await deterministicOperationId("line-text", item.provider_event_id);
+  const operationId = await deterministicOperationId(
+    "line-text",
+    item.provider_event_id,
+  );
   const { data, error } = await client.rpc("server_tx_create_pending_action", {
     p_actor_id: actor.user_id,
     p_household_id: actor.household_id,
@@ -613,7 +873,10 @@ async function tryCreateMultiIntentReview(
     p_ttl_minutes: PENDING_ACTION_TTL_MINUTES,
   });
   if (error || !data?.pending_action_id) {
-    console.error("process-line-inbox: create multi intent review failed", error?.message);
+    console.error(
+      "process-line-inbox: create multi intent review failed",
+      error?.message,
+    );
     return true;
   }
   await replyOrEnqueuePush(client, {
@@ -629,8 +892,12 @@ async function tryCreateMultiIntentReview(
         kind: candidate.kind,
         title: candidate.title,
         missingFields: candidate.missing_fields,
-      duplicateMatch: Boolean(candidate.duplicate_match),
-      duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
+        duplicateMatch: Boolean(candidate.duplicate_match),
+        duplicateDecision: candidate.duplicate_decision === "existing" ||
+            candidate.duplicate_decision === "update" ||
+            candidate.duplicate_decision === "separate"
+          ? candidate.duplicate_decision
+          : null,
       })),
     }),
     dedupKey: `line-multi-intent-preview:${item.provider_event_id}`,
@@ -647,10 +914,17 @@ async function cancelMultiIntentCandidate(
 ): Promise<void> {
   const pending = await getEditablePending(client, actor, pendingActionId);
   if (!pending || pending.action_type !== "line_multi_intent_review") {
-    await sendConfirmation(client, item, actor, "この候補はすでに更新されています。最新の内容を確認してください。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "この候補はすでに更新されています。最新の内容を確認してください。",
+    );
     return;
   }
-  const rows = Array.isArray(pending.normalized_payload.candidates) ? pending.normalized_payload.candidates : [];
+  const rows = Array.isArray(pending.normalized_payload.candidates)
+    ? pending.normalized_payload.candidates
+    : [];
   let found = false;
   const candidates = rows.map((row) => {
     if (!row || typeof row !== "object") return row;
@@ -660,20 +934,40 @@ async function cancelMultiIntentCandidate(
     return { ...candidate, status: "cancelled" };
   });
   if (!found) {
-    await sendConfirmation(client, item, actor, "その候補はすでに取り消されています。最新の内容を確認してください。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "その候補はすでに取り消されています。最新の内容を確認してください。",
+    );
     return;
   }
-  const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
-    ...pending.normalized_payload,
-    candidates,
-  });
+  const updated = await updateEditablePending(
+    client,
+    actor,
+    pending.id,
+    pending.action_type,
+    {
+      ...pending.normalized_payload,
+      candidates,
+    },
+  );
   if (!updated) return;
   const active = candidates.filter((row): row is Record<string, unknown> =>
-    Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
+    Boolean(row) && typeof row === "object" &&
+    (row as Record<string, unknown>).status === "draft"
   );
   if (active.length === 0) {
-    await client.rpc("server_tx_cancel_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: updated.id });
-    await sendConfirmation(client, item, actor, "すべての候補を取り消しました。");
+    await client.rpc("server_tx_cancel_pending_action", {
+      p_actor_id: actor.user_id,
+      p_pending_action_id: updated.id,
+    });
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "すべての候補を取り消しました。",
+    );
     return;
   }
   await replyOrEnqueuePush(client, {
@@ -685,13 +979,24 @@ async function cancelMultiIntentCandidate(
     message: buildMultiIntentPreviewFlex({
       pendingActionId: updated.id,
       candidates: active.map((candidate) => ({
-        candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
-        missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
-      duplicateMatch: Boolean(candidate.duplicate_match),
-      duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
+        candidateId: String(candidate.candidate_id),
+        kind: String(candidate.kind),
+        title: String(candidate.title),
+        missingFields: Array.isArray(candidate.missing_fields)
+          ? candidate.missing_fields.filter((field): field is string =>
+            typeof field === "string"
+          )
+          : [],
+        duplicateMatch: Boolean(candidate.duplicate_match),
+        duplicateDecision: candidate.duplicate_decision === "existing" ||
+            candidate.duplicate_decision === "update" ||
+            candidate.duplicate_decision === "separate"
+          ? candidate.duplicate_decision
+          : null,
       })),
     }),
-    dedupKey: `line-multi-intent-cancel:${item.provider_event_id}:${candidateId}`,
+    dedupKey:
+      `line-multi-intent-cancel:${item.provider_event_id}:${candidateId}`,
   });
 }
 
@@ -705,29 +1010,52 @@ async function resolveMultiIntentDuplicate(
 ): Promise<void> {
   const pending = await getEditablePending(client, actor, pendingActionId);
   if (!pending || pending.action_type !== "line_multi_intent_review") {
-    await sendConfirmation(client, item, actor, "この候補はすでに更新されています。最新の内容を確認してください。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "この候補はすでに更新されています。最新の内容を確認してください。",
+    );
     return;
   }
-  const rows = Array.isArray(pending.normalized_payload.candidates) ? pending.normalized_payload.candidates : [];
+  const rows = Array.isArray(pending.normalized_payload.candidates)
+    ? pending.normalized_payload.candidates
+    : [];
   let found = false;
   const candidates = rows.map((row) => {
     if (!row || typeof row !== "object") return row;
     const candidate = row as Record<string, unknown>;
     if (candidate.candidate_id !== candidateId) return candidate;
-    if (!candidate.duplicate_match || typeof candidate.duplicate_match !== "object") return candidate;
+    if (
+      !candidate.duplicate_match ||
+      typeof candidate.duplicate_match !== "object"
+    ) return candidate;
     found = true;
     return { ...candidate, duplicate_decision: decision };
   });
   if (!found) {
-    await sendConfirmation(client, item, actor, "この候補には重複の選択は必要ありません。最新の内容を確認してください。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "この候補には重複の選択は必要ありません。最新の内容を確認してください。",
+    );
     return;
   }
-  const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
-    ...pending.normalized_payload, candidates,
-  });
+  const updated = await updateEditablePending(
+    client,
+    actor,
+    pending.id,
+    pending.action_type,
+    {
+      ...pending.normalized_payload,
+      candidates,
+    },
+  );
   if (!updated) return;
   const active = candidates.filter((row): row is Record<string, unknown> =>
-    Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
+    Boolean(row) && typeof row === "object" &&
+    (row as Record<string, unknown>).status === "draft"
   );
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
@@ -738,13 +1066,24 @@ async function resolveMultiIntentDuplicate(
     message: buildMultiIntentPreviewFlex({
       pendingActionId: updated.id,
       candidates: active.map((candidate) => ({
-        candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
-        missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+        candidateId: String(candidate.candidate_id),
+        kind: String(candidate.kind),
+        title: String(candidate.title),
+        missingFields: Array.isArray(candidate.missing_fields)
+          ? candidate.missing_fields.filter((field): field is string =>
+            typeof field === "string"
+          )
+          : [],
         duplicateMatch: Boolean(candidate.duplicate_match),
-        duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
+        duplicateDecision: candidate.duplicate_decision === "existing" ||
+            candidate.duplicate_decision === "update" ||
+            candidate.duplicate_decision === "separate"
+          ? candidate.duplicate_decision
+          : null,
       })),
     }),
-    dedupKey: `line-multi-intent-duplicate:${item.provider_event_id}:${candidateId}:${decision}`,
+    dedupKey:
+      `line-multi-intent-duplicate:${item.provider_event_id}:${candidateId}:${decision}`,
   });
 }
 
@@ -752,7 +1091,9 @@ function correctionRole(text: string): "papa" | "mama" | "self" | null {
   const contrast = text.match(
     /(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
   );
-  if (contrast) return /^(?:パパ|父|お父さん)$/.test(contrast[1]) ? "papa" : "mama";
+  if (contrast) {
+    return /^(?:パパ|父|お父さん)$/.test(contrast[1]) ? "papa" : "mama";
+  }
   if (/(?:自分|自分に|自分へ)/.test(text)) return "self";
   if (/(?:パパ|父|お父さん)/.test(text)) return "papa";
   if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return "mama";
@@ -768,12 +1109,18 @@ function correctionDate(text: string): string | null {
 
 function correctionTime(text: string): string | null | undefined {
   if (/時刻なし|時間なし/.test(text)) return null;
-  const explicit = text.match(/(?:午前|午後)?\s*(\d{1,2})時(?:\s*(\d{1,2})分?)?/);
+  const explicit = text.match(
+    /(?:午前|午後)?\s*(\d{1,2})時(?:\s*(\d{1,2})分?)?/,
+  );
   if (explicit) {
     let hour = Number(explicit[1]);
     const minute = Number(explicit[2] ?? "0");
     if (/午後/.test(text) && hour < 12) hour += 12;
-    if (hour <= 23 && minute <= 59) return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    if (hour <= 23 && minute <= 59) {
+      return `${String(hour).padStart(2, "0")}:${
+        String(minute).padStart(2, "0")
+      }`;
+    }
   }
   if (/朝/.test(text)) return "08:00";
   if (/夕方/.test(text)) return "18:00";
@@ -782,7 +1129,9 @@ function correctionTime(text: string): string | null | undefined {
 }
 
 function correctionTitle(text: string): string | null {
-  const match = text.trim().match(/^(?:タイトル|件名)\s*(?:は|を|:|：)\s*(.{1,80}?)(?:に変更|にして)?[。！!]?$/u);
+  const match = text.trim().match(
+    /^(?:タイトル|件名)\s*(?:は|を|:|：)\s*(.{1,80}?)(?:に変更|にして)?[。！!]?$/u,
+  );
   if (!match) return null;
   const title = match[1].replace(/\s+/g, " ").trim();
   return title.length > 0 && title.length <= 80 ? title : null;
@@ -816,7 +1165,15 @@ async function sendMissingRoleRecovery(
   role: "papa" | "mama",
 ): Promise<void> {
   const partner = await partnerUserId(client, actor);
-  await sendConfirmation(client, item, actor, missingRoleRecoveryText(role, Boolean(partner)), partner ? editQuickReplies(pendingActionId) : missingRoleQuickReplies(pendingActionId));
+  await sendConfirmation(
+    client,
+    item,
+    actor,
+    missingRoleRecoveryText(role, Boolean(partner)),
+    partner
+      ? editQuickReplies(pendingActionId)
+      : missingRoleQuickReplies(pendingActionId),
+  );
 }
 
 async function sendPartnerInviteLink(
@@ -826,23 +1183,52 @@ async function sendPartnerInviteLink(
   pendingActionId: string,
 ): Promise<void> {
   if (await partnerUserId(client, actor)) {
-    await sendConfirmation(client, item, actor, "すでにパートナーは参加しています。もう一度「担当はママ」または「担当はパパ」と送ってください。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "すでにパートナーは参加しています。もう一度「担当はママ」または「担当はパパ」と送ってください。",
+    );
     return;
   }
-  const operationId = await deterministicOperationId("line-partner-invite", actor.user_id, pendingActionId);
-  const { data, error } = await client.rpc("server_tx_create_household_invite", {
-    p_actor_id: actor.user_id,
-    p_operation_id: operationId,
-  });
-  if (error || !data || typeof (data as { raw_token?: unknown }).raw_token !== "string") {
-    await sendConfirmation(client, item, actor, "この下書き用の招待リンクはすでに発行済みです。上の招待リンクをパートナーへ共有してください。下書きはそのまま残っています。");
+  const operationId = await deterministicOperationId(
+    "line-partner-invite",
+    actor.user_id,
+    pendingActionId,
+  );
+  const { data, error } = await client.rpc(
+    "server_tx_create_household_invite",
+    {
+      p_actor_id: actor.user_id,
+      p_operation_id: operationId,
+    },
+  );
+  if (
+    error || !data ||
+    typeof (data as { raw_token?: unknown }).raw_token !== "string"
+  ) {
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "この下書き用の招待リンクはすでに発行済みです。上の招待リンクをパートナーへ共有してください。下書きはそのまま残っています。",
+    );
     return;
   }
   const base = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
-  const url = base ? `${base}/join?token=${encodeURIComponent((data as { raw_token: string }).raw_token)}` : null;
-  await sendConfirmation(client, item, actor, url
-    ? `ママを招待するリンクです（24時間有効）。パートナーに共有してください。参加後、この下書きで「担当はママ」と送れば変更できます。\n${url}`
-    : "招待リンクを作れませんでした。PWAの「設定 ＞ 家族」から招待してください。下書きはそのまま残っています。");
+  const url = base
+    ? `${base}/join?token=${
+      encodeURIComponent((data as { raw_token: string }).raw_token)
+    }`
+    : null;
+  await sendConfirmation(
+    client,
+    item,
+    actor,
+    url
+      ? `ママを招待するリンクです（24時間有効）。パートナーに共有してください。参加後、この下書きで「担当はママ」と送れば変更できます。\n${url}`
+      : "招待リンクを作れませんでした。PWAの「設定 ＞ 家族」から招待してください。下書きはそのまま残っています。",
+  );
 }
 
 async function tryApplyLineTextEdit(
@@ -855,9 +1241,20 @@ async function tryApplyLineTextEdit(
   if (!pending) return false;
 
   if (pending.normalized_payload.clarification_stage === "title") {
-    const value = text.normalize("NFKC").replace(/\s+/g, " ").trim().replace(/[。！!]+$/u, "");
-    if (!value || value.length > 80 || lineCreationStarterKind(value) || readOnlyLineIntent(value)) {
-      await sendConfirmation(client, item, actor, "追加する内容を短く教えてください。例「皮膚科の準備」「ゴミ出し」「牛乳」");
+    const value = text.normalize("NFKC").replace(/\s+/g, " ").trim().replace(
+      /[。！!]+$/u,
+      "",
+    );
+    if (
+      !value || value.length > 80 || lineCreationStarterKind(value) ||
+      readOnlyLineIntent(value)
+    ) {
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "追加する内容を短く教えてください。例「皮膚科の準備」「ゴミ出し」「牛乳」",
+      );
       return true;
     }
     const inferred = await extractLineIntent(text);
@@ -865,17 +1262,33 @@ async function tryApplyLineTextEdit(
     payload.title = inferred?.title ?? value;
     if (inferred) {
       payload.scheduled_date = inferred.scheduledDate;
-      payload.due_local_time = inferred.dueLocalTime ?? daypartToLocalTime(inferred.daypart);
+      payload.due_local_time = inferred.dueLocalTime ??
+        daypartToLocalTime(inferred.daypart);
       payload.daypart = inferred.daypart;
       payload.context = inferred.context;
       payload.subtasks = inferred.subtasks;
     }
-    if (pending.action_type === "request_create") payload.shared_message = `${String(payload.title)}をお願いできますか？`;
+    if (pending.action_type === "request_create") {
+      payload.shared_message = `${String(payload.title)}をお願いできますか？`;
+    }
     delete payload.clarification_stage;
     delete payload.line_edit_mode;
-    const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload);
+    const updated = await updateEditablePending(
+      client,
+      actor,
+      pending.id,
+      pending.action_type,
+      payload,
+    );
     if (!updated) return true;
-    await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
+    await sendPendingActionPreview(
+      client,
+      item,
+      actor,
+      updated.id,
+      updated.action_type,
+      updated.normalized_payload,
+    );
     return true;
   }
 
@@ -884,7 +1297,13 @@ async function tryApplyLineTextEdit(
   const time = correctionTime(text);
   const title = correctionTitle(text);
   if (!role && !date && time === undefined && !title) {
-    await sendConfirmation(client, item, actor, "修正したい内容をそのまま送ってください。例:「ママじゃなくてパパ」「明日10時に変更」「時刻なし」。元の下書きはまだ変更していません。", editQuickReplies(pending.id));
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "修正したい内容をそのまま送ってください。例:「ママじゃなくてパパ」「明日10時に変更」「時刻なし」。元の下書きはまだ変更していません。",
+      editQuickReplies(pending.id),
+    );
     return true;
   }
   let actionType = pending.action_type;
@@ -897,9 +1316,13 @@ async function tryApplyLineTextEdit(
     payload.daypart = time === null ? null : (payload.daypart ?? null);
   }
   if (role) {
-    const selected = role === "self" ? actor.user_id : await householdUserForRole(client, actor.household_id, role);
+    const selected = role === "self"
+      ? actor.user_id
+      : await householdUserForRole(client, actor.household_id, role);
     if (!selected) {
-      if (role === "papa" || role === "mama") await sendMissingRoleRecovery(client, item, actor, pending.id, role);
+      if (role === "papa" || role === "mama") {
+        await sendMissingRoleRecovery(client, item, actor, pending.id, role);
+      }
       return true;
     }
     const label = role === "papa" ? "パパ" : role === "mama" ? "ママ" : "自分";
@@ -914,17 +1337,40 @@ async function tryApplyLineTextEdit(
       delete payload.recipient_user_id;
     }
   }
-  const updated = await updateEditablePending(client, actor, pending.id, actionType, payload);
+  const updated = await updateEditablePending(
+    client,
+    actor,
+    pending.id,
+    actionType,
+    payload,
+  );
   if (!updated) {
-    await sendConfirmation(client, item, actor, "修正を保存できませんでした。元の確認カードからもう一度お試しください。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "修正を保存できませんでした。元の確認カードからもう一度お試しください。",
+    );
     return true;
   }
-  await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
+  await sendPendingActionPreview(
+    client,
+    item,
+    actor,
+    updated.id,
+    updated.action_type,
+    updated.normalized_payload,
+  );
   return true;
 }
 
-function targetLabel(payload: Record<string, unknown>, actor: LineActor): string {
-  if (payload.target_label === "パパ" || payload.target_label === "ママ") return String(payload.target_label);
+function targetLabel(
+  payload: Record<string, unknown>,
+  actor: LineActor,
+): string {
+  if (payload.target_label === "パパ" || payload.target_label === "ママ") {
+    return String(payload.target_label);
+  }
   if (payload.recipient_user_id) return "パートナー";
   if (payload.planned_assignee_user_id === actor.user_id) return "自分";
   if (payload.assignee_user_id === actor.user_id) return "自分";
@@ -932,19 +1378,32 @@ function targetLabel(payload: Record<string, unknown>, actor: LineActor): string
 }
 
 function scheduleLabel(payload: Record<string, unknown>): string {
-  const date = typeof payload.scheduled_date === "string" ? payload.scheduled_date : "";
+  const date = typeof payload.scheduled_date === "string"
+    ? payload.scheduled_date
+    : "";
   const daypart = typeof payload.daypart === "string" ? payload.daypart : null;
-  const localTime = typeof payload.due_local_time === "string" ? payload.due_local_time : null;
-  const dateLabel = date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : "今日";
-  const part = localTime ?? (daypart ? daypartLabel(daypart as "morning" | "noon" | "evening" | "night") : "時刻なし");
+  const localTime = typeof payload.due_local_time === "string"
+    ? payload.due_local_time
+    : null;
+  const dateLabel = date
+    ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`
+    : "今日";
+  const part = localTime ??
+    (daypart
+      ? daypartLabel(daypart as "morning" | "noon" | "evening" | "night")
+      : "時刻なし");
   return `${dateLabel} ${part}`;
 }
 
 function previewDetailLines(payload: Record<string, unknown>): string[] {
   const lines: string[] = [];
-  if (typeof payload.context === "string" && payload.context.trim()) lines.push(`予定: ${payload.context.trim()}`);
+  if (typeof payload.context === "string" && payload.context.trim()) {
+    lines.push(`予定: ${payload.context.trim()}`);
+  }
   if (Array.isArray(payload.subtasks) && payload.subtasks.length > 0) {
-    const subtasks = payload.subtasks.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 5).map((item) => `・${item.trim()}`);
+    const subtasks = payload.subtasks.filter((item): item is string =>
+      typeof item === "string" && item.trim().length > 0
+    ).slice(0, 5).map((item) => `・${item.trim()}`);
     if (subtasks.length > 0) lines.push("準備: " + subtasks.join(" "));
   }
   return lines;
@@ -959,7 +1418,9 @@ async function sendPendingActionPreview(
   payload: Record<string, unknown>,
 ): Promise<void> {
   if (actionType === "assignment_change_request") {
-    const editUrl = `${Deno.env.get("APP_BASE_URL") ?? ""}/requests?pending=${pendingActionId}`;
+    const editUrl = `${
+      Deno.env.get("APP_BASE_URL") ?? ""
+    }/requests?pending=${pendingActionId}`;
     await replyOrEnqueuePush(client, {
       replyToken: item.payload.replyToken,
       lineUserId: item.source_external_user_id,
@@ -971,15 +1432,32 @@ async function sendPendingActionPreview(
         title: String(payload.title ?? "担当変更"),
         message: String(payload.shared_message ?? "担当をお願いできますか？"),
         editUrl,
-        scheduleLabel: payload.due_at ? new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(String(payload.due_at))) : String(payload.scheduled_date ?? ""),
+        scheduleLabel: payload.due_at
+          ? new Intl.DateTimeFormat("ja-JP", {
+            timeZone: "Asia/Tokyo",
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(new Date(String(payload.due_at)))
+          : String(payload.scheduled_date ?? ""),
         scope: payload.scope === "this_week" ? "this_week" : "once",
       }),
       dedupKey: `line-pending-preview:${item.provider_event_id}`,
     });
     return;
   }
-  const kindLabel = actionType === "request_create" ? "お願い" : actionType === "shopping_item_add" ? "買い物" : payload.explicit_kind === "event" || payload.calendar_visibility === "special" ? "予定" : "タスク";
-  const confirmLabel = actionType === "request_create" ? "この内容で送る" : "この内容で登録";
+  const kindLabel = actionType === "request_create"
+    ? "お願い"
+    : actionType === "shopping_item_add"
+    ? "買い物"
+    : payload.explicit_kind === "event" ||
+        payload.calendar_visibility === "special"
+    ? "予定"
+    : "タスク";
+  const confirmLabel = actionType === "request_create"
+    ? "この内容で送る"
+    : "この内容で登録";
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
     lineUserId: item.source_external_user_id,
@@ -991,27 +1469,50 @@ async function sendPendingActionPreview(
       kindLabel,
       title: String(payload.title ?? "予定"),
       scheduleLabel: scheduleLabel(payload),
-      targetLabel: actionType === "shopping_item_add" ? "買い物リスト" : targetLabel(payload, actor),
+      targetLabel: actionType === "shopping_item_add"
+        ? "買い物リスト"
+        : targetLabel(payload, actor),
       detailLines: previewDetailLines(payload),
       confirmLabel,
-      sourceLabel: payload.parse_source === "gemini" ? "AIが内容を推定しました。登録前に確認してください。" : undefined,
+      sourceLabel: payload.parse_source === "gemini"
+        ? "AIが内容を推定しました。登録前に確認してください。"
+        : undefined,
     }),
     dedupKey: `line-pending-preview:${item.provider_event_id}`,
   });
 }
 
 function editQuickReplies(pendingActionId: string): LineQuickReplyAction[] {
-  const pb = (label: string, field: string, value: string): LineQuickReplyAction => ({
+  const pb = (
+    label: string,
+    field: string,
+    value: string,
+  ): LineQuickReplyAction => ({
     type: "postback",
     label,
-    data: `action=update_pending&pending_action_id=${pendingActionId}&field=${field}&value=${value}`,
+    data:
+      `action=update_pending&pending_action_id=${pendingActionId}&field=${field}&value=${value}`,
     displayText: label,
   });
   return [
-    pb("今日", "date", "today"), pb("明日", "date", "tomorrow"), pb("朝", "time", "morning"), pb("夜", "time", "night"), pb("時刻なし", "time", "none"),
-    pb("自分", "assignee", "self"), pb("パパ", "assignee", "papa"), pb("ママ", "assignee", "mama"),
-    pb("予定", "kind", "event"), pb("タスク", "kind", "task"), pb("お願い", "kind", "request"), pb("買い物", "kind", "shopping"),
-    { type: "postback", label: "キャンセル", data: `action=cancel_pending&pending_action_id=${pendingActionId}`, displayText: "キャンセル" },
+    pb("今日", "date", "today"),
+    pb("明日", "date", "tomorrow"),
+    pb("朝", "time", "morning"),
+    pb("夜", "time", "night"),
+    pb("時刻なし", "time", "none"),
+    pb("自分", "assignee", "self"),
+    pb("パパ", "assignee", "papa"),
+    pb("ママ", "assignee", "mama"),
+    pb("予定", "kind", "event"),
+    pb("タスク", "kind", "task"),
+    pb("お願い", "kind", "request"),
+    pb("買い物", "kind", "shopping"),
+    {
+      type: "postback",
+      label: "キャンセル",
+      data: `action=cancel_pending&pending_action_id=${pendingActionId}`,
+      displayText: "キャンセル",
+    },
   ];
 }
 
@@ -1047,7 +1548,12 @@ async function beginClarificationForKind(
   } else {
     const partner = await partnerUserId(client, actor);
     if (!partner) {
-      await sendConfirmation(client, item, actor, "お願いを送る相手がまだ参加していません。PWAの「設定 ＞ 家族」からパートナーを招待してください。");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "お願いを送る相手がまだ参加していません。PWAの「設定 ＞ 家族」からパートナーを招待してください。",
+      );
       return;
     }
     actionType = "request_create";
@@ -1055,7 +1561,13 @@ async function beginClarificationForKind(
     payload.target_label = "パートナー";
     delete payload.planned_assignee_user_id;
   }
-  const updated = await updateEditablePending(client, actor, pending.id, actionType, payload);
+  const updated = await updateEditablePending(
+    client,
+    actor,
+    pending.id,
+    actionType,
+    payload,
+  );
   if (!updated) return;
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
@@ -1063,7 +1575,11 @@ async function beginClarificationForKind(
     householdId: actor.household_id,
     recipientUserId: actor.user_id,
     text: "あと1つ教えてください。",
-    message: buildMissingTitleFlex({ pendingActionId: updated.id, kind, scheduleLabel: scheduleLabel(payload) }),
+    message: buildMissingTitleFlex({
+      pendingActionId: updated.id,
+      kind,
+      scheduleLabel: scheduleLabel(payload),
+    }),
     dedupKey: `line-clarify-title:${item.provider_event_id}`,
   });
 }
@@ -1077,92 +1593,234 @@ async function handlePostback(
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
 
-  if (fields.action === "cancel_multi_candidate" && fields.pending_action_id && fields.candidate_id) {
-    await cancelMultiIntentCandidate(client, item, actor, fields.pending_action_id, fields.candidate_id);
+  if (
+    fields.action === "cancel_multi_candidate" && fields.pending_action_id &&
+    fields.candidate_id
+  ) {
+    await cancelMultiIntentCandidate(
+      client,
+      item,
+      actor,
+      fields.pending_action_id,
+      fields.candidate_id,
+    );
     return;
   }
 
-if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && fields.candidate_id &&
-    (fields.decision === "existing" || fields.decision === "update" || fields.decision === "separate")) {
-  await resolveMultiIntentDuplicate(client, item, actor, fields.pending_action_id, fields.candidate_id, fields.decision);
-  return;
-}
+  if (
+    fields.action === "resolve_multi_duplicate" && fields.pending_action_id &&
+    fields.candidate_id &&
+    (fields.decision === "existing" || fields.decision === "update" ||
+      fields.decision === "separate")
+  ) {
+    await resolveMultiIntentDuplicate(
+      client,
+      item,
+      actor,
+      fields.pending_action_id,
+      fields.candidate_id,
+      fields.decision,
+    );
+    return;
+  }
 
   if (fields.action === "create_partner_invite" && fields.pending_action_id) {
-    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+    const pending = await getEditablePending(
+      client,
+      actor,
+      fields.pending_action_id,
+    );
     if (!pending) {
-      await sendConfirmation(client, item, actor, "この下書きはすでに確定・期限切れです。");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "この下書きはすでに確定・期限切れです。",
+      );
       return;
     }
     await sendPartnerInviteLink(client, item, actor, pending.id);
     return;
   }
 
-  if (fields.action === "clarify_kind" && fields.pending_action_id && fields.kind) {
-    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+  if (
+    fields.action === "clarify_kind" && fields.pending_action_id && fields.kind
+  ) {
+    const pending = await getEditablePending(
+      client,
+      actor,
+      fields.pending_action_id,
+    );
     if (!pending) {
-      await sendConfirmation(client, item, actor, "この入力はすでに確定・期限切れです。");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "この入力はすでに確定・期限切れです。",
+      );
       return;
     }
     if (!["event", "task", "request", "shopping"].includes(fields.kind)) return;
-    await beginClarificationForKind(client, item, actor, pending, fields.kind as LineCreationKind);
+    await beginClarificationForKind(
+      client,
+      item,
+      actor,
+      pending,
+      fields.kind as LineCreationKind,
+    );
     return;
   }
 
   if (fields.action === "edit_pending" && fields.pending_action_id) {
-    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+    const pending = await getEditablePending(
+      client,
+      actor,
+      fields.pending_action_id,
+    );
     if (!pending) {
-      await sendConfirmation(client, item, actor, "この入力はすでに確定・期限切れです。");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "この入力はすでに確定・期限切れです。",
+      );
       return;
     }
     if (pending.action_type === "assignment_change_request") {
       const quick: LineQuickReplyAction[] = [
-        { type: "postback", label: "今回だけ", data: `action=update_pending&pending_action_id=${fields.pending_action_id}&field=scope&value=once`, displayText: "今回だけ" },
-        { type: "postback", label: "今週だけ", data: `action=update_pending&pending_action_id=${fields.pending_action_id}&field=scope&value=this_week`, displayText: "今週だけ" },
-        { type: "postback", label: "キャンセル", data: `action=cancel_pending&pending_action_id=${fields.pending_action_id}`, displayText: "キャンセル" },
+        {
+          type: "postback",
+          label: "今回だけ",
+          data:
+            `action=update_pending&pending_action_id=${fields.pending_action_id}&field=scope&value=once`,
+          displayText: "今回だけ",
+        },
+        {
+          type: "postback",
+          label: "今週だけ",
+          data:
+            `action=update_pending&pending_action_id=${fields.pending_action_id}&field=scope&value=this_week`,
+          displayText: "今週だけ",
+        },
+        {
+          type: "postback",
+          label: "キャンセル",
+          data:
+            `action=cancel_pending&pending_action_id=${fields.pending_action_id}`,
+          displayText: "キャンセル",
+        },
       ];
-      await sendConfirmation(client, item, actor, "変更する範囲を選んでください。", quick);
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "変更する範囲を選んでください。",
+        quick,
+      );
       return;
     }
     const editPayload = { ...pending.normalized_payload, line_edit_mode: true };
-    const marked = await updateEditablePending(client, actor, pending.id, pending.action_type, editPayload);
+    const marked = await updateEditablePending(
+      client,
+      actor,
+      pending.id,
+      pending.action_type,
+      editPayload,
+    );
     if (!marked) {
-      await sendConfirmation(client, item, actor, "編集を開始できませんでした。元の確認カードからもう一度お試しください。");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "編集を開始できませんでした。元の確認カードからもう一度お試しください。",
+      );
       return;
     }
-    await sendConfirmation(client, item, actor, "修正したい内容をそのまま送れます。例:「ママじゃなくてパパ」「明日10時に変更」「タイトル: 皮膚科の準備」。下のボタンで選んでも大丈夫です。", editQuickReplies(fields.pending_action_id));
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "修正したい内容をそのまま送れます。例:「ママじゃなくてパパ」「明日10時に変更」「タイトル: 皮膚科の準備」。下のボタンで選んでも大丈夫です。",
+      editQuickReplies(fields.pending_action_id),
+    );
     return;
   }
 
-  if (fields.action === "update_pending" && fields.pending_action_id && fields.field && fields.value) {
-    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+  if (
+    fields.action === "update_pending" && fields.pending_action_id &&
+    fields.field && fields.value
+  ) {
+    const pending = await getEditablePending(
+      client,
+      actor,
+      fields.pending_action_id,
+    );
     if (!pending) {
-      await sendConfirmation(client, item, actor, "この入力はすでに確定・期限切れです。");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "この入力はすでに確定・期限切れです。",
+      );
       return;
     }
     let actionType = pending.action_type;
     const payload = { ...pending.normalized_payload };
-    if (fields.field === "scope" && actionType === "assignment_change_request") {
+    if (
+      fields.field === "scope" && actionType === "assignment_change_request"
+    ) {
       payload.scope = fields.value === "this_week" ? "this_week" : "once";
     } else if (fields.field === "date") {
-      payload.scheduled_date = fields.value === "tomorrow" ? jstIsoDateOffset(1) : fields.value === "day_after" ? jstIsoDateOffset(2) : jstIsoDateOffset(0);
+      payload.scheduled_date = fields.value === "tomorrow"
+        ? jstIsoDateOffset(1)
+        : fields.value === "day_after"
+        ? jstIsoDateOffset(2)
+        : jstIsoDateOffset(0);
     } else if (fields.field === "time") {
-      const part = fields.value === "morning" || fields.value === "evening" || fields.value === "night" ? fields.value : null;
+      const part = fields.value === "morning" || fields.value === "evening" ||
+          fields.value === "night"
+        ? fields.value
+        : null;
       payload.daypart = part;
       payload.due_local_time = part ? daypartToLocalTime(part) : null;
     } else if (fields.field === "assignee") {
-      const selected = fields.value === "self" ? actor.user_id : fields.value === "papa" || fields.value === "mama" ? await householdUserForRole(client, actor.household_id, fields.value) : null;
+      const selected = fields.value === "self"
+        ? actor.user_id
+        : fields.value === "papa" || fields.value === "mama"
+        ? await householdUserForRole(client, actor.household_id, fields.value)
+        : null;
       if (!selected) {
-        if (fields.value === "papa" || fields.value === "mama") await sendMissingRoleRecovery(client, item, actor, pending.id, fields.value);
-        else await sendConfirmation(client, item, actor, "担当者を変更できませんでした。下書きは変更していません。");
+        if (fields.value === "papa" || fields.value === "mama") {
+          await sendMissingRoleRecovery(
+            client,
+            item,
+            actor,
+            pending.id,
+            fields.value,
+          );
+        } else {await sendConfirmation(
+            client,
+            item,
+            actor,
+            "担当者を変更できませんでした。下書きは変更していません。",
+          );}
         return;
       }
-      payload.target_label = fields.value === "papa" ? "パパ" : fields.value === "mama" ? "ママ" : "自分";
-      if (actionType === "shopping_item_add") payload.assignee_user_id = selected;
-      else if (actionType === "request_create") {
+      payload.target_label = fields.value === "papa"
+        ? "パパ"
+        : fields.value === "mama"
+        ? "ママ"
+        : "自分";
+      if (actionType === "shopping_item_add") {
+        payload.assignee_user_id = selected;
+      } else if (actionType === "request_create") {
         payload.recipient_user_id = selected;
         delete payload.planned_assignee_user_id;
-        if (!payload.shared_message) payload.shared_message = `${String(payload.title ?? "この件")}をお願いできますか？`;
+        if (!payload.shared_message) {
+          payload.shared_message = `${
+            String(payload.title ?? "この件")
+          }をお願いできますか？`;
+        }
       } else {
         actionType = "task_create_once";
         payload.planned_assignee_user_id = selected;
@@ -1191,35 +1849,72 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       } else if (fields.value === "request") {
         const partner = await partnerUserId(client, actor);
         if (!partner) {
-          await sendConfirmation(client, item, actor, "お願いを送る相手がまだ参加していません。");
+          await sendConfirmation(
+            client,
+            item,
+            actor,
+            "お願いを送る相手がまだ参加していません。",
+          );
           return;
         }
         actionType = "request_create";
         payload.recipient_user_id = partner;
         payload.target_label = "パートナー";
         delete payload.planned_assignee_user_id;
-        if (!payload.shared_message) payload.shared_message = `${String(payload.title ?? "この件")}をお願いできますか？`;
+        if (!payload.shared_message) {
+          payload.shared_message = `${
+            String(payload.title ?? "この件")
+          }をお願いできますか？`;
+        }
       }
     }
     delete payload.line_edit_mode;
-    const result = await updateEditablePending(client, actor, fields.pending_action_id, actionType, payload);
+    const result = await updateEditablePending(
+      client,
+      actor,
+      fields.pending_action_id,
+      actionType,
+      payload,
+    );
     if (!result) return;
-    await sendPendingActionPreview(client, item, actor, result.id, result.action_type, result.normalized_payload);
+    await sendPendingActionPreview(
+      client,
+      item,
+      actor,
+      result.id,
+      result.action_type,
+      result.normalized_payload,
+    );
     return;
   }
 
   if (fields.action === "confirm_pending" && fields.pending_action_id) {
-    const { error } = await client.rpc("server_tx_confirm_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: fields.pending_action_id });
+    const { error } = await client.rpc("server_tx_confirm_pending_action", {
+      p_actor_id: actor.user_id,
+      p_pending_action_id: fields.pending_action_id,
+    });
     if (error) {
-      console.error("process-line-inbox: confirm_pending failed", error.message);
+      console.error(
+        "process-line-inbox: confirm_pending failed",
+        error.message,
+      );
       return;
     }
-    await sendConfirmation(client, item, actor, completionHint("✓ 確定しました。"), menuQuickReplies());
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      completionHint("✓ 確定しました。"),
+      menuQuickReplies(),
+    );
     return;
   }
 
   if (fields.action === "cancel_pending" && fields.pending_action_id) {
-    const { error } = await client.rpc("server_tx_cancel_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: fields.pending_action_id });
+    const { error } = await client.rpc("server_tx_cancel_pending_action", {
+      p_actor_id: actor.user_id,
+      p_pending_action_id: fields.pending_action_id,
+    });
     if (error) {
       console.error("process-line-inbox: cancel_pending failed", error.message);
       return;
@@ -1229,8 +1924,13 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
   }
 
   if (fields.action === "complete_task" && fields.task_id) {
-    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
-    const completionActor = fields.completion_actor === "partner" ? "partner" : "self";
+    const operationId = await deterministicOperationId(
+      "line-postback",
+      item.provider_event_id,
+    );
+    const completionActor = fields.completion_actor === "partner"
+      ? "partner"
+      : "self";
     const { error } = await client.rpc("server_tx_complete_task", {
       p_actor_id: actor.user_id,
       p_operation_id: operationId,
@@ -1239,7 +1939,10 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       p_complete_remaining_subtasks: fields.complete_remaining === "true",
     });
     if (error) {
-      console.error("process-line-inbox: complete_task postback failed", error.message);
+      console.error(
+        "process-line-inbox: complete_task postback failed",
+        error.message,
+      );
       return;
     }
     await sendConfirmation(client, item, actor, "✓ 完了にしました");
@@ -1247,14 +1950,23 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
   }
 
   if (fields.action === "accept_assignment_change" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-assignment-accept", item.provider_event_id);
-    const { error } = await client.rpc("server_tx_accept_assignment_change_request", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_request_id: fields.request_id,
-    });
+    const operationId = await deterministicOperationId(
+      "line-assignment-accept",
+      item.provider_event_id,
+    );
+    const { error } = await client.rpc(
+      "server_tx_accept_assignment_change_request",
+      {
+        p_actor_id: actor.user_id,
+        p_operation_id: operationId,
+        p_request_id: fields.request_id,
+      },
+    );
     if (error) {
-      console.error("process-line-inbox: accept assignment change failed", error.message);
+      console.error(
+        "process-line-inbox: accept assignment change failed",
+        error.message,
+      );
       return;
     }
     await sendConfirmation(client, item, actor, "✓ 担当を引き受けました");
@@ -1262,14 +1974,20 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
   }
 
   if (fields.action === "decline_assignment_change" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-assignment-decline", item.provider_event_id);
+    const operationId = await deterministicOperationId(
+      "line-assignment-decline",
+      item.provider_event_id,
+    );
     const { error } = await client.rpc("server_tx_decline_request", {
       p_actor_id: actor.user_id,
       p_operation_id: operationId,
       p_request_id: fields.request_id,
     });
     if (error) {
-      console.error("process-line-inbox: decline assignment change failed", error.message);
+      console.error(
+        "process-line-inbox: decline assignment change failed",
+        error.message,
+      );
       return;
     }
     await sendConfirmation(client, item, actor, "変更はありません。");
@@ -1277,57 +1995,128 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
   }
 
   if (fields.action === "accept_request" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-request-accept", item.provider_event_id);
+    const operationId = await deterministicOperationId(
+      "line-request-accept",
+      item.provider_event_id,
+    );
     const { error } = await client.rpc("server_tx_accept_request", {
       p_actor_id: actor.user_id,
       p_operation_id: operationId,
       p_request_id: fields.request_id,
     });
     if (error) {
-      if (/REQUEST_NOT_PENDING|REQUEST_ACCEPT_NOT_ALLOWED/.test(error.message)) await sendConfirmation(client, item, actor, "このお願いはすでに処理済みです。");
-      else console.error("process-line-inbox: accept request failed", error.message);
+      if (
+        /REQUEST_NOT_PENDING|REQUEST_ACCEPT_NOT_ALLOWED/.test(error.message)
+      ) {
+        await sendConfirmation(
+          client,
+          item,
+          actor,
+          "このお願いはすでに処理済みです。",
+        );
+      } else {console.error(
+          "process-line-inbox: accept request failed",
+          error.message,
+        );}
       return;
     }
-    await sendConfirmation(client, item, actor, completionHint("✓ 引き受けました。タスクに追加しました。"), menuQuickReplies());
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      completionHint("✓ 引き受けました。タスクに追加しました。"),
+      menuQuickReplies(),
+    );
     return;
   }
 
   if (fields.action === "decline_request" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-request-decline", item.provider_event_id);
+    const operationId = await deterministicOperationId(
+      "line-request-decline",
+      item.provider_event_id,
+    );
     const { error } = await client.rpc("server_tx_decline_request", {
       p_actor_id: actor.user_id,
       p_operation_id: operationId,
       p_request_id: fields.request_id,
     });
     if (error) {
-      if (/REQUEST_NOT_PENDING|REQUEST_DECLINE_NOT_ALLOWED/.test(error.message)) await sendConfirmation(client, item, actor, "このお願いはすでに処理済みです。");
-      else console.error("process-line-inbox: decline request failed", error.message);
+      if (
+        /REQUEST_NOT_PENDING|REQUEST_DECLINE_NOT_ALLOWED/.test(error.message)
+      ) {
+        await sendConfirmation(
+          client,
+          item,
+          actor,
+          "このお願いはすでに処理済みです。",
+        );
+      } else {console.error(
+          "process-line-inbox: decline request failed",
+          error.message,
+        );}
       return;
     }
-    await sendConfirmation(client, item, actor, "今回は難しいとして返しました。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "今回は難しいとして返しました。",
+    );
     return;
   }
 
-  if (fields.action === "routine_item" && fields.session_id && fields.task_instance_id && fields.value) {
-    const allowed = ["complete", "partner_handled", "skip", "failed", "cancelled", "rescheduled", "unknown"];
+  if (
+    fields.action === "routine_item" && fields.session_id &&
+    fields.task_instance_id && fields.value
+  ) {
+    const allowed = [
+      "complete",
+      "partner_handled",
+      "skip",
+      "failed",
+      "cancelled",
+      "rescheduled",
+      "unknown",
+    ];
     if (!allowed.includes(fields.value)) {
-      console.warn("process-line-inbox: invalid routine_item value", { value: fields.value });
+      console.warn("process-line-inbox: invalid routine_item value", {
+        value: fields.value,
+      });
       return;
     }
-    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
-    const { error } = await client.rpc("server_tx_routine_session_item_action_v3", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_session_id: fields.session_id,
-      p_task_instance_id: fields.task_instance_id,
-      p_action: fields.value,
-      p_source: "line",
-      p_rescheduled_to: fields.value === "rescheduled" ? jstIsoDateOffset(1) : null,
-      p_reconciliation_operation_id: null,
-    });
+    const operationId = await deterministicOperationId(
+      "line-postback",
+      item.provider_event_id,
+    );
+    const { error } = await client.rpc(
+      "server_tx_routine_session_item_action_v3",
+      {
+        p_actor_id: actor.user_id,
+        p_operation_id: operationId,
+        p_session_id: fields.session_id,
+        p_task_instance_id: fields.task_instance_id,
+        p_action: fields.value,
+        p_source: "line",
+        p_rescheduled_to: fields.value === "rescheduled"
+          ? jstIsoDateOffset(1)
+          : null,
+        p_reconciliation_operation_id: null,
+      },
+    );
     if (error) {
-      console.error("process-line-inbox: routine_item postback failed", error.message);
-      if (error.message === "TASK_TERMINAL") await sendStaleSessionReply(client, item, actor, fields.session_id, null);
+      console.error(
+        "process-line-inbox: routine_item postback failed",
+        error.message,
+      );
+      if (error.message === "TASK_TERMINAL") {
+        await sendStaleSessionReply(
+          client,
+          item,
+          actor,
+          fields.session_id,
+          null,
+        );
+      }
       return;
     }
     const labels: Record<string, string> = {
@@ -1340,47 +2129,108 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       unknown: "✓ 不明として記録しました",
     };
     const itemLabel = labels[fields.value] ?? "✓ 記録しました";
-    const session = await getRoutineSession(client, actor.user_id, fields.session_id);
+    const session = await getRoutineSession(
+      client,
+      actor.user_id,
+      fields.session_id,
+    );
     const remaining = session?.items ?? [];
     const candidates = fields.value === "unknown"
-      ? remaining.filter((candidate) => candidate.task_instance_id !== fields.task_instance_id)
+      ? remaining.filter((candidate) =>
+        candidate.task_instance_id !== fields.task_instance_id
+      )
       : remaining;
     const next = session ? pickNextUnfinished(candidates) : null;
-    if (next) await sendItemPrompt(client, item, actor, fields.session_id, next, itemLabel);
-    else await sendConfirmation(client, item, actor, `${itemLabel}\n\n✓ 全項目の回答が終わりました！`);
+    if (next) {
+      await sendItemPrompt(
+        client,
+        item,
+        actor,
+        fields.session_id,
+        next,
+        itemLabel,
+      );
+    } else {await sendConfirmation(
+        client,
+        item,
+        actor,
+        `${itemLabel}\n\n✓ 全項目の回答が終わりました！`,
+      );}
     return;
   }
 
   if (fields.action === "routine_item_mode" && fields.session_id) {
-    const session = await getRoutineSession(client, actor.user_id, fields.session_id);
+    const session = await getRoutineSession(
+      client,
+      actor.user_id,
+      fields.session_id,
+    );
     if (!session || !session.can_act) {
-      await sendStaleSessionReply(client, item, actor, fields.session_id, session?.current_session_id ?? null);
+      await sendStaleSessionReply(
+        client,
+        item,
+        actor,
+        fields.session_id,
+        session?.current_session_id ?? null,
+      );
       return;
     }
     const next = pickNextUnfinished(session.items);
-    if (next) await sendItemPrompt(client, item, actor, fields.session_id, next);
-    else await sendConfirmation(client, item, actor, "✓ 未完了の項目はありません");
+    if (next) {
+      await sendItemPrompt(client, item, actor, fields.session_id, next);
+    } else {await sendConfirmation(
+        client,
+        item,
+        actor,
+        "✓ 未完了の項目はありません",
+      );}
     return;
   }
 
   if (fields.action === "routine_item_next" && fields.session_id) {
-    const session = await getRoutineSession(client, actor.user_id, fields.session_id);
+    const session = await getRoutineSession(
+      client,
+      actor.user_id,
+      fields.session_id,
+    );
     if (!session || !session.can_act) {
-      await sendStaleSessionReply(client, item, actor, fields.session_id, session?.current_session_id ?? null);
+      await sendStaleSessionReply(
+        client,
+        item,
+        actor,
+        fields.session_id,
+        session?.current_session_id ?? null,
+      );
       return;
     }
-    const next = pickNextUnfinished(session.items, fields.task_instance_id ?? null);
-    if (next) await sendItemPrompt(client, item, actor, fields.session_id, next);
-    else await sendConfirmation(client, item, actor, "✓ 未完了の項目はありません");
+    const next = pickNextUnfinished(
+      session.items,
+      fields.task_instance_id ?? null,
+    );
+    if (next) {
+      await sendItemPrompt(client, item, actor, fields.session_id, next);
+    } else {await sendConfirmation(
+        client,
+        item,
+        actor,
+        "✓ 未完了の項目はありません",
+      );}
     return;
   }
 
-  if (fields.action === "routine_complete" && fields.session_id && fields.value) {
+  if (
+    fields.action === "routine_complete" && fields.session_id && fields.value
+  ) {
     if (!["complete_all", "skip_incomplete"].includes(fields.value)) {
-      console.warn("process-line-inbox: invalid routine_complete value", { value: fields.value });
+      console.warn("process-line-inbox: invalid routine_complete value", {
+        value: fields.value,
+      });
       return;
     }
-    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
+    const operationId = await deterministicOperationId(
+      "line-postback",
+      item.provider_event_id,
+    );
     const { error } = await client.rpc("server_tx_complete_routine_session", {
       p_actor_id: actor.user_id,
       p_operation_id: operationId,
@@ -1389,35 +2239,82 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       p_source: "line",
     });
     if (error) {
-      console.error("process-line-inbox: routine_complete postback failed", error.message);
-      if (error.message === "TASK_TERMINAL") await sendStaleSessionReply(client, item, actor, fields.session_id, null);
+      console.error(
+        "process-line-inbox: routine_complete postback failed",
+        error.message,
+      );
+      if (error.message === "TASK_TERMINAL") {
+        await sendStaleSessionReply(
+          client,
+          item,
+          actor,
+          fields.session_id,
+          null,
+        );
+      }
       return;
     }
-    const sessionLabel = fields.value === "complete_all" ? "✓ 全部完了にしました" : "✓ 今回は不要にしました";
+    const sessionLabel = fields.value === "complete_all"
+      ? "✓ 全部完了にしました"
+      : "✓ 今回は不要にしました";
     await sendConfirmation(client, item, actor, sessionLabel);
     return;
   }
 
   if (fields.action === "routine_skip_prompt" && fields.session_id) {
-    const session = await getRoutineSession(client, actor.user_id, fields.session_id);
+    const session = await getRoutineSession(
+      client,
+      actor.user_id,
+      fields.session_id,
+    );
     if (!session || !session.can_act) {
-      await sendStaleSessionReply(client, item, actor, fields.session_id, session?.current_session_id ?? null);
+      await sendStaleSessionReply(
+        client,
+        item,
+        actor,
+        fields.session_id,
+        session?.current_session_id ?? null,
+      );
       return;
     }
     const confirmQuickReply: LineQuickReplyAction[] = [
-      { type: "postback", label: "はい、今回は不要", data: `action=routine_complete&session_id=${fields.session_id}&value=skip_incomplete`, displayText: "はい、今回は不要" },
-      { type: "postback", label: "戻る", data: "action=routine_cancel_prompt", displayText: "戻る" },
+      {
+        type: "postback",
+        label: "はい、今回は不要",
+        data:
+          `action=routine_complete&session_id=${fields.session_id}&value=skip_incomplete`,
+        displayText: "はい、今回は不要",
+      },
+      {
+        type: "postback",
+        label: "戻る",
+        data: "action=routine_cancel_prompt",
+        displayText: "戻る",
+      },
     ];
-    await sendConfirmation(client, item, actor, "未完了の項目を「今回は不要」にしますか？", confirmQuickReply);
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "未完了の項目を「今回は不要」にしますか？",
+      confirmQuickReply,
+    );
     return;
   }
 
   if (fields.action === "routine_cancel_prompt") {
-    await sendConfirmation(client, item, actor, "キャンセルしました。変更はありません。");
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "キャンセルしました。変更はありません。",
+    );
     return;
   }
 
-  console.warn("process-line-inbox: unrecognized postback action", { action: fields.action ?? null });
+  console.warn("process-line-inbox: unrecognized postback action", {
+    action: fields.action ?? null,
+  });
 }
 
 async function handleText(
@@ -1426,7 +2323,9 @@ async function handleText(
   actor: LineActor | null,
   text: string,
 ): Promise<void> {
-  if (await tryClaimLinkToken(client, item.source_external_user_id, text)) return;
+  if (await tryClaimLinkToken(client, item.source_external_user_id, text)) {
+    return;
+  }
   if (!actor) return;
   if (await tryHandleReadOnlyText(client, item, actor, text)) return;
   if (await tryHandlePendingReferent(client, item, actor, text)) return;
@@ -1439,9 +2338,19 @@ async function handleText(
 
   if (!parsed && /(?:迎え.*お願い|お願い.*迎え)/.test(text)) {
     const scheduledDate = resolveJapanesePickupDate(text);
-    const { data: definition } = await client.from("task_definitions").select("id").eq("household_id", actor.household_id).eq("code", "pickup").maybeSingle();
+    const { data: definition } = await client.from("task_definitions").select(
+      "id",
+    ).eq("household_id", actor.household_id).eq("code", "pickup").maybeSingle();
     const { data: task } = definition && scheduledDate
-      ? await client.from("task_instances").select("id,title,due_at,scheduled_date").eq("household_id", actor.household_id).eq("task_definition_id", definition.id).eq("scheduled_date", scheduledDate).eq("planned_assignee_id", actor.user_id).in("status", ["todo", "in_progress"]).maybeSingle()
+      ? await client.from("task_instances").select(
+        "id,title,due_at,scheduled_date",
+      ).eq("household_id", actor.household_id).eq(
+        "task_definition_id",
+        definition.id,
+      ).eq("scheduled_date", scheduledDate).eq(
+        "planned_assignee_id",
+        actor.user_id,
+      ).in("status", ["todo", "in_progress"]).maybeSingle()
       : { data: null };
     const partner = await partnerUserId(client, actor);
     if (task && partner) {
@@ -1471,12 +2380,20 @@ async function handleText(
       clarification_kind: starterKind,
       scheduled_date: correctionDate(text) ?? jstIsoDateOffset(0),
       due_local_time: due === undefined ? null : due,
-      daypart: /朝/.test(text) ? "morning" : /夕方/.test(text) ? "evening" : /夜/.test(text) ? "night" : null,
+      daypart: /朝/.test(text)
+        ? "morning"
+        : /夕方/.test(text)
+        ? "evening"
+        : /夜/.test(text)
+        ? "night"
+        : null,
     };
   } else if (parsed) {
     actionType = parsed.actionType;
     payload = { ...parsed.payload, raw_text: text };
-    if (actionType === "task_create_once" && !payload.planned_assignee_user_id) {
+    if (
+      actionType === "task_create_once" && !payload.planned_assignee_user_id
+    ) {
       payload.planned_assignee_user_id = actor.user_id;
       payload.target_label = "自分";
     }
@@ -1490,9 +2407,20 @@ async function handleText(
         due_local_time: correctionTime(text) ?? null,
       };
     } else {
-      const targetUser = intent.targetRole ? await householdUserForRole(client, actor.household_id, intent.targetRole) : null;
-      const dueLocalTime = intent.dueLocalTime ?? daypartToLocalTime(intent.daypart);
-      const roleLabel = intent.targetRole === "papa" ? "パパ" : intent.targetRole === "mama" ? "ママ" : null;
+      const targetUser = intent.targetRole
+        ? await householdUserForRole(
+          client,
+          actor.household_id,
+          intent.targetRole,
+        )
+        : null;
+      const dueLocalTime = intent.dueLocalTime ??
+        daypartToLocalTime(intent.daypart);
+      const roleLabel = intent.targetRole === "papa"
+        ? "パパ"
+        : intent.targetRole === "mama"
+        ? "ママ"
+        : null;
       if (intent.kind === "shopping") {
         actionType = "shopping_item_add";
         payload = {
@@ -1509,13 +2437,16 @@ async function handleText(
           parse_source: intent.source,
         };
       } else {
-        const recipient = intent.kind === "request" ? (targetUser ?? (await partnerUserId(client, actor))) : null;
+        const recipient = intent.kind === "request"
+          ? (targetUser ?? (await partnerUserId(client, actor)))
+          : null;
         if (recipient && recipient !== actor.user_id) {
           actionType = "request_create";
           payload = {
             raw_text: text,
             title: intent.title,
-            shared_message: intent.sharedMessage ?? `${intent.title}をお願いできますか？`,
+            shared_message: intent.sharedMessage ??
+              `${intent.title}をお願いできますか？`,
             recipient_user_id: recipient,
             scheduled_date: intent.scheduledDate,
             due_local_time: dueLocalTime,
@@ -1547,30 +2478,49 @@ async function handleText(
     }
   }
 
-  const operationId = await deterministicOperationId("line-text", item.provider_event_id);
-  const { data: pendingData, error } = await client.rpc("server_tx_create_pending_action", {
-    p_actor_id: actor.user_id,
-    p_household_id: actor.household_id,
-    p_operation_id: operationId,
-    p_source: "line",
-    p_action_type: actionType,
-    p_normalized_payload: payload,
-    p_ttl_minutes: PENDING_ACTION_TTL_MINUTES,
-  });
+  const operationId = await deterministicOperationId(
+    "line-text",
+    item.provider_event_id,
+  );
+  const { data: pendingData, error } = await client.rpc(
+    "server_tx_create_pending_action",
+    {
+      p_actor_id: actor.user_id,
+      p_household_id: actor.household_id,
+      p_operation_id: operationId,
+      p_source: "line",
+      p_action_type: actionType,
+      p_normalized_payload: payload,
+      p_ttl_minutes: PENDING_ACTION_TTL_MINUTES,
+    },
+  );
   if (error) {
-    console.error("process-line-inbox: create_pending_action failed", error.message);
+    console.error(
+      "process-line-inbox: create_pending_action failed",
+      error.message,
+    );
     return;
   }
   const pendingActionId = pendingData?.pending_action_id as string | undefined;
   if (pendingActionId && actionType !== "needs_pwa_review") {
-    await sendPendingActionPreview(client, item, actor, pendingActionId, actionType, payload);
+    await sendPendingActionPreview(
+      client,
+      item,
+      actor,
+      pendingActionId,
+      actionType,
+      payload,
+    );
     return;
   }
   if (pendingActionId) {
     const pending = await getEditablePending(client, actor, pendingActionId);
     if (!pending) return;
     const knownKind = payload.clarification_kind;
-    if (knownKind === "event" || knownKind === "task" || knownKind === "request" || knownKind === "shopping") {
+    if (
+      knownKind === "event" || knownKind === "task" ||
+      knownKind === "request" || knownKind === "shopping"
+    ) {
       await beginClarificationForKind(client, item, actor, pending, knownKind);
       return;
     }
@@ -1580,16 +2530,25 @@ async function handleText(
       householdId: actor.household_id,
       recipientUserId: actor.user_id,
       text: "登録する種類を確認してください。",
-      message: buildIntentClarificationFlex({ pendingActionId, scheduleHint: scheduleLabel(payload) }),
+      message: buildIntentClarificationFlex({
+        pendingActionId,
+        scheduleHint: scheduleLabel(payload),
+      }),
       dedupKey: `line-clarify-kind:${item.provider_event_id}`,
     });
   }
 }
 
-async function processItem(client: SupabaseClient, item: WebhookInboxItem): Promise<void> {
+async function processItem(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+): Promise<void> {
   const actor = await resolveActor(client, item.source_external_user_id);
-  if (item.payload.type === "postback") await handlePostback(client, item, actor);
-  else if (item.payload.type === "message" && item.payload.message?.type === "text") {
+  if (item.payload.type === "postback") {
+    await handlePostback(client, item, actor);
+  } else if (
+    item.payload.type === "message" && item.payload.message?.type === "text"
+  ) {
     await handleText(client, item, actor, item.payload.message.text ?? "");
   }
 }
@@ -1598,17 +2557,28 @@ Deno.serve(
   withServiceHandler(async (req: Request) => {
     requireWorkerToken(req);
     const client = createServiceRoleClient();
-    const { data: batchData, error: claimError } = await client.rpc("server_tx_claim_webhook_inbox_batch", {
-      p_worker_id: WORKER_ID,
-      p_limit: BATCH_LIMIT,
-      p_lease_seconds: LEASE_SECONDS,
-    });
+    const { data: batchData, error: claimError } = await client.rpc(
+      "server_tx_claim_webhook_inbox_batch",
+      {
+        p_worker_id: WORKER_ID,
+        p_limit: BATCH_LIMIT,
+        p_lease_seconds: LEASE_SECONDS,
+      },
+    );
     if (claimError) {
-      console.error("process-line-inbox: claim batch failed", claimError.message);
-      return new Response(JSON.stringify({ error: { code: "INTERNAL_ERROR", message: "internal error" } }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      console.error(
+        "process-line-inbox: claim batch failed",
+        claimError.message,
+      );
+      return new Response(
+        JSON.stringify({
+          error: { code: "INTERNAL_ERROR", message: "internal error" },
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
     const items = (batchData ?? []) as WebhookInboxItem[];
     let succeeded = 0;
@@ -1616,15 +2586,21 @@ Deno.serve(
     for (const item of items) {
       try {
         await processItem(client, item);
-        const { data: completeData } = await client.rpc("server_tx_complete_webhook_inbox_item", {
-          p_id: item.id,
-          p_lease_token: item.lease_token,
-        });
+        const { data: completeData } = await client.rpc(
+          "server_tx_complete_webhook_inbox_item",
+          {
+            p_id: item.id,
+            p_lease_token: item.lease_token,
+          },
+        );
         if ((completeData as { ok?: boolean } | null)?.ok) succeeded++;
       } catch (err) {
         failed++;
         const message = err instanceof Error ? err.message : String(err);
-        console.error("process-line-inbox: item processing failed", { id: item.id, message });
+        console.error("process-line-inbox: item processing failed", {
+          id: item.id,
+          message,
+        });
         await client.rpc("server_tx_fail_webhook_inbox_item", {
           p_id: item.id,
           p_lease_token: item.lease_token,

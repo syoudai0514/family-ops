@@ -1,9 +1,9 @@
 import { callGemini } from "../_shared/gemini.ts";
 import {
   deterministicLineIntent,
-  normalizeGeminiLineIntent,
   type LineIntent,
   type LineIntentKind,
+  normalizeGeminiLineIntent,
 } from "./lineIntent.ts";
 
 export type ConciergeDuplicateMatch = {
@@ -43,9 +43,15 @@ export type LineMultiIntentPendingCandidate = {
   confidence: number | null;
   ambiguous_fields: string[];
   duplicate_match: ConciergeDuplicateMatch | null;
+  duplicate_decision: "existing" | "update" | "separate" | null;
   status: "draft" | "cancelled";
   missing_fields: string[];
-  action_type: "task_create_once" | "shopping_item_add" | "request_create" | "handover_create" | "actual_record";
+  action_type:
+    | "task_create_once"
+    | "shopping_item_add"
+    | "request_create"
+    | "handover_create"
+    | "actual_record";
   payload: Record<string, unknown>;
 };
 
@@ -53,31 +59,48 @@ export function activeMultiIntentCandidates(
   value: unknown,
 ): LineMultiIntentPendingCandidate[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((candidate): candidate is LineMultiIntentPendingCandidate => {
-    if (!candidate || typeof candidate !== "object") return false;
-    const row = candidate as Record<string, unknown>;
-    return typeof row.candidate_id === "string" &&
-      typeof row.operation_id === "string" &&
-      typeof row.title === "string" &&
-      row.status === "draft" &&
-      Array.isArray(row.missing_fields) &&
-      typeof row.action_type === "string" &&
-      row.payload !== null && typeof row.payload === "object";
-  });
+  return value.filter(
+    (candidate): candidate is LineMultiIntentPendingCandidate => {
+      if (!candidate || typeof candidate !== "object") return false;
+      const row = candidate as Record<string, unknown>;
+      return typeof row.candidate_id === "string" &&
+        typeof row.operation_id === "string" &&
+        typeof row.title === "string" &&
+        row.status === "draft" &&
+        Array.isArray(row.missing_fields) &&
+        typeof row.action_type === "string" &&
+        row.payload !== null && typeof row.payload === "object";
+    },
+  );
 }
 
 function title(value: string): string {
-  return value.replace(/[。！!？?]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+  return value.replace(/[。！!？?]/g, "").replace(/\s+/g, " ").trim().slice(
+    0,
+    80,
+  );
 }
 
 const WEEKDAY_INDEX: Record<string, number> = {
-  日曜: 0, 月曜: 1, 火曜: 2, 水曜: 3, 木曜: 4, 金曜: 5, 土曜: 6,
+  日曜: 0,
+  月曜: 1,
+  火曜: 2,
+  水曜: 3,
+  木曜: 4,
+  金曜: 5,
+  土曜: 6,
 };
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 function dateFromToken(token: string, now: Date): string {
   const shifted = new Date(now.getTime() + JST_OFFSET_MS);
-  const base = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
+  const base = new Date(
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+    ),
+  );
   let days: number;
   if (token === "今日") days = 0;
   else if (token === "明日") days = 1;
@@ -91,18 +114,27 @@ function dateFromToken(token: string, now: Date): string {
 }
 
 function explicitDate(clause: string, now: Date): string {
-  const token = clause.match(/今日|明日|明後日|[月火水木金土日]曜/u)?.[0] ?? "今日";
+  const token = clause.match(/今日|明日|明後日|[月火水木金土日]曜/u)?.[0] ??
+    "今日";
   return dateFromToken(token, now);
 }
 
 function explicitRole(clause: string): "papa" | "mama" | null {
-  const correction = clause.match(/(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/u);
-  const token = correction?.[1] ?? clause.match(/パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻/u)?.[0] ?? null;
+  const correction = clause.match(
+    /(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/u,
+  );
+  const token = correction?.[1] ??
+    clause.match(/パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻/u)?.[0] ??
+    null;
   if (!token) return null;
   return /^(?:パパ|父|お父さん)$/u.test(token) ? "papa" : "mama";
 }
 
-function fallbackRequestIntent(clause: string, requestTitle: string, now: Date): LineIntent {
+function fallbackRequestIntent(
+  clause: string,
+  requestTitle: string,
+  now: Date,
+): LineIntent {
   const role = explicitRole(clause);
   return {
     kind: "request",
@@ -119,37 +151,61 @@ function fallbackRequestIntent(clause: string, requestTitle: string, now: Date):
   };
 }
 
-function sourceSpan(raw: string, source: string, cursor = 0): { start: number; end: number } | null {
+function sourceSpan(
+  raw: string,
+  source: string,
+  cursor = 0,
+): { start: number; end: number } | null {
   const direct = raw.indexOf(source, cursor);
   const start = direct >= 0 ? direct : raw.indexOf(source);
   return start >= 0 ? { start, end: start + source.length } : null;
 }
 
-function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandidate, "candidateId">[] {
+function clauseCandidates(
+  clause: string,
+  now: Date,
+): Omit<LineConversationCandidate, "candidateId">[] {
   const parsed = deterministicLineIntent(clause, now);
   if (parsed) {
-    const cleanedTitle = parsed.kind === "shopping" ? parsed.title.replace(/も$/u, "") : parsed.title;
+    const cleanedTitle = parsed.kind === "shopping"
+      ? parsed.title.replace(/も$/u, "")
+      : parsed.title;
     return [{
       operationId: null,
       kind: parsed.kind,
       title: cleanedTitle,
-      intent: parsed.kind === "shopping" && cleanedTitle !== parsed.title ? { ...parsed, title: cleanedTitle } : parsed,
+      intent: parsed.kind === "shopping" && cleanedTitle !== parsed.title
+        ? { ...parsed, title: cleanedTitle }
+        : parsed,
       sourceText: clause,
       sourceSpan: null,
       confidence: null,
       ambiguousFields: [],
-      missingFields: parsed.kind === "request" && !parsed.targetRole ? ["assignee"] : [],
+      missingFields: parsed.kind === "request" && !parsed.targetRole
+        ? ["assignee"]
+        : [],
       duplicateMatch: null,
     }];
   }
 
   const lowStock = clause.match(/^(.{1,60}?)(?:が|は)?(?:もう)?なくなりそう/u);
-  if (lowStock) return [{
-    operationId: null,
-    kind: "shopping", title: title(lowStock[1]), intent: null, sourceText: clause,
-    sourceSpan: null, confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
-  }];
-  const request = clause.match(/^(.{1,70}?)(?:を)?(?:お願い(?:します|したい)?|頼める[？?]?)$/u);
+  if (lowStock) {
+    return [{
+      operationId: null,
+      kind: "shopping",
+      title: title(lowStock[1]),
+      intent: null,
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    }];
+  }
+  const request = clause.match(
+    /^(.{1,70}?)(?:を)?(?:お願い(?:します|したい)?|頼める[？?]?)$/u,
+  );
   if (request) {
     const requestTitle = title(request[1])
       .replace(/^(?:今日|明日|明後日|[月火水木金土日]曜)の?/u, "")
@@ -158,22 +214,48 @@ function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandi
     const intent = fallbackRequestIntent(clause, requestTitle, now);
     return [{
       operationId: null,
-      kind: "request", title: requestTitle, intent, sourceText: clause,
-      sourceSpan: null, confidence: null, ambiguousFields: intent.targetRole ? [] : ["assignee"],
-      missingFields: intent.targetRole ? [] : ["assignee"], duplicateMatch: null,
+      kind: "request",
+      title: requestTitle,
+      intent,
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: intent.targetRole ? [] : ["assignee"],
+      missingFields: intent.targetRole ? [] : ["assignee"],
+      duplicateMatch: null,
     }];
   }
-  const actual = clause.match(/^(.{1,70}?)(?:を)?(?:やった|した|かけた)(?:よ|済み)?$/u);
-  if (actual) return [{
-    operationId: null,
-    kind: "actual", title: title(actual[1]), intent: null, sourceText: clause,
-    sourceSpan: null, confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
-  }];
-  if (/(?:水遊び|行事|変更|お知らせ|熱|咳|休み)/u.test(clause)) return [{
-    operationId: null,
-    kind: "share", title: title(clause), intent: null, sourceText: clause,
-    sourceSpan: null, confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
-  }];
+  const actual = clause.match(
+    /^(.{1,70}?)(?:を)?(?:やった|した|かけた)(?:よ|済み)?$/u,
+  );
+  if (actual) {
+    return [{
+      operationId: null,
+      kind: "actual",
+      title: title(actual[1]),
+      intent: null,
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    }];
+  }
+  if (/(?:水遊び|行事|変更|お知らせ|熱|咳|休み)/u.test(clause)) {
+    return [{
+      operationId: null,
+      kind: "share",
+      title: title(clause),
+      intent: null,
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    }];
+  }
   return [];
 }
 
@@ -188,7 +270,9 @@ function splitConversation(text: string): string[] {
 }
 
 function correctionDate(clause: string, now: Date): string | null {
-  const match = clause.match(/(?:あ[、,]?\s*)?(?:やっぱ|やっぱり|訂正(?:して)?|ではなく|じゃなくて?)\s*(今日|明日|明後日|[月火水木金土日]曜)/u);
+  const match = clause.match(
+    /(?:あ[、,]?\s*)?(?:やっぱ|やっぱり|訂正(?:して)?|ではなく|じゃなくて?)\s*(今日|明日|明後日|[月火水木金土日]曜)/u,
+  );
   return match ? dateFromToken(match[1], now) : null;
 }
 
@@ -211,10 +295,14 @@ function applyCorrection(
   return true;
 }
 
-function finalize(candidates: Omit<LineConversationCandidate, "candidateId">[], rawText: string): LineConversationCandidate[] {
+function finalize(
+  candidates: Omit<LineConversationCandidate, "candidateId">[],
+  rawText: string,
+): LineConversationCandidate[] {
   let cursor = 0;
   return candidates.map((candidate, index) => {
-    const span = candidate.sourceSpan ?? sourceSpan(rawText, candidate.sourceText, cursor);
+    const span = candidate.sourceSpan ??
+      sourceSpan(rawText, candidate.sourceText, cursor);
     if (span) cursor = span.end;
     return { ...candidate, sourceSpan: span, candidateId: `c${index + 1}` };
   });
@@ -249,7 +337,9 @@ function parseModelJson(raw: string): Record<string, unknown> | null {
   try {
     const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? raw;
     const parsed = JSON.parse(fenced.trim());
-    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+    return parsed && typeof parsed === "object"
+      ? parsed as Record<string, unknown>
+      : null;
   } catch {
     return null;
   }
@@ -261,21 +351,33 @@ export function normalizeSemanticDecomposition(
   source: string,
 ): LineConversationCandidate[] {
   const parsed = parseModelJson(raw);
-  const rows = parsed && Array.isArray(parsed.candidates) ? parsed.candidates : [];
+  const rows = parsed && Array.isArray(parsed.candidates)
+    ? parsed.candidates
+    : [];
   const normalized: Omit<LineConversationCandidate, "candidateId">[] = [];
   for (const value of rows.slice(0, 8)) {
     if (!value || typeof value !== "object") return [];
     const row = value as Record<string, unknown>;
     const kind = String(row.kind ?? "");
-    if (!["task", "request", "shopping", "share", "actual"].includes(kind)) return [];
-    const candidateTitle = typeof row.title === "string" ? title(row.title) : "";
-    const sourceText = typeof row.source_text === "string" ? row.source_text.trim() : "";
-    if (!candidateTitle || !sourceText || !source.includes(sourceText)) return [];
+    if (!["task", "request", "shopping", "share", "actual"].includes(kind)) {
+      return [];
+    }
+    const candidateTitle = typeof row.title === "string"
+      ? title(row.title)
+      : "";
+    const sourceText = typeof row.source_text === "string"
+      ? row.source_text.trim()
+      : "";
+    if (!candidateTitle || !sourceText || !source.includes(sourceText)) {
+      return [];
+    }
     const missingFields = cleanStringArray(row.missing_fields);
     const ambiguousFields = cleanStringArray(row.ambiguous_fields);
-    const confidence = typeof row.confidence === "number" && row.confidence >= 0 && row.confidence <= 1
-      ? row.confidence
-      : null;
+    const confidence =
+      typeof row.confidence === "number" && row.confidence >= 0 &&
+        row.confidence <= 1
+        ? row.confidence
+        : null;
 
     let intent: LineIntent | null = null;
     if (kind === "task" || kind === "request" || kind === "shopping") {
@@ -286,7 +388,9 @@ export function normalizeSemanticDecomposition(
         due_local_time: row.due_local_time ?? null,
         daypart: row.daypart ?? null,
         target_role: row.target_role ?? null,
-        shared_message: kind === "request" ? (row.shared_message ?? null) : null,
+        shared_message: kind === "request"
+          ? (row.shared_message ?? null)
+          : null,
         subtasks: row.subtasks ?? [],
         context: row.context ?? null,
         calendar_visibility: row.calendar_visibility ?? "hidden",
@@ -314,12 +418,18 @@ export function normalizeSemanticDecomposition(
 
 type SemanticProvider = (text: string, now: Date) => Promise<string | null>;
 
-async function geminiSemanticProvider(text: string, now: Date): Promise<string | null> {
+async function geminiSemanticProvider(
+  text: string,
+  now: Date,
+): Promise<string | null> {
   const model = Deno.env.get("GEMINI_MODEL_LINE_DECOMPOSITION") ??
     Deno.env.get("GEMINI_MODEL_LINE_INTENT") ??
     Deno.env.get("GEMINI_MODEL_REWRITE") ?? "";
   if (!model) return null;
-  const today = new Date(now.getTime() + JST_OFFSET_MS).toISOString().slice(0, 10);
+  const today = new Date(now.getTime() + JST_OFFSET_MS).toISOString().slice(
+    0,
+    10,
+  );
   const prompt = [
     "家庭内オペレーションの自然文を、意味上独立した候補へAI-firstで分解してください。",
     `今日(Asia/Tokyo)は ${today} です。`,
@@ -372,6 +482,8 @@ export function assignCandidateOperationIds(
   }));
 }
 
-export function isMultiIntentMessage(candidates: LineConversationCandidate[]): boolean {
+export function isMultiIntentMessage(
+  candidates: LineConversationCandidate[],
+): boolean {
   return candidates.length > 1;
 }
