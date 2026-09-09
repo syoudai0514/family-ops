@@ -2,8 +2,10 @@ name: Lane B finalize guarded patch
 
 on:
   push:
-    branches: [sol/lane-b-concierge-correctness]
-    paths: [.github/workflows/lane-b-finalize-selfpatch.yml]
+    branches:
+      - sol/lane-b-concierge-correctness
+    paths:
+      - .github/workflows/lane-b-finalize-selfpatch.yml
 
 permissions:
   contents: write
@@ -19,7 +21,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Patch canonical pending candidate type
+      - name: Patch and format
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -36,23 +39,21 @@ jobs:
           old = '      operation_id: candidate.operationId,\n      kind: candidate.kind,'
           assert s.count(old) == 1, s.count(old)
           s = s.replace(old, '''      operation_id: candidate.operationId ?? await deterministicOperationId(
-        "line-candidate", item.provider_event_id, candidate.candidateId,
-      ),
-      kind: candidate.kind,''')
+                "line-candidate", item.provider_event_id, candidate.candidateId,
+              ),
+              kind: candidate.kind,''')
           p.write_text(s)
           PY
-          deno fmt \
-            supabase/functions/process-line-inbox/lineMultiIntent.ts \
-            supabase/functions/process-line-inbox/lineUxBuilders.ts \
-            supabase/functions/process-line-inbox/index.ts \
-            supabase/functions/process-pending-actions/index.ts
+          deno fmt supabase/functions/process-line-inbox/lineMultiIntent.ts supabase/functions/process-line-inbox/lineUxBuilders.ts supabase/functions/process-line-inbox/index.ts supabase/functions/process-pending-actions/index.ts
       - name: Targeted Deno checks
+        shell: bash
         working-directory: supabase/functions
         run: |
           deno check process-line-inbox/index.ts
           deno check process-pending-actions/index.ts
           deno test --allow-env process-line-inbox/lineMultiIntent.test.ts
-      - name: Commit and remove one-shot workflow
+      - name: Commit finalized source
+        shell: bash
         run: |
           rm .github/workflows/lane-b-finalize-selfpatch.yml
           git config user.name "family-ops-lane-b"
