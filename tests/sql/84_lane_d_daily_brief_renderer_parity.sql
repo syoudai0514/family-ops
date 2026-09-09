@@ -37,14 +37,16 @@ begin
      or position('昨日の提出物' in v_day) = 0
      or position('引き継ぎ・共有' in v_day) = 0
      or position('もう済んでいる' in v_day) = 0
+     or position('今やること' in v_day) = 0
      or position('待ち・確認' in v_day) = 0 then
     raise exception 'FAIL lane-d-renderer-day: material DailyBrief semantics missing: %', v_day;
   end if;
 
   if position('まず確認' in v_day) > position('いつもと違うこと' in v_day)
      or position('いつもと違うこと' in v_day) > position('引き継ぎ・共有' in v_day)
-     or position('引き継ぎ・共有' in v_day) > position('もう済んでいる' in v_day) then
-    raise exception 'FAIL lane-d-renderer-order: priority order drifted: %', v_day;
+     or position('引き継ぎ・共有' in v_day) > position('もう済んでいる' in v_day)
+     or position('もう済んでいる' in v_day) > position('今やること' in v_day) then
+    raise exception 'FAIL lane-d-renderer-order: approved priority order drifted: %', v_day;
   end if;
 
   v_evening := private.fn_render_daily_brief_text_v3(v_brief, 'evening');
@@ -52,6 +54,10 @@ begin
      or position('朝 3/4 完了' in v_evening) = 0
      or position('明日に影響' in v_evening) = 0 then
     raise exception 'FAIL lane-d-renderer-evening: waiting/morning-summary/tomorrow missing: %', v_evening;
+  end if;
+  if position('引き継ぎ・共有' in v_evening) > position('もう済んでいる' in v_evening)
+     or position('もう済んでいる' in v_evening) > position('まだ残っていること' in v_evening) then
+    raise exception 'FAIL lane-d-renderer-evening-order: completed/handover must precede ordinary remaining work: %', v_evening;
   end if;
 end;
 $$;
