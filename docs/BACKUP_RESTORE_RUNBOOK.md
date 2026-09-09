@@ -101,11 +101,19 @@ For a same-repository PR changing CF-11 controls,
    `household_members.user_id` parents), never by guessed names.
 10. Rewrite only those FK positions and typed-restore every allowlisted table
     with normal constraints active.
-11. Require exact per-table counts, zero identity/task linkage orphans and no
-    old production UUID remaining in identity-FK positions.
+11. Require exact per-table counts, exact preservation of every source field
+    after UUID rebinding, zero identity/task linkage orphans and no old
+    production UUID remaining in identity-FK positions.
 12. Use each signed-in user's JWT through normal PostgREST/RLS to read its
     profile, household membership, household and at least one restored task.
 13. Remove temporary session material and stop disposable stack even on failure.
+
+Do not fail recovery merely because Supabase migration-history timestamp IDs
+differ between source and rebuilt target. The same reviewed migration may have
+a different remote ID depending on deployment path. Both histories must exist,
+but compatibility is proven directly by required-table presence, typed restore,
+constraints, exact row counts, all source-field content equality and the final
+authenticated RLS-use proof.
 
 A green unit test or table-count-only restore is not CF-11 proof.
 
@@ -120,7 +128,8 @@ If the original Family Ops project is lost:
 4. Match each new authenticated email to exactly one snapshot Auth reference.
    Ambiguous/missing identity blocks recovery; never guess ownership.
 5. Run the same schema-derived old→new UUID rebinding before household restore.
-6. Restore durable household data under normal constraints.
+6. Restore durable household data under normal constraints and require exact
+   preservation of all source fields represented in the snapshot.
 7. **Before reopening Family Ops**, sign in as each recovered household user and
    confirm normal authenticated access to profile, membership, household and
    tasks. This is the minimum "family can resume use" gate.
@@ -149,7 +158,7 @@ CF-11 remains FAIL until every item has CURRENT evidence:
 - [ ] Full payload read-back equals source.
 - [ ] Family Ops generation count <=30 with tuple-scoped pruning.
 - [ ] Freshness PASS <=26h.
-- [ ] Actual disposable Supabase restore PASS with constraints + exact counts.
+- [ ] Actual disposable Supabase restore PASS with constraints + exact counts + all source-field content equality.
 - [ ] NEW Auth identity sign-in succeeds for every identity represented in the snapshot.
 - [ ] Old→new UUID rebind leaves no identity-FK orphan/stale old UUID.
 - [ ] Every recovered signed-in identity reads profile/membership/household/task through normal RLS.
