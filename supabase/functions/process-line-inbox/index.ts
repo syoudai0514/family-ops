@@ -38,6 +38,7 @@ import {
   createServiceRoleClient,
   requireWorkerToken,
 } from "../_shared/auth.ts";
+import { attachCanonicalConciergeDuplicate } from "../_shared/conciergeDuplicateMatch.ts";
 import { jsonResponse, withServiceHandler } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { parseLineText } from "./parser.ts";
@@ -56,7 +57,7 @@ import {
   buildScheduleSummaryFlex,
 } from "./lineUxBuilders.ts";
 import {
-  deterministicLineConversationCandidates,
+  decomposeLineConversationCandidates,
   isMultiIntentMessage,
   type LineMultiIntentPendingCandidate,
 } from "./lineMultiIntent.ts";
@@ -509,19 +510,36 @@ async function tryHandlePendingReferent(
 
 async function buildMultiIntentPendingCandidates(
   client: SupabaseClient,
+  item: WebhookInboxItem,
   actor: LineActor,
   text: string,
 ): Promise<LineMultiIntentPendingCandidate[]> {
-  const candidates = deterministicLineConversationCandidates(text);
-  if (!isMultiIntentMessage(candidates)) return [];
+  // Whole-utterance AI decomposition is the normal semantic path.
+  // The shared helper alone owns deterministic availability fallback.
+  const interpreted = await decomposeLineConversationCandidates(text);
+  if (!isMultiIntentMessage(interpreted)) return [];
+  const identified = await Promise.all(interpreted.map(async (candidate) => ({
+    ...candidate,
+    operationId: candidate.operationId ?? await deterministicOperationId(
+      "line-candidate", item.provider_event_id, candidate.candidateId,
+    ),
+  })));
+  const candidates = await Promise.all(identified.map((candidate) =>
+    attachCanonicalConciergeDuplicate(client, actor.household_id, candidate)
+  ));
   const partner = await partnerUserId(client, actor);
   return Promise.all(candidates.map(async (candidate) => {
     const intent = candidate.intent;
     const base = {
       candidate_id: candidate.candidateId,
+      operation_id: candidate.operationId,
       kind: candidate.kind,
       title: candidate.title,
       source_text: candidate.sourceText,
+      source_span: candidate.sourceSpan,
+      confidence: candidate.confidence,
+      ambiguous_fields: [...candidate.ambiguousFields],
+      duplicate_match: candidate.duplicateMatch,
       status: "draft" as const,
       missing_fields: [...candidate.missingFields],
     };
@@ -581,7 +599,7 @@ async function tryCreateMultiIntentReview(
   actor: LineActor,
   text: string,
 ): Promise<boolean> {
-  const candidates = await buildMultiIntentPendingCandidates(client, actor, text);
+  const candidates = await buildMultiIntentPendingCandidates(client, item, actor, text);
   if (candidates.length === 0) return false;
   const operationId = await deterministicOperationId("line-text", item.provider_event_id);
   const { data, error } = await client.rpc("server_tx_create_pending_action", {
