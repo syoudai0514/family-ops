@@ -12,9 +12,12 @@ create trigger lane_a_inject_failure before insert on public.task_events
 for each row execute function private.lane_a_inject_failure();
 set role service_role;
 do $$
-declare u uuid:=gen_random_uuid(); v uuid:=gen_random_uuid(); hh uuid; ar uuid; br uuid; task_id uuid;
+declare
+ u uuid:=gen_random_uuid(); v uuid:=gen_random_uuid(); hh uuid; ar uuid; br uuid; task_id uuid;
  c jsonb; result jsonb; replay jsonb; req uuid; attempt uuid; op uuid; terms jsonb; phase text; channel text;
- count_before integer; work_due timestamptz; reply_due timestamptz;
+ count_before integer; work_due timestamptz; reply_due timestamptz; actual_reply timestamptz;
+ next_tuesday timestamptz; next_friday timestamptz; anchor_before timestamptz;
+ line_accept_op uuid; line_payload jsonb;
 begin
  insert into auth.users(id) values(u),(v);
  hh:=(public.server_tx_create_household(u,gen_random_uuid(),'Lane A test','Owner')->>'household_id')::uuid;
@@ -22,6 +25,9 @@ begin
  perform private.backfill_canonical_foundation_v1();
  select id into ar from public.domain_actor_refs where household_id=hh and real_user_id=u;
  select id into br from public.domain_actor_refs where household_id=hh and real_user_id=v;
+
+ -- CF-01: the same RequestAttempt transition contract is exercised from both
+ -- PWA and LINE sources for every material assignment lifecycle branch.
  foreach channel in array array['pwa','line'] loop
    foreach phase in array array['pending','checking','consulting','declined','expired','atomicity','stale_task'] loop
      insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,planned_assignee_id,
@@ -102,19 +108,103 @@ begin
      end if;
    end loop;
  end loop;
- -- Work and reply order must be independent; expired work does not expire a
- -- still-valid response deadline. No channel-specific proposal rule.
- for work_due,reply_due in select * from (values
-  (now()+interval '4 days',now()+interval '1 day'),
-  (now()+interval '1 day',now()+interval '4 days'),
-  (now()-interval '1 day',now()+interval '1 day'),
-  (null::timestamptz,null::timestamptz)) fixture(work_due,reply_due)
- loop
-   c:=private.fn_command_create_light_request_v2(hh,u,ar,null,br,'Deadline fixture',null,work_due,reply_due,gen_random_uuid(),'pwa');
-   if (c->>'reply_due_at')::timestamptz is distinct from coalesce(reply_due,now()+interval '24 hours') then
-     raise exception 'FAIL reply proposal or override'; end if;
-   result:=public.server_tx_transition_request_v2(v,gen_random_uuid(),(c->>'request_id')::uuid,(c->>'attempt_id')::uuid,'accept',null,1,1,'line');
-   if result->>'state'<>'accepted' then raise exception 'FAIL work deadline affected reply lifecycle'; end if;
- end loop;
+
+ -- CF-12 explicit order cases. Build next week's Tuesday / Friday in JST so
+ -- the fixture remains future-dated instead of becoming an accidental expiry
+ -- test as wall-clock time advances.
+ next_tuesday := (
+   date_trunc('week', now() at time zone 'Asia/Tokyo') + interval '8 days 12 hours'
+ ) at time zone 'Asia/Tokyo';
+ next_friday := (
+   date_trunc('week', now() at time zone 'Asia/Tokyo') + interval '11 days 12 hours'
+ ) at time zone 'Asia/Tokyo';
+
+ -- reply Tuesday / work Friday
+ c:=private.fn_command_create_light_request_v2(
+   hh,u,ar,null,br,'Reply Tue work Fri',null,next_friday,next_tuesday,gen_random_uuid(),'pwa');
+ if (c->>'reply_due_at')::timestamptz is distinct from next_tuesday
+    or (c->>'due_at')::timestamptz is distinct from next_friday then
+   raise exception 'FAIL reply Tue/work Fri collapsed deadlines'; end if;
+ result:=public.server_tx_transition_request_v2(v,gen_random_uuid(),(c->>'request_id')::uuid,(c->>'attempt_id')::uuid,'accept',null,1,1,'line');
+ if result->>'state'<>'accepted' then raise exception 'FAIL reply Tue/work Fri LINE acceptance'; end if;
+
+ -- reply Friday / work Tuesday: an explicit future response deadline is
+ -- allowed after the work deadline; work due must not expire the Attempt.
+ c:=private.fn_command_create_light_request_v2(
+   hh,u,ar,null,br,'Reply Fri work Tue',null,next_tuesday,next_friday,gen_random_uuid(),'pwa');
+ if (c->>'reply_due_at')::timestamptz is distinct from next_friday
+    or (c->>'due_at')::timestamptz is distinct from next_tuesday then
+   raise exception 'FAIL reply Fri/work Tue collapsed deadlines'; end if;
+ result:=public.server_tx_transition_request_v2(v,gen_random_uuid(),(c->>'request_id')::uuid,(c->>'attempt_id')::uuid,'accept',null,1,1,'line');
+ if result->>'state'<>'accepted' then raise exception 'FAIL work deadline affected response lifecycle'; end if;
+
+ -- Omitted reply deadline with future work: server proposes and persists one
+ -- response deadline, no caller-specific fallback. It must be future, no more
+ -- than 24h from the creation anchor, and earlier than the Friday work due.
+ anchor_before:=clock_timestamp();
+ c:=private.fn_command_create_light_request_v2(
+   hh,u,ar,null,br,'Omitted reply with work',null,next_friday,null,gen_random_uuid(),'pwa');
+ actual_reply:=(c->>'reply_due_at')::timestamptz;
+ if actual_reply is null or actual_reply <= anchor_before
+    or actual_reply > anchor_before + interval '24 hours 5 seconds'
+    or actual_reply >= next_friday then
+   raise exception 'FAIL omitted reply deadline proposal'; end if;
+ if (select reply_due_at from public.request_attempts where id=(c->>'attempt_id')::uuid) is distinct from actual_reply then
+   raise exception 'FAIL proposed reply deadline not persisted as Attempt truth'; end if;
+
+ -- Omitted reply and work deadline still gets a response deadline (~24h).
+ anchor_before:=clock_timestamp();
+ c:=private.fn_command_create_light_request_v2(
+   hh,u,ar,null,br,'Omitted both deadlines',null,null,null,gen_random_uuid(),'pwa');
+ actual_reply:=(c->>'reply_due_at')::timestamptz;
+ if actual_reply < anchor_before + interval '23 hours 59 minutes'
+    or actual_reply > anchor_before + interval '24 hours 5 seconds' then
+   raise exception 'FAIL omitted reply/work proposal'; end if;
+
+ -- Public light-request creation must propagate the *persisted* proposed reply
+ -- deadline and immutable Attempt snapshot into LINE pending actions.
+ c:=public.server_tx_send_request_v2(
+   u,gen_random_uuid(),v,'LINE snapshot parity','お願いします',next_friday,null);
+ req:=(c->>'request_id')::uuid; attempt:=(c->>'attempt_id')::uuid;
+ actual_reply:=(c->>'reply_due_at')::timestamptz;
+ select operation_id, normalized_payload into line_accept_op, line_payload
+ from private.pending_actions
+ where actor_id=v and action_type='request_accept'
+   and normalized_payload->>'request_id'=req::text;
+ if line_accept_op is null
+    or line_payload->>'attempt_id' is distinct from attempt::text
+    or (line_payload->>'expected_revision')::bigint <> 1
+    or (line_payload->>'expected_terms_revision')::integer <> 1
+    or (line_payload->>'reply_due_at')::timestamptz is distinct from actual_reply then
+   raise exception 'FAIL LINE action missing immutable RequestAttempt snapshot'; end if;
+ if not exists(
+   select 1 from public.user_notifications n
+   where n.recipient_user_id=v
+     and n.dedup_key='request:received:'||req::text
+     and (n.payload->>'reply_due_at')::timestamptz is not distinct from actual_reply
+     and n.payload->>'attempt_id'=attempt::text
+ ) then raise exception 'FAIL LINE notification lost persisted reply deadline/snapshot'; end if;
+
+ -- If the Attempt changes after the LINE button was issued, the worker's
+ -- legacy adapter must consume the stored snapshot and fail stale rather than
+ -- selecting the newer revision on the user's behalf.
+ update public.request_attempts set revision=revision+1 where id=attempt;
+ begin
+   perform public.server_tx_accept_request(v,line_accept_op,req);
+   raise exception 'FAIL stale LINE pending action accepted latest revision';
+ exception when others then if sqlerrm<>'REQUEST_ATTEMPT_STALE' then raise; end if; end;
+
+ -- Fresh LINE pending action succeeds through the same canonical transition.
+ c:=public.server_tx_send_request_v2(
+   u,gen_random_uuid(),v,'LINE fresh snapshot','お願いします',next_friday,next_tuesday);
+ req:=(c->>'request_id')::uuid; attempt:=(c->>'attempt_id')::uuid;
+ select operation_id into line_accept_op
+ from private.pending_actions
+ where actor_id=v and action_type='request_accept'
+   and normalized_payload->>'request_id'=req::text;
+ result:=public.server_tx_accept_request(v,line_accept_op,req);
+ if result->>'state'<>'accepted'
+    or (select state from public.request_attempts where id=attempt)<>'accepted' then
+   raise exception 'FAIL fresh LINE snapshot did not use canonical transition'; end if;
 end; $$;
 rollback;
