@@ -27,15 +27,17 @@ The Issue #48 matrix is useful implementation history, but its PASS labels are n
 | `unit-domain` | Pure/domain invariant without transport claims |
 | `db-rpc` | Canonical persistence/RPC state transition |
 | `edge-api` | Authenticated Edge/API boundary and command contract |
-| `browser` | Rendered user interaction/result, not source-string presence |
+| `browser` | Real rendered browser interaction/result at the declared entry boundary; jsdom/source-string presence alone is insufficient |
 | `line-transport` | LINE Messaging API webhook/postback/reply boundary |
 | `google-provider` | Controlled Google Calendar provider response boundary |
 | `image-ocr-ai` | Actual image bytes through classify → OCR → AI → review/provenance |
-| `physical-iphone-manual` | Real iPhone/PWA behavior that jsdom cannot establish |
+| `physical-iphone-manual` | Real iPhone/PWA behavior that desktop Chrome/jsdom cannot establish |
 | `cross-channel-concurrency` | Actual LINE and PWA racing the same canonical aggregate |
 | `whole-day-scenario` | Clock-controlled morning → daytime → evening user journey |
 
 No evidence class is inherently sufficient by itself. Every scenario also carries a **user-visible assertion**. If the technical path works but the user-visible result conflicts with the Requirements or approved UX, the scenario remains FAIL/PENDING.
+
+Component interaction tests remain useful regression evidence, but F1 does not relabel React Testing Library/jsdom as `browser`, nor desktop responsive emulation as `physical-iphone-manual`.
 
 ## Requirement → scenario → boundary traceability
 
@@ -43,7 +45,7 @@ The executable manifest is `tests/evidence/cf14/scenarios.mjs`. It validates tha
 
 | Scenario | Requirement IDs | Entry boundary | Required evidence | F1 state |
 | --- | --- | --- | --- | --- |
-| CF14-TODAY-DAY-FLOW | Q1,Q9,Q13,Q15,Q23,Q24,Q35,Q40,Q68,Q75,Q87 | PWA Today route at controlled clock | domain, DB, browser, iPhone, whole-day | expected-failing / Today owner |
+| CF14-TODAY-DAY-FLOW | Q1,Q9,Q13,Q15,Q23,Q24,Q35,Q40,Q68,Q75,Q87 | PWA Today route at controlled clock | domain, DB, browser, iPhone, whole-day | expected-failing / real-browser state subset authored; Today+iPhone+whole-day pending |
 | CF14-REQUEST-LIFECYCLE | Q2,Q30,Q36,Q41-Q47,Q51 | PWA + LINE Request entry | domain, DB, Edge, browser, LINE | expected-failing / Request owner |
 | CF14-HANDOVER-SHARE | Q3,Q16,Q37,Q38,Q48,Q49 | PWA/LINE share/ack | domain, DB, Edge, browser, LINE | external-pending |
 | CF14-CHECKIN-RECONCILIATION | Q5,Q6,Q31,Q53,Q54,Q59-Q61,Q63,Q64,Q76 | PWA/LINE check-in | domain, DB, Edge, browser, LINE, whole-day | external-pending |
@@ -56,7 +58,7 @@ The executable manifest is `tests/evidence/cf14/scenarios.mjs`. It validates tha
 | CF14-Q27-LINE-WEBHOOK-POSTBACK | Q27 | signed LINE-compatible HTTP webhook/postback, then actual provider in F2 | DB, Edge, LINE | external-pending |
 | CF14-Q70-RAW-MULTI-INTENT | Q70 | raw LINE text before candidates | domain, Edge, LINE | expected-failing / interpretation owner |
 | CF14-Q71-RAW-AMBIGUITY | Q71 | raw LINE text with one ambiguity | domain, Edge, LINE | expected-failing / interpretation owner |
-| CF14-NAVIGATION-RETURN | Q77 | PWA secondary nav → back/return | browser, iPhone | external-pending |
+| CF14-NAVIGATION-RETURN | Q77 | PWA secondary nav → back/return | browser, iPhone | real Chrome authoring evidence GREEN; physical iPhone pending |
 | CF14-DUPLICATE-TERMINAL-GUARDS | Q81,Q82 | Edge duplicate/stale/terminal mutation | domain, DB, Edge, concurrency | external-pending |
 | CF14-Q58-DEFERRED-DAG | Q58 | domain/schema/user-surface audit | domain | runnable |
 | CF14-SHOPPING-ACTION | Q33 | PWA shopping completion | domain, DB, Edge, browser | external-pending |
@@ -76,8 +78,9 @@ The executable manifest, not this compressed table, is the checkable coverage re
 - raw-language Q70/Q71 corpus runner; rejects prebuilt `candidateJson`
 - response-loss/retry runner; requires one canonical mutation + replay
 - Request lifecycle/stale/expiry fixture validator
-- browser Loading/Error/Stale observation runner
+- component Loading/Error/Stale observation runner
 - Back/return-state journey runner
+- dependency-free real-Chrome/CDP authoring runner for Today Loading/Ready/Stale/Error + Back/return, using test-only HTTP interception at the Supabase boundary
 - explicit JST clock-boundary runner for weekday 06:30, weekend/holiday 09:00, and 20:30 evening edges
 - Nursery actual-image-byte runner; requires classify/OCR/AI/review, provenance, no pre-confirm mutation, and representative OCR/source hints
 - signed LINE HTTP envelope runner using the Messaging API `X-Line-Signature` HMAC-SHA256 contract for text and postback fixtures
@@ -90,7 +93,11 @@ The executable manifest, not this compressed table, is the checkable coverage re
 
 Fixtures live in `tests/evidence/cf14/fixtures.mjs`. Nursery uses a synthetic Japanese nursery-notice PNG containing representative date/class/event/bring-item/submission text, not a 1x1 placeholder and not post-OCR candidate JSON.
 
-## Today actual user-visible state evidence
+## Today state / navigation evidence
+
+There are now two deliberately separate evidence layers.
+
+### Component regression layer
 
 `apps/web/src/features/today/Today.states.interaction.test.tsx` renders the real `Today` component while controlling its external data hooks. It establishes that:
 
@@ -98,7 +105,23 @@ Fixtures live in `tests/evidence/cf14/fixtures.mjs`. Nursery uses a synthetic Ja
 - canonical Today read error remains an explicit user-visible alert rather than becoming empty success.
 - `calendar_stale=true` reaches the real Today surface as `⚠ Google予定を最新化できていません`.
 
-Existing `TodaySchedule.test.tsx` independently covers the stale calendar rendering. This is useful browser evidence, but it does **not** close the full Today experience: daypart ordering/content, return-state, material first-flow visibility, physical iPhone behavior, and whole-day continuity still require final evidence after the Today implementation lane converges.
+Existing `TodaySchedule.test.tsx` independently covers the stale calendar rendering. These are useful component regressions, not final `browser` or device evidence.
+
+### Real-Chrome F1 authoring layer
+
+`scripts/run_cf14_browser_e2e.mjs`, supervised by `scripts/run_cf14_browser_e2e_ci.mjs`, launches the actual web app in a real headless Chrome/Chromium process and exercises the DOM and HTTP boundaries rather than jsdom. The CI artifact contains screenshots plus `evidence.json` and is exact-head named.
+
+The runner proves the following F1 authoring scenarios:
+
+1. **Loading:** while the canonical Today brief read is deliberately unresolved, the real rendered page visibly shows `読み込み中…`.
+2. **Ready:** after HTTP reads complete, the rendered Today route visibly shows `今日の状況` and the representative task.
+3. **Back/return:** Today → Concierge → draft entry → `戻る` → Today → Concierge preserves the Concierge draft and keeps Today reachable.
+4. **Stale refresh:** a real task interaction succeeds, the subsequent canonical Today refresh fails, `読み込みに失敗しました。` is visible, and the previously rendered task remains visible rather than disappearing into false empty success.
+5. **Initial Error:** a failing canonical read on fresh Today navigation renders `読み込みに失敗しました。` as the family-visible failure.
+
+The test-only Supabase service is intercepted at the real browser HTTP boundary. F1 is therefore proving browser rendering/interaction against controlled service responses, not claiming a production provider/deployment run. The artifact explicitly records `physicalDevice: false` and cannot satisfy `physical-iphone-manual`.
+
+This closes the F1 authoring gap where Today state and Q77 return behavior existed only in jsdom. It still does **not** close daypart ordering/content, actual production deployment behavior, physical iPhone/PWA clipping/safe-area behavior, scheduler delivery, or whole-day continuity.
 
 ## Q88 clock boundaries
 
@@ -126,7 +149,7 @@ However, the Requirements/approved UX are stronger and CURRENT does not yet sati
 3. **Q109:** deadline arrival must not auto-release a claim. The current component interaction proves only “no release on render”; DB/domain + clock evidence is still required.
 4. **Q107:** `誰でもOK` as a formal assignment type still needs domain/DB evidence in addition to the page interaction.
 
-Therefore Q107-Q109 is **expected-failing / FAIL-PENDING**, even though the state-transition test itself is green. The interaction test deliberately accepts either current/future release label only to exercise the transition, and contains `todo` acceptance checks for the approved user-facing conditions so CURRENT wording is not frozen as the product contract.
+Therefore Q107-Q109 is **expected-failing / FAIL-PENDING**, even though the state-transition portion is green. The two known Q108/Q109 approved-UX mismatches are executed as Vitest `it.fails` assertions, not skipped TODOs; a product fix that makes them unexpectedly pass therefore forces the test owner to remove the expected-failure marker and reclassify evidence deliberately.
 
 ## F2 acceptance precedence
 
@@ -141,10 +164,11 @@ This prevents a known Requirement/UX defect from being hidden by adding more tes
 ## Tests runnable now
 
 - `npm run test:cf14:authoring` — manifest, boundary harness, clock, signed LINE, controlled Google, Nursery, retry, concurrency, F2-guard self-tests. Must be GREEN; it does not claim product acceptance.
+- `npm run test:cf14:browser` — real headless Chrome F1 authoring run for Today Loading/Ready/Stale/Error and Back/return; writes screenshots + `evidence.json`. It is real-browser evidence, but deliberately not physical-iPhone or final-production evidence.
 - normal Web Vitest suite includes `AnyoneOwnerPage.interaction.test.tsx` and `Today.states.interaction.test.tsx`.
 - `npm run test:cf14:f2` — strict final evidence runner. It is expected to FAIL until an evidence payload from one final exact HEAD exists **and every known acceptance blocker is cleared**.
 
-The default CI suite runs authoring tests, but deliberately does not run the expected-failing F2 acceptance command during lane development.
+The default CI suite runs both F1 authoring self-tests and the real-browser authoring run, but deliberately does not run the expected-failing F2 acceptance command during lane development.
 
 ## Expected failures / ownership
 
@@ -152,7 +176,7 @@ The default CI suite runs authoring tests, but deliberately does not run the exp
 | --- | --- | --- |
 | Q70/Q71 raw natural-language through production LINE interpretation | FAIL/PENDING | LINE/Concierge implementation lane |
 | Request lifecycle against converged Request implementation | FAIL/PENDING | Request lane |
-| Today full daypart/return/iPhone/whole-day experience | FAIL/PENDING | Today/notification owner + F2 |
+| Today daypart ordering + production deployment + physical iPhone + whole-day experience | FAIL/PENDING | Today/notification owner + F2 |
 | Q107-Q109 claimant identity / `[手放す]` UX / deadline non-release | FAIL/PENDING | Shopping/AnyoneOwner UX implementation owner + F2 |
 | Nursery actual provider classify/OCR/AI from representative image bytes | FAIL/PENDING | Nursery/provider integration owner |
 | LINE Messaging API real webhook/postback transcript | FAIL/PENDING | F2 with controlled LINE credentials |
@@ -187,12 +211,14 @@ The strict runner defaults to `tests/evidence/cf14/evidence/current.json` and re
 
 A missing record, skipped provider run, stale artifact from another HEAD, source-string assertion, manually relabeled old evidence, or known Requirement/UX blocker cannot close CF-14.
 
+The F1 Chrome artifact is not automatically imported as final F2 evidence. F2 must run against the one converged final HEAD and must use the final deployment/provider/device boundary demanded by each scenario.
+
 ## F1 exit condition
 
 F1 is ready to hand to F2 when:
 
 1. authoring tests are green,
-2. actual-interaction tests added by F1 are green,
+2. component interaction tests and real-browser authoring tests added by F1 are green,
 3. known product/UX mismatches remain explicitly FAIL/PENDING and are attributed to an implementation owner,
 4. technical green is prevented from overriding a known Requirement/UX blocker,
 5. no production business semantics were changed,
