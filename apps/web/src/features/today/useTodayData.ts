@@ -249,7 +249,8 @@ function isSnapshotEmpty(snapshot: TodaySnapshot) {
     && snapshot.briefSchedule.length === 0
     && (snapshot.partnerSummary.critical_items?.length ?? 0) === 0
     && snapshot.reconciliation.remaining_count === 0
-    && snapshot.tomorrowImpact.impact_count === 0;
+    && snapshot.tomorrowImpact.impact_count === 0
+    && snapshot.morningSummary.totalCount === 0;
 }
 
 function unique(values: Array<string | undefined>) {
