@@ -3,12 +3,28 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 
 export type ConciergeCandidateKind = 'task' | 'request' | 'shopping' | 'share' | 'actual';
 
+export type ConciergeDuplicateMatch = {
+  entityKind: 'task' | 'shopping' | 'request';
+  entityId: string;
+  expectedRevision: number;
+  evidence: {
+    strategy: 'canonical_exact';
+    matchedTitle: string;
+    matchedDate: string | null;
+  };
+};
+
 export type ConciergeCandidate = {
   candidateId: string;
+  operationId: string;
   kind: ConciergeCandidateKind;
   title: string;
   sourceText: string;
+  sourceSpan: { start: number; end: number } | null;
+  confidence: number | null;
+  ambiguousFields: string[];
   missingFields: string[];
+  duplicateMatch: ConciergeDuplicateMatch | null;
   intent: {
     scheduledDate?: string;
     dueLocalTime?: string | null;
@@ -29,11 +45,16 @@ type RawLineIntent = {
 
 type RawConciergeCandidate = {
   candidateId: string;
+  operationId: string;
   kind: ConciergeCandidateKind;
   title: string;
   intent: RawLineIntent | null;
   sourceText: string;
+  sourceSpan?: { start: number; end: number } | null;
+  confidence?: number | null;
+  ambiguousFields?: string[];
   missingFields: string[];
+  duplicateMatch?: ConciergeDuplicateMatch | null;
 };
 
 type RawConciergeProposal = {
@@ -76,22 +97,32 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
   return {
     read_only_intent: raw.read_only_intent,
     clarification: raw.clarification,
-    candidates: (raw.candidates ?? []).map((candidate) => ({
-      candidateId: candidate.candidateId,
-      kind: candidate.kind,
-      title: candidate.title,
-      sourceText: candidate.sourceText?.trim() || sourceText,
-      missingFields: candidate.missingFields ?? [],
-      intent: candidate.intent ? {
-        scheduledDate: candidate.intent.scheduledDate,
-        dueLocalTime: candidate.intent.dueLocalTime ?? null,
-        desiredDueAt: null,
-        priority: null,
-        targetUserId: null,
-        targetRole: candidate.intent.targetRole ?? null,
-        sharedMessage: candidate.intent.sharedMessage ?? null,
-      } : null,
-    })),
+    candidates: (raw.candidates ?? []).flatMap((candidate) => {
+      // Candidates without a pre-issued operation identity cannot be retried
+      // safely, so reject them before they can reach the confirmation screen.
+      if (!candidate.operationId) return [];
+      return [{
+        candidateId: candidate.candidateId,
+        operationId: candidate.operationId,
+        kind: candidate.kind,
+        title: candidate.title,
+        sourceText: candidate.sourceText?.trim() || sourceText,
+        sourceSpan: candidate.sourceSpan ?? null,
+        confidence: candidate.confidence ?? null,
+        ambiguousFields: candidate.ambiguousFields ?? [],
+        missingFields: candidate.missingFields ?? [],
+        duplicateMatch: candidate.duplicateMatch ?? null,
+        intent: candidate.intent ? {
+          scheduledDate: candidate.intent.scheduledDate,
+          dueLocalTime: candidate.intent.dueLocalTime ?? null,
+          desiredDueAt: null,
+          priority: null,
+          targetUserId: null,
+          targetRole: candidate.intent.targetRole ?? null,
+          sharedMessage: candidate.intent.sharedMessage ?? null,
+        } : null,
+      } satisfies ConciergeCandidate];
+    }),
   };
 }
 
