@@ -46,3 +46,35 @@ Deno.test("CF-08 single candidate retains material semantics used by LINE and PW
     sourceText: raw,
   });
 });
+
+Deno.test("CF-08 clarification target is limited to the one ambiguous field", async () => {
+  const raw = "日曜のお迎えお願い";
+  const model = JSON.stringify({
+    candidates: [{
+      kind: "request",
+      title: "お迎え",
+      source_text: raw,
+      scheduled_date: "2026-09-13",
+      due_local_time: null,
+      daypart: null,
+      target_role: null,
+      shared_message: "日曜のお迎えをお願いできますか？",
+      subtasks: [],
+      context: null,
+      calendar_visibility: "hidden",
+      missing_fields: ["assignee"],
+      ambiguous_fields: ["assignee"],
+      confidence: 0.58,
+    }],
+  });
+
+  const [candidate] = await decomposeLineConversationCandidates(
+    raw,
+    new Date("2026-09-09T03:00:00Z"),
+    () => Promise.resolve(model),
+  );
+
+  assertEquals(candidate.intent?.scheduledDate, "2026-09-13");
+  assertEquals(candidate.missingFields, ["assignee"]);
+  assertEquals(candidate.ambiguousFields, ["assignee"]);
+});
