@@ -49,7 +49,10 @@ jobs:
       - name: Install pinned Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: 2.117.0
+          # Match the version already exercised by this repository's real
+          # Supabase integration CI instead of introducing a separate backup-
+          # only CLI version without a product reason.
+          version: 2.115.0
 
       - name: Compute backup filename
         id: meta
@@ -63,6 +66,14 @@ jobs:
           # Database settings. Use direct/session connection, never a
           # transaction-mode pooler endpoint.
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          # supabase/config.toml references these Google values through
+          # env(...). They are irrelevant to db dump, but the CLI parses the
+          # project config before executing. Use the same harmless placeholder
+          # pattern already proven by the repository's Supabase integration CI;
+          # do not pull unrelated provider secrets into the backup job.
+          GOOGLE_SIGNIN_CLIENT_ID: ci-backup-placeholder.apps.googleusercontent.com
+          GOOGLE_SIGNIN_CLIENT_SECRET: ci-backup-placeholder
+          GOOGLE_SIGNIN_CALLBACK_URL: http://127.0.0.1:54321/auth/v1/callback
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_DB_URL:-}" ]; then
