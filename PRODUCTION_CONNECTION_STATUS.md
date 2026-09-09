@@ -11,6 +11,19 @@ GitHub is the authority**. This status file intentionally does not claim its own
 commit SHA as the current PR HEAD because updating this file changes that SHA.
 Always fresh-read PR #68 and `main` immediately before a release decision.
 
+## Product-success interpretation for Lane C
+
+CF-11/CF-15 are not ends in themselves. They exist to protect the canonical
+Family Ops household experience: the family should be able to keep using LINE
+and PWA normally, and after a serious incident the household must be able to
+recover usable data rather than merely possess a backup file.
+
+Lane C therefore adds no Request/Concierge/Today behavior, no new household
+screen or notification, and no normal-user recovery step. Its recovery PASS
+requires coherent Supabase Auth identity linkage and household data after
+restore, because restored rows that the household cannot sign into are not a
+successful Family Ops recovery.
+
 | サービス | 接続元 | 接続先 | 必要secret / control | production設定済 | live test済 | 状態 | 残作業 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Vercel PWA | iPhone Safari | `family-ops-web.vercel.app` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | 設定済（既存デプロイ） | 2026-09-09公開入口HTTP 200 / PWA shell確認 | 稼働中 | `main` が Production Git branch の方針を維持。Lane C PR #68ではPreview deploymentを再有効化しない |
@@ -22,54 +35,26 @@ Always fresh-read PR #68 and `main` immediately before a release decision.
 | GitHub Actions | manual dispatch | Supabase Management API | `SUPABASE_ACCESS_TOKEN` | 設定済（実行成功） | 済 | 稼働中 | E2E workflowが`outbox.status=sent`のみ成功にする |
 | Google Calendar OAuth/API/watch | Calendar Edge Functions | Google Calendar API | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URI`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `GOOGLE_CALENDAR_WEBHOOK_URL`, `APP_BASE_URL`, `CRON_WORKER_TOKEN` | 未設定として扱う | 未実施 | 後回し | Google Cloud OAuth client/API/consent screenと監視cronを設定後にE2E |
 | Gemini | `propose-ai-draft` Edge Function | Gemini API | `GEMINI_API_KEY`, `GEMINI_MODEL_REWRITE` | 設定済との既存確認 | 未実施 | 要監査 | PWAのAI言い換えでprovider応答を確認 |
-| Encrypted DB backup | GitHub Actions `backup.yml` | production Supabase → private Cloudflare R2 | `SUPABASE_DB_URL`, `BACKUP_AGE_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。main上の2026-09-09再実行では`SUPABASE_DB_URL`空。PR #68ではSupabase互換logical bundle方式へ修正済みだが未merge | 失敗 | **RED** | Secrets/R2を設定し、CURRENT mainのactual backup SUCCESS・non-empty encrypted bundle・marker更新を実証 |
+| Encrypted DB backup | GitHub Actions `backup.yml` | production Supabase → private Cloudflare R2 | `SUPABASE_DB_URL`, `BACKUP_AGE_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも`SUPABASE_DB_URL`空 | 失敗 | **RED** | Secrets/R2を設定し、actual backup SUCCESS・non-empty encrypted bundle・marker更新を実証 |
 | Backup freshness | GitHub Actions `backup_freshness_alert.yml` | R2 `latest-backup.txt` + referenced encrypted object | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | **未完了**。2026-09-09再実行でも4項目が空 | 失敗 | **RED** | actual freshness SUCCESS、exact 26h policy内、marker参照object存在/非0byteを実証 |
-| Restore readiness | owner local/manual | R2 encrypted backup → fresh disposable Supabase environment | owner-held age private key + R2 read credentials | private keyは意図的にGitHub/CI外 | 未実施 | **RED / NOT EVIDENCED** | 実際のFamily Ops復旧条件として、`scripts/restore_drill.sh`を新規disposable Supabase環境に実行し、migration/core data sanityまで`RESULT: PASS`を取得 |
-| Repository enforcement | GitHub repository | `main` | active ruleset / branch protection | **未設定**。2026-09-09 fresh-readで`protected=false`, required checks enforcement off, rulesets `[]` | 実効保護なし | **RED** | PR必須、5 checks必須、force-push/delete禁止、bypass actorなしのactive main rulesetを管理者が適用し、privileged verifierで確認 |
+| Restore readiness | owner local/manual | R2 encrypted backup → fresh disposable Supabase environment | owner-held age private key + R2 read credentials | private keyは意図的にGitHub/CI外 | 未実施 | **RED / NOT EVIDENCED** | `scripts/restore_drill.sh`でmigration/core rowsに加え`auth.users`/`auth.identities`とmember/profile linkageまで`RESULT: PASS`を取得し、災害復旧時はGoogle Auth設定後に実sign-in smokeを行う |
+| Repository enforcement | GitHub repository | `main` | active ruleset / branch protection | **未設定**。2026-09-09 fresh-readで`protected=false`, required checks enforcement off, rulesets `[]` | 実効保護なし | **RED** | PR必須、5 checks必須、force-push/delete禁止、standing bypassなしのpreventive protectionを管理者が適用し、privileged verifierで確認 |
 
-## Lane C evidence — 2026-09-09
+## Lane C CURRENT evidence — 2026-09-09
 
-- Family Ops / おうちノートの最上位成功条件は、technical completenessそのものではなく、canonical Requirements / approved UXどおりに家族の日常運営が続けられ、障害時にも家庭データを実際に復旧できることである。Lane CはRequest / Concierge / Today / LINE / PWAの利用者向け挙動を変更しない。
-- Requirements & UX Baselineは「家庭で毎日使ったときに本当に回るか」を基準とし、LINEを日常の主導線、PWAを詳細・一括編集・設定・履歴等の補完とする。Lane Cのバックアップ/保護変更はこの主導線へ新しい操作や通知を追加しない。
-- Fresh-read base `main` at the latest Lane C audit remained
-  `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected.
-- Lane C work is PR #68 on branch `sol/lane-c-operational-safety`. The exact
-  CURRENT PR HEAD must be read from GitHub, not copied from this self-mutating
-  status document.
-- Latest verified predecessor HEAD before this status-only commit was
-  `72d55475335304ad12e8388f66a35ddc8dfca74a`:
-  - full CI `34315926902` / run #822 — Web, DB, Edge and real Supabase
-    integration all SUCCESS;
-  - Operational safety CI `34315926787` / run #28 — backup/restore controls
-    and repository-enforcement verifier both SUCCESS.
-  Re-run/fresh-read after any later source change; a stale GREEN is not release
-  evidence for a different HEAD.
-- `scripts/verify_repository_enforcement.sh` is the fail-closed CF-15 verifier.
-  It accepts either a complete active ruleset or equally strong classic branch
-  protection, and never combines incomplete controls into a synthetic PASS.
-- CF-11 source hardening uses the same Supabase CLI version already proven by
-  Family Ops real integration CI (`2.115.0`) and a Supabase-compatible logical
-  bundle rather than a raw whole-cluster `pg_dump`. This is not a new product
-  feature; it removes a recovery failure mode so the household can actually
-  regain its application data in a fresh Supabase environment after a severe
-  incident.
-- The encrypted bundle contains application roles/schema/data plus migration
-  history. The age private key remains outside GitHub/CI.
-- Scheduled backup run `34275297279` on current `main` failed before dumping
-  because `SUPABASE_DB_URL` was unset. The hardened PR workflow has therefore
-  not yet produced runtime backup evidence.
-- Freshness run `34288805536` was re-run on 2026-09-09 and still failed because
-  the R2 account/access/secret/bucket inputs were absent.
-- Supabase `family-ops` was independently read as `ACTIVE_HEALTHY`; the CF-11
-  blocker is backup connectivity/credentials, not a stopped production DB.
-- Production schema inspection confirmed the app relies on Supabase-managed
-  `auth`/`storage`, Family Ops `public`/`private`, standard Supabase roles, and
-  populated migration history. For that reason a plain vanilla PostgreSQL
-  restore target is not treated as proof that Family Ops itself can recover.
-- Vercel production remains the READY `main` deployment for
-  `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`; Lane C branch pushes have not
-  produced new Preview deployments. This preserves the approved product UX
-  while release enforcement is remediated.
+- Base `main` remains `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected at the latest fresh-read.
+- Lane C work remains PR #68 on `sol/lane-c-operational-safety`; live GitHub is the authority for its exact current HEAD.
+- Latest repository verification before the status-only update:
+  - full CI `34317136604` / run #843: Web SUCCESS, DB SUCCESS, Edge SUCCESS, real Supabase integration SUCCESS;
+  - Operational safety CI `34317135932` / run #32: SUCCESS, including backup/restore control and repository-enforcement regressions.
+- CF-11 current production-state reads found:
+  - Family Ops `household_members` and `profiles` reference `auth.users`;
+  - production has one Auth user and one Auth identity, with no current identity gap for that user;
+  - restore drill now rejects missing/orphaned Auth/member/profile linkage rather than treating table presence alone as usable recovery;
+  - Supabase Storage currently has no object in household-facing `nursery-source`; current non-empty objects are in handoff/evidence-oriented buckets. The DB backup therefore does not claim binary-Storage recovery, and this must be revisited if irreplaceable household binaries begin accumulating.
+- Scheduled backup run `34275297279` still has no successful production dump/R2 evidence because `SUPABASE_DB_URL` was unset on the inspected attempt.
+- Freshness run `34288805536` latest inspected attempt remains FAILURE; logs show the R2 account/access/secret/bucket values empty.
+- Vercel Production remains the existing `main` deployment; Lane C branch pushes have not created new Preview deployments.
 
 The PASS authority for backup/recovery is `docs/BACKUP_RESTORE_RUNBOOK.md`.
 The PASS authority for `main` release enforcement is
