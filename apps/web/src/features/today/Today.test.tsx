@@ -1,9 +1,27 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { createSupabaseFromMock } from '../../test/supabaseMock';
-import { Today, selectNextOwnedTask, shouldShowWaitingTask } from './Today';
+import {
+  Today,
+  isTodayRequestAttemptActionable,
+  selectNextOwnedTask,
+  shouldShowWaitingTask,
+  todayRequestTransitionPayload,
+  type TodayRequestAttempt,
+} from './Today';
 import type { PendingAction, TodaySchedule } from '../../lib/types';
+import { callEdgeFunction } from '../../lib/apiClient';
+import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
+
+const REQUEST_ATTEMPT: TodayRequestAttempt = {
+  id: 'attempt-1',
+  request_id: 'request-1',
+  state: 'pending',
+  revision: 3,
+  terms_revision: 2,
+  reply_due_at: '2099-09-10T12:00:00Z',
+};
 
 vi.mock('../../lib/supabaseClient', () => ({
   supabase: {
@@ -30,7 +48,30 @@ vi.mock('../../lib/supabaseClient', () => ({
           completed_at: null,
         },
       ],
-      requests: [],
+      requests: [
+        {
+          id: 'request-1',
+          household_id: 'household-1',
+          requester_id: 'user-2',
+          recipient_id: 'user-1',
+          shared_title: '迎えをお願い',
+          shared_message: '今日の迎えをお願いします',
+          due_at: '2099-09-11T12:00:00Z',
+          status: 'pending',
+          linked_task_instance_id: null,
+          accepted_at: null,
+          declined_at: null,
+          completed_at: null,
+          cancelled_at: null,
+        },
+      ],
+      request_attempts: [
+        {
+          ...REQUEST_ATTEMPT,
+          created_at: '2099-09-09T12:00:00Z',
+          test_context_id: null,
+        },
+      ],
       handovers: [],
       handover_reads: [],
       shopping_items: [],
@@ -42,7 +83,7 @@ vi.mock('../../lib/supabaseClient', () => ({
             tasks: [{ task_id: 'task-1' }],
             carryover: [],
             already_handled: [],
-            urgent_actions: [],
+            urgent_actions: [{ request_id: 'request-1' }],
             handovers: [],
             shopping: [],
             schedule: [],
@@ -168,6 +209,19 @@ describe('Today', () => {
     expect(shouldShowWaitingTask({ ...task, due_at: '2026-09-04T23:00:00Z' }, now)).toBe(true);
     expect(shouldShowWaitingTask({ ...task, next_check_at: null }, now)).toBe(true);
   });
+
+  it('freezes the observed RequestAttempt snapshot used by Today actions', () => {
+    expect(todayRequestTransitionPayload('request-1', REQUEST_ATTEMPT)).toEqual({
+      request_id: 'request-1',
+      attempt_id: 'attempt-1',
+      expected_revision: 3,
+      expected_terms_revision: 2,
+    });
+    expect(isTodayRequestAttemptActionable(REQUEST_ATTEMPT, new Date('2099-09-10T11:59:59Z').getTime())).toBe(true);
+    expect(isTodayRequestAttemptActionable(REQUEST_ATTEMPT, new Date('2099-09-10T12:00:00Z').getTime())).toBe(false);
+    expect(isTodayRequestAttemptActionable({ ...REQUEST_ATTEMPT, state: 'consulting' })).toBe(false);
+  });
+
   it('selects my next task even when the partner has an earlier task', () => {
     const base = {
       household_id: 'household-1',
@@ -246,6 +300,31 @@ describe('Today', () => {
       expect(screen.getByText(/お迎え（担当: 本人）/)).toBeInTheDocument();
     });
     expect(screen.getByText('⚠ 予定と重複')).toBeInTheDocument();
+  });
+
+  it('sends the observed RequestAttempt snapshot from the Today quick action', async () => {
+    vi.mocked(callEdgeFunction).mockClear();
+    render(
+      <MemoryRouter>
+        <Today />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('迎えをお願い')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'やる' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'やる' }));
+    await waitFor(() => {
+      expect(callEdgeFunction).toHaveBeenCalledWith(
+        EDGE_FUNCTIONS.acceptRequest,
+        expect.objectContaining({
+          request_id: 'request-1',
+          attempt_id: 'attempt-1',
+          expected_revision: 3,
+          expected_terms_revision: 2,
+        }),
+      );
+    });
   });
 
   it('shows the first-priority confirmation card with the LINE-created pending action', async () => {
