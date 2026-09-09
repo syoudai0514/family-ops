@@ -5,14 +5,16 @@ import { useTodayData } from './useTodayData';
 const rpc = vi.fn();
 const rows: Record<string, Array<Record<string, unknown>>> = {};
 
+type QueryResult = { data: Array<Record<string, unknown>>; error: null };
+
 function query(table: string) {
-  const value = { data: rows[table] ?? [], error: null };
+  const result: QueryResult = { data: rows[table] ?? [], error: null };
   const chain: Record<string, unknown> = {};
   for (const method of ['select', 'in', 'eq', 'order', 'is']) {
     chain[method] = vi.fn(() => chain);
   }
-  chain.then = (resolve: (value: typeof value) => unknown, reject?: (reason: unknown) => unknown) =>
-    Promise.resolve(value).then(resolve, reject);
+  chain.then = (resolve: (queryResult: QueryResult) => unknown, reject?: (reason: unknown) => unknown) =>
+    Promise.resolve(result).then(resolve, reject);
   return chain;
 }
 
