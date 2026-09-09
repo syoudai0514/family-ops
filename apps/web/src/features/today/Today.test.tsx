@@ -57,7 +57,7 @@ vi.mock('../../lib/supabaseClient', () => ({
       getSession: () => Promise.resolve({ data: { session: { access_token: 'test-token' } } }),
     },
     from: createSupabaseFromMock({
-      task_instances: [taskRow],
+      task_instances: [taskRow as unknown as Record<string, unknown>],
       task_subtask_instances: [],
       task_execution_targets: [],
       requests: [
