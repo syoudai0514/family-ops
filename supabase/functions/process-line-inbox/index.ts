@@ -540,6 +540,7 @@ async function buildMultiIntentPendingCandidates(
       confidence: candidate.confidence,
       ambiguous_fields: [...candidate.ambiguousFields],
       duplicate_match: candidate.duplicateMatch,
+      duplicate_decision: null,
       status: "draft" as const,
       missing_fields: [...candidate.missingFields],
     };
@@ -628,6 +629,8 @@ async function tryCreateMultiIntentReview(
         kind: candidate.kind,
         title: candidate.title,
         missingFields: candidate.missing_fields,
+      duplicateMatch: Boolean(candidate.duplicate_match),
+      duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
       })),
     }),
     dedupKey: `line-multi-intent-preview:${item.provider_event_id}`,
@@ -684,9 +687,64 @@ async function cancelMultiIntentCandidate(
       candidates: active.map((candidate) => ({
         candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
         missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+      duplicateMatch: Boolean(candidate.duplicate_match),
+      duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
       })),
     }),
     dedupKey: `line-multi-intent-cancel:${item.provider_event_id}:${candidateId}`,
+  });
+}
+
+async function resolveMultiIntentDuplicate(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  pendingActionId: string,
+  candidateId: string,
+  decision: "existing" | "update" | "separate",
+): Promise<void> {
+  const pending = await getEditablePending(client, actor, pendingActionId);
+  if (!pending || pending.action_type !== "line_multi_intent_review") {
+    await sendConfirmation(client, item, actor, "この候補はすでに更新されています。最新の内容を確認してください。");
+    return;
+  }
+  const rows = Array.isArray(pending.normalized_payload.candidates) ? pending.normalized_payload.candidates : [];
+  let found = false;
+  const candidates = rows.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const candidate = row as Record<string, unknown>;
+    if (candidate.candidate_id !== candidateId) return candidate;
+    if (!candidate.duplicate_match || typeof candidate.duplicate_match !== "object") return candidate;
+    found = true;
+    return { ...candidate, duplicate_decision: decision };
+  });
+  if (!found) {
+    await sendConfirmation(client, item, actor, "この候補には重複の選択は必要ありません。最新の内容を確認してください。");
+    return;
+  }
+  const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
+    ...pending.normalized_payload, candidates,
+  });
+  if (!updated) return;
+  const active = candidates.filter((row): row is Record<string, unknown> =>
+    Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
+  );
+  await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text: "重複候補の扱いを更新しました。",
+    message: buildMultiIntentPreviewFlex({
+      pendingActionId: updated.id,
+      candidates: active.map((candidate) => ({
+        candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
+        missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+        duplicateMatch: Boolean(candidate.duplicate_match),
+        duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
+      })),
+    }),
+    dedupKey: `line-multi-intent-duplicate:${item.provider_event_id}:${candidateId}:${decision}`,
   });
 }
 
@@ -1023,6 +1081,12 @@ async function handlePostback(
     await cancelMultiIntentCandidate(client, item, actor, fields.pending_action_id, fields.candidate_id);
     return;
   }
+
+if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && fields.candidate_id &&
+    (fields.decision === "existing" || fields.decision === "update" || fields.decision === "separate")) {
+  await resolveMultiIntentDuplicate(client, item, actor, fields.pending_action_id, fields.candidate_id, fields.decision);
+  return;
+}
 
   if (fields.action === "create_partner_invite" && fields.pending_action_id) {
     const pending = await getEditablePending(client, actor, fields.pending_action_id);

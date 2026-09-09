@@ -444,13 +444,32 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
         throw new Error('multi-intent review still needs clarification');
       }
       for (const candidate of candidates) {
-        await execute(client, {
-          ...item,
-          action_type: candidate.action_type,
-          normalized_payload: candidate.payload,
-          operation_id: candidate.operation_id,
+      const duplicate = candidate.duplicate_match;
+      const decision = (candidate as typeof candidate & { duplicate_decision?: "existing" | "update" | "separate" | null }).duplicate_decision ?? null;
+      if (duplicate && !decision) throw new Error('multi-intent duplicate still needs a decision');
+      if (duplicate && decision === 'existing') continue;
+      if (duplicate && decision === 'update') {
+        const { error } = await client.rpc('server_tx_commit_concierge_duplicate_update', {
+          p_actor_id: item.actor_id,
+          p_operation_id: candidate.operation_id,
+          p_entity_kind: duplicate.entityKind,
+          p_entity_id: duplicate.entityId,
+          p_expected_revision: duplicate.expectedRevision,
+          p_title: String(candidate.payload.title ?? candidate.title),
+          p_scheduled_date: candidate.payload.scheduled_date ?? null,
+          p_due_local_time: candidate.payload.due_local_time ?? null,
+          p_planned_assignee_user_id: candidate.action_type === 'task_create_once' ? candidate.payload.planned_assignee_user_id ?? null : null,
         });
+        if (error) throw new Error(error.message);
+        continue;
       }
+      await execute(client, {
+        ...item,
+        action_type: candidate.action_type,
+        normalized_payload: candidate.payload,
+        operation_id: candidate.operation_id,
+      });
+    }
       return { result_type: 'multi_intent', result_id: null };
     }
     default:
