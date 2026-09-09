@@ -28,6 +28,17 @@ const INPUT_LABELS: Record<string, string> = {
   nonpickup_evening: '今夜の入力',
 };
 
+const REQUEST_STATE_LABELS: Record<TodayRequestAttempt['state'], string> = {
+  pending: '返事待ち',
+  checking: '確認中',
+  consulting: '相談中',
+  awaiting_confirmation: '合意確認待ち',
+  accepted: '引き受け済み',
+  declined: '見送り済み',
+  expired: '返事期限切れ',
+  cancelled: '取り消し済み',
+};
+
 export function selectNextOwnedTask(tasks: TaskInstance[], userId: string | null | undefined) {
   if (!userId) return null;
   return (
@@ -115,6 +126,9 @@ function RequestQuickActions({
       <div>
         <strong>{request.shared_title}</strong>
         {request.shared_message && <p>{request.shared_message}</p>}
+        {attempt && (
+          <span className="task-item-meta">返事状態: {REQUEST_STATE_LABELS[attempt.state]}</span>
+        )}
         {attempt?.reply_due_at && (
           <span className="task-item-meta">返事期限: {formatDateTimeJa(attempt.reply_due_at)}</span>
         )}
@@ -308,6 +322,26 @@ export function Today() {
     );
   }
 
+  function renderExceptions() {
+    if (data.exceptions.length === 0) return null;
+    return (
+      <section className="card compact-section" aria-label="いつもと違う">
+        <div className="section-heading">
+          <div><p className="eyebrow">いつもと違うこと</p><h2>今日の例外</h2></div>
+          <span>{data.exceptions.length}件</span>
+        </div>
+        <ul className="today-schedule-list">
+          {data.exceptions.map((item, index) => (
+            <li key={`${item.kind ?? 'exception'}:${item.task_id ?? item.event_id ?? index}`}>
+              <strong>{item.title ?? '予定と違うことがあります'}</strong>
+              {(item.message || item.detail) && <p className="task-item-meta">{item.message ?? item.detail}</p>}
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
+
   function renderWaiting() {
     if (data.waitingTasks.length === 0) return null;
     return (
@@ -371,16 +405,23 @@ export function Today() {
     );
   }
 
-  function renderPartnerCritical() {
+  function renderPartnerState() {
     const items = data.partnerSummary.critical_items ?? [];
-    if (items.length === 0) return null;
+    const open = data.partnerSummary.open_assigned ?? 0;
+    const completed = data.partnerSummary.completed_today ?? 0;
+    if (items.length === 0 && open === 0 && completed === 0) return null;
     return (
-      <section className="card compact-section partner-summary" aria-label="相手の重要な予定">
-        <p className="eyebrow">相手の重要な予定</p>
-        <h2>ここだけ確認</h2>
-        <ul className="today-schedule-list">
-          {items.slice(0, 3).map((item) => <li key={item.task_id}>{item.title}</li>)}
-        </ul>
+      <section className="card compact-section partner-summary" aria-label="相手の今日">
+        <p className="eyebrow">相手の今日</p>
+        <h2>残り {open}件・完了 {completed}件</h2>
+        {items.length > 0 && (
+          <>
+            <p className="task-item-meta">重要な項目</p>
+            <ul className="today-schedule-list">
+              {items.slice(0, 3).map((item) => <li key={item.task_id}>{item.title}</li>)}
+            </ul>
+          </>
+        )}
       </section>
     );
   }
@@ -479,14 +520,15 @@ export function Today() {
       {clock.daypart === 'morning' && (
         <>
           {renderDecisions()}
-          {renderWaiting()}
+          {renderExceptions()}
           {renderTaskSection('昨夜からの持ち越し', data.carryoverTasks, 'いつもと違うこと')}
+          {renderWaiting()}
           {renderHandovers()}
           {data.alreadyHandledTasks.length > 0 && renderTaskSection('対応済み', data.alreadyHandledTasks, '二重対応を防ぐ')}
           {renderInput()}
           {renderTaskSection('朝やること', morningResidual, '今日やること')}
           {renderTaskSection('このあと', [...daytimeResidual, ...eveningTasks], '先の見通し')}
-          {renderPartnerCritical()}
+          {renderPartnerState()}
           {renderSchedule()}
         </>
       )}
@@ -494,8 +536,12 @@ export function Today() {
       {clock.daypart === 'day' && (
         <>
           {renderDecisions()}
-          {renderSchedule()}
+          {renderExceptions()}
+          {renderTaskSection('持ち越し', data.carryoverTasks, 'いつもと違うこと')}
           {renderWaiting()}
+          {renderHandovers()}
+          {data.alreadyHandledTasks.length > 0 && renderTaskSection('対応済み', data.alreadyHandledTasks, '二重対応を防ぐ')}
+          {renderSchedule()}
           {nextTask && (
             <section className="next-action-hero" aria-labelledby="next-action-title">
               <span className="next-action-pill">次にやること</span>
@@ -516,15 +562,17 @@ export function Today() {
           {renderTaskSection('朝の残り', morningResidual, 'まだ終わっていないこと')}
           {renderTaskSection('今やること', daytimeResidual, '今日やること')}
           {renderTaskSection('このあと', eveningTasks, '先の見通し')}
-          {renderHandovers()}
-          {renderPartnerCritical()}
+          {renderPartnerState()}
         </>
       )}
 
       {clock.daypart === 'evening' && (
         <>
           {renderDecisions()}
+          {renderExceptions()}
           {renderWaiting()}
+          {renderHandovers()}
+          {renderSchedule()}
           {renderTaskSection('まだ残っていること', [...data.carryoverTasks, ...unfinishedBeforeEvening], '今日をしめくくる')}
           {renderTaskSection('夜にやること', eveningTasks, '今日やること')}
           {renderTomorrowImpact()}
@@ -535,8 +583,7 @@ export function Today() {
             </section>
           )}
           {renderInput()}
-          {renderHandovers()}
-          {renderPartnerCritical()}
+          {renderPartnerState()}
           {renderShopping()}
           {data.reconciliation.remaining_count > 0 && !currentInput && (
             <section className="card compact-section" aria-label="まとめ入力">
