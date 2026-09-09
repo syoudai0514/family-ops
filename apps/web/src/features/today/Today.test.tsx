@@ -10,7 +10,7 @@ import {
   todayRequestTransitionPayload,
 } from './Today';
 import type { TodayRequestAttempt } from './useTodayData';
-import type { PendingAction } from '../../lib/types';
+import type { PendingAction, TaskInstance } from '../../lib/types';
 import { callEdgeFunction } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 
@@ -41,7 +41,7 @@ const taskRow = {
   attention_state: 'active',
   actual_completed_by_id: null,
   completed_at: null,
-};
+} as TaskInstance;
 
 vi.mock('./useTodayClock', () => ({
   useTodayClock: () => ({
@@ -213,12 +213,12 @@ vi.mock('../../app/HouseholdContext', () => ({
 
 describe('Today', () => {
   it('suppresses a waiting task until its future check date unless an immediate deadline is at risk', () => {
-    const task = {
+    const task: TaskInstance = {
       ...taskRow,
       id: 'waiting',
       title: '園からの返事',
       due_at: null,
-      attention_state: 'waiting' as const,
+      attention_state: 'waiting',
       next_check_at: '2026-09-11T00:00:00Z',
     };
     const now = new Date('2026-09-09T00:00:00Z');
@@ -244,7 +244,7 @@ describe('Today', () => {
       [
         { ...taskRow, id: 'partner', title: '相手の仕事', due_at: '2026-09-09T06:00:00Z', planned_assignee_id: 'user-2' },
         { ...taskRow, id: 'mine', title: '自分の仕事', due_at: '2026-09-09T07:00:00Z', planned_assignee_id: 'user-1' },
-      ] as TaskInstance[],
+      ],
       'user-1',
     );
     expect(selected?.id).toBe('mine');
