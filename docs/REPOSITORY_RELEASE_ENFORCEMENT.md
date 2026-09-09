@@ -110,20 +110,29 @@ The repository includes a read-only verifier for that effective state:
 
 ```bash
 GITHUB_REPOSITORY=syoudai0514/family-ops \
+GH_TOKEN='<admin-capable token supplied outside logs/chat>' \
   bash scripts/verify_repository_enforcement.sh
 ```
 
-`GH_TOKEN` or `GITHUB_TOKEN` may be supplied to avoid unauthenticated GitHub
-API rate limits. The verifier never writes repository settings and never
-prints token values. It reads the target branch plus active branch-ruleset
-details and fails unless the PR rule, all five release-critical contexts,
-`non_fast_forward`, `deletion`, and zero bypass actors are evidenced.
+GitHub can omit the `bypass_actors` field from a ruleset response when the
+caller lacks sufficient ruleset visibility. Because interpreting an omitted
+field as an empty bypass list would be a false PASS, the verifier is
+**fail-closed**: it refuses PASS unless `bypass_actors` is actually visible and
+empty. The token must therefore have enough repository/ruleset permission to
+read that field. Never commit it or print it in logs/chat.
+
+The verifier never writes repository settings and never prints token values.
+It reads the target branch plus active branch-ruleset details and fails unless
+the PR rule, all five release-critical contexts, `non_fast_forward`,
+`deletion`, and zero visible bypass actors are evidenced. It sends the current
+GitHub REST API version header (`2026-03-10`).
 
 Its fixture regression suite is
 `tests/operations/repository_enforcement_test.sh` and runs inside the existing
 `operational-safety (backup controls)` required-check candidate. Keeping the
 job name unchanged prevents this additional verifier coverage from silently
-changing the required GitHub check context.
+changing the required GitHub check context. The regression suite includes the
+case where GitHub omits `bypass_actors`, which must remain RED.
 
 CF-15 is PASS only when the effective GitHub state is demonstrated. A CI
 workflow that merely runs *after* a direct push is not an equivalent
@@ -157,5 +166,6 @@ available):
 - configure **no bypass actors**. For genuine break-glass, use the temporary,
   audited administrator procedure above instead of leaving a standing bypass.
 
-After saving, re-read GitHub and run the verifier above. Do not assume the form
-submission succeeded merely because the settings page accepted it.
+After saving, re-read GitHub and run the verifier above using privileged
+ruleset visibility. Do not assume the form submission succeeded merely
+because the settings page accepted it.
