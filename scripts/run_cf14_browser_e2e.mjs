@@ -226,6 +226,21 @@ async function navigate(client, url) {
   });
 }
 
+async function openConciergeFromQuickAdd(client) {
+  const openedAdd = await evaluate(client, `(() => {
+    const button = document.querySelector('button[aria-label="追加する"]');
+    if (!button) return false; button.click(); return true;
+  })()`);
+  assert.equal(openedAdd, true, 'Today must expose the canonical Quick Add action');
+  await waitForText(client, '追加するもの');
+  const openedConcierge = await evaluate(client, `(() => {
+    const button = [...document.querySelectorAll('button')].find((candidate) => candidate.textContent?.includes('おうちコンシェルジュ'));
+    if (!button) return false; button.click(); return true;
+  })()`);
+  assert.equal(openedConcierge, true, 'Quick Add must expose the Concierge journey');
+  await waitForPath(client, '/concierge');
+}
+
 async function startVite() {
   const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
     'run', 'dev', '-w', 'apps/web', '--', '--host', '127.0.0.1', '--port', '4173', '--strictPort',
@@ -331,12 +346,7 @@ async function main() {
       screenshot: await screenshot(client, 'today-ready.png'),
     });
 
-    const openedConcierge = await evaluate(client, `(() => {
-      const button = [...document.querySelectorAll('button')].find((candidate) => candidate.textContent?.includes('コンシェルジュ'));
-      if (!button) return false; button.click(); return true;
-    })()`);
-    assert.equal(openedConcierge, true, 'Today must expose the Concierge journey');
-    await waitForPath(client, '/concierge');
+    await openConciergeFromQuickAdd(client);
     await waitForText(client, 'おうちコンシェルジュ');
     assert.equal(await evaluate(client, `(() => {
       const textarea = document.querySelector('textarea'); if (!textarea) return false;
@@ -350,15 +360,14 @@ async function main() {
     })()`), true, 'Concierge must expose a Back action');
     await waitForPath(client, '/today');
     await waitForText(client, task.title);
-    await evaluate(client, `([...document.querySelectorAll('button')].find((candidate) => candidate.textContent?.includes('コンシェルジュ')))?.click()`);
-    await waitForPath(client, '/concierge');
+    await openConciergeFromQuickAdd(client);
     await waitFor(() => evaluate(client, `document.querySelector('textarea')?.value === '戻り状態の下書き'`), {
       timeoutMs: 5_000, label: 'Concierge draft restored after returning from Today',
     });
     scenarios.push({
       scenarioId: 'CF14-BACK-RETURN-REAL-BROWSER',
-      entryBoundary: 'Today → Concierge → Back → Today → Concierge in real Chrome',
-      visibleAssertion: 'Today context remains reachable and Concierge draft survives the return journey',
+      entryBoundary: 'Today Quick Add → Concierge → Back → Today Quick Add → Concierge in real Chrome',
+      visibleAssertion: 'Today context remains reachable and Concierge draft survives the canonical return journey',
       screenshot: await screenshot(client, 'back-return-draft.png'),
     });
     await evaluate(client, 'history.back()');
