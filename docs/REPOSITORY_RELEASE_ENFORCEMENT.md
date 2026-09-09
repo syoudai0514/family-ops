@@ -19,18 +19,30 @@ not change application behavior.
 For ordinary development, `main` must be protected so an unreviewed/direct
 update cannot bypass release-critical checks.
 
-Preferred GitHub repository branch ruleset targeting the default branch
-`main`:
+The preferred mechanism is an **Active GitHub branch ruleset** targeting the
+default branch `main`. A classic branch-protection rule is also acceptable if
+it independently provides the same preventive strength.
+
+For a branch ruleset require:
 
 1. enforcement status: **Active**;
 2. **Require a pull request before merging**;
 3. **Require status checks to pass before merging**;
 4. use strict/up-to-date status checks when practical;
-5. **Block force pushes**;
-6. **Restrict deletions** / do not allow branch deletion;
-7. do not configure a routine bypass path.
+5. **Block force pushes** (`non_fast_forward`);
+6. **Restrict deletions** (`deletion`);
+7. no configured standing bypass actors.
 
-Required check contexts for the current repository are:
+For classic branch protection require:
+
+1. pull requests before merging;
+2. the same required status checks below;
+3. **Include administrators / enforce for administrators**;
+4. force pushes disabled;
+5. branch deletion disabled;
+6. no pull-request bypass allowances.
+
+Required check contexts for either mechanism are:
 
 - `web (lint / typecheck / test / build)`
 - `db (migrations / RLS / RPC / idempotency / quota)`
@@ -39,7 +51,7 @@ Required check contexts for the current repository are:
 - `operational-safety (backup controls)`
 
 These names are the GitHub Actions **job names**, not workflow display names.
-If any job is renamed, this document and the repository ruleset must be
+If any job is renamed, this document and the repository protection must be
 updated in the same change so required-check enforcement does not silently
 become stale.
 
@@ -78,8 +90,9 @@ Therefore:
 Break-glass is for a genuine production incident only; it is not an ordinary
 shortcut around checks.
 
-The steady-state ruleset should have **no configured bypass actors**. If an
-administrator must temporarily relax the `main` rule for a genuine incident:
+Steady state must have no configured ruleset bypass actors and no classic
+branch-protection PR bypass allowances. If an administrator must temporarily
+relax the `main` rule for a genuine incident:
 
 1. record the incident/reason before the update when feasible;
 2. record the exact commit SHA being placed on `main`;
@@ -92,21 +105,21 @@ administrator must temporarily relax the `main` rule for a genuine incident:
 7. record which checks and production smoke were performed.
 
 Do not enable force pushes for break-glass. Prefer a temporary, auditable
-administrator rule change over a standing bypass actor or rewriting `main`
-history.
+administrator rule change over a standing bypass or rewriting `main` history.
 
 ## Verification — CF-15 is not PASS from YAML/docs alone
 
-After configuring GitHub, fresh-read the repository rule state and verify:
+After configuring GitHub, fresh-read the effective repository state and
+verify one complete preventive mechanism:
 
-- `main` is protected / targeted by an Active ruleset;
-- pull request is required for the normal path;
+- `main` reports protected;
+- normal updates require a pull request;
 - all five required status checks above are enforced;
 - force pushes are blocked;
 - deletion is blocked;
-- no configured bypass actor makes the rule ineffective.
+- the mechanism has no normal standing bypass path.
 
-The repository includes a read-only verifier for that effective state:
+The repository includes a read-only verifier:
 
 ```bash
 GITHUB_REPOSITORY=syoudai0514/family-ops \
@@ -114,29 +127,30 @@ GH_TOKEN='<admin-capable token supplied outside logs/chat>' \
   bash scripts/verify_repository_enforcement.sh
 ```
 
-GitHub can omit the `bypass_actors` field from a ruleset response when the
-caller lacks sufficient ruleset visibility. Because interpreting an omitted
-field as an empty bypass list would be a false PASS, the verifier is
-**fail-closed**: it refuses PASS unless `bypass_actors` is actually visible and
-empty. The token must therefore have enough repository/ruleset permission to
-read that field. Never commit it or print it in logs/chat.
+The verifier accepts either of the two complete mechanisms above; it does not
+weaken requirements by combining incomplete controls into a synthetic PASS.
+
+For rulesets, GitHub can omit `bypass_actors` when the caller lacks sufficient
+ruleset visibility. Interpreting an omitted field as an empty bypass list
+would be a false PASS, so ruleset verification is **fail-closed** unless
+`bypass_actors` is actually visible and empty.
+
+For classic branch protection, the verifier requires admin-readable branch
+protection detail and specifically checks PR requirement, all five status
+checks, `enforce_admins=true`, force-push disabled, deletion disabled, and no
+PR bypass allowances.
 
 The verifier never writes repository settings and never prints token values.
-It reads the target branch plus active branch-ruleset details and fails unless
-the PR rule, all five release-critical contexts, `non_fast_forward`,
-`deletion`, and zero visible bypass actors are evidenced. It sends the current
-GitHub REST API version header (`2026-03-10`).
-
-Its fixture regression suite is
+It sends the current GitHub REST API version header (`2026-03-10`). Its
+fixture regression suite is
 `tests/operations/repository_enforcement_test.sh` and runs inside the existing
-`operational-safety (backup controls)` required-check candidate. Keeping the
-job name unchanged prevents this additional verifier coverage from silently
-changing the required GitHub check context. The regression suite includes the
-case where GitHub omits `bypass_actors`, which must remain RED.
+`operational-safety (backup controls)` required-check candidate. Keeping that
+job name unchanged prevents the additional coverage from silently changing
+the required GitHub check context.
 
-CF-15 is PASS only when the effective GitHub state is demonstrated. A CI
-workflow that merely runs *after* a direct push is not an equivalent
-preventive control.
+CF-15 is PASS only when effective GitHub state is demonstrated. A CI workflow
+that merely runs *after* a direct push is not an equivalent preventive
+control.
 
 ## Current tooling limitation for applying repository settings
 
@@ -152,20 +166,14 @@ fresh-read the effective state afterward before declaring CF-15 PASS.
 
 ### Smallest manual GitHub admin action
 
-In repository **Settings → Rules → Rulesets**, create a branch ruleset for
-`main` (or use the equivalent protected-branch UI if rulesets are not
-available):
+Preferred: repository **Settings → Rules → Rulesets**, create an Active branch
+ruleset for default branch / `main` with PR required, the five checks above,
+force-push prevention, deletion prevention, and no bypass actors.
 
-- target: default branch / `main`;
-- enforcement: Active;
-- require pull request before merging;
-- require the five check contexts listed above;
-- require branch up to date before merging when practical;
-- block force pushes;
-- block deletion;
-- configure **no bypass actors**. For genuine break-glass, use the temporary,
-  audited administrator procedure above instead of leaving a standing bypass.
+Equivalent fallback: configure classic branch protection for `main` with PR
+required, the five checks above, administrator enforcement enabled, force
+push disabled, deletion disabled, and no PR bypass allowances.
 
-After saving, re-read GitHub and run the verifier above using privileged
-ruleset visibility. Do not assume the form submission succeeded merely
-because the settings page accepted it.
+After saving, re-read GitHub and run the verifier above with sufficient
+visibility. Do not assume the settings-page submission succeeded merely
+because the UI accepted it.
