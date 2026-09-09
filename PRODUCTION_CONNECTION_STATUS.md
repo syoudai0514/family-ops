@@ -36,13 +36,23 @@ Always fresh-read PR #68 and `main` immediately before a release decision.
 - Lane C work is PR #68 on branch `sol/lane-c-operational-safety`. The exact
   CURRENT PR HEAD must be read from GitHub, not copied from this self-mutating
   status document.
+- Latest verified predecessor HEAD before this status-only commit was
+  `72d55475335304ad12e8388f66a35ddc8dfca74a`:
+  - full CI `34315926902` / run #822 — Web, DB, Edge and real Supabase
+    integration all SUCCESS;
+  - Operational safety CI `34315926787` / run #28 — backup/restore controls
+    and repository-enforcement verifier both SUCCESS.
+  Re-run/fresh-read after any later source change; a stale GREEN is not release
+  evidence for a different HEAD.
 - `scripts/verify_repository_enforcement.sh` is the fail-closed CF-15 verifier.
   It accepts either a complete active ruleset or equally strong classic branch
   protection, and never combines incomplete controls into a synthetic PASS.
-- CF-11 source hardening now uses a pinned Supabase CLI logical-backup bundle
-  rather than raw whole-cluster `pg_dump`. This is not a new product feature;
-  it removes a recovery failure mode so the household can actually regain its
-  application data in a fresh Supabase environment after a severe incident.
+- CF-11 source hardening uses the same Supabase CLI version already proven by
+  Family Ops real integration CI (`2.115.0`) and a Supabase-compatible logical
+  bundle rather than a raw whole-cluster `pg_dump`. This is not a new product
+  feature; it removes a recovery failure mode so the household can actually
+  regain its application data in a fresh Supabase environment after a severe
+  incident.
 - The encrypted bundle contains application roles/schema/data plus migration
   history. The age private key remains outside GitHub/CI.
 - Scheduled backup run `34275297279` on current `main` failed before dumping
@@ -56,9 +66,9 @@ Always fresh-read PR #68 and `main` immediately before a release decision.
   `auth`/`storage`, Family Ops `public`/`private`, standard Supabase roles, and
   populated migration history. For that reason a plain vanilla PostgreSQL
   restore target is not treated as proof that Family Ops itself can recover.
-- Vercel production remained READY on the `main` deployment for
-  `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`; Lane C branch pushes do not
-  generate preview deployments. This preserves the approved product behavior
+- Vercel production remains the READY `main` deployment for
+  `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff`; Lane C branch pushes have not
+  produced new Preview deployments. This preserves the approved product UX
   while release enforcement is remediated.
 
 The PASS authority for backup/recovery is `docs/BACKUP_RESTORE_RUNBOOK.md`.
