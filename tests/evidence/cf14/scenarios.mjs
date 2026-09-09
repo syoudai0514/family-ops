@@ -30,7 +30,7 @@ export const cf14Scenarios = [
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'browser', 'physical-iphone-manual', 'whole-day-scenario'],
     userVisibleAssertion: 'Loading/error/stale/current states and daypart ordering are visible without hiding material Today work on iPhone.',
     status: 'expected-failing',
-    expectedFailureReason: 'Today implementation is owned by another lane; F1 authors the boundary harness but does not alter Today behavior.',
+    expectedFailureReason: 'F1 has authored actual Loading/Error/Stale render evidence, but full Today daypart/return/iPhone/whole-day acceptance still belongs to the converged Today implementation plus F2.',
   },
   {
     scenarioId: 'CF14-REQUEST-LIFECYCLE',
@@ -102,7 +102,7 @@ export const cf14Scenarios = [
     ownerLane: 'F2 verifier',
     entryBoundary: 'Scheduler -> delivery intent -> user-visible LINE notification',
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'edge-api', 'line-transport', 'whole-day-scenario'],
-    userVisibleAssertion: 'Morning/evening scheduled messages and exceptions arrive at the correct clock boundary without noisy pre-emptive reminders.',
+    userVisibleAssertion: 'Morning/evening scheduled messages and exceptions arrive at the correct JST clock boundary without noisy pre-emptive reminders.',
     status: 'external-pending',
   },
   {
@@ -182,11 +182,12 @@ export const cf14Scenarios = [
   {
     scenarioId: 'CF14-Q107-Q109-SHOPPING-INTERACTION',
     requirementIds: range(107, 109),
-    ownerLane: 'F1 authoring + F2 verifier',
+    ownerLane: 'Shopping/AnyoneOwner UX implementation owner + F2 verifier',
     entryBoundary: 'Rendered PWA anyone-owner page with user button interaction',
     requiredEvidenceClasses: ['db-rpc', 'edge-api', 'browser'],
-    userVisibleAssertion: 'Unclaimed items can be claimed, another claimant can be intentionally taken over, and the current claimant releases only by explicit action.',
-    status: 'runnable',
+    userVisibleAssertion: '`誰でもOK` is a distinct assignment type; the user claims with `自分がやる`, takeover identifies the current claimant before confirmation, the claimant can `手放す`, and a deadline never auto-releases the claim.',
+    status: 'expected-failing',
+    expectedFailureReason: 'F1 proves current claim/takeover/release state transitions only. CURRENT UX says `家族が対応中` instead of identifying the claimant, labels release `担当を戻す` instead of approved `手放す`, and deadline non-release still needs DB/domain + clock evidence. These are product/UX gaps, not test-harness gaps.',
   },
   {
     scenarioId: 'CF14-NURSERY-ACTUAL-INPUT',
