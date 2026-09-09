@@ -28,7 +28,7 @@ Preferred GitHub repository branch ruleset targeting the default branch
 4. use strict/up-to-date status checks when practical;
 5. **Block force pushes**;
 6. **Restrict deletions** / do not allow branch deletion;
-7. do not grant a routine bypass path.
+7. do not configure a routine bypass path.
 
 Required check contexts for the current repository are:
 
@@ -78,7 +78,8 @@ Therefore:
 Break-glass is for a genuine production incident only; it is not an ordinary
 shortcut around checks.
 
-If an administrator must bypass or temporarily relax the `main` rule:
+The steady-state ruleset should have **no configured bypass actors**. If an
+administrator must temporarily relax the `main` rule for a genuine incident:
 
 1. record the incident/reason before the update when feasible;
 2. record the exact commit SHA being placed on `main`;
@@ -90,8 +91,9 @@ If an administrator must bypass or temporarily relax the `main` rule:
    documentation/tests;
 7. record which checks and production smoke were performed.
 
-Do not enable force pushes for break-glass. Prefer an explicit, auditable
-administrator bypass over rewriting `main` history.
+Do not enable force pushes for break-glass. Prefer a temporary, auditable
+administrator rule change over a standing bypass actor or rewriting `main`
+history.
 
 ## Verification — CF-15 is not PASS from YAML/docs alone
 
@@ -102,11 +104,30 @@ After configuring GitHub, fresh-read the repository rule state and verify:
 - all five required status checks above are enforced;
 - force pushes are blocked;
 - deletion is blocked;
-- no ordinary writer has a bypass that makes the rule ineffective.
+- no configured bypass actor makes the rule ineffective.
 
-CF-15 is PASS only when that effective state is demonstrated. A CI workflow
-that merely runs *after* a direct push is not an equivalent preventive
-control.
+The repository includes a read-only verifier for that effective state:
+
+```bash
+GITHUB_REPOSITORY=syoudai0514/family-ops \
+  bash scripts/verify_repository_enforcement.sh
+```
+
+`GH_TOKEN` or `GITHUB_TOKEN` may be supplied to avoid unauthenticated GitHub
+API rate limits. The verifier never writes repository settings and never
+prints token values. It reads the target branch plus active branch-ruleset
+details and fails unless the PR rule, all five release-critical contexts,
+`non_fast_forward`, `deletion`, and zero bypass actors are evidenced.
+
+Its fixture regression suite is
+`tests/operations/repository_enforcement_test.sh` and runs inside the existing
+`operational-safety (backup controls)` required-check candidate. Keeping the
+job name unchanged prevents this additional verifier coverage from silently
+changing the required GitHub check context.
+
+CF-15 is PASS only when the effective GitHub state is demonstrated. A CI
+workflow that merely runs *after* a direct push is not an equivalent
+preventive control.
 
 ## Current tooling limitation for applying repository settings
 
@@ -133,8 +154,8 @@ available):
 - require branch up to date before merging when practical;
 - block force pushes;
 - block deletion;
-- no routine bypass. If a break-glass administrator bypass is configured,
-  keep it limited to administrators and use only under the procedure above.
+- configure **no bypass actors**. For genuine break-glass, use the temporary,
+  audited administrator procedure above instead of leaving a standing bypass.
 
-After saving, re-read GitHub and verify the effective rule rather than
-assuming the form submission succeeded.
+After saving, re-read GitHub and run the verifier above. Do not assume the form
+submission succeeded merely because the settings page accepted it.
