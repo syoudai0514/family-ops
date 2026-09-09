@@ -23,11 +23,22 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path('supabase/functions/process-line-inbox/lineMultiIntent.ts')
           s = p.read_text()
           old = '  duplicate_match: ConciergeDuplicateMatch | null;\n  status: "draft" | "cancelled";'
           assert s.count(old) == 1, s.count(old)
           s = s.replace(old, '  duplicate_match: ConciergeDuplicateMatch | null;\n  duplicate_decision: "existing" | "update" | "separate" | null;\n  status: "draft" | "cancelled";')
+          p.write_text(s)
+
+          p = Path('supabase/functions/process-line-inbox/index.ts')
+          s = p.read_text()
+          old = '      operation_id: candidate.operationId,\n      kind: candidate.kind,'
+          assert s.count(old) == 1, s.count(old)
+          s = s.replace(old, '''      operation_id: candidate.operationId ?? await deterministicOperationId(
+        "line-candidate", item.provider_event_id, candidate.candidateId,
+      ),
+      kind: candidate.kind,''')
           p.write_text(s)
           PY
           deno fmt \
