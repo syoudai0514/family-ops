@@ -2,44 +2,121 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BACKUP="$ROOT/.github/workflows/backup.yml"
+FRESHNESS_WORKFLOW="$ROOT/.github/workflows/backup_freshness_alert.yml"
+DRILL_WORKFLOW="$ROOT/.github/workflows/recovery-drill.yml"
+SNAPSHOT="$ROOT/scripts/create_household_snapshot.sh"
 FRESHNESS="$ROOT/scripts/backup_freshness_check.sh"
 RESTORE="$ROOT/scripts/restore_drill.sh"
-BACKUP_WORKFLOW="$ROOT/.github/workflows/backup.yml"
-RECOVERY_WORKERS="$ROOT/scripts/reconfigure_recovery_workers.sql"
+TABLES="$ROOT/scripts/family_ops_recovery_tables.txt"
+ADR="$ROOT/docs/adr/0014-right-sized-household-backup-recovery.md"
+DESIGN="$ROOT/docs/design/current/10_BACKUP_RECOVERY.md"
+RUNBOOK="$ROOT/docs/BACKUP_RESTORE_RUNBOOK.md"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin"
 
-cat > "$TMP/bin/aws" <<'FAKE_AWS'
+fail() { echo "FAIL: $*" >&2; exit 1; }
+expect_status() {
+  local expected="$1"; shift
+  set +e
+  "$@" >/dev/null 2>&1
+  local actual=$?
+  set -e
+  [ "$actual" -eq "$expected" ] || fail "expected exit $expected, got $actual: $*"
+}
+
+for file in "$BACKUP" "$FRESHNESS_WORKFLOW" "$DRILL_WORKFLOW" "$SNAPSHOT" "$FRESHNESS" "$RESTORE" "$TABLES" "$ADR" "$DESIGN" "$RUNBOOK"; do
+  [ -s "$file" ] || fail "required CF-11 file missing: $file"
+done
+
+bash -n "$SNAPSHOT"
+bash -n "$FRESHNESS"
+bash -n "$RESTORE"
+bash "$RESTORE" --help >/dev/null
+expect_status 3 bash "$RESTORE" --scratch-db-url 'postgresql://user:pw@example.invalid/db'
+
+# CURRENT implementation must not retain the legacy R2/age secret/key path.
+for file in "$BACKUP" "$FRESHNESS_WORKFLOW" "$DRILL_WORKFLOW" "$SNAPSHOT" "$FRESHNESS" "$RESTORE"; do
+  if grep -Eq 'R2_(ACCOUNT|ACCESS|SECRET|BUCKET)|BACKUP_AGE|AGE_PRIVATE_KEY|cloudflarestorage\.com|aws s3|age -[rd]' "$file"; then
+    fail "legacy R2/age implementation reference remains in $file"
+  fi
+done
+if grep -Rq 'actions/upload-artifact' "$BACKUP" "$DRILL_WORKFLOW"; then
+  fail "household recovery payload must not be uploaded as a GitHub artifact"
+fi
+
+# Existing services only: one known source and the already-existing separate
+# app-save-hub target, using the already-configured management token.
+grep -Fq 'SOURCE_PROJECT_REF: dnlqxjpjpkxnfgculzip' "$BACKUP" || fail "backup source project ref missing"
+grep -Fq 'TARGET_PROJECT_REF: wdwbmvpipbdpomqulsrj' "$BACKUP" || fail "app-save-hub target project ref missing"
+grep -Fq 'SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}' "$BACKUP" || fail "existing Supabase token is not used"
+grep -Fq 'MAX_BACKUPS: "30"' "$BACKUP" || fail "30-snapshot retention contract missing"
+grep -Fq 'cmp -s "$WORKDIR/source-canonical.json" "$WORKDIR/target-canonical.json"' "$SNAPSHOT" || fail "full payload read-back equality check missing"
+grep -Fq "app_id = 'family-ops'" "$SNAPSHOT" || fail "Family Ops history isolation filter missing"
+grep -Fq "slot_id = 'household'" "$SNAPSHOT" || fail "Family Ops household slot isolation missing"
+
+# Allowlist must be explicit, public-domain only, duplicate-free and contain the
+# currently foundational household/task/routine/transport state.
+mapfile -t RECOVERY_TABLES < <(sed -E 's/[[:space:]]+#.*$//' "$TABLES" | sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d')
+[ "${#RECOVERY_TABLES[@]}" -ge 20 ] || fail "recovery allowlist is implausibly small"
+[ "$(printf '%s\n' "${RECOVERY_TABLES[@]}" | sort | uniq -d | wc -l)" -eq 0 ] || fail "recovery allowlist has duplicate tables"
+for table in "${RECOVERY_TABLES[@]}"; do
+  [[ "$table" =~ ^public\.[a-z][a-z0-9_]*$ ]] || fail "invalid/non-public recovery table: $table"
+done
+for required in \
+  public.households public.profiles public.household_members public.domain_actor_refs \
+  public.task_definitions public.task_instances public.task_subtask_instances \
+  public.recurrence_rules public.shopping_items public.handovers \
+  public.household_routine_schedules public.routine_checkin_sessions \
+  public.transport_weekly_templates; do
+  grep -Fxq "$required" "$TABLES" || fail "foundational recovery table missing: $required"
+done
+for prohibited in \
+  public.test_simulation_contexts public.calendar_connections public.calendar_events_cache \
+  public.user_notifications; do
+  if grep -Fxq "$prohibited" "$TABLES"; then
+    fail "derived/provider/test table must not be household recovery truth: $prohibited"
+  fi
+done
+if grep -Eq '^private\.' "$TABLES"; then
+  fail "private operational/provider tables must not be in the CF-11 household snapshot"
+fi
+
+grep -Fq 'test_context_id is null' "$SNAPSHOT" || fail "test/simulation row filtering missing"
+grep -Fq "jsonb_build_object('id', u.id, 'email', u.email)" "$SNAPSHOT" || fail "minimal Auth ownership refs missing"
+if grep -Eq 'encrypted_password|refresh_token|raw_user_meta_data|auth\.identities' "$SNAPSHOT"; then
+  fail "snapshot producer must not copy Auth credentials/session/provider identity data"
+fi
+
+# Recovery proof must use an actual disposable Supabase stack and typed restore,
+# while daily scheduled backups must not create a daily restore stack.
+grep -Fq 'workflow_run:' "$DRILL_WORKFLOW" || fail "recovery drill must follow a successful backup"
+grep -Fq "github.event.workflow_run.event == 'push'" "$DRILL_WORKFLOW" || fail "automatic recovery drill must be limited to main push evidence"
+if grep -Fq 'schedule:' "$DRILL_WORKFLOW"; then
+  fail "right-sized recovery drill must not run a disposable stack every day"
+fi
+grep -Fq 'supabase db reset' "$DRILL_WORKFLOW" || fail "disposable current-schema setup missing"
+grep -Fq 'jsonb_populate_recordset' "$RESTORE" || fail "typed table restore missing"
+grep -Fq 'snapshot table set does not exactly match' "$RESTORE" || fail "allowlist/table-set equality guard missing"
+grep -Fq 'restored row count mismatch' "$RESTORE" || fail "exact per-table row count validation missing"
+
+# Architecture governance must explicitly supersede only legacy CF-11 mechanics,
+# not silently call an unexecuted v6 design PASS.
+grep -Fq 'supersedes only the CF-11 backup/recovery implementation mechanics' "$ADR" || fail "ADR authority resolution missing"
+grep -Fq 'R2, age encryption and an' "$ADR" || fail "ADR must state R2/age are not CURRENT acceptance"
+grep -Fq 'CF-11 = PASS only with CURRENT operational evidence' "$DESIGN" || fail "CURRENT acceptance gate missing"
+grep -Fq 'Actual disposable recovery drill SUCCESS' "$RUNBOOK" || fail "runbook live recovery proof gate missing"
+
+# Unit-regress exact freshness boundary without accessing Supabase.
+cat > "$TMP/bin/curl" <<'FAKE_CURL'
 #!/usr/bin/env bash
 set -euo pipefail
-if [ "${1:-}" = "s3" ] && [ "${2:-}" = "cp" ]; then
-  src="${3:-}"
-  dst="${4:-}"
-  if [[ "$src" == */latest-backup.txt ]]; then
-    cp "$FAKE_MARKER_FILE" "$dst"
-    exit 0
-  fi
-fi
-if [ "${1:-}" = "s3api" ] && [ "${2:-}" = "head-object" ]; then
-  if [ "${FAKE_OBJECT_PRESENT:-1}" = "1" ]; then
-    printf '%s\n' "${FAKE_OBJECT_SIZE:-1024}"
-    exit 0
-  fi
-  exit 1
-fi
-echo "unexpected fake aws invocation: $*" >&2
-exit 99
-FAKE_AWS
-chmod +x "$TMP/bin/aws"
-
-BASE_PATH="$TMP/bin:$PATH"
-
-write_marker() {
-  local filename="$1"
-  local timestamp="$2"
-  printf '%s\n%s\n' "$filename" "$timestamp" > "$TMP/marker.txt"
-}
+cat <<JSON
+[{"updated_at":"${FAKE_STORED_AT}","source_created_at":"${FAKE_SOURCE_AT}","source_project_ref":"${FAKE_SOURCE_REF:-dnlqxjpjpkxnfgculzip}","schema_version":"${FAKE_SCHEMA_VERSION:-1}","tables_type":"${FAKE_TABLES_TYPE:-object}","households":${FAKE_HOUSEHOLDS:-1},"household_members":${FAKE_MEMBERS:-1},"task_instances":${FAKE_TASKS:-1}}]
+JSON
+FAKE_CURL
+chmod +x "$TMP/bin/curl"
 
 timestamp_seconds_ago() {
   local seconds="$1"
@@ -48,170 +125,39 @@ timestamp_seconds_ago() {
 
 run_freshness() {
   env \
-    PATH="$BASE_PATH" \
-    HOME="${HOME:-$TMP}" \
-    R2_ACCOUNT_ID="test-account" \
-    R2_BUCKET_NAME="test-bucket" \
-    AWS_ACCESS_KEY_ID="test-access" \
-    AWS_SECRET_ACCESS_KEY="test-secret" \
-    FAKE_MARKER_FILE="$TMP/marker.txt" \
-    FAKE_OBJECT_PRESENT="${FAKE_OBJECT_PRESENT:-1}" \
-    FAKE_OBJECT_SIZE="${FAKE_OBJECT_SIZE:-1024}" \
-    MAX_BACKUP_AGE_HOURS="${MAX_BACKUP_AGE_HOURS:-26}" \
+    PATH="$TMP/bin:$PATH" \
+    SUPABASE_ACCESS_TOKEN=test-token \
+    TARGET_PROJECT_REF=target-test \
+    SOURCE_PROJECT_REF=dnlqxjpjpkxnfgculzip \
+    MAX_BACKUP_AGE_HOURS=26 \
+    FAKE_STORED_AT="${FAKE_STORED_AT}" \
+    FAKE_SOURCE_AT="${FAKE_SOURCE_AT}" \
+    FAKE_SOURCE_REF="${FAKE_SOURCE_REF:-dnlqxjpjpkxnfgculzip}" \
+    FAKE_SCHEMA_VERSION="${FAKE_SCHEMA_VERSION:-1}" \
+    FAKE_TABLES_TYPE="${FAKE_TABLES_TYPE:-object}" \
+    FAKE_HOUSEHOLDS="${FAKE_HOUSEHOLDS:-1}" \
+    FAKE_MEMBERS="${FAKE_MEMBERS:-1}" \
+    FAKE_TASKS="${FAKE_TASKS:-1}" \
     bash "$FRESHNESS"
 }
 
-expect_status() {
-  local expected="$1"
-  shift
-  set +e
-  "$@" >/dev/null 2>&1
-  local actual=$?
-  set -e
-  if [ "$actual" -ne "$expected" ]; then
-    echo "FAIL: expected exit $expected, got $actual: $*" >&2
-    exit 1
-  fi
-}
-
-expect_status 2 env PATH="$BASE_PATH" bash "$FRESHNESS"
-
-write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-FAKE_OBJECT_PRESENT=1 FAKE_OBJECT_SIZE=4096 run_freshness >/dev/null
-
-write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(timestamp_seconds_ago $((25 * 3600 + 55 * 60)))"
+FAKE_STORED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+FAKE_SOURCE_AT="$(timestamp_seconds_ago $((25 * 3600 + 55 * 60)))"
 run_freshness >/dev/null
-write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(timestamp_seconds_ago $((26 * 3600 + 5 * 60)))"
+
+FAKE_STORED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+FAKE_SOURCE_AT="$(timestamp_seconds_ago $((26 * 3600 + 5 * 60)))"
 expect_status 1 run_freshness
 
-write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-FAKE_OBJECT_PRESENT=0 expect_status 1 run_freshness
-FAKE_OBJECT_PRESENT=1 FAKE_OBJECT_SIZE=0 expect_status 1 run_freshness
-
-write_marker "family-ops-backup-$(date -u -d '2 days ago' +%Y-%m-%d).tar.age" "$(date -u -d '2 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+FAKE_STORED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+FAKE_SOURCE_AT="$(date -u -d '+2 hours' +%Y-%m-%dT%H:%M:%SZ)"
 expect_status 1 run_freshness
 
-write_marker "family-ops-backup-$(date -u +%Y-%m-%d).tar.age" "$(date -u -d '2 hours' +%Y-%m-%dT%H:%M:%SZ)"
-expect_status 1 run_freshness
+FAKE_STORED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+FAKE_SOURCE_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+FAKE_TASKS=0 expect_status 1 run_freshness
 
-write_marker "not-a-backup.tar.age" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-expect_status 1 run_freshness
+# Required status-check job identity must stay stable for the protected ruleset.
+grep -Fq 'name: operational-safety (backup controls)' "$ROOT/.github/workflows/operational-safety-ci.yml" || fail "protected operational-safety check name changed"
 
-if grep -Eq '^[[:space:]]+pg_dump[[:space:]\\]' "$BACKUP_WORKFLOW"; then
-  echo "FAIL: backup.yml must not run raw pg_dump against the Supabase managed cluster" >&2
-  exit 1
-fi
-if ! grep -q 'uses: supabase/setup-cli@v1' "$BACKUP_WORKFLOW"; then
-  echo "FAIL: backup.yml must install Supabase CLI via setup-cli" >&2
-  exit 1
-fi
-if ! grep -q 'version: 2.115.0' "$BACKUP_WORKFLOW"; then
-  echo "FAIL: backup.yml must use the Supabase CLI version already proven by Family Ops integration CI" >&2
-  exit 1
-fi
-for required in \
-  'supabase db dump --db-url "$SUPABASE_DB_URL" -f roles.sql --role-only' \
-  'supabase db dump --db-url "$SUPABASE_DB_URL" -f schema.sql' \
-  '--data-only --use-copy' \
-  '--schema supabase_migrations' \
-  'tar -cf logical-backup.tar'; do
-  if ! grep -Fq -- "$required" "$BACKUP_WORKFLOW"; then
-    echo "FAIL: backup.yml is missing Supabase-compatible backup contract: $required" >&2
-    exit 1
-  fi
-done
-
-for excluded in \
-  '-x "cron.job"' \
-  '-x "cron.job_run_details"' \
-  '-x "net.http_request_queue"' \
-  '-x "net._http_response"'; do
-  if ! grep -Fq -- "$excluded" "$BACKUP_WORKFLOW"; then
-    echo "FAIL: backup.yml must exclude environment-specific worker state: $excluded" >&2
-    exit 1
-  fi
-done
-
-HEAD_OBJECT_LINE="$(grep -n 'aws s3api head-object' "$BACKUP_WORKFLOW" | head -n1 | cut -d: -f1 || true)"
-MARKER_STEP_LINE="$(grep -n 'name: Update latest-backup marker' "$BACKUP_WORKFLOW" | head -n1 | cut -d: -f1 || true)"
-if [ -z "$HEAD_OBJECT_LINE" ] || [ -z "$MARKER_STEP_LINE" ] || [ "$HEAD_OBJECT_LINE" -ge "$MARKER_STEP_LINE" ]; then
-  echo "FAIL: backup.yml must verify R2 head-object before the marker-update step" >&2
-  exit 1
-fi
-
-if grep -REn 'AGE_PRIVATE_KEY|AGE-SECRET-KEY' "$ROOT/.github/workflows" >/dev/null; then
-  echo "FAIL: private age key material/identifier must not appear in CI workflows" >&2
-  exit 1
-fi
-if ! grep -q 'BACKUP_AGE_PUBLIC_KEY' "$BACKUP_WORKFLOW"; then
-  echo "FAIL: backup.yml must encrypt using BACKUP_AGE_PUBLIC_KEY" >&2
-  exit 1
-fi
-
-for required in \
-  "to_regnamespace('auth')" \
-  "to_regnamespace('storage')" \
-  "to_regrole('service_role')" \
-  "to_regclass('cron.job')" \
-  "to_regclass('net.http_request_queue')" \
-  "to_regclass('vault.decrypted_secrets')" \
-  'history_schema.sql' \
-  'history_data.sql' \
-  'EXPECTED_MEMBERS=' \
-  'SET session_replication_role = replica' \
-  '--single-transaction' \
-  'select count(*) from auth.users' \
-  'select count(*) from auth.identities' \
-  'MEMBER_AUTH_ORPHANS=' \
-  'PROFILE_AUTH_ORPHANS=' \
-  'MEMBER_IDENTITY_ORPHANS=' \
-  'FAMILY_OPS_CRON_JOBS='; do
-  if ! grep -Fq -- "$required" "$RESTORE"; then
-    echo "FAIL: restore drill is missing Supabase-compatible recovery guard: $required" >&2
-    exit 1
-  fi
-done
-
-test -s "$RECOVERY_WORKERS" || { echo "FAIL: recovery worker SQL is missing" >&2; exit 1; }
-for required in \
-  'vault.decrypted_secrets' \
-  'family_ops_project_url' \
-  'family_ops_worker_token' \
-  'X-Family-Ops-Worker-Token' \
-  'family-ops-calendar-outbox-v1' \
-  'process-family-ops-calendar-outbox' \
-  'family-ops-line-delivery-v1' \
-  'send-notifications' \
-  'family-ops-line-inbox-v1' \
-  'process-line-inbox' \
-  'family-ops-materialize-recurring-v1' \
-  'materialize-recurring' \
-  'family-ops-pending-actions-v1' \
-  'process-pending-actions' \
-  'family-ops-routine-dispatch-v1' \
-  'dispatch-routine-automation' \
-  '10 15 * * *'; do
-  if ! grep -Fq -- "$required" "$RECOVERY_WORKERS"; then
-    echo "FAIL: recovery worker SQL is missing contract element: $required" >&2
-    exit 1
-  fi
-done
-if [ "$(grep -c 'SELECT cron.schedule(' "$RECOVERY_WORKERS")" -ne 6 ]; then
-  echo "FAIL: recovery worker SQL must define exactly six Family Ops jobs" >&2
-  exit 1
-fi
-if grep -Fq 'dnlqxjpjpkxnfgculzip' "$RECOVERY_WORKERS"; then
-  echo "FAIL: recovery worker SQL must not hardcode the production Supabase project ref" >&2
-  exit 1
-fi
-if grep -Eq 'CRON_WORKER_TOKEN[[:space:]]*=' "$RECOVERY_WORKERS"; then
-  echo "FAIL: recovery worker SQL must not contain a literal worker-token assignment" >&2
-  exit 1
-fi
-
-expect_status 3 env CI=true PATH="$PATH" bash "$RESTORE" --scratch-db-url "postgresql://unused/unused"
-bash "$RESTORE" --help >/dev/null
-bash -n "$FRESHNESS"
-bash -n "$RESTORE"
-
-echo "PASS: backup operational control regression tests"
+echo "PASS: right-sized CF-11 backup/recovery control regressions"
