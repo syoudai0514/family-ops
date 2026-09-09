@@ -140,6 +140,15 @@ test('cross-channel PASS requires both transport artifacts and a canonical readb
   );
 });
 
+test('whole-day PASS requires morning-to-evening evidence in chronological order', () => {
+  const details = structuredClone(detailByClass['whole-day-scenario']);
+  details.timeline = [details.timeline[1], details.timeline[0], details.timeline[2]];
+  assert.throws(
+    () => validatePassEvidenceRecord(record('whole-day-scenario', { details }), { exactHead: HEAD }),
+    /must be later than the previous step/,
+  );
+});
+
 test('F2 record validation rejects a technically valid evidence class attached to the wrong scenario', () => {
   const bad = record('browser', { scenarioId: 'CF14-Q27-LINE-WEBHOOK-POSTBACK' });
   assert.throws(
