@@ -56,13 +56,13 @@ The executable validator is `tests/evidence/cf14/evidence-records.mjs`. The capt
 | `unit-domain` | assertions exercised at domain boundary |
 | `db-rpc` | canonical readback artifact + assertions |
 | `edge-api` | actual request/response artifacts + assertions |
-| `browser` | interaction artifact/trace + steps + visible assertions + browser/viewport |
+| `browser` | **real browser** interaction artifact/trace + steps + visible assertions + browser/viewport; jsdom/happy-dom/Vitest are not browser evidence |
 | `line-transport` | provider event id + webhook/postback artifact + reply artifact + family-visible result |
 | `google-provider` | provider event id + operation + provider response artifact + family-visible result |
 | `image-ocr-ai` | raw image artifact + classify→OCR→AI→review evidence + provenance + review artifact + visible assertions |
-| `physical-iphone-manual` | physical device/iOS + Safari/PWA surface + interaction steps + screenshots + visible assertions |
+| `physical-iphone-manual` | physical iPhone/iOS + Safari/PWA surface + interaction steps + screenshots + visible assertions |
 | `cross-channel-concurrency` | LINE artifact + PWA artifact + measured concurrency window + canonical readback + visible assertions |
-| `whole-day-scenario` | timezone-explicit morning/daytime/evening timeline + visible assertions |
+| `whole-day-scenario` | timezone-explicit chronological morning/daytime/evening timeline + visible assertions |
 
 ## F2 fail-closed rules
 
@@ -72,13 +72,13 @@ The executable validator is `tests/evidence/cf14/evidence-records.mjs`. The capt
 - PASS record HEAD differs from payload HEAD;
 - PASS record has no captured timestamp with timezone;
 - PASS record has no substantive class-specific details;
-- browser evidence has no interaction artifact/steps/visible assertions;
+- browser evidence has no interaction artifact/steps/visible assertions or identifies a simulated DOM/test runner instead of a real browser;
 - LINE evidence has no actual reply artifact/family-visible result;
 - Google evidence begins after the provider boundary;
 - Nursery evidence begins after image intake/OCR;
-- physical iPhone evidence is actually jsdom/desktop responsive mode or has no screenshots/interaction history;
+- physical-iPhone evidence comes from desktop responsive emulation, lacks real iPhone/iOS identity, or has no screenshots/interaction history;
 - concurrency evidence does not contain both LINE and PWA sides plus canonical readback;
-- whole-day evidence is not clocked through multiple material day steps;
+- whole-day evidence is not timezone-explicit and chronological through multiple material day steps;
 - required evidence class is missing;
 - the scenario is still `expected-failing` or `skeleton` because a known Requirement/approved-UX gap remains.
 
@@ -100,5 +100,7 @@ A technically functioning action is FAIL if the family-facing result is material
 ## Relationship to F1
 
 F1 authors the architecture, harnesses and evidence requirements. It does not fabricate external/device proof and does not modify out-of-scope product behavior merely to make the verifier green.
+
+Vitest/React Testing Library component interaction tests authored in F1 are useful regression evidence, but they do **not** satisfy the final `browser` or `physical-iphone-manual` evidence classes by themselves.
 
 Final F2 execution starts only after implementation lanes converge and the exact final HEAD is known.
