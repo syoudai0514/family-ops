@@ -3,13 +3,15 @@
 - **Status:** Accepted / Canonical Detailed Design
 - **Accepted:** 2026-09-02
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
-- **Governance:** ADR 0012 Accepted / ADR 0013 Accepted
-- **Review:** Independent Round 5 Final Verification = `GO`
-- **Reviewed head:** `5c85bd1468a624b831493e198b0f88b4ef7c574e`
+- **Governance:** ADR 0012 Accepted / ADR 0013 Accepted / ADR 0014 Accepted for CF-11
+- **Review:** Independent Round 5 Final Verification = `GO`; CF-11 recovery scope subsequently right-sized by Product Owner in ADR 0014
+- **Reviewed head:** `5c85bd1468a624b831493e198b0f88b4ef7c574e` for the Round 5 package
 
 このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**canonical detailed design**である。PR #41は独立Round 5最終検証で `GO` を得たexact reviewed headをmergeし、ADR 0013のAccepted化により本ディレクトリのarchitecture/schema/API evolutionが正式に承認された。
 
 以後、実装者はこの固定pathを正として使用する。`FINAL` / `V2` / `LATEST` の並行設計コピーは作らない。設計変更はこのpathを更新し、product behavior変更ならRequirements Baseline、architecture scope変更ならADRも同時に更新・レビューする。
+
+CF-11 backup/recoveryについては、2026-09-09のProduct Owner判断をADR 0014が明示的に統治し、`10_BACKUP_RECOVERY.md` がCURRENT具体設計を保持する。Legacy v6 WP10のR2/age mechanicsはこのscopeに限りsupersededであり、v6ファイル自体は履歴として変更しない。
 
 ---
 
@@ -65,6 +67,7 @@ Before Phase 1 migration work, implementation must fresh-read the actual product
 7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md`
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
+10. `10_BACKUP_RECOVERY.md` — CF-11 right-sized household recovery design under ADR 0014
 
 Review instruction/history documents remain for audit only:
 
@@ -95,6 +98,7 @@ Review instruction/history documents remain for audit only:
 - aggregate canonical reader+writer activates atomically.
 - after P1, feature-off never restores legacy current truth.
 - no existing migration rewrite / `supabase db reset` / production data delete.
+- CF-11 household recovery scope is explicit-allowlist and excludes provider credentials/queues/test state; app-save-hub recovery proof does not claim provider-session recovery.
 
 ---
 
@@ -121,6 +125,7 @@ Final verdict: `GO`.
 - Round 3: `NO-GO` — BLOCKER 0 / HIGH 1
 - Round 4: reviewer A `GO WITH CONDITIONS` with one MEDIUM; reviewer B `GO`; no BLOCKER/HIGH
 - Round 5: **`GO` — BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 0 / Requirements contradiction 0**
+- CF-11 operational architecture: right-sized by Product Owner / ADR 0014 on 2026-09-09; operational PASS still requires actual backup + freshness + disposable restore evidence
 
 Round 5 reviewed head:
 
@@ -142,4 +147,5 @@ Implementation must follow the work-package ordering and gates in `07_ACCEPTANCE
 - each aggregate read+write cutover is atomic;
 - provider lifecycle overlap/orphan audits must pass before Family Event P1;
 - P1 rollback never restores legacy semantic truth;
-- destructive cleanup remains separately reviewed and deferred.
+- destructive cleanup remains separately reviewed and deferred;
+- CF-11 acceptance is additionally governed by `10_BACKUP_RECOVERY.md` and requires live separate-project snapshot + freshness + disposable restore evidence before PASS.
