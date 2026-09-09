@@ -1,0 +1,51 @@
+name: Lane B finalize guarded patch
+
+on:
+  push:
+    branches: [sol/lane-b-concierge-correctness]
+    paths: [.github/workflows/lane-b-finalize-selfpatch.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/lane-b-concierge-correctness
+          fetch-depth: 0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Patch canonical pending candidate type
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('supabase/functions/process-line-inbox/lineMultiIntent.ts')
+          s = p.read_text()
+          old = '  duplicate_match: ConciergeDuplicateMatch | null;\n  status: "draft" | "cancelled";'
+          assert s.count(old) == 1, s.count(old)
+          s = s.replace(old, '  duplicate_match: ConciergeDuplicateMatch | null;\n  duplicate_decision: "existing" | "update" | "separate" | null;\n  status: "draft" | "cancelled";')
+          p.write_text(s)
+          PY
+          deno fmt \
+            supabase/functions/process-line-inbox/lineMultiIntent.ts \
+            supabase/functions/process-line-inbox/lineUxBuilders.ts \
+            supabase/functions/process-line-inbox/index.ts \
+            supabase/functions/process-pending-actions/index.ts
+      - name: Targeted Deno checks
+        working-directory: supabase/functions
+        run: |
+          deno check process-line-inbox/index.ts
+          deno check process-pending-actions/index.ts
+          deno test --allow-env process-line-inbox/lineMultiIntent.test.ts
+      - name: Commit and remove one-shot workflow
+        run: |
+          rm .github/workflows/lane-b-finalize-selfpatch.yml
+          git config user.name "family-ops-lane-b"
+          git config user.email "actions@users.noreply.github.com"
+          git add supabase/functions/process-line-inbox/lineMultiIntent.ts supabase/functions/process-line-inbox/lineUxBuilders.ts supabase/functions/process-line-inbox/index.ts supabase/functions/process-pending-actions/index.ts .github/workflows/lane-b-finalize-selfpatch.yml
+          git commit -m "CF-06 CF-08 finalize LINE candidate contract"
+          git push origin HEAD:sol/lane-b-concierge-correctness
