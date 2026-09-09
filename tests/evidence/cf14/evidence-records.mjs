@@ -104,16 +104,21 @@ export function validatePassEvidenceRecord(record, { exactHead } = {}) {
       assert.ok(Number.isFinite(details.concurrencyWindowMs) && details.concurrencyWindowMs >= 0, 'details.concurrencyWindowMs must be a non-negative number');
       assertStringArray(details.visibleAssertions, 'details.visibleAssertions');
       break;
-    case 'whole-day-scenario':
+    case 'whole-day-scenario': {
       assert.ok(Array.isArray(details.timeline) && details.timeline.length >= 3, 'details.timeline requires at least three clocked steps');
+      let previousTimestamp = -Infinity;
       for (const [index, step] of details.timeline.entries()) {
         assert.ok(step && typeof step === 'object' && !Array.isArray(step), `details.timeline[${index}] must be an object`);
         assertNonEmptyString(step.step, `details.timeline[${index}].step`);
         assertNonEmptyString(step.channel, `details.timeline[${index}].channel`);
         assertTimestamp(step.at, `details.timeline[${index}].at`);
+        const timestamp = Date.parse(step.at);
+        assert.ok(timestamp > previousTimestamp, `details.timeline[${index}].at must be later than the previous step`);
+        previousTimestamp = timestamp;
       }
       assertStringArray(details.visibleAssertions, 'details.visibleAssertions');
       break;
+    }
     default:
       assert.fail(`unsupported evidence class: ${record.evidenceClass}`);
   }
