@@ -15,11 +15,15 @@
 
 ## Normative hierarchy
 
-1. accepted ADR governing the exact architecture decision
-2. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
+For **product requirements and UX meaning**, authority is:
+
+1. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
+2. accepted ADRs only within their explicit governance / architecture scope; they do not silently redefine product meaning
 3. `docs/design/current/`
 4. `docs/design/v6/` for non-conflicting legacy architecture/provider/security mechanics
 5. code/tests
+
+For an **architecture-specific decision that does not change product requirements/UX**, the accepted ADR governing that exact architecture scope controls the detailed-design realization, subject to the Baseline above. A product-meaning change must update the Baseline through ADR 0012 governance rather than being introduced by a design or ADR side door.
 
 Physical schema/cutover detail:
 
