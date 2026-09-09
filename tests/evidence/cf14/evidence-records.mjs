@@ -34,6 +34,11 @@ function assertOrderedStages(stages, requiredStages, label) {
 function assertEnvironment(environment, label) {
   assert.ok(environment && typeof environment === 'object' && !Array.isArray(environment), `${label} must be an object`);
   assertNonEmptyString(environment.browser, `${label}.browser`);
+  assert.doesNotMatch(
+    environment.browser,
+    /(?:jsdom|happy-dom|vitest|react testing library)/i,
+    `${label}.browser must identify a real browser, not a simulated DOM/test runner`,
+  );
   assertNonEmptyString(environment.viewport, `${label}.viewport`);
 }
 
@@ -91,7 +96,9 @@ export function validatePassEvidenceRecord(record, { exactHead } = {}) {
       break;
     case 'physical-iphone-manual':
       assertNonEmptyString(details.deviceModel, 'details.deviceModel');
+      assert.match(details.deviceModel, /^iPhone\b/i, 'details.deviceModel must identify a physical iPhone');
       assertNonEmptyString(details.osVersion, 'details.osVersion');
+      assert.match(details.osVersion, /^iOS\b/i, 'details.osVersion must identify iOS');
       assert.ok(['installed-pwa', 'safari'].includes(details.surface), 'details.surface must be installed-pwa or safari');
       assertStringArray(details.interactionSteps, 'details.interactionSteps');
       assertStringArray(details.screenshotArtifacts, 'details.screenshotArtifacts');
