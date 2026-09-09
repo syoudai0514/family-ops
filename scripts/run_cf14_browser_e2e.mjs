@@ -365,23 +365,23 @@ async function main() {
       const buttons = [...document.querySelectorAll('button[aria-label=${JSON.stringify(`${task.title}を完了にする`)}]')];
       const button = buttons.at(-1); if (!button) return false; button.click(); return true;
     })()`), true, 'Nested Today task completion action must exist');
-    await waitForText(client, 'CF14_BROWSER_STALE_REFRESH', 8_000);
+    await waitForText(client, '読み込みに失敗しました。', 8_000);
     await waitForText(client, task.title, 2_000);
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-STALE',
       entryBoundary: 'real task interaction succeeds, then canonical Today refresh fails',
-      visibleAssertion: 'refresh error is visible while the previously rendered task remains visible',
+      visibleAssertion: '読み込みに失敗しました。 is visible while the previously rendered task remains visible',
       screenshot: await screenshot(client, 'today-stale-refresh.png'),
     });
 
     state.mode = 'initial-error';
     state.failAfterMutation = false;
     await navigate(client, `${APP_URL}?cf14=initial-error`);
-    await waitForText(client, 'CF14_BROWSER_INITIAL_READ_FAILED', 8_000);
+    await waitForText(client, '読み込みに失敗しました。', 8_000);
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-ERROR',
       entryBoundary: 'real Chrome Today navigation with failing canonical read',
-      visibleAssertion: 'canonical read failure is rendered as a user-visible alert',
+      visibleAssertion: '読み込みに失敗しました。 is rendered as the user-visible read failure',
       screenshot: await screenshot(client, 'today-error.png'),
     });
 
@@ -401,7 +401,13 @@ async function main() {
     client?.close();
     await stopChild(chrome?.child);
     await stopChild(vite);
-    if (chrome?.userDataDir) await rm(chrome.userDataDir, { recursive: true, force: true });
+    if (chrome?.userDataDir) {
+      try {
+        await rm(chrome.userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      } catch (error) {
+        console.warn(`[cf14-browser] Chrome profile cleanup did not complete: ${error.message}`);
+      }
+    }
   }
 }
 
