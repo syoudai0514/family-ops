@@ -12,6 +12,10 @@ cat > "$TMP/bin/curl" <<'FAKE_CURL'
 set -euo pipefail
 url="${!#}"
 case "$url" in
+  */branches/main/protection)
+    [ -f "$FIXTURE_DIR/protection.json" ] || exit 22
+    cat "$FIXTURE_DIR/protection.json"
+    ;;
   */branches/main)
     cat "$FIXTURE_DIR/branch.json"
     ;;
@@ -29,14 +33,13 @@ esac
 FAKE_CURL
 chmod +x "$TMP/bin/curl"
 
-cat > "$TMP/fixtures/branch.json" <<'EOF'
-{"name":"main","protected":true}
-EOF
-cat > "$TMP/fixtures/rulesets.json" <<'EOF'
-[{"id":1,"name":"main-release","target":"branch","enforcement":"active"}]
-EOF
+printf '%s\n' '{"name":"main","protected":true}' > "$TMP/fixtures/branch.json"
 
 write_good_ruleset() {
+  rm -f "$TMP/fixtures/protection.json"
+  cat > "$TMP/fixtures/rulesets.json" <<'EOF'
+[{"id":1,"name":"main-release","target":"branch","enforcement":"active"}]
+EOF
   cat > "$TMP/fixtures/ruleset-1.json" <<'EOF'
 {
   "id": 1,
@@ -64,6 +67,32 @@ write_good_ruleset() {
 EOF
 }
 
+write_good_protection() {
+  printf '%s\n' '[]' > "$TMP/fixtures/rulesets.json"
+  rm -f "$TMP/fixtures/ruleset-1.json"
+  cat > "$TMP/fixtures/protection.json" <<'EOF'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "web (lint / typecheck / test / build)",
+      "db (migrations / RLS / RPC / idempotency / quota)",
+      "edge-functions (deno lint / check / auth-matrix lint)",
+      "supabase-integration (real CLI stack)",
+      "operational-safety (backup controls)"
+    ]
+  },
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 0,
+    "bypass_pull_request_allowances": {"users": [], "teams": [], "apps": []}
+  },
+  "enforce_admins": {"enabled": true},
+  "allow_force_pushes": {"enabled": false},
+  "allow_deletions": {"enabled": false}
+}
+EOF
+}
+
 run_verify() {
   env \
     PATH="$TMP/bin:$PATH" \
@@ -84,10 +113,11 @@ expect_fail() {
   fi
 }
 
+# Complete Active ruleset path passes.
 write_good_ruleset
 run_verify >/dev/null
 
-# Unprotected target branch is never acceptable even if a ruleset fixture exists.
+# Unprotected target branch is never acceptable.
 printf '%s\n' '{"name":"main","protected":false}' > "$TMP/fixtures/branch.json"
 expect_fail run_verify
 printf '%s\n' '{"name":"main","protected":true}' > "$TMP/fixtures/branch.json"
@@ -110,7 +140,7 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 expect_fail run_verify
 
-# Force-push prevention is mandatory.
+# Force-push prevention is mandatory for rulesets.
 write_good_ruleset
 python3 - "$TMP/fixtures/ruleset-1.json" <<'PY'
 import json, sys
@@ -123,7 +153,7 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 expect_fail run_verify
 
-# Branch deletion prevention is mandatory.
+# Branch deletion prevention is mandatory for rulesets.
 write_good_ruleset
 python3 - "$TMP/fixtures/ruleset-1.json" <<'PY'
 import json, sys
@@ -136,8 +166,8 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 expect_fail run_verify
 
-# GitHub may omit bypass_actors for a caller without enough ruleset visibility.
-# Absence must never be interpreted as an empty bypass list.
+# GitHub may omit bypass_actors without enough ruleset visibility. Absence
+# must never be interpreted as an empty bypass list.
 write_good_ruleset
 python3 - "$TMP/fixtures/ruleset-1.json" <<'PY'
 import json, sys
@@ -150,7 +180,7 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 expect_fail run_verify
 
-# A configured routine bypass makes the control non-mechanical for this contract.
+# A configured standing ruleset bypass is RED.
 write_good_ruleset
 python3 - "$TMP/fixtures/ruleset-1.json" <<'PY'
 import json, sys
@@ -174,6 +204,80 @@ data["conditions"]["ref_name"] = {"include": ["refs/heads/*"], "exclude": ["refs
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(data, fh)
 PY
+expect_fail run_verify
+
+# A complete classic branch-protection path is an equivalent preventive
+# mechanism and must pass when no ruleset is configured.
+write_good_protection
+run_verify >/dev/null
+
+# Classic protection must include every release-critical check.
+write_good_protection
+python3 - "$TMP/fixtures/protection.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+data["required_status_checks"]["contexts"].remove("operational-safety (backup controls)")
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh)
+PY
+expect_fail run_verify
+
+# Admins must not retain a normal-path bypass under classic protection.
+write_good_protection
+python3 - "$TMP/fixtures/protection.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+data["enforce_admins"]["enabled"] = False
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh)
+PY
+expect_fail run_verify
+
+# Force pushes and branch deletion must be explicitly disabled.
+write_good_protection
+python3 - "$TMP/fixtures/protection.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+data["allow_force_pushes"]["enabled"] = True
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh)
+PY
+expect_fail run_verify
+
+write_good_protection
+python3 - "$TMP/fixtures/protection.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+data["allow_deletions"]["enabled"] = True
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh)
+PY
+expect_fail run_verify
+
+# PR bypass allowances are standing bypasses and therefore RED.
+write_good_protection
+python3 - "$TMP/fixtures/protection.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+data["required_pull_request_reviews"]["bypass_pull_request_allowances"]["users"] = ["octocat"]
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh)
+PY
+expect_fail run_verify
+
+# Protected=true without either complete mechanism is still RED.
+printf '%s\n' '[]' > "$TMP/fixtures/rulesets.json"
+rm -f "$TMP/fixtures/ruleset-1.json" "$TMP/fixtures/protection.json"
 expect_fail run_verify
 
 bash "$VERIFY" --help >/dev/null
