@@ -1,0 +1,267 @@
+name: Lane B duplicate guarded self patch
+
+on:
+  push:
+    branches:
+      - sol/lane-b-concierge-correctness
+    paths:
+      - .github/workflows/lane-b-duplicate-selfpatch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'CF-06 enforce LINE duplicate decisions') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/lane-b-concierge-correctness
+          fetch-depth: 0
+      - name: Apply guarded replacements
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          # 1) LINE presentation: duplicates get the approved three choices and
+          # the group cannot be confirmed until every matched candidate decides.
+          builder_path = Path('supabase/functions/process-line-inbox/lineUxBuilders.ts')
+          builder = builder_path.read_text()
+          pattern = re.compile(r'export function buildMultiIntentPreviewFlex\(data: \{.*?\n\}\n\nexport function buildIntentClarificationFlex', re.S)
+          replacement = r'''export function buildMultiIntentPreviewFlex(data: {
+            pendingActionId: string;
+            candidates: Array<{
+              candidateId: string;
+              kind: string;
+              title: string;
+              missingFields: string[];
+              duplicateMatch?: boolean;
+              duplicateDecision?: "existing" | "update" | "separate" | null;
+            }>;
+          }): Record<string, unknown> {
+            const label = (kind: string): string => ({ share: "共有", task: "タスク", shopping: "買い物", request: "お願い", actual: "実績" }[kind] ?? "候補");
+            const duplicateButton = (candidateId: string, labelText: string, decision: string) => ({
+              type: "button", style: "secondary", height: "sm",
+              action: {
+                type: "postback", label: labelText,
+                data: `action=resolve_multi_duplicate&pending_action_id=${data.pendingActionId}&candidate_id=${candidateId}&decision=${decision}`,
+                displayText: labelText,
+              },
+            });
+            const lines: Record<string, unknown>[] = data.candidates.slice(0, 5).flatMap((candidate) => [
+              row(label(candidate.kind), candidate.title),
+              ...(candidate.missingFields.length > 0 ? [{
+                type: "text", size: "xxs", color: "#B54708", wrap: true,
+                text: `確認が必要: ${candidate.missingFields.join("・")}`,
+              }] : []),
+              ...(candidate.duplicateMatch ? [
+                { type: "text", size: "xxs", color: "#B54708", wrap: true,
+                  text: candidate.duplicateDecision
+                    ? `重複の扱い: ${candidate.duplicateDecision === "existing" ? "既存を使う" : candidate.duplicateDecision === "update" ? "既存を更新" : "別物として追加"}`
+                    : "既存データと一致しています。扱いを選んでください。" },
+                { type: "box", layout: "vertical", spacing: "xs", contents: [
+                  duplicateButton(candidate.candidateId, "既存を使う", "existing"),
+                  duplicateButton(candidate.candidateId, "既存を更新", "update"),
+                  duplicateButton(candidate.candidateId, "別物として追加", "separate"),
+                ] },
+              ] : []),
+              {
+                type: "button", style: "link", height: "sm",
+                action: {
+                  type: "postback", label: `${candidate.title}を取り消す`,
+                  data: `action=cancel_multi_candidate&pending_action_id=${data.pendingActionId}&candidate_id=${candidate.candidateId}`,
+                  displayText: `${candidate.title}を取り消す`,
+                },
+              },
+            ]);
+            const hasMissing = data.candidates.some((candidate) => candidate.missingFields.length > 0);
+            const hasUndecidedDuplicate = data.candidates.some((candidate) => candidate.duplicateMatch && !candidate.duplicateDecision);
+            return {
+              type: "flex",
+              altText: "読み取った内容を確認してください",
+              contents: {
+                type: "bubble", size: "mega",
+                header: { type: "box", layout: "vertical", paddingAll: "11px", backgroundColor: "#F2FBF7", contents: [
+                  { type: "text", text: "この内容でよいですか？", weight: "bold", color: TEXT },
+                  { type: "text", text: "候補ごとに取り消せます。不明な項目だけ確認します。", size: "xs", color: MUTED, margin: "xs" },
+                ] },
+                body: { type: "box", layout: "vertical", spacing: "xs", paddingAll: "10px", contents: lines },
+                footer: { type: "box", layout: "vertical", spacing: "xs", paddingAll: "5px", contents: [
+                  ...((hasMissing || hasUndecidedDuplicate) ? [{
+                    type: "text", size: "xs", color: "#B54708", wrap: true,
+                    text: hasUndecidedDuplicate ? "重複候補の扱いだけ選んでください。ほかの候補は残ります。" : "不明な箇所だけ教えてください。理解できている内容は残ります。",
+                  }] : [{
+                    type: "button", style: "primary", color: LINE_GREEN, height: "sm",
+                    action: { type: "postback", label: "まとめて登録", data: `action=confirm_pending&pending_action_id=${data.pendingActionId}`, displayText: "まとめて登録" },
+                  }]),
+                  { type: "button", style: "secondary", height: "sm", action: { type: "postback", label: "全部取り消す", data: `action=cancel_pending&pending_action_id=${data.pendingActionId}`, displayText: "全部取り消す" } },
+                ] },
+              },
+            };
+          }
+
+          export function buildIntentClarificationFlex'''
+          builder, count = pattern.subn(replacement, builder, count=1)
+          assert count == 1, f'buildMultiIntentPreviewFlex replacement count={count}'
+          builder_path.write_text(builder)
+
+          # 2) LINE pending creation/review: persist decision, render it, and
+          # provide a postback handler that only changes sender-private draft data.
+          line_path = Path('supabase/functions/process-line-inbox/index.ts')
+          line = line_path.read_text()
+          old = '      duplicate_match: candidate.duplicateMatch,\n      status: "draft" as const,'
+          assert line.count(old) == 1, f'duplicate base count={line.count(old)}'
+          line = line.replace(old, '      duplicate_match: candidate.duplicateMatch,\n      duplicate_decision: null,\n      status: "draft" as const,')
+
+          old_map = '''        missingFields: candidate.missing_fields,
+              })),'''
+          new_map = '''        missingFields: candidate.missing_fields,
+                duplicateMatch: Boolean(candidate.duplicate_match),
+                duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
+              })),'''
+          map_count = line.count(old_map)
+          assert map_count == 1, f'initial preview map count={map_count}'
+          line = line.replace(old_map, new_map)
+
+          old_cancel_map = '''        candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
+                missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+              })),'''
+          new_cancel_map = '''        candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
+                missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+                duplicateMatch: Boolean(candidate.duplicate_match),
+                duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
+              })),'''
+          assert line.count(old_cancel_map) == 1, f'cancel preview map count={line.count(old_cancel_map)}'
+          line = line.replace(old_cancel_map, new_cancel_map)
+
+          marker = '\nfunction correctionRole(text: string): "papa" | "mama" | "self" | null {'
+          assert line.count(marker) == 1, f'correctionRole marker count={line.count(marker)}'
+          resolver = r'''
+          async function resolveMultiIntentDuplicate(
+            client: SupabaseClient,
+            item: WebhookInboxItem,
+            actor: LineActor,
+            pendingActionId: string,
+            candidateId: string,
+            decision: "existing" | "update" | "separate",
+          ): Promise<void> {
+            const pending = await getEditablePending(client, actor, pendingActionId);
+            if (!pending || pending.action_type !== "line_multi_intent_review") {
+              await sendConfirmation(client, item, actor, "この候補はすでに更新されています。最新の内容を確認してください。");
+              return;
+            }
+            const rows = Array.isArray(pending.normalized_payload.candidates) ? pending.normalized_payload.candidates : [];
+            let found = false;
+            const candidates = rows.map((row) => {
+              if (!row || typeof row !== "object") return row;
+              const candidate = row as Record<string, unknown>;
+              if (candidate.candidate_id !== candidateId) return candidate;
+              if (!candidate.duplicate_match || typeof candidate.duplicate_match !== "object") return candidate;
+              found = true;
+              return { ...candidate, duplicate_decision: decision };
+            });
+            if (!found) {
+              await sendConfirmation(client, item, actor, "この候補には重複の選択は必要ありません。最新の内容を確認してください。");
+              return;
+            }
+            const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
+              ...pending.normalized_payload,
+              candidates,
+            });
+            if (!updated) return;
+            const active = candidates.filter((row): row is Record<string, unknown> =>
+              Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
+            );
+            await replyOrEnqueuePush(client, {
+              replyToken: item.payload.replyToken,
+              lineUserId: item.source_external_user_id,
+              householdId: actor.household_id,
+              recipientUserId: actor.user_id,
+              text: "重複候補の扱いを更新しました。",
+              message: buildMultiIntentPreviewFlex({
+                pendingActionId: updated.id,
+                candidates: active.map((candidate) => ({
+                  candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
+                  missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+                  duplicateMatch: Boolean(candidate.duplicate_match),
+                  duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
+                })),
+              }),
+              dedupKey: `line-multi-intent-duplicate:${item.provider_event_id}:${candidateId}:${decision}`,
+            });
+          }
+          '''
+          line = line.replace(marker, resolver + marker)
+
+          postback_marker = '''  if (fields.action === "cancel_multi_candidate" && fields.pending_action_id && fields.candidate_id) {
+            await cancelMultiIntentCandidate(client, item, actor, fields.pending_action_id, fields.candidate_id);
+            return;
+          }
+          '''
+          assert line.count(postback_marker) == 1, f'cancel postback marker count={line.count(postback_marker)}'
+          duplicate_postback = postback_marker + '''
+            if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && fields.candidate_id &&
+                (fields.decision === "existing" || fields.decision === "update" || fields.decision === "separate")) {
+              await resolveMultiIntentDuplicate(client, item, actor, fields.pending_action_id, fields.candidate_id, fields.decision);
+              return;
+            }
+          '''
+          line = line.replace(postback_marker, duplicate_postback)
+          line_path.write_text(line)
+
+          # 3) Execution: unresolved duplicate is fail-closed. Existing is no
+          # write, update calls the CAS-only canonical RPC, separate uses create.
+          pending_path = Path('supabase/functions/process-pending-actions/index.ts')
+          pending = pending_path.read_text()
+          old_loop = '''      for (const candidate of candidates) {
+                await execute(client, {
+                  ...item,
+                  action_type: candidate.action_type,
+                  normalized_payload: candidate.payload,
+                  operation_id: candidate.operation_id,
+                });
+              }'''
+          new_loop = '''      for (const candidate of candidates) {
+                const duplicate = candidate.duplicate_match;
+                const decision = (candidate as typeof candidate & { duplicate_decision?: "existing" | "update" | "separate" | null }).duplicate_decision ?? null;
+                if (duplicate && !decision) throw new Error('multi-intent duplicate still needs a decision');
+                if (duplicate && decision === 'existing') continue;
+                if (duplicate && decision === 'update') {
+                  const { error } = await client.rpc('server_tx_commit_concierge_duplicate_update', {
+                    p_actor_id: item.actor_id,
+                    p_operation_id: candidate.operation_id,
+                    p_entity_kind: duplicate.entityKind,
+                    p_entity_id: duplicate.entityId,
+                    p_expected_revision: duplicate.expectedRevision,
+                    p_title: String(candidate.payload.title ?? candidate.title),
+                    p_scheduled_date: candidate.payload.scheduled_date ?? null,
+                    p_due_local_time: candidate.payload.due_local_time ?? null,
+                    p_planned_assignee_user_id: candidate.action_type === 'task_create_once' ? candidate.payload.planned_assignee_user_id ?? null : null,
+                  });
+                  if (error) throw new Error(error.message);
+                  continue;
+                }
+                await execute(client, {
+                  ...item,
+                  action_type: candidate.action_type,
+                  normalized_payload: candidate.payload,
+                  operation_id: candidate.operation_id,
+                });
+              }'''
+          assert pending.count(old_loop) == 1, f'multi execution loop count={pending.count(old_loop)}'
+          pending = pending.replace(old_loop, new_loop)
+          pending_path.write_text(pending)
+
+          Path('.github/workflows/lane-b-duplicate-selfpatch.yml').unlink()
+          PY
+      - name: Commit LINE duplicate decisions
+        shell: bash
+        run: |
+          git config user.name "family-ops-lane-b"
+          git config user.email "actions@users.noreply.github.com"
+          git add supabase/functions/process-line-inbox/lineUxBuilders.ts supabase/functions/process-line-inbox/index.ts supabase/functions/process-pending-actions/index.ts .github/workflows/lane-b-duplicate-selfpatch.yml
+          git commit -m "CF-06 enforce LINE duplicate decisions"
+          git push origin HEAD:sol/lane-b-concierge-correctness
