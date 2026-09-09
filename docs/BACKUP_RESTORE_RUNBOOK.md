@@ -5,6 +5,15 @@ This is the operational runbook for WP10 (`docs/design/v6/10_WORK_PACKAGES.md`
 package — do not edit `docs/design/v6/`; if this runbook and v6 ever seem to
 disagree, v6 wins and this file gets fixed.
 
+## Product outcome first
+
+The point of this control is not to produce a technically valid backup file.
+It is to let the household resume using Family Ops after a severe data-loss
+incident without changing the approved daily LINE/PWA experience beforehand.
+A restore is therefore not PASS unless household data, Supabase Auth identity
+linkage and the representative operational state needed to use the app are
+coherent after restore.
+
 ## How the backup system works
 
 1. `.github/workflows/backup.yml` runs daily (18:00 UTC / 03:00 JST).
@@ -17,10 +26,13 @@ disagree, v6 wins and this file gets fixed.
    - `data.sql`
    - `history_schema.sql`
    - `history_data.sql`
-3. `schema.sql` / `data.sql` use Supabase CLI's managed-schema filtering;
+3. `schema.sql` / `data.sql` use Supabase CLI's managed-platform filtering;
    migration history is deliberately dumped separately because the normal
    filtered schema dump does not by itself preserve
-   `supabase_migrations.schema_migrations`.
+   `supabase_migrations.schema_migrations`. Supabase's supported logical
+   backup/restore path preserves Auth user data needed for project migration;
+   the restore drill still verifies restored `auth.users` / `auth.identities`
+   and their Family Ops references explicitly instead of assuming success.
 4. The five SQL members are packed into `logical-backup.tar`, encrypted with
    `age` using **only the public recipient**, and uploaded as
    `family-ops-backup-YYYY-MM-DD.tar.age` to the private R2 bucket.
@@ -156,9 +168,17 @@ The script fails closed unless all of the following succeed:
 10. requires all six representative core tables to exist;
 11. requires numeric row counts, with non-zero foundational household/task
     rows;
-12. requires a representative `task_instances.updated_at` timestamp.
+12. requires restored `auth.users`, `auth.identities` and `public.profiles`
+    to be non-empty for the current household state;
+13. rejects any restored `household_members` or `profiles` row whose `user_id`
+    does not resolve to `auth.users`, and rejects a household member without a
+    corresponding `auth.identities` row;
+14. requires a representative `task_instances.updated_at` timestamp.
 
-Only then does it print `RESULT: PASS`.
+Only then does it print `RESULT: PASS`. These identity checks matter because
+the restore data phase deliberately disables triggers/FK enforcement: without
+the explicit post-restore checks, public household rows could look present
+while the family could no longer authenticate into them.
 
 ### Backup naming / manual inspection
 
@@ -190,14 +210,38 @@ Do not paste the private key into a shared terminal, CI log, chat, or script
 that transmits it. Delete decrypted SQL/tar files after the drill because they
 contain production data.
 
+## Supabase Auth reconfiguration after disaster recovery
+
+Database recovery preserves the user/authentication records that are part of
+the logical database migration, but a newly created Supabase project still has
+its own project-level Auth configuration/API keys. Before cutover:
+
+- configure the same Google sign-in provider/redirect settings required by
+  Family Ops;
+- update application/provider configuration for the new Supabase project;
+- do not assume an access token issued by the old project remains valid on the
+  new project; require a normal sign-in again when the target uses a different
+  JWT signing secret;
+- smoke-test an actual sign-in, household load and recent task access before
+  declaring household recovery complete.
+
+This is not a new daily-user step. It is a disaster-recovery operator step so
+that restored data is actually usable by the family.
+
 ## Supabase Storage object scope
 
 This WP10 control is a **database logical backup**. Supabase database dumps
 can preserve Storage database metadata, but database backups do not contain
-the binary objects stored by the Storage service itself. If Family Ops starts
-using Supabase Storage for irreplaceable binary files, an object-backup control
-must be added explicitly; do not describe this database backup as recovering
-those blobs.
+the binary objects stored by the Storage service itself. If Family Ops stores
+**irreplaceable household binaries** in Storage, an object-backup control must
+be added explicitly; do not describe this database backup as recovering those
+blobs.
+
+Current runtime evidence inspected during CF-11 showed the household-facing
+`nursery-source` bucket empty; the existing non-empty objects were in
+handoff/evidence-oriented buckets. That observation is current-state evidence,
+not a permanent exemption: if real nursery or other irreplaceable household
+files begin accumulating, the backup requirement must be revisited.
 
 ## Disaster recovery
 
@@ -207,8 +251,8 @@ loss/corruption event:
 - preserve evidence/current broken state first;
 - obtain a second person's confirmation when practical;
 - restore into a **new Supabase project** first;
-- run the same fail-closed sanity checks;
-- verify Auth/application data and required provider configuration;
+- run the same fail-closed sanity checks, including Auth identity linkage;
+- configure the target project's Auth/provider/API settings;
 - only then perform a deliberate cutover/recovery action;
 - after cutover, smoke-test sign-in, household loading and recent task data.
 
@@ -233,8 +277,9 @@ release state. Source review or green unit tests are not substitutes.
    - bundle member contract validates.
 4. **Isolated Supabase restore drill PASS**
    - target is a fresh disposable Supabase-compatible environment;
-   - migration history, core schema, foundational rows and representative
-     timestamp checks all pass;
+   - migration history, core schema and foundational rows pass;
+   - restored Auth users/identities and Family Ops member/profile linkage pass;
+   - representative task timestamp passes;
    - script exits 0 and prints `RESULT: PASS`.
 
 Record workflow run IDs/results and restore-drill date/result only. Never
@@ -252,8 +297,10 @@ readiness:
       policy and referencing a non-empty encrypted object.
 - [ ] Run `scripts/restore_drill.sh` against a fresh disposable Supabase
       target using the owner-held private key locally.
-- [ ] Require exit 0 and `RESULT: PASS`.
+- [ ] Require exit 0 and `RESULT: PASS`, including Auth identity linkage.
 - [ ] Compare latest restored migration with the expected release migration.
+- [ ] For disaster recovery, verify target Auth/provider configuration and an
+      actual sign-in before cutover.
 - [ ] Record only non-secret evidence.
 - [ ] Treat any failure as release-blocking until a new backup + restore drill
       passes.
@@ -271,6 +318,7 @@ control logic. It verifies, among other things:
 - no raw production `pg_dump` path;
 - pinned Supabase CLI + schema/data/migration-history dump contract;
 - Supabase-compatible restore preflight and restore ordering;
+- post-restore Auth user/identity and Family Ops linkage guards;
 - private age key exclusion from CI;
 - restore refusal in CI.
 
