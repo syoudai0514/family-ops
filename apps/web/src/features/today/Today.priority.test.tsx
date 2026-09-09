@@ -120,7 +120,7 @@ describe('Today first-flow priority contract', () => {
     expect(remainingHeading.compareDocumentPosition(tomorrowSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('does not render the Empty success surface while the separate pending-action controller is still loading', () => {
+  it('does not render the Empty success surface while pending-action state is loading or failed', () => {
     mockToday.mockReturnValue(data({
       status: 'empty', urgentActions: [], exceptions: [], tasks: [],
       taskGroups: { morning: [], daytime: [], evening: [], optional: [] }, waitingTasks: [],
@@ -132,7 +132,12 @@ describe('Today first-flow priority contract', () => {
     const view = render(<MemoryRouter><Today /></MemoryRouter>);
     expect(screen.queryByRole('heading', { name: '今日は確認が必要な項目はありません' })).not.toBeInTheDocument();
 
-    mockPending.mockReturnValue({ ...pendingBase, pendingActions: [], loading: false });
+    mockPending.mockReturnValue({ ...pendingBase, pendingActions: [], loading: false, error: '取得失敗' });
+    view.rerender(<MemoryRouter><Today /></MemoryRouter>);
+    expect(screen.getByRole('alert')).toHaveTextContent('確認項目の取得に失敗しました');
+    expect(screen.queryByRole('heading', { name: '今日は確認が必要な項目はありません' })).not.toBeInTheDocument();
+
+    mockPending.mockReturnValue({ ...pendingBase, pendingActions: [], loading: false, error: null });
     view.rerender(<MemoryRouter><Today /></MemoryRouter>);
     expect(screen.getByRole('heading', { name: '今日は確認が必要な項目はありません' })).toBeInTheDocument();
   });
