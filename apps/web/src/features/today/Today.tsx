@@ -56,13 +56,17 @@ export interface TodayRequestAttempt {
 function useTodayRequestAttempts(requests: RequestRow[]) {
   const [attempts, setAttempts] = useState<Map<string, TodayRequestAttempt>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const requestIdsKey = useMemo(
+    () => JSON.stringify(requests.map((request) => request.id).sort()),
+    [requests],
+  );
 
   useEffect(() => {
     let cancelled = false;
-    const requestIds = requests.map((request) => request.id);
+    const requestIds = JSON.parse(requestIdsKey) as string[];
     if (requestIds.length === 0) {
-      setAttempts(new Map());
-      setError(null);
+      setAttempts((current) => (current.size === 0 ? current : new Map()));
+      setError((current) => (current === null ? current : null));
       return () => { cancelled = true; };
     }
 
@@ -88,7 +92,7 @@ function useTodayRequestAttempts(requests: RequestRow[]) {
     })();
 
     return () => { cancelled = true; };
-  }, [requests]);
+  }, [requestIdsKey]);
 
   return { attempts, error };
 }
