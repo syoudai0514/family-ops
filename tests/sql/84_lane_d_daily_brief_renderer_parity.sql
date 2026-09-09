@@ -8,10 +8,10 @@ set local role service_role;
 do $$
 declare
   v_brief jsonb := jsonb_build_object(
-    'urgent_actions', jsonb_build_array(jsonb_build_object('title', '担当を決める')),
-    'exceptions', jsonb_build_array(jsonb_build_object('title', '保育園が短縮')),
+    'urgent_actions', jsonb_build_array(jsonb_build_object('shared_title', '担当を決める')),
+    'exceptions', jsonb_build_array(jsonb_build_object('message', '保育園が短縮')),
     'carryovers', jsonb_build_array(jsonb_build_object('title', '昨日の提出物')),
-    'waiting_checks', jsonb_build_array(jsonb_build_object('title', '園から返事待ち')),
+    'waiting_checks', jsonb_build_array(jsonb_build_object('waiting_note', '園から返事待ち')),
     'active_infos', jsonb_build_array(jsonb_build_object('shared_text', '水筒を玄関へ')),
     'already_handled', jsonb_build_array(jsonb_build_object('title', '朝の連絡帳')),
     'own_task_groups', jsonb_build_object(
@@ -31,14 +31,15 @@ declare
   v_evening text;
 begin
   v_day := private.fn_render_daily_brief_text_v3(v_brief, 'daytime');
-  if position('まず確認' in v_day) = 0
+  if position('担当を決める' in v_day) = 0
+     or position('まず確認' in v_day) = 0
      or position('いつもと違うこと' in v_day) = 0
      or position('保育園が短縮' in v_day) = 0
      or position('昨日の提出物' in v_day) = 0
      or position('引き継ぎ・共有' in v_day) = 0
      or position('もう済んでいる' in v_day) = 0
      or position('今やること' in v_day) = 0
-     or position('待ち・確認' in v_day) = 0 then
+     or position('園から返事待ち' in v_day) = 0 then
     raise exception 'FAIL lane-d-renderer-day: material DailyBrief semantics missing: %', v_day;
   end if;
 
