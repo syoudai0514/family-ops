@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies (workspace root)
         run: npm ci
 
+      - name: CF-14 authoring evidence self-test
+        run: npm run test:cf14:authoring
+
       - name: Lint
         run: npm run lint -w apps/web
 
