@@ -50,6 +50,73 @@ export const requestLifecycleFixtures = [
   },
 ];
 
+export const clockBoundaryFixtures = [
+  {
+    id: 'weekday-morning-before',
+    requirementIds: ['Q88'],
+    dayType: 'weekday',
+    deliveryKind: 'morning',
+    at: '2026-09-14T06:29:59+09:00',
+    expectedShouldDeliver: false,
+  },
+  {
+    id: 'weekday-morning-at-boundary',
+    requirementIds: ['Q88'],
+    dayType: 'weekday',
+    deliveryKind: 'morning',
+    at: '2026-09-14T06:30:00+09:00',
+    expectedShouldDeliver: true,
+  },
+  {
+    id: 'weekend-morning-before',
+    requirementIds: ['Q88'],
+    dayType: 'weekend',
+    deliveryKind: 'morning',
+    at: '2026-09-19T08:59:59+09:00',
+    expectedShouldDeliver: false,
+  },
+  {
+    id: 'weekend-morning-at-boundary',
+    requirementIds: ['Q88'],
+    dayType: 'weekend',
+    deliveryKind: 'morning',
+    at: '2026-09-19T09:00:00+09:00',
+    expectedShouldDeliver: true,
+  },
+  {
+    id: 'holiday-morning-before',
+    requirementIds: ['Q88'],
+    dayType: 'holiday',
+    deliveryKind: 'morning',
+    at: '2026-09-23T08:59:59+09:00',
+    expectedShouldDeliver: false,
+  },
+  {
+    id: 'holiday-morning-at-boundary',
+    requirementIds: ['Q88'],
+    dayType: 'holiday',
+    deliveryKind: 'morning',
+    at: '2026-09-23T09:00:00+09:00',
+    expectedShouldDeliver: true,
+  },
+  {
+    id: 'evening-before',
+    requirementIds: ['Q88'],
+    dayType: 'weekday',
+    deliveryKind: 'evening',
+    at: '2026-09-14T20:29:59+09:00',
+    expectedShouldDeliver: false,
+  },
+  {
+    id: 'evening-at-boundary',
+    requirementIds: ['Q88'],
+    dayType: 'weekday',
+    deliveryKind: 'evening',
+    at: '2026-09-14T20:30:00+09:00',
+    expectedShouldDeliver: true,
+  },
+];
+
 // 1x1 transparent PNG. It is intentionally bytes, not OCR/candidate JSON.
 export const nurseryActualImageFixture = {
   id: 'nursery-image-actual-input-1',
