@@ -562,14 +562,18 @@ async function buildMultiIntentPendingCandidates(
       };
     }
     if (candidate.kind === "request") {
+      const explicitRecipient = intent?.targetRole
+        ? await householdUserForRole(client, actor.household_id, intent.targetRole)
+        : null;
+      const recipient = explicitRecipient ?? partner;
       return {
         ...base,
         action_type: "request_create" as const,
-        missing_fields: partner ? base.missing_fields : [...base.missing_fields, "お願いする相手"],
+        missing_fields: recipient ? base.missing_fields : [...base.missing_fields, "お願いする相手"],
         payload: {
           title: candidate.title,
           shared_message: intent?.sharedMessage ?? `${candidate.title}をお願いできますか？`,
-          recipient_user_id: partner,
+          recipient_user_id: recipient,
           scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
           due_local_time: intent?.dueLocalTime ?? null,
         },
