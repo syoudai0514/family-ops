@@ -23,7 +23,7 @@ const REQUEST_ATTEMPT: TodayRequestAttempt = {
   reply_due_at: '2099-09-10T12:00:00Z',
 };
 
-const taskRow = {
+const taskRow = vi.hoisted(() => ({
   id: 'task-1',
   household_id: 'household-1',
   task_definition_id: null,
@@ -41,7 +41,7 @@ const taskRow = {
   attention_state: 'active',
   actual_completed_by_id: null,
   completed_at: null,
-} as TaskInstance;
+})) as TaskInstance;
 
 vi.mock('./useTodayClock', () => ({
   useTodayClock: () => ({
@@ -132,6 +132,7 @@ vi.mock('../../lib/supabaseClient', () => ({
               schedule: [],
               carryovers: [],
             },
+            morning_summary: { completed_count: 0, total_count: 0 },
           },
           error: null,
         });
