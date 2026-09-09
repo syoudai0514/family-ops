@@ -42,11 +42,12 @@ successful Family Ops recovery.
 
 ## Lane C CURRENT evidence — 2026-09-09
 
-- Base `main` remains `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected at the latest fresh-read.
+- Base `main` remained `6d93ba0d5b6ed1d6dbc3bbf8ec0a973f898d30ff` and unprotected at the latest fresh-read before this documentation-only sync.
 - Lane C work remains PR #68 on `sol/lane-c-operational-safety`; live GitHub is the authority for its exact current HEAD.
-- Latest repository verification before the status-only update:
-  - full CI `34317136604` / run #843: Web SUCCESS, DB SUCCESS, Edge SUCCESS, real Supabase integration SUCCESS;
-  - Operational safety CI `34317135932` / run #32: SUCCESS, including backup/restore control and repository-enforcement regressions.
+- Latest repository verification before this documentation-only sync:
+  - full CI `34317378938` / run #847: Web SUCCESS, DB SUCCESS, Edge SUCCESS, real Supabase integration SUCCESS;
+  - Operational safety CI `34317379004` / run #33: SUCCESS, including backup/restore control and repository-enforcement regressions.
+  These runs prove their tested predecessor HEAD; re-read CI after this self-mutating status commit before any release decision.
 - CF-11 current production-state reads found:
   - Family Ops `household_members` and `profiles` reference `auth.users`;
   - production has one Auth user and one Auth identity, with no current identity gap for that user;
