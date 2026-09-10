@@ -825,7 +825,6 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
       const attemptId = str(latestAttempt.attempt_id);
       const attemptRevision = num(latestAttempt.revision);
       const termsRevision = num(latestAttempt.terms_revision);
-      const labels = simulationDirectionLabels(latest, simulatedLabel);
       if (requestId && attemptId && attemptRevision && termsRevision) {
         quick.push(postback("受ける", encodeFields("mc_sim_respond", {
           test_context_id: contextId,
