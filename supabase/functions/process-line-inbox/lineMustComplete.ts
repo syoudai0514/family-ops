@@ -176,6 +176,10 @@ function isSimulationText(text: string): boolean {
   return /^(1人テスト|一人テスト|テストモード|テスト状態)$/u.test(text.normalize("NFKC").trim());
 }
 
+function isSimulationEndText(text: string): boolean {
+  return /^(テスト終了|1人テスト終了|一人テスト終了)$/u.test(text.normalize("NFKC").trim());
+}
+
 async function openReconciliation(ctx: LineMustCompleteContext): Promise<void> {
   const { data, error } = await ctx.client.rpc("server_read_current_routine_sessions", { p_actor_id: ctx.actorId });
   if (error) {
@@ -686,10 +690,9 @@ function simulationRequestText(root: JsonObject, request: JsonObject): string {
 
 function simulationControls(
   contextId: string,
-  revision: number | null,
   simulatedLabel: string,
 ): LineQuickReplyAction[] {
-  const quick: LineQuickReplyAction[] = [
+  return [
     postback(`${simulatedLabel}にお願い`, encodeFields("mc_sim_send", {
       test_context_id: contextId,
       direction: "operator_to_simulated",
@@ -698,15 +701,7 @@ function simulationControls(
       test_context_id: contextId,
       direction: "simulated_to_operator",
     })),
-    postback("最新のお願いを見る", encodeFields("mc_sim_view", { test_context_id: contextId })),
   ];
-  if (revision) {
-    quick.push(postback("1人テスト終了", encodeFields("mc_sim_archive", {
-      test_context_id: contextId,
-      revision,
-    })));
-  }
-  return quick;
 }
 
 async function openSimulation(ctx: LineMustCompleteContext): Promise<void> {
@@ -728,9 +723,48 @@ async function openSimulation(ctx: LineMustCompleteContext): Promise<void> {
   if (!contextId || !revision) return;
   const simulatedLabel = simulationRoleLabel(root);
   await ctx.reply(
-    `1人テスト中：${simulatedLabel}\nあなた1人で、${simulatedLabel}に届くお願い／${simulatedLabel}から届くお願いを確認できます。\n本物の家族・providerへ副作用は出ません。`,
-    simulationControls(contextId, revision, simulatedLabel),
+    `1人テスト中：${simulatedLabel}\nあなた1人で、${simulatedLabel}に届くお願い／${simulatedLabel}から届くお願いを確認できます。\n本物の家族・providerへ副作用は出ません。\n\n最新のお願いを見る: 「テスト状態」\n終了する: 「テスト終了」`,
+    simulationControls(contextId, simulatedLabel),
   );
+}
+
+
+async function archiveActiveSimulation(ctx: LineMustCompleteContext): Promise<void> {
+  const { data, error } = await ctx.client.rpc("server_tx_get_active_test_simulation_v1", {
+    p_actor_id: ctx.actorId,
+  });
+  if (error) {
+    await replyMutationError(ctx, error);
+    return;
+  }
+  const root = record(data);
+  if (root?.active !== true) {
+    await ctx.reply("1人テストは開始されていません。");
+    return;
+  }
+  const contextId = str(root.test_context_id);
+  const revision = num(root.revision);
+  if (!contextId || !revision) {
+    await ctx.reply("テスト状態を確認できませんでした。状態は変更していません。");
+    return;
+  }
+  const operationId = await deterministicOperationId(
+    "line-sim-archive-text",
+    ctx.eventId,
+    contextId,
+    String(revision),
+  );
+  const { error: archiveError } = await ctx.client.rpc("server_tx_archive_test_simulation_v1", {
+    p_actor_id: ctx.actorId,
+    p_operation_id: operationId,
+    p_test_context_id: contextId,
+    p_expected_revision: revision,
+  });
+  if (archiveError) {
+    await replyMutationError(ctx, archiveError);
+    return;
+  }
+  await ctx.reply("✓ 1人テストを終了しました。本番Taskへの変換や本物の家族への送信はありません。");
 }
 
 async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
@@ -814,7 +848,7 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
     if (!latest) {
       await ctx.reply(
         `1人テスト中：${simulatedLabel}\nまだお願いはありません。\n本物の家族・providerへ副作用は出ません。`,
-        simulationControls(contextId, revision, simulatedLabel),
+        simulationControls(contextId, simulatedLabel),
       );
       return;
     }
@@ -933,6 +967,10 @@ export async function tryHandleLineMustCompleteText(ctx: LineMustCompleteContext
   }
   if (isHandoverReviewText(text)) {
     await openHandoverReview(ctx);
+    return true;
+  }
+  if (isSimulationEndText(text)) {
+    await archiveActiveSimulation(ctx);
     return true;
   }
   if (isSimulationText(text)) {
