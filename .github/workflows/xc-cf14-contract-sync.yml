@@ -1,0 +1,45 @@
+name: XC CF14 contract sync
+
+on:
+  push:
+    branches:
+      - integration/family-ops-final-candidate
+    paths:
+      - '.github/workflows/xc-cf14-contract-sync.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/family-ops-final-candidate
+          fetch-depth: 0
+      - name: Align CF14 sender consultation evidence with structured terms UX
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/run_cf14_browser_e2e.mjs')
+          s = p.read_text()
+          old = s
+          s = s.replace('この条件で確認する', '表示中の条件版を確認する')
+          s = s.replace('input[aria-label="合意する条件"]', 'input[aria-label="相談メモ"]')
+          if s == old:
+              raise SystemExit('expected CF14 consultation contract strings not found')
+          p.write_text(s)
+          PY
+      - name: Commit contract sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/run_cf14_browser_e2e.mjs
+          git commit -m 'test: align CF14 with structured consultation UX'
+          git push origin HEAD:integration/family-ops-final-candidate
