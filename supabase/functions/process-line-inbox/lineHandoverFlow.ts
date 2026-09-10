@@ -9,14 +9,6 @@ interface Context {
   reply: (text: string, quickReplies?: LineQuickReplyAction[]) => Promise<void>;
 }
 
-type JsonObject = Record<string, unknown>;
-
-function record(value: unknown): JsonObject | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonObject
-    : null;
-}
-
 function postback(label: string, data: string, displayText = label): LineQuickReplyAction {
   return { type: "postback", label, data, displayText };
 }
