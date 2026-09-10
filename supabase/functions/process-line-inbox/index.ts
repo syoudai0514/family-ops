@@ -91,6 +91,10 @@ import {
   tryHandleLineMustCompletePostback,
   tryHandleLineMustCompleteText,
 } from "./lineMustComplete.ts";
+import {
+  appendTodayDetailLinks,
+  todayContextQuickReplies,
+} from "./lineTodayUx.ts";
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get("LINE_INBOX_BATCH_LIMIT") ?? "25");
@@ -211,34 +215,43 @@ async function sendLineSchedule(
   kind: "today" | "tomorrow" | "week",
 ): Promise<void> {
   if (kind === "today") {
-    const { data, error } = await client.rpc("server_read_line_today_daily_brief", {
-      p_actor_id: actor.user_id,
-    });
-    if (error) {
-      console.error("process-line-inbox: DailyBrief read failed", error.message);
-      await sendConfirmation(
-        client,
-        item,
-        actor,
-        "今日の状況を読み込めませんでした。少し待ってからもう一度送ってください。",
-        menuQuickReplies(),
-      );
-      return;
-    }
-    const text = typeof data === "string" && data.trim()
-      ? data
-      : "今日のおうちノート\n\n確認が必要な項目はありません。";
-    await replyOrEnqueuePush(client, {
-      replyToken: item.payload.replyToken,
-      lineUserId: item.source_external_user_id,
-      householdId: actor.household_id,
-      recipientUserId: actor.user_id,
-      text,
-      quickReplyItems: menuQuickReplies(),
-      dedupKey: `line-daily-brief:${item.provider_event_id}`,
-    });
+  const [rendered, structured] = await Promise.all([
+    client.rpc("server_read_line_today_daily_brief", { p_actor_id: actor.user_id }),
+    client.rpc("server_read_daily_brief", { p_actor_id: actor.user_id, p_local_date: null }),
+  ]);
+  if (rendered.error || structured.error) {
+    console.error(
+      "process-line-inbox: DailyBrief read failed",
+      rendered.error?.message ?? structured.error?.message ?? "unknown",
+    );
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "今日の状況を読み込めませんでした。少し待ってからもう一度送ってください。",
+      menuQuickReplies(),
+    );
     return;
   }
+  const baseText = typeof rendered.data === "string" && rendered.data.trim()
+    ? rendered.data
+    : "今日のおうちノート\n\n確認が必要な項目はありません。";
+  const todayText = appendTodayDetailLinks(
+    baseText,
+    structured.data,
+    Deno.env.get("APP_BASE_URL") ?? "",
+  );
+  await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text: todayText,
+    quickReplyItems: todayContextQuickReplies(structured.data, menuQuickReplies()),
+    dedupKey: `line-daily-brief:${item.provider_event_id}`,
+  });
+  return;
+}
 
   const range = kind === "week"
     ? jstWeekRange()

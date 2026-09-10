@@ -6,6 +6,11 @@ import {
   pickNextUnfinished,
   type RoutineSessionItem,
 } from "./routineItemFlow.ts";
+import {
+  handleHandoverAckPostback,
+  isHandoverReviewText,
+  openHandoverReview,
+} from "./lineHandoverFlow.ts";
 
 export interface LineMustCompleteContext {
   client: SupabaseClient;
@@ -774,6 +779,10 @@ export async function tryHandleLineMustCompleteText(ctx: LineMustCompleteContext
     await openRequests(ctx);
     return true;
   }
+  if (isHandoverReviewText(text)) {
+    await openHandoverReview(ctx);
+    return true;
+  }
   if (isSimulationText(text)) {
     await openSimulation(ctx);
     return true;
@@ -820,6 +829,9 @@ export async function tryHandleLineMustCompletePostback(
   }
   if (action === "mc_request_repropose") {
     await reproposeRequest(ctx, fields);
+    return true;
+  }
+  if (await handleHandoverAckPostback(ctx, fields)) {
     return true;
   }
   if (action?.startsWith("mc_sim_")) {
