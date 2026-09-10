@@ -36,6 +36,45 @@ async function actorRefId(ctx: Context): Promise<string | null> {
   return typeof data?.id === "string" ? data.id : null;
 }
 
+function roleLabel(role: unknown): string | null {
+  if (role === "papa") return "パパ";
+  if (role === "mama") return "ママ";
+  return null;
+}
+
+async function handoverAuthorLabel(
+  ctx: Context,
+  authorActorRefId: unknown,
+  legacyAuthorId: unknown,
+): Promise<string> {
+  let userId = typeof legacyAuthorId === "string" ? legacyAuthorId : null;
+
+  if (typeof authorActorRefId === "string") {
+    const { data: actorRef } = await ctx.client
+      .from("domain_actor_refs")
+      .select("real_user_id,simulated_role")
+      .eq("household_id", ctx.householdId)
+      .eq("id", authorActorRefId)
+      .maybeSingle();
+    const simulated = roleLabel(actorRef?.simulated_role);
+    if (simulated) return simulated;
+    if (typeof actorRef?.real_user_id === "string") userId = actorRef.real_user_id;
+  }
+
+  if (userId) {
+    const { data: member } = await ctx.client
+      .from("household_members")
+      .select("family_role")
+      .eq("household_id", ctx.householdId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    const label = roleLabel(member?.family_role);
+    if (label) return label;
+  }
+
+  return "家族";
+}
+
 export function isHandoverReviewText(text: string): boolean {
   return /^(共有確認|引き継ぎ確認|確認が必要な共有)$/u.test(text.normalize("NFKC").trim());
 }
@@ -49,7 +88,7 @@ export async function openHandoverReview(ctx: Context): Promise<void> {
 
   const { data: rows, error } = await ctx.client
     .from("handovers")
-    .select("id,shared_text,info_kind,revision,created_at")
+    .select("id,shared_text,info_kind,revision,created_at,author_actor_ref_id,author_id")
     .eq("household_id", ctx.householdId)
     .eq("status", "active")
     .eq("visibility", "household")
@@ -83,9 +122,10 @@ export async function openHandoverReview(ctx: Context): Promise<void> {
 
   const kind = target.info_kind === "share" ? "共有" : "引き継ぎ";
   const text = String(target.shared_text ?? "").trim() || "内容なし";
+  const author = await handoverAuthorLabel(ctx, target.author_actor_ref_id, target.author_id);
   const params = new URLSearchParams({ action: "mc_handover_ack", handover_id: target.id });
   await ctx.reply(
-    `確認が必要な${kind}\n\n${text}\n\n内容を確認したら下の「確認した」を押してください。これは関連ToDoの完了とは別です。`,
+    `確認が必要な${kind}\n${author} → 家族全員\n状態: あなたの確認待ち\n\n内容: ${text}\n\n必要: 下の「確認した」を押してください。これは関連ToDoの完了とは別です。`,
     [postback("確認した", params.toString())],
   );
 }
