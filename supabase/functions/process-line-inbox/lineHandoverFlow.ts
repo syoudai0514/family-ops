@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
+import { handleAssignmentPostback } from "./lineAssignmentFlow.ts";
 
 interface Context {
   client: SupabaseClient;
@@ -134,6 +135,11 @@ export async function handleHandoverAckPostback(
   ctx: Context,
   fields: Record<string, string>,
 ): Promise<boolean> {
+  // lineMustComplete already routes every remaining contextual postback here.
+  // Keep assignment actions on that existing safe entry boundary instead of
+  // adding a second generic postback dispatcher to the large inbox worker.
+  if (await handleAssignmentPostback(ctx, fields)) return true;
+
   if (fields.action !== "mc_handover_ack") return false;
   const handoverId = fields.handover_id;
   if (!handoverId) return true;
