@@ -1,0 +1,44 @@
+name: XC LINE reader sync
+
+on:
+  push:
+    branches:
+      - integration/family-ops-final-candidate
+    paths:
+      - '.github/workflows/xc-line-reader-sync.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/family-ops-final-candidate
+          fetch-depth: 0
+      - name: Use canonical shopping read model in LINE
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('supabase/functions/process-line-inbox/lineMustComplete.ts')
+          s = p.read_text()
+          old = 'ctx.client.rpc("get_my_shopping_workspace")'
+          new = 'ctx.client.rpc("server_read_shopping_workspace", { p_actor_id: ctx.actorId })'
+          if old not in s:
+              raise SystemExit('expected legacy shopping reader call not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Commit reader sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/process-line-inbox/lineMustComplete.ts
+          git commit -m 'fix: use canonical shopping reader from LINE'
+          git push origin HEAD:integration/family-ops-final-candidate
