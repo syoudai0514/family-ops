@@ -62,11 +62,14 @@ begin
       )
     )
   );
-  if position('パパ → 家族｜引き継ぎ｜確認不要' in v_handover) = 0
-     or position('ママ → 家族｜共有｜確認待ち（LINEで「共有確認」）' in v_handover) = 0
-     or position('水筒は玄関です' in v_handover) = 0
-     or position('提出物を確認してください' in v_handover) = 0 then
-    raise exception 'FAIL f2-line-today-handover: actor/ack context missing: %', v_handover;
+  if position('パパ → 家族全員｜引き継ぎ' in v_handover) = 0
+     or position('状態: 共有中・確認不要' in v_handover) = 0
+     or position('ママ → 家族全員｜共有' in v_handover) = 0
+     or position('状態: あなたの確認待ち' in v_handover) = 0
+     or position('必要: 下の「共有を確認」→「確認した」' in v_handover) = 0
+     or position('内容: 水筒は玄関です' in v_handover) = 0
+     or position('内容: 提出物を確認してください' in v_handover) = 0 then
+    raise exception 'FAIL f2-line-today-handover: actor/audience/state/action context missing: %', v_handover;
   end if;
 
   v_rendered := private.fn_render_daily_brief_text_v3(
