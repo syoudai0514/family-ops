@@ -827,7 +827,7 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
       const termsRevision = num(latestAttempt.terms_revision);
       const labels = simulationDirectionLabels(latest, simulatedLabel);
       if (requestId && attemptId && attemptRevision && termsRevision) {
-        quick.push(postback(`${labels.recipient}として受ける`, encodeFields("mc_sim_respond", {
+        quick.push(postback("受ける", encodeFields("mc_sim_respond", {
           test_context_id: contextId,
           request_id: requestId,
           attempt_id: attemptId,
@@ -835,7 +835,7 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
           terms_revision: termsRevision,
           response: "accept",
         })));
-        quick.push(postback(`${labels.recipient}として断る`, encodeFields("mc_sim_respond", {
+        quick.push(postback("断る", encodeFields("mc_sim_respond", {
           test_context_id: contextId,
           request_id: requestId,
           attempt_id: attemptId,
@@ -846,9 +846,12 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
       }
     }
 
-    quick.push(...simulationControls(contextId, revision, simulatedLabel).filter((item) =>
-      item.type !== "postback" || !item.data.includes("action=mc_sim_view")
-    ));
+    // On a recipient decision screen, keep only the decision itself visible.
+    // LINE Quick Replies are horizontally scrollable, so mixing navigation/test
+    // controls here makes the real recipient action hard to discover and tap.
+    if (quick.length === 0) {
+      quick.push(message("テスト状態に戻る", "テスト状態"));
+    }
     await ctx.reply(simulationRequestText(root, latest), quick);
     return;
   }
