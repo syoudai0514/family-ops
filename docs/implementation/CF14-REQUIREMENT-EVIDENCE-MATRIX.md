@@ -46,16 +46,16 @@ The executable manifest is `tests/evidence/cf14/scenarios.mjs`. It validates tha
 | Scenario | Requirement IDs | Entry boundary | Required evidence | F1 state |
 | --- | --- | --- | --- | --- |
 | CF14-TODAY-DAY-FLOW | Q1,Q9,Q13,Q15,Q23,Q24,Q35,Q40,Q68,Q75,Q87 | PWA Today route at controlled clock | domain, DB, browser, iPhone, whole-day | external-pending / integrated Today source; iPhone+whole-day evidence pending |
-| CF14-REQUEST-LIFECYCLE | Q2,Q30,Q36,Q41-Q47,Q51 | PWA + LINE Request entry | domain, DB, Edge, browser, LINE | expected-failing / Astra XC-03 LINE consultation entry missing |
+| CF14-REQUEST-LIFECYCLE | Q2,Q30,Q36,Q41-Q47,Q51 | PWA + LINE Request entry | domain, DB, Edge, browser, LINE | external-pending / canonical LINE lifecycle implemented; actual LINE transport evidence remains F2 |
 | CF14-HANDOVER-SHARE | Q3,Q16,Q37,Q38,Q48,Q49 | PWA/LINE share/ack | domain, DB, Edge, browser, LINE | external-pending |
-| CF14-CHECKIN-RECONCILIATION | Q5,Q6,Q31,Q53,Q54,Q59-Q61,Q63,Q64,Q76 | PWA/LINE check-in | domain, DB, Edge, browser, LINE, whole-day | expected-failing / Astra XC-03 |
+| CF14-CHECKIN-RECONCILIATION | Q5,Q6,Q31,Q53,Q54,Q59-Q61,Q63,Q64,Q76 | PWA/LINE check-in | domain, DB, Edge, browser, LINE, whole-day | external-pending / canonical LINE reconciliation+undo implemented; transport/whole-day evidence remains F2 |
 | CF14-TASK-QUICK-ADD | Q8,Q21,Q22,Q55-Q57,Q69,Q74 | PWA Quick Add/task interaction | domain, DB, Edge, browser | external-pending |
 | CF14-PLANNING-ASSIGNMENT | Q10-Q12,Q50,Q52,Q83-Q86 | assignment/rule change | domain, DB, Edge, browser, LINE, concurrency | external-pending |
 | CF14-EVENT-PLANNING | Q17-Q19 | event planning/review | domain, DB, Edge, browser | external-pending |
 | CF14-HISTORY-ACTUALS | Q7,Q20,Q28,Q29,Q32,Q62 | History/actuals UI | domain, DB, browser | external-pending |
 | CF14-NOTIFICATION-SCHEDULE | Q14,Q25,Q26,Q88 | scheduler → LINE delivery at explicit JST clock | domain, DB, Edge, LINE, whole-day | external-pending |
-| CF14-LINE-DAILY-ENTRY | Q4,Q39,Q65-Q67,Q72,Q73,Q78-Q80 | actual LINE webhook/postback | domain, DB, Edge, LINE, browser, concurrency | expected-failing / Astra XC-03 |
-| CF14-Q27-LINE-WEBHOOK-POSTBACK | Q27 | signed LINE-compatible HTTP webhook/postback, then actual provider in F2 | DB, Edge, LINE | expected-failing / Astra XC-03 |
+| CF14-LINE-DAILY-ENTRY | Q4,Q39,Q65-Q67,Q72,Q73,Q78-Q80 | actual LINE webhook/postback | domain, DB, Edge, LINE, browser, concurrency | external-pending / LINE canonical daily entry implemented; actual transport/concurrency evidence remains F2 |
+| CF14-Q27-LINE-WEBHOOK-POSTBACK | Q27 | signed LINE-compatible HTTP webhook/postback, then actual provider in F2 | DB, Edge, LINE | external-pending / one-user LINE adapter implemented; actual LINE provider evidence remains F2 |
 | CF14-Q70-RAW-MULTI-INTENT | Q70 | raw LINE text before candidates | domain, Edge, LINE | external-pending / raw-text transport/provider evidence pending |
 | CF14-Q71-RAW-AMBIGUITY | Q71 | raw LINE text with one ambiguity | domain, Edge, LINE | external-pending / raw-text transport/provider evidence pending |
 | CF14-NAVIGATION-RETURN | Q77 | PWA secondary nav → back/return | browser, iPhone | real Chrome authoring evidence GREEN; physical iPhone pending |
@@ -67,7 +67,7 @@ The executable manifest is `tests/evidence/cf14/scenarios.mjs`. It validates tha
 | CF14-GOOGLE-BASELINE | Q34 | controlled Google provider response | DB, Edge, Google, browser | external-pending |
 | CF14-Q110-Q112-GOOGLE-PROVIDER | Q110-Q112 | controlled Google change/delete/duplicate response | DB, Edge, Google, browser | controlled harness authored; real provider pending |
 | CF14-LINE-PWA-CONCURRENT-RACE | cross-cuts Q78,Q79,Q81,Q84,Q108,Q109 | concurrent actual LINE + PWA | DB, Edge, browser, LINE, concurrency | external-pending |
-| CF14-WHOLE-DAY-ORCHESTRATION | cross-cuts Q1,Q5,Q9,Q14,Q23,Q25,Q26,Q39,Q40,Q63,Q75,Q87,Q88 | morning → daytime → evening | browser, LINE, iPhone, concurrency, whole-day | skeleton |
+| CF14-WHOLE-DAY-ORCHESTRATION | cross-cuts Q1,Q5,Q9,Q14,Q23,Q25,Q26,Q39,Q40,Q63,Q75,Q87,Q88 | morning → daytime → evening | browser, LINE, iPhone, concurrency, whole-day | external-pending / orchestration harness authored; exact-head external execution remains F2 |
 
 The executable manifest, not this compressed table, is the checkable coverage record.
 
@@ -159,13 +159,7 @@ Q70/Q71, Shopping PWA and Nursery provider scenarios must not retain generic
 pre-integration “another lane is converging” failure reasons. Actual image/OCR/AI,
 physical iPhone, provider and transport execution remains F2 work.
 
-Conversely, Request lifecycle, check-in, LINE daily entry and Q27 are
-`expected-failing` because source inspection proves required LINE operations have
-no production entry point (Astra XC-03). Whole-day remains a skeleton. These
-statuses must only be cleared with implementation and entry-point verification.
-The assessor and its missing-evidence / known-defect guards are unchanged. Its
-known-defect regression uses an explicit synthetic defect so correcting Shopping
-does not remove guard coverage.
+Request lifecycle, check-in, LINE daily entry and Q27 no longer carry an implementation-known-defect status: the production LINE worker now routes those normal actions through the shared canonical commands with revision-bearing postbacks and user-visible fail-closed handling. Whole-day orchestration is also authored and is now classified as external-pending. Actual LINE/provider/device/concurrency/whole-day execution remains F2 evidence and is deliberately not claimed here. The assessor and its missing-evidence / known-defect guards are unchanged; the known-defect regression continues to use an explicit synthetic defect.
 
 ## F2 acceptance precedence
 

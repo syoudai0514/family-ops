@@ -38,8 +38,7 @@ export const cf14Scenarios = [
     entryBoundary: 'User request/response through PWA and LINE command entry points',
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'edge-api', 'browser', 'line-transport'],
     userVisibleAssertion: 'The user sees one coherent Request lifecycle, with stale/expired attempts failing closed and accepted work joining the linked ToDo.',
-    status: 'expected-failing',
-    expectedFailureReason: 'Astra XC-03: normal LINE request Other reply hands off to PWA instead of exposing the required consultation lifecycle; XC-02 fixes only PWA sender reachability.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-HANDOVER-SHARE',
@@ -57,8 +56,7 @@ export const cf14Scenarios = [
     entryBoundary: 'PWA/LINE check-in and daily reconciliation entry',
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'edge-api', 'browser', 'line-transport', 'whole-day-scenario'],
     userVisibleAssertion: 'Bulk completion, exceptions, unknowns and next-day entry preserve the intended task facts from the user-facing flow.',
-    status: 'expected-failing',
-    expectedFailureReason: 'Astra XC-03: LINE Input hands off to PWA and does not expose canonical mostly-done/undo daily reconciliation commands.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-TASK-QUICK-ADD',
@@ -112,8 +110,7 @@ export const cf14Scenarios = [
     entryBoundary: 'Actual LINE Messaging API webhook/postback and resulting reply/deep-link',
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'edge-api', 'line-transport', 'browser', 'cross-channel-concurrency'],
     userVisibleAssertion: 'LINE remains the daily operational entry, shows all own tasks, deep-links to matching PWA state, and avoids duplicate/self-return notifications.',
-    status: 'expected-failing',
-    expectedFailureReason: 'Astra XC-03: required normal LINE input, negotiation, waiting and claim/release entry points remain missing; this is an implementation blocker, not provider evidence pending.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-Q27-LINE-WEBHOOK-POSTBACK',
@@ -122,8 +119,7 @@ export const cf14Scenarios = [
     entryBoundary: 'Actual LINE Messaging API webhook + postback into one-user test mode',
     requiredEvidenceClasses: ['db-rpc', 'edge-api', 'line-transport'],
     userVisibleAssertion: 'One operator can act as both sides in the LINE test flow while all production spouse/Google/analytics side effects remain fenced.',
-    status: 'expected-failing',
-    expectedFailureReason: 'Astra XC-03: one-user simulation has PWA and RPC entry points but no production LINE webhook/postback route.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-Q70-RAW-MULTI-INTENT',
@@ -231,7 +227,6 @@ export const cf14Scenarios = [
     entryBoundary: 'Clock-controlled full-day sequence across scheduled LINE, PWA Today, check-in and cross-channel updates',
     requiredEvidenceClasses: ['browser', 'line-transport', 'physical-iphone-manual', 'cross-channel-concurrency', 'whole-day-scenario'],
     userVisibleAssertion: 'A family can move from morning brief through daytime changes to evening reconciliation without lost state, duplicate noise or hidden work.',
-    status: 'skeleton',
-    expectedFailureReason: 'F1 provides orchestration structure only; full-day execution remains unauthored against real transports and Astra XC-03 LINE entry gaps remain unresolved.',
+    status: 'external-pending',
   },
 ];
