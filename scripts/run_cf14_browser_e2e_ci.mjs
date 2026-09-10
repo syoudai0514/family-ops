@@ -3,8 +3,8 @@ import { spawn } from 'node:child_process';
 import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const PASS_MARKER = '[cf14-browser] PASS 5 real-browser authoring scenarios;';
-const TIMEOUT_MS = 60_000;
+const PASS_MARKER = '[cf14-browser] PASS 6 real-browser authoring scenarios;';
+const TIMEOUT_MS = 90_000;
 const detached = process.platform !== 'win32';
 const artifactDir = path.resolve('artifacts/cf14-browser');
 const expectedScenarioIds = [
@@ -13,6 +13,7 @@ const expectedScenarioIds = [
   'CF14-BACK-RETURN-REAL-BROWSER',
   'CF14-TODAY-REAL-BROWSER-STALE',
   'CF14-TODAY-REAL-BROWSER-ERROR',
+  'CF14-REQUEST-SENDER-CONSULTATION-REAL-BROWSER',
 ];
 
 function stopProcessTree(child) {
@@ -81,7 +82,7 @@ const result = new Promise((resolve, reject) => {
     clearTimeout(timer);
     try {
       await validateEvidenceArtifact();
-      console.log('[cf14-browser-supervisor] validated evidence.json, five screenshots, exact source HEAD, real Chrome identity, and HTTP-boundary trace.');
+      console.log('[cf14-browser-supervisor] validated evidence.json, six screenshots, exact source HEAD, real Chrome identity, and HTTP-boundary trace.');
       stopProcessTree(child);
       resolve();
     } catch (error) {

@@ -36,6 +36,17 @@ const task = {
   actual_completed_by_id: null, completed_at: null, attention_state: 'active', waiting_note: null,
   next_check_at: null, revision: 3, task_definitions: null,
 };
+const consultationRequest = {
+  id: 'request-cf14-consultation', household_id: household.id,
+  requester_id: membership.user_id, recipient_id: 'partner-cf14',
+  shared_title: 'お迎えの相談', shared_message: '玄関で引き継ぐ', status: 'pending', due_at: null,
+};
+const consultationAttempt = {
+  id: 'attempt-cf14-consultation', request_id: consultationRequest.id,
+  state: 'awaiting_confirmation', revision: 4, terms_revision: 2,
+  terms: { candidate: '玄関で引き継ぐ' }, reply_due_at: null,
+};
+const consultationCommands = [];
 const state = { mode: 'normal', failAfterMutation: false, initialBriefDelayMs: 850, requestLog: [] };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -176,6 +187,10 @@ async function fulfillSupabaseRequest(client, { requestId, request }) {
     }
   } else if (pathname === '/rest/v1/task_instances') {
     response = jsonResponse(planningTaskRows(url));
+  } else if (pathname === '/rest/v1/requests') {
+    response = jsonResponse([consultationRequest]);
+  } else if (pathname === '/rest/v1/request_attempts') {
+    response = jsonResponse([consultationAttempt]);
   } else if (pathname.startsWith('/rest/v1/')) {
     response = jsonResponse([]);
   } else if (pathname === '/functions/v1/list-pending-actions') {
@@ -187,6 +202,13 @@ async function fulfillSupabaseRequest(client, { requestId, request }) {
   } else if (pathname === '/functions/v1/complete-task') {
     state.failAfterMutation = true;
     response = jsonResponse({ task_id: task.id, status: 'completed' });
+  } else if (pathname === '/functions/v1/negotiate-request') {
+    const command = JSON.parse(request.postData ?? '{}');
+    consultationCommands.push(command);
+    consultationAttempt.state = 'accepted';
+    consultationAttempt.revision += 1;
+    consultationRequest.status = 'accepted';
+    response = jsonResponse({ state: 'accepted' });
   } else if (pathname.startsWith('/functions/v1/')) {
     response = jsonResponse({});
   } else if (pathname === '/auth/v1/user') {
@@ -407,6 +429,39 @@ async function main() {
       entryBoundary: 'real Chrome Today navigation with failing canonical read',
       visibleAssertion: '読み込みに失敗しました。 is rendered as the user-visible read failure',
       screenshot: await screenshot(client, 'today-error.png'),
+    });
+
+    // XC-02: exercise the sender's actual Requests route, not an isolated JSX
+    // fixture. HTTP is controlled authoring evidence, not a real-provider claim.
+    state.mode = 'normal';
+    await navigate(client, 'http://127.0.0.1:4173/requests');
+    await waitForText(client, consultationRequest.shared_title);
+    await waitForText(client, 'この条件で確認する');
+    const setTerms = async (value) => evaluate(client, `(() => {
+      const input = document.querySelector('input[aria-label="合意する条件"]');
+      if (!input) return false;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+      input.dispatchEvent(new Event('input', { bubbles: true })); return true;
+    })()`);
+    assert.equal(await setTerms('園で引き継ぐ'), true);
+    await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する')?.disabled === true`), { label: 'unsent terms cannot confirm saved version' });
+    assert.equal(consultationCommands.length, 0);
+    await setTerms('玄関で引き継ぐ');
+    await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する')?.disabled === false`), { label: 'saved terms can be confirmed' });
+    await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する').click()`);
+    await waitFor(() => consultationCommands.length === 1, { label: 'sender canonical confirmation HTTP' });
+    const command = consultationCommands[0];
+    assert.equal(command.request_id, consultationRequest.id);
+    assert.equal(command.attempt_id, consultationAttempt.id);
+    assert.equal(command.action, 'confirm_terms');
+    assert.equal(command.expected_revision, 4);
+    assert.equal(command.expected_terms_revision, 2);
+    await waitForText(client, '履歴 1');
+    scenarios.push({
+      scenarioId: 'CF14-REQUEST-SENDER-CONSULTATION-REAL-BROWSER',
+      entryBoundary: 'authenticated Requests route → sender consultation → canonical confirmation HTTP → refreshed history',
+      visibleAssertion: 'Unsent edited terms cannot be confirmed; saved revision 2 can be confirmed by the sender and canonical reload updates the request bucket.',
+      screenshot: await screenshot(client, 'request-sender-consultation.png'),
     });
 
     const evidence = {
