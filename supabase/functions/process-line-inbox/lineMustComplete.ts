@@ -176,6 +176,10 @@ function isSimulationText(text: string): boolean {
   return /^(1人テスト|一人テスト|テストモード|テスト状態)$/u.test(text.normalize("NFKC").trim());
 }
 
+function isSimulationViewText(text: string): boolean {
+  return /^(最新のお願い|お願いを見る|(?:🧪\s*)?(?:ママ|パパ)側で確認)$/u.test(text.normalize("NFKC").trim());
+}
+
 function isSimulationEndText(text: string): boolean {
   return /^(テスト終了|1人テスト終了|一人テスト終了)$/u.test(text.normalize("NFKC").trim());
 }
@@ -719,13 +723,15 @@ async function openSimulation(ctx: LineMustCompleteContext): Promise<void> {
     return;
   }
   const contextId = str(root.test_context_id);
-  const revision = num(root.revision);
-  if (!contextId || !revision) return;
-  const simulatedLabel = simulationRoleLabel(root);
-  await ctx.reply(
-    `1人テスト中：${simulatedLabel}\nあなた1人で、${simulatedLabel}に届くお願い／${simulatedLabel}から届くお願いを確認できます。\n本物の家族・providerへ副作用は出ません。\n\n最新のお願いを見る: 「テスト状態」\n終了する: 「テスト終了」`,
-    simulationControls(contextId, simulatedLabel),
-  );
+  if (!contextId) return;
+
+  // "テスト状態" is the canonical entry point. If a request exists, show
+  // that request immediately; otherwise the workspace renderer shows the
+  // two-action test home. This keeps the text instruction and behavior aligned.
+  await mutateSimulation(ctx, {
+    action: "mc_sim_view",
+    test_context_id: contextId,
+  });
 }
 
 
@@ -970,6 +976,10 @@ export async function tryHandleLineMustCompleteText(ctx: LineMustCompleteContext
   }
   if (isSimulationEndText(text)) {
     await archiveActiveSimulation(ctx);
+    return true;
+  }
+  if (isSimulationViewText(text)) {
+    await openSimulation(ctx);
     return true;
   }
   if (isSimulationText(text)) {
