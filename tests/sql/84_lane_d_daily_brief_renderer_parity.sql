@@ -1,6 +1,7 @@
 -- Lane D CF-02 / CF-04: text transports must surface the same material
 -- DailyBrief semantics as PWA Today. Daypart rendering may change density, but
 -- it must not silently drop an own-work band or another canonical section.
+-- F2 UX: tomorrow impact is actionable content, not a count-only summary.
 \set ON_ERROR_STOP on
 
 begin;
@@ -28,7 +29,13 @@ declare
       'completed_today', 1,
       'critical_items', jsonb_build_array(jsonb_build_object('title', '相手の迎え'))
     ),
-    'tomorrow_impact', jsonb_build_object('impact_count', 1),
+    'tomorrow_impact', jsonb_build_object(
+      'impact_count', 1,
+      'tasks', jsonb_build_array(jsonb_build_object(
+        'title', '明日の水筒を準備',
+        'task_kind', 'morning_preparation'
+      ))
+    ),
     'shopping', '[]'::jsonb,
     'reconciliation', jsonb_build_object('remaining_count', 2),
     'morning_summary', jsonb_build_object('completed_count', 3, 'total_count', 4)
@@ -36,6 +43,7 @@ declare
   v_morning text;
   v_day text;
   v_evening text;
+  v_count_only text;
 begin
   v_morning := private.fn_render_daily_brief_text_v3(v_brief, 'morning');
   if position('朝の薬' in v_morning) = 0
@@ -46,7 +54,8 @@ begin
      or position('相手の今日' in v_morning) = 0
      or position('残り 2件・待ち 1件・完了 1件' in v_morning) = 0
      or position('まとめ入力' in v_morning) = 0
-     or position('明日に影響' in v_morning) = 0 then
+     or position('明日の準備・変更' in v_morning) = 0
+     or position('明日の水筒を準備' in v_morning) = 0 then
     raise exception 'FAIL lane-d-renderer-morning: canonical DailyBrief section disappeared: %', v_morning;
   end if;
 
@@ -69,7 +78,8 @@ begin
      or position('余裕タスク' in v_day) = 0
      or position('相手の迎え' in v_day) = 0
      or position('未確認 2件' in v_day) = 0
-     or position('明日に影響' in v_day) = 0 then
+     or position('明日の準備・変更' in v_day) = 0
+     or position('明日の水筒を準備' in v_day) = 0 then
     raise exception 'FAIL lane-d-renderer-day: material DailyBrief semantics missing: %', v_day;
   end if;
 
@@ -93,13 +103,24 @@ begin
      or position('余裕タスク' in v_evening) = 0
      or position('相手の今日' in v_evening) = 0
      or position('まとめ入力' in v_evening) = 0
-     or position('明日に影響' in v_evening) = 0 then
+     or position('明日の準備・変更' in v_evening) = 0
+     or position('明日の水筒を準備' in v_evening) = 0 then
     raise exception 'FAIL lane-d-renderer-evening: canonical DailyBrief semantics missing: %', v_evening;
   end if;
   if position('引き継ぎ・共有' in v_evening) > position('もう済んでいる' in v_evening)
      or position('もう済んでいる' in v_evening) > position('まだ残っていること' in v_evening)
      or position('まだ残っていること' in v_evening) > position('夜にやること' in v_evening) then
     raise exception 'FAIL lane-d-renderer-evening-order: completed/handover must precede ordinary remaining work: %', v_evening;
+  end if;
+
+  v_count_only := private.fn_render_daily_brief_text_v3(
+    jsonb_build_object('tomorrow_impact', jsonb_build_object('impact_count', 11)),
+    'evening'
+  );
+  if position('明日の準備・変更' in v_count_only) > 0
+     or position('明日に影響' in v_count_only) > 0
+     or position('11件' in v_count_only) > 0 then
+    raise exception 'FAIL lane-d-renderer-tomorrow-count-only: count-only noise must stay hidden: %', v_count_only;
   end if;
 end;
 $$;
