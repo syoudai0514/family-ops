@@ -12,7 +12,7 @@ type RpcCall = { name: string; args: Record<string, unknown> };
 type Reply = { text: string; quickReplies: LineQuickReplyAction[] };
 
 function makeContext(
-  rpcImpl: (name: string, args: Record<string, unknown>) => Promise<RpcResult>,
+  rpcImpl: (name: string, args: Record<string, unknown>) => RpcResult | Promise<RpcResult>,
 ) {
   const calls: RpcCall[] = [];
   const replies: Reply[] = [];
@@ -27,8 +27,9 @@ function makeContext(
     actorId: "00000000-0000-4000-8000-000000000001",
     householdId: "00000000-0000-4000-8000-000000000002",
     eventId: "line-event-1",
-    reply: async (text, quickReplies = []) => {
+    reply: (text, quickReplies = []) => {
       replies.push({ text, quickReplies });
+      return Promise.resolve();
     },
   };
   return { ctx, calls, replies };
@@ -58,7 +59,7 @@ Deno.test("LINE material deadline parser rejects impossible dates", () => {
 });
 
 Deno.test("LINE daily input enters canonical reconciliation and exposes all/mostly/individual", async () => {
-  const { ctx, calls, replies } = makeContext(async (name) => {
+  const { ctx, calls, replies } = makeContext((name) => {
     assertEquals(name, "server_read_current_routine_sessions");
     return {
       data: { sessions: [{ session_id: "session-1", status: "open", can_act: true }] },
@@ -75,7 +76,7 @@ Deno.test("LINE daily input enters canonical reconciliation and exposes all/most
 });
 
 Deno.test("LINE all-done postback uses canonical reconciliation and returns an undo action", async () => {
-  const { ctx, calls, replies } = makeContext(async (name, args) => {
+  const { ctx, calls, replies } = makeContext((name, args) => {
     assertEquals(name, "server_tx_reconcile_routine_session_v2");
     assertEquals(args.p_actor_id, ctx.actorId);
     assertEquals(args.p_session_id, "session-1");
@@ -90,7 +91,7 @@ Deno.test("LINE all-done postback uses canonical reconciliation and returns an u
 });
 
 Deno.test("LINE request action forwards immutable attempt revisions and fails stale closed", async () => {
-  const { ctx, calls, replies } = makeContext(async (name, args) => {
+  const { ctx, calls, replies } = makeContext((name, args) => {
     assertEquals(name, "server_tx_transition_request_v2");
     assertEquals(args.p_expected_revision, 7);
     assertEquals(args.p_expected_terms_revision, 3);
@@ -110,7 +111,7 @@ Deno.test("LINE request action forwards immutable attempt revisions and fails st
 });
 
 Deno.test("LINE waiting resume preserves revision CAS and canonical source", async () => {
-  const { ctx, calls, replies } = makeContext(async (name, args) => {
+  const { ctx, calls, replies } = makeContext((name, args) => {
     assertEquals(name, "server_tx_set_task_waiting");
     assertEquals(args.p_expected_revision, 11);
     assertEquals(args.p_waiting_action, "resume");
@@ -125,7 +126,7 @@ Deno.test("LINE waiting resume preserves revision CAS and canonical source", asy
 });
 
 Deno.test("LINE shopping discovery uses canonical read model and claim uses canonical writer", async () => {
-  const { ctx, calls, replies } = makeContext(async (name, args) => {
+  const { ctx, calls, replies } = makeContext((name, args) => {
     if (name === "server_read_shopping_workspace") {
       assertEquals(args.p_actor_id, ctx.actorId);
       return {
@@ -159,7 +160,7 @@ Deno.test("LINE shopping discovery uses canonical read model and claim uses cano
 });
 
 Deno.test("LINE one-user simulation entry stays explicitly sandboxed", async () => {
-  const { ctx, calls, replies } = makeContext(async (name) => {
+  const { ctx, calls, replies } = makeContext((name) => {
     if (name === "server_tx_get_active_test_simulation_v1") {
       return { data: { active: false }, error: null };
     }
