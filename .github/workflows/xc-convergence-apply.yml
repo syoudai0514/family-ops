@@ -1,0 +1,40 @@
+name: XC convergence apply
+
+on:
+  push:
+    branches:
+      - integration/family-ops-final-candidate
+    paths:
+      - '.github/workflows/xc-convergence-apply.yml'
+      - 'scripts/xc_convergence_patch.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/family-ops-final-candidate
+          fetch-depth: 0
+      - name: Apply staged XC convergence patch
+        run: python3 scripts/xc_convergence_patch.py
+      - name: Commit applied source wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/process-line-inbox/index.ts \
+                  supabase/functions/process-line-inbox/lineMustComplete.ts \
+                  apps/web/src/features/requests/Requests.tsx \
+                  docs/design/current/03_STATE_MACHINES_AND_COMMANDS.md
+          git commit -m 'fix: wire XC-03 XC-05 convergence'
+          git push origin HEAD:integration/family-ops-final-candidate
