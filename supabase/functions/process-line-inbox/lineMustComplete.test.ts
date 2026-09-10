@@ -262,3 +262,58 @@ Deno.test("LINE one-user simulation creates a meaningful role-labelled request",
   assertStringIncludes(replies[0].text, "お迎えをお願い");
   assert(!replies[0].text.includes("合成した相手"));
 });
+
+
+Deno.test("LINE one-user simulation home keeps primary actions to two visible buttons", async () => {
+  const { ctx, calls, replies } = makeContext((name) => {
+    assertEquals(name, "server_tx_get_active_test_simulation_v1");
+    return {
+      data: {
+        active: true,
+        revision: 4,
+        test_context_id: "test-context-1",
+        simulated_role: "mama",
+        simulated_display_label: "🧪 ママ",
+      },
+      error: null,
+    };
+  });
+
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "テスト状態"), true);
+  assertEquals(calls.map((call) => call.name), ["server_tx_get_active_test_simulation_v1"]);
+  assertEquals(replies[0].quickReplies.length, 2);
+  assertEquals(replies[0].quickReplies.map((action) => action.label), [
+    "🧪 ママにお願い",
+    "🧪 ママからお願い",
+  ]);
+  assertStringIncludes(replies[0].text, "最新のお願いを見る: 「テスト状態」");
+  assertStringIncludes(replies[0].text, "終了する: 「テスト終了」");
+});
+
+Deno.test("LINE one-user simulation can end by text without hidden horizontal button", async () => {
+  const { ctx, calls, replies } = makeContext((name, args) => {
+    if (name === "server_tx_get_active_test_simulation_v1") {
+      return {
+        data: {
+          active: true,
+          revision: 4,
+          test_context_id: "test-context-1",
+          simulated_role: "mama",
+          simulated_display_label: "🧪 ママ",
+        },
+        error: null,
+      };
+    }
+    assertEquals(name, "server_tx_archive_test_simulation_v1");
+    assertEquals(args.p_test_context_id, "test-context-1");
+    assertEquals(args.p_expected_revision, 4);
+    return { data: { status: "archived" }, error: null };
+  });
+
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "テスト終了"), true);
+  assertEquals(calls.map((call) => call.name), [
+    "server_tx_get_active_test_simulation_v1",
+    "server_tx_archive_test_simulation_v1",
+  ]);
+  assertStringIncludes(replies[0].text, "1人テストを終了しました");
+});
