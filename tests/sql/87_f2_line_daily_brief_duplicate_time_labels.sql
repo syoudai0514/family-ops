@@ -1,5 +1,8 @@
--- F2 regression: same-title recurring occurrences must remain distinguishable
--- in LINE while unique labels stay compact.
+-- F2 regression for the real LINE Today remediation.
+-- The rejected clock-prefix workaround must stay gone. Same-title routine work
+-- is disambiguated by daypart grouping, handovers carry direction/ack context,
+-- and tomorrow output names the actual preparation/change instead of an opaque
+-- impact count.
 \set ON_ERROR_STOP on
 
 begin;
@@ -7,40 +10,105 @@ set local role service_role;
 
 do $$
 declare
-  v_lines text;
+  v_plain text;
+  v_urgent text;
+  v_handover text;
+  v_rendered text;
 begin
-  v_lines := private.fn_daily_brief_lines_v1(
+  v_plain := private.fn_daily_brief_lines_v1(
+    jsonb_build_array(
+      jsonb_build_object('title', '同名タスク', 'due_at', '2026-09-09T22:00:00+00:00'),
+      jsonb_build_object('title', '同名タスク', 'due_at', '2026-09-10T11:45:00+00:00')
+    )
+  );
+  if position('07:00' in v_plain) > 0 or position('20:45' in v_plain) > 0 then
+    raise exception 'FAIL f2-line-today-daypart: per-item clock clutter returned: %', v_plain;
+  end if;
+
+  v_urgent := private.fn_daily_brief_urgent_lines_v2(
+    jsonb_build_array(
+      jsonb_build_object('kind', 'request_reply_needed', 'title', 'お迎えのお願い', 'state', 'pending'),
+      jsonb_build_object('kind', 'assignment_needed', 'title', '同名タスク', 'routine_phase', 'morning'),
+      jsonb_build_object('kind', 'assignment_needed', 'title', '朝だけ', 'routine_phase', 'morning'),
+      jsonb_build_object('kind', 'assignment_needed', 'title', '同名タスク', 'routine_phase', 'evening')
+    )
+  );
+  if position('・お迎えのお願い（返事待ち）' in v_urgent) = 0
+     or position('担当未定（朝）' in v_urgent) = 0
+     or position('担当未定（夜）' in v_urgent) = 0
+     or position('07:00' in v_urgent) > 0
+     or position('20:45' in v_urgent) > 0 then
+    raise exception 'FAIL f2-line-today-daypart: urgent/daypart context missing: %', v_urgent;
+  end if;
+  if position('担当未定（朝）' in v_urgent) > position('担当未定（夜）' in v_urgent) then
+    raise exception 'FAIL f2-line-today-daypart: daypart order drifted: %', v_urgent;
+  end if;
+
+  v_handover := private.fn_daily_brief_handover_lines_v1(
     jsonb_build_array(
       jsonb_build_object(
-        'title', '同名タスク',
-        'due_at', '2026-09-09T22:00:00+00:00'
+        'author_role', 'papa',
+        'audience_label', '家族',
+        'info_kind', 'handover',
+        'ack_policy', 'none',
+        'shared_text', '水筒は玄関です'
       ),
       jsonb_build_object(
-        'title', '同名タスク',
-        'due_at', '2026-09-10T11:45:00+00:00'
-      ),
-      jsonb_build_object(
-        'title', '一回だけ',
-        'due_at', '2026-09-10T09:00:00+00:00'
+        'author_role', 'mama',
+        'audience_label', '家族',
+        'info_kind', 'share',
+        'ack_policy', 'required',
+        'shared_text', '提出物を確認してください'
       )
     )
   );
-
-  if position('・07:00 同名タスク' in v_lines) = 0
-     or position('・20:45 同名タスク' in v_lines) = 0 then
-    raise exception 'FAIL f2-line-duplicate-time-labels: duplicate occurrences are not distinguishable: %', v_lines;
+  if position('パパ → 家族｜引き継ぎ｜確認不要' in v_handover) = 0
+     or position('ママ → 家族｜共有｜確認待ち（LINEで「共有確認」）' in v_handover) = 0
+     or position('水筒は玄関です' in v_handover) = 0
+     or position('提出物を確認してください' in v_handover) = 0 then
+    raise exception 'FAIL f2-line-today-handover: actor/ack context missing: %', v_handover;
   end if;
 
-  if position('・一回だけ' in v_lines) = 0
-     or position('・18:00 一回だけ' in v_lines) > 0 then
-    raise exception 'FAIL f2-line-duplicate-time-labels: unique title should remain compact: %', v_lines;
-  end if;
-
-  if position('・07:00 同名タスク' in v_lines) > position('・20:45 同名タスク' in v_lines) then
-    raise exception 'FAIL f2-line-duplicate-time-labels: source order changed: %', v_lines;
+  v_rendered := private.fn_render_daily_brief_text_v3(
+    jsonb_build_object(
+      'urgent_actions', '[]'::jsonb,
+      'exceptions', '[]'::jsonb,
+      'carryovers', '[]'::jsonb,
+      'active_infos', '[]'::jsonb,
+      'already_handled', '[]'::jsonb,
+      'waiting_checks', '[]'::jsonb,
+      'schedule', '[]'::jsonb,
+      'own_task_groups', jsonb_build_object(
+        'morning', '[]'::jsonb,
+        'daytime', '[]'::jsonb,
+        'evening', '[]'::jsonb,
+        'optional', '[]'::jsonb
+      ),
+      'partner_summary', jsonb_build_object(
+        'open_assigned', 0,
+        'waiting', 0,
+        'completed_today', 0,
+        'critical_items', '[]'::jsonb
+      ),
+      'tomorrow_impact', jsonb_build_object(
+        'tasks', jsonb_build_array(jsonb_build_object('title', '明日の園バッグ準備')),
+        'schedule', '[]'::jsonb,
+        'carryovers', '[]'::jsonb,
+        'impact_count', 1
+      ),
+      'reconciliation', jsonb_build_object('remaining_count', 0),
+      'morning_summary', jsonb_build_object('completed_count', 0, 'total_count', 0),
+      'shopping', '[]'::jsonb
+    ),
+    'evening'
+  );
+  if position('明日の準備・変更' in v_rendered) = 0
+     or position('明日の園バッグ準備' in v_rendered) = 0
+     or position('明日に影響' in v_rendered) > 0 then
+    raise exception 'FAIL f2-line-today-tomorrow: concrete tomorrow detail missing: %', v_rendered;
   end if;
 end;
 $$;
 
 rollback;
-select 'f2_line_daily_brief_duplicate_time_labels: PASS' as result;
+select 'f2_line_today_actionable_ux: PASS' as result;
