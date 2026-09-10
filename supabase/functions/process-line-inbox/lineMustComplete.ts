@@ -355,7 +355,7 @@ async function setWaiting(ctx: LineMustCompleteContext, fields: Record<string, s
 }
 
 async function openShopping(ctx: LineMustCompleteContext): Promise<void> {
-  const { data, error } = await ctx.client.rpc("get_my_shopping_workspace");
+  const { data, error } = await ctx.client.rpc("server_read_shopping_workspace", { p_actor_id: ctx.actorId });
   if (error) {
     await replyMutationError(ctx, error);
     return;
