@@ -234,8 +234,8 @@ const waitForPath = (client, pathname, timeoutMs = 10_000) => waitFor(
   { timeoutMs, label: `pathname ${pathname}` },
 );
 
-async function screenshot(client, filename) {
-  const { data } = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+async function screenshot(client, filename, captureBeyondViewport = true) {
+  const { data } = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport });
   const target = path.join(ARTIFACT_DIR, filename);
   await writeFile(target, Buffer.from(data, 'base64'));
   return path.relative(process.cwd(), target);
@@ -448,8 +448,16 @@ async function main() {
     assert.equal(consultationCommands.length, 0);
     await setTerms('玄関で引き継ぐ');
     await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する')?.disabled === false`), { label: 'saved terms can be confirmed' });
-    const consultationScreenshot = await screenshot(client, 'request-sender-consultation.png');
-    await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する').click()`);
+    await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する').scrollIntoView({ block: 'center', behavior: 'instant' })`);
+    const point = await waitFor(() => evaluate(client, `(() => {
+      const button = [...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する');
+      const rect = button.getBoundingClientRect();
+      const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+      return button.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
+    })()`), { label: 'sender confirmation is reachable without fixed-navigation obstruction' });
+    const consultationScreenshot = await screenshot(client, 'request-sender-consultation.png', false);
+    await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
     await waitFor(() => consultationCommands.length === 1, { label: 'sender canonical confirmation HTTP' });
     const command = consultationCommands[0];
     assert.equal(command.request_id, consultationRequest.id);
