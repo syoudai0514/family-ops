@@ -168,9 +168,97 @@ Deno.test("LINE one-user simulation entry stays explicitly sandboxed", async () 
     return { data: { status: "active" }, error: null };
   });
   assertEquals(await tryHandleLineMustCompleteText(ctx, "1人テスト"), true);
-  assertStringIncludes(replies[0].text, "実LINE送信・Google provider更新はしません");
+  assertStringIncludes(replies[0].text, "本物の家族へのLINE送信やGoogle更新はしません");
   assert(replies[0].quickReplies.some((action) => action.type === "postback" && action.data.includes("mc_sim_open")));
   assertEquals(await tryHandleLineMustCompletePostback(ctx, { action: "mc_sim_open", role: "mama" }), true);
   assertEquals(calls.map((call) => call.name), ["server_tx_get_active_test_simulation_v1", "server_tx_open_test_simulation_interactive_v1"]);
-  assertStringIncludes(replies[1].text, "1人テストを開始しました");
+  assertStringIncludes(replies[1].text, "相手役は 🧪 ママ");
+});
+
+
+Deno.test("LINE one-user simulation shows the actual request instead of developer counters", async () => {
+  const { ctx, calls, replies } = makeContext((name) => {
+    assertEquals(name, "server_tx_get_test_simulation_workspace_v2");
+    return {
+      data: {
+        status: "active",
+        revision: 2,
+        simulated_role: "mama",
+        simulated_display_label: "🧪 ママ",
+        production_side_effects: false,
+        tasks: [],
+        requests: [{
+          title: "お迎えをお願い",
+          message: "今日のお迎えをお願いできますか？",
+          due_at: "2026-09-11T00:30:00.000Z",
+          status: "pending",
+          requester_side: "operator",
+          recipient_side: "simulated",
+          request_id: "request-1",
+          latest_attempt: {
+            state: "pending",
+            attempt_id: "attempt-1",
+            revision: 3,
+            terms_revision: 1,
+            reply_due_at: "2026-09-10T23:30:00.000Z",
+          },
+        }],
+      },
+      error: null,
+    };
+  });
+
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_sim_view",
+    test_context_id: "test-context-1",
+  }), true);
+
+  assertEquals(calls.map((call) => call.name), ["server_tx_get_test_simulation_workspace_v2"]);
+  assertStringIncludes(replies[0].text, "🧪 ママとして確認");
+  assertStringIncludes(replies[0].text, "あなたからお願いが届いています");
+  assertStringIncludes(replies[0].text, "お迎えをお願い");
+  assertStringIncludes(replies[0].text, "内容: 今日のお迎えをお願いできますか？");
+  assertStringIncludes(replies[0].text, "返事期限:");
+  assertStringIncludes(replies[0].text, "作業期限:");
+  assertStringIncludes(replies[0].text, "状態: 返事待ち");
+  assert(!replies[0].text.includes("お願い: 1件 / タスク: 0件"));
+  assert(!replies[0].quickReplies.some((action) => action.label === "自分→相手" || action.label === "相手→自分"));
+  assert(replies[0].quickReplies.some((action) => action.label === "🧪 ママとして受ける"));
+  assert(replies[0].quickReplies.some((action) => action.label === "🧪 ママとして断る"));
+  assert(replies[0].quickReplies.some((action) => action.label === "🧪 ママにお願い"));
+  assert(replies[0].quickReplies.some((action) => action.label === "🧪 ママからお願い"));
+});
+
+Deno.test("LINE one-user simulation creates a meaningful role-labelled request", async () => {
+  const { ctx, calls, replies } = makeContext((name, args) => {
+    if (name === "server_tx_test_simulation_send_request_v1") {
+      assertEquals(args.p_direction, "operator_to_simulated");
+      assertEquals(args.p_shared_title, "お迎えをお願い");
+      assertEquals(args.p_shared_message, "今日のお迎えをお願いできますか？");
+      return { data: { status: "pending" }, error: null };
+    }
+    assertEquals(name, "server_tx_get_active_test_simulation_v1");
+    return {
+      data: {
+        active: true,
+        simulated_role: "mama",
+        simulated_display_label: "🧪 ママ",
+      },
+      error: null,
+    };
+  });
+
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_sim_send",
+    test_context_id: "test-context-1",
+    direction: "operator_to_simulated",
+  }), true);
+
+  assertEquals(calls.map((call) => call.name), [
+    "server_tx_test_simulation_send_request_v1",
+    "server_tx_get_active_test_simulation_v1",
+  ]);
+  assertStringIncludes(replies[0].text, "あなた → 🧪 ママ");
+  assertStringIncludes(replies[0].text, "お迎えをお願い");
+  assert(!replies[0].text.includes("合成した相手"));
 });
