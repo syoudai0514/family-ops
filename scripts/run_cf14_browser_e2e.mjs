@@ -436,21 +436,21 @@ async function main() {
     state.mode = 'normal';
     await navigate(client, 'http://127.0.0.1:4173/requests');
     await waitForText(client, consultationRequest.shared_title);
-    await waitForText(client, 'この条件で確認する');
+    await waitForText(client, '表示中の条件版を確認する');
     const setTerms = async (value) => evaluate(client, `(() => {
-      const input = document.querySelector('input[aria-label="合意する条件"]');
+      const input = document.querySelector('input[aria-label="相談メモ"]');
       if (!input) return false;
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
       input.dispatchEvent(new Event('input', { bubbles: true })); return true;
     })()`);
     assert.equal(await setTerms('園で引き継ぐ'), true);
-    await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する')?.disabled === true`), { label: 'unsent terms cannot confirm saved version' });
+    await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === '表示中の条件版を確認する')?.disabled === true`), { label: 'unsent terms cannot confirm saved version' });
     assert.equal(consultationCommands.length, 0);
     await setTerms('玄関で引き継ぐ');
-    await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する')?.disabled === false`), { label: 'saved terms can be confirmed' });
-    await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する').scrollIntoView({ block: 'center', behavior: 'instant' })`);
+    await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === '表示中の条件版を確認する')?.disabled === false`), { label: 'saved terms can be confirmed' });
+    await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === '表示中の条件版を確認する').scrollIntoView({ block: 'center', behavior: 'instant' })`);
     const point = await waitFor(() => evaluate(client, `(() => {
-      const button = [...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する');
+      const button = [...document.querySelectorAll('button')].find(b => b.textContent === '表示中の条件版を確認する');
       const rect = button.getBoundingClientRect();
       const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
       return button.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
