@@ -106,23 +106,15 @@ export async function handleHandoverAckPostback(
   const handoverId = fields.handover_id;
   if (!handoverId) return true;
 
-  const actorRef = await actorRefId(ctx);
-  if (!actorRef) {
-    await ctx.reply("確認を記録できませんでした。状態は変更していません。");
-    return true;
-  }
-  const operationId = await deterministicOperationId("line-handover-ack", ctx.eventId, handoverId, actorRef);
-  const { error } = await ctx.client.schema("private").rpc("fn_command_ack_info_v1", {
-    p_household_id: ctx.householdId,
-    p_operator_user_id: ctx.actorId,
-    p_actor_ref_id: actorRef,
-    p_test_context_id: null,
-    p_handover_id: handoverId,
+  const operationId = await deterministicOperationId("line-handover-ack", ctx.eventId, handoverId, ctx.actorId);
+  const { error } = await ctx.client.rpc("server_tx_ack_info_v1", {
+    p_actor_id: ctx.actorId,
     p_operation_id: operationId,
+    p_handover_id: handoverId,
   });
   if (error) {
     const code = error.message ?? "";
-    if (/NOT_ACTIVE|NOT_FOUND|CONFLICT|STALE/.test(code)) {
+    if (/NOT_ACTIVE|NOT_FOUND|NOT_ACTIONABLE|CONFLICT|STALE/.test(code)) {
       await ctx.reply("この共有は状態が変わっています。最新の「今日」または「共有確認」を開き直してください。");
     } else {
       await ctx.reply("確認を記録できませんでした。状態は変更していません。");
