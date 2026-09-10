@@ -448,6 +448,7 @@ async function main() {
     assert.equal(consultationCommands.length, 0);
     await setTerms('玄関で引き継ぐ');
     await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する')?.disabled === false`), { label: 'saved terms can be confirmed' });
+    const consultationScreenshot = await screenshot(client, 'request-sender-consultation.png');
     await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この条件で確認する').click()`);
     await waitFor(() => consultationCommands.length === 1, { label: 'sender canonical confirmation HTTP' });
     const command = consultationCommands[0];
@@ -461,7 +462,7 @@ async function main() {
       scenarioId: 'CF14-REQUEST-SENDER-CONSULTATION-REAL-BROWSER',
       entryBoundary: 'authenticated Requests route → sender consultation → canonical confirmation HTTP → refreshed history',
       visibleAssertion: 'Unsent edited terms cannot be confirmed; saved revision 2 can be confirmed by the sender and canonical reload updates the request bucket.',
-      screenshot: await screenshot(client, 'request-sender-consultation.png'),
+      screenshot: consultationScreenshot,
     });
 
     const evidence = {

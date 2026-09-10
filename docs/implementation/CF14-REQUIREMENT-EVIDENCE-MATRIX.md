@@ -180,7 +180,7 @@ This prevents a known Requirement/UX defect from being hidden by adding more tes
 ## Tests runnable now
 
 - `npm run test:cf14:authoring` — manifest, boundary harness, clock, signed LINE, controlled Google, Nursery, retry, concurrency, F2-guard self-tests. Must be GREEN; it does not claim product acceptance.
-- `npm run test:cf14:browser` — real headless Chrome F1 authoring run for Today Loading/Ready/Stale/Error and Back/return; writes screenshots + `evidence.json`. It is real-browser evidence, but deliberately not physical-iPhone or final-production evidence.
+- `npm run test:cf14:browser` — real headless Chrome F1 authoring run for Today Loading/Ready/Stale/Error, Back/return and sender consultation (six scenarios); writes screenshots + `evidence.json`. It is real-browser evidence, but deliberately not physical-iPhone or final-production evidence.
 - normal Web Vitest suite includes `AnyoneOwnerPage.interaction.test.tsx` and `Today.states.interaction.test.tsx`.
 - `npm run test:cf14:f2` — strict final evidence runner. It is expected to FAIL until an evidence payload from one final exact HEAD exists **and every known acceptance blocker is cleared**.
 
