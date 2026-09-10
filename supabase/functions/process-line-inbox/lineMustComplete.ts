@@ -842,7 +842,6 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
     const requestRows = records(root.requests ?? []);
     const latest = requestRows[0];
     const simulatedLabel = simulationRoleLabel(root);
-    const revision = num(root.revision);
     const quick: LineQuickReplyAction[] = [];
 
     if (!latest) {
