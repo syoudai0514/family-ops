@@ -292,6 +292,11 @@ Every material terms edit increments `terms_revision` and invalidates prior conf
 
 Accepted only when all required ActorRefs confirm same revision.
 
+Both requester and recipient must have a reachable confirmation control on
+their normal Request surface. Editing local text is not confirmation of that
+text: submit the proposal first, then confirm its persisted terms revision.
+Refreshing one request preserves the surrounding page and other local inputs.
+
 ### 5.4 Reply deadline expiry
 
 Worker `expire-request-attempts` can run periodically.
@@ -505,6 +510,15 @@ Reject:
 - no current state change
 
 “latest external wins” path is forbidden.
+
+### Concierge duplicate partial updates
+
+`既存を更新` is a patch of the reviewed canonical entity, not a replacement
+form. Omitted owner, work time, and calendar end retain their current values.
+A date change retains the existing local work time and calendar end time.
+An explicit different owner must use the existing assignment agreement flow;
+duplicate matching itself never establishes household consent. The parent
+operation receipt replays before revision validation after a lost response.
 
 ## 11. Natural language command pipeline
 

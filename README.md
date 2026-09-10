@@ -1,7 +1,7 @@
 # family-ops
 
 家族の予定・家事・お願い・買い物・引き継ぎを共有する家庭運営OS。
-設計正本は [`docs/design/v6/`](docs/design/v6/README.md)（`family-ops-sonnet-plan-v6`）。v1〜v5は実装判断に使用しない。
+正本の優先順位は Accepted ADR → [Requirements Baseline](docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md) → [CURRENT詳細設計](docs/design/current/README.md) → 矛盾しない補助設計 → 実装・テストです。[ADR0012](docs/adr/0012-requirements-ux-canonical-governance.md) / [ADR0013](docs/adr/0013-current-detailed-design-architecture-evolution.md)に従います。`docs/design/v6/`は履歴・非競合部分の参照用であり、CURRENT正本を上書きしません。
 
 ## Stack
 
@@ -22,7 +22,8 @@ supabase/
   migrations/               SQL migrations (schema, RLS, grants, server_tx_* RPCs)
   functions/                Edge Functions (Deno)
     _shared/                 auth/cors/idempotency helpers shared across functions
-docs/design/v6/             Vendored copy of the v6 design package (normative)
+docs/design/current/        Canonical detailed design under Accepted ADRs and Requirements
+docs/design/v6/             Historical supporting design (only non-conflicting parts apply)
 tests/
   sql/                       psql-driven schema/RLS/RPC/idempotency/quota tests
   unit/                      misc non-web unit tests

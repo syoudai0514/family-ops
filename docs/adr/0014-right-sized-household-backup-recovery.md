@@ -1,17 +1,16 @@
 # ADR 0014 — Right-sized household backup and recovery
 
-- **Status:** Product Owner approved / pending canonical merge
+- **Status:** Accepted
 - **Date:** 2026-09-09
 - **Decision owner:** Product Owner
 - **Scope:** CF-11 backup/recovery only
 
 ## Governance state
 
-The Product Owner approved this decision on 2026-09-09. Under ADR 0012 governance,
-this branch copy is **not yet an Accepted/canonical ADR**. It becomes Accepted only
-when the exact reviewed change is merged to protected `main` through the required
-PR/check path. Until that merge, it is the approved proposal being implemented and
-verified on this branch; CURRENT `main` remains canonical.
+The Product Owner approved this decision on 2026-09-09. PR #73 merged to protected
+`main` on 2026-09-09 at `06a4e6b1a5aefccb8f9353fad294dd895582bc53`.
+Under ADR 0012, this ADR is therefore Accepted/canonical within its CF-11 scope.
+This acceptance does not approve deployment or merging later candidate changes.
 
 ## Context
 
@@ -46,7 +45,7 @@ ADR 0012 and ADR 0013 govern this conflict:
 4. `docs/design/v6/` remains historical/normative only where it does not
    conflict with newer accepted authority.
 
-After this ADR is merged and becomes Accepted, it **supersedes only the CF-11
+This Accepted ADR **supersedes only the CF-11
 backup/recovery implementation mechanics** in v6 WP10, v6 observability/backup
 §5-7, and the v6 WP12 `restore drill pass` interpretation. The v6 files remain
 read-only historical records and are not rewritten.
