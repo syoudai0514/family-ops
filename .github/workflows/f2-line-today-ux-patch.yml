@@ -38,12 +38,11 @@ jobs:
           text = index.read_text()
           import_anchor = '} from "./lineMustComplete.ts";'
           assert text.count(import_anchor) == 1, 'process-line-inbox import anchor drifted'
-          if './lineTodayUx.ts' not in text:
-              text = text.replace(
-                  import_anchor,
-                  import_anchor + '\nimport {\n  appendTodayDetailLinks,\n  todayContextQuickReplies,\n} from "./lineTodayUx.ts";',
-                  1,
-              )
+          text = text.replace(
+              import_anchor,
+              import_anchor + '\nimport {\n  appendTodayDetailLinks,\n  todayContextQuickReplies,\n} from "./lineTodayUx.ts";',
+              1,
+          )
 
           start_marker = '  if (kind === "today") {'
           end_marker = '\n\n  const range = kind === "week"'
@@ -90,52 +89,33 @@ jobs:
             });
             return;
           }'''
-          text = text[:start] + new_block + text[end:]
-          index.write_text(text)
+          index.write_text(text[:start] + new_block + text[end:])
 
           must = Path('supabase/functions/process-line-inbox/lineMustComplete.ts')
           text = must.read_text()
           import_anchor = '} from "./routineItemFlow.ts";'
           assert text.count(import_anchor) == 1, 'lineMustComplete import anchor drifted'
-          if './lineHandoverFlow.ts' not in text:
-              text = text.replace(
-                  import_anchor,
-                  import_anchor + '\nimport {\n  handleHandoverAckPostback,\n  isHandoverReviewText,\n  openHandoverReview,\n} from "./lineHandoverFlow.ts";',
-                  1,
-              )
+          text = text.replace(
+              import_anchor,
+              import_anchor + '\nimport {\n  handleHandoverAckPostback,\n  isHandoverReviewText,\n  openHandoverReview,\n} from "./lineHandoverFlow.ts";',
+              1,
+          )
 
-          text_anchor = '''  if (isRequestText(text)) {
-            await openRequests(ctx);
-            return true;
-          }
-          if (isSimulationText(text)) {'''
-          text_replacement = '''  if (isRequestText(text)) {
-            await openRequests(ctx);
-            return true;
-          }
-          if (isHandoverReviewText(text)) {
-            await openHandoverReview(ctx);
-            return true;
-          }
-          if (isSimulationText(text)) {'''
-          assert text.count(text_anchor) == 1, 'lineMustComplete text-handler anchor drifted'
-          text = text.replace(text_anchor, text_replacement, 1)
+          simulation_marker = '  if (isSimulationText(text)) {'
+          assert text.count(simulation_marker) == 1, 'simulation text marker drifted'
+          text = text.replace(
+              simulation_marker,
+              '  if (isHandoverReviewText(text)) {\n    await openHandoverReview(ctx);\n    return true;\n  }\n' + simulation_marker,
+              1,
+          )
 
-          postback_anchor = '''  if (action === "mc_request_repropose") {
-            await reproposeRequest(ctx, fields);
-            return true;
-          }
-          if (action?.startsWith("mc_sim_")) {'''
-          postback_replacement = '''  if (action === "mc_request_repropose") {
-            await reproposeRequest(ctx, fields);
-            return true;
-          }
-          if (await handleHandoverAckPostback(ctx, fields)) {
-            return true;
-          }
-          if (action?.startsWith("mc_sim_")) {'''
-          assert text.count(postback_anchor) == 1, 'lineMustComplete postback anchor drifted'
-          text = text.replace(postback_anchor, postback_replacement, 1)
+          simulation_postback_marker = '  if (action?.startsWith("mc_sim_")) {'
+          assert text.count(simulation_postback_marker) == 1, 'simulation postback marker drifted'
+          text = text.replace(
+              simulation_postback_marker,
+              '  if (await handleHandoverAckPostback(ctx, fields)) {\n    return true;\n  }\n' + simulation_postback_marker,
+              1,
+          )
           must.write_text(text)
           PY
 
@@ -144,10 +124,11 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          grep -q 'appendTodayDetailLinks' supabase/functions/process-line-inbox/index.ts
-          grep -q 'todayContextQuickReplies' supabase/functions/process-line-inbox/index.ts
-          grep -q 'openHandoverReview' supabase/functions/process-line-inbox/lineMustComplete.ts
-          grep -q 'handleHandoverAckPostback' supabase/functions/process-line-inbox/lineMustComplete.ts
+          test "$(grep -c 'from "./lineTodayUx.ts"' supabase/functions/process-line-inbox/index.ts)" -eq 1
+          test "$(grep -c 'from "./lineHandoverFlow.ts"' supabase/functions/process-line-inbox/lineMustComplete.ts)" -eq 1
+          grep -q 'todayContextQuickReplies(structured.data, menuQuickReplies())' supabase/functions/process-line-inbox/index.ts
+          grep -q 'await openHandoverReview(ctx)' supabase/functions/process-line-inbox/lineMustComplete.ts
+          grep -q 'await handleHandoverAckPostback(ctx, fields)' supabase/functions/process-line-inbox/lineMustComplete.ts
 
       - name: Commit candidate patch
         shell: bash
