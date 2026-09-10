@@ -50,15 +50,11 @@ jobs:
             exit 1
           }
 
-      - name: Deploy changed authenticated Edge Functions from frozen HEAD
+      - name: Deploy remaining existing authenticated Edge Functions
         shell: bash
         run: |
           set -euo pipefail
           functions=(
-            accept-assignment-change-request
-            accept-request
-            cancel-request
-            commit-concierge-duplicate
             confirm-request-draft
             decline-request
             negotiate-request
@@ -70,7 +66,7 @@ jobs:
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api
           done
 
-      - name: Deploy changed worker Edge Functions from frozen HEAD
+      - name: Deploy remaining existing worker Edge Functions
         shell: bash
         run: |
           set -euo pipefail
