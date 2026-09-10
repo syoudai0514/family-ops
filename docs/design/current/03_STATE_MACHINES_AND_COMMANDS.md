@@ -655,3 +655,14 @@ Every response carries the observed attempt ID, attempt revision and terms revis
 The common reply-deadline proposal rule is: when work lies in the future, propose the earlier of 24 hours after creation or halfway between creation and work; otherwise propose 24 hours after creation. Explicit user-specified future response deadlines take precedence even when later than work. The deadline is proposed once and persisted on the attempt; replay never recalculates it. Work dates remain execution data. This rule implements Q47's configurable automatic proposal; it does not redefine Q30/Q36 agreement semantics.
 
 Implementation verification is tracked in `docs/implementation/LANE-A-REQUEST-CANONICALIZATION.md`. This contract is a review candidate until the independent review gate passes.
+
+
+<!-- XC-03-XC-05-CONVERGENCE -->
+## XC-03 / XC-05 final convergence (2026-09-10)
+
+- LINE MUST-complete actions are thin transport adapters. They always carry the observed aggregate revision/terms revision where the target is revision-bearing and call the same canonical server command as PWA. A stale LINE message fails closed; the adapter never refetches the newest revision and applies an old tap to it.
+- Daily reconciliation uses `server_tx_reconcile_routine_session_v2` and exact-operation undo; individual answers continue through the canonical routine-item command. Waiting uses `server_tx_set_task_waiting`; anyone-owner shopping uses `server_tx_shopping_claim_v2`; Request consultation uses `server_tx_transition_request_v2`.
+- Request consultation prose (`candidate` / consultation memo) is discussion-only. It is never parsed into Task fields. A material pre-acceptance change is represented by `terms.material_patch` version 1. Supported material fields are work due date/time and the exact server-issued assignment-change target set to the request recipient.
+- The UI/LINE must show the concrete material patch before `confirm_terms`. The first confirmation does not mutate Task truth. When both parties confirm the same terms revision, acceptance and material Task application are one SQL transaction. A concurrent Task revision conflict rolls back acceptance and fails closed.
+- A single changed work deadline is intentionally rejected for a multi-occurrence `this_week` assignment scope; that scope may change assignment as one agreement, while per-occurrence date/time changes require individually represented Task changes. This prevents one free-text sentence from collapsing several distinct work deadlines.
+- Request reply deadline remains RequestAttempt-owned and is never rewritten by a work-deadline material patch.

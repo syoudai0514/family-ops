@@ -87,6 +87,10 @@ import {
   menuQuickReplies,
   readOnlyLineIntent,
 } from "./lineConversation.ts";
+import {
+  tryHandleLineMustCompletePostback,
+  tryHandleLineMustCompleteText,
+} from "./lineMustComplete.ts";
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get("LINE_INBOX_BATCH_LIMIT") ?? "25");
@@ -1108,6 +1112,14 @@ async function handlePostback(
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
 
+  if (await tryHandleLineMustCompletePostback({
+    client,
+    actorId: actor.user_id,
+    householdId: actor.household_id,
+    eventId: item.provider_event_id,
+    reply: (text, quickReplies) => sendConfirmation(client, item, actor, text, quickReplies),
+  }, fields)) return;
+
   if (fields.action === "cancel_multi_candidate" && fields.pending_action_id && fields.candidate_id) {
     await cancelMultiIntentCandidate(client, item, actor, fields.pending_action_id, fields.candidate_id);
     return;
@@ -1450,6 +1462,13 @@ async function handleText(
 ): Promise<void> {
   if (await tryClaimLinkToken(client, item.source_external_user_id, text)) return;
   if (!actor) return;
+  if (await tryHandleLineMustCompleteText({
+    client,
+    actorId: actor.user_id,
+    householdId: actor.household_id,
+    eventId: item.provider_event_id,
+    reply: (replyText, quickReplies) => sendConfirmation(client, item, actor, replyText, quickReplies),
+  }, text)) return;
   if (await tryHandleReadOnlyText(client, item, actor, text)) return;
   if (await tryHandlePendingReferent(client, item, actor, text)) return;
   if (await tryApplyLineTextEdit(client, item, actor, text)) return;

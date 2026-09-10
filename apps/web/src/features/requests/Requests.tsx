@@ -211,11 +211,56 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
   const replyDueAt = responseDeadline(attempt);
-  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {request.assignment_task_instance_id ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && attempt.state !== 'consulting' && attempt.state !== 'awaiting_confirmation' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button><button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button><button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>その他の返答</button></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && showOther && <div className="request-other-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button><CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} /><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button><p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms key={attempt.terms_revision} attempt={attempt} busy={busy} onAction={negotiate} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
+  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {request.assignment_task_instance_id ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && attempt.state !== 'consulting' && attempt.state !== 'awaiting_confirmation' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button><button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button><button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>その他の返答</button></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && showOther && <div className="request-other-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button><CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} /><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button><p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms key={attempt.terms_revision} request={request} attempt={attempt} busy={busy} onAction={negotiate} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
 }
 
 function CommentedDecline({ busy, onSubmit }: { busy: boolean; onSubmit: (comment: string) => void }) { const [comment, setComment] = useState(''); return <div className="request-comment-row"><input aria-label="難しい理由（任意）" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="コメント付きで難しい" /><button type="button" className="secondary-button" disabled={busy} onClick={() => onSubmit(comment)}>コメント付きで難しい</button></div>; }
-function ConsultationTerms({ attempt, busy, onAction }: { attempt: RequestAttempt; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) { const [candidate, setCandidate] = useState(typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : ''); return <div className="request-other-actions" aria-label="相談の条件"><p><strong>相談中</strong> — 担当はまだ変わりません。二人が同じ条件を確認してから確定します。</p><input aria-label="合意する条件" value={candidate} onChange={(event) => setCandidate(event.target.value)} placeholder="例：明日は私、金曜は交代" /><button type="button" className="secondary-button" disabled={busy || !candidate.trim()} onClick={() => onAction('edit_terms', { ...attempt.terms, candidate: candidate.trim() })}>この条件を提案</button><button type="button" disabled={busy || candidate.trim() !== (typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : '')} onClick={() => onAction('confirm_terms')}>この条件で確認する</button><p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? '相手の確認待ち' : '条件の入力待ち'}（条件版 {attempt.terms_revision}）</p></div>; }
+function ConsultationTerms({ request, attempt, busy, onAction }: { request: RequestRow; attempt: RequestAttempt; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) {
+  const savedMemo = typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : '';
+  const savedPatch = attempt.terms?.material_patch && typeof attempt.terms.material_patch === 'object' ? attempt.terms.material_patch as Record<string, unknown> : null;
+  const savedWorkDue = typeof savedPatch?.work_due_at === 'string' ? toDateTimeLocal(savedPatch.work_due_at) : '';
+  const [memo, setMemo] = useState(savedMemo);
+  const [workDue, setWorkDue] = useState(savedWorkDue);
+  const weeklyAssignment = Boolean(request.assignment_task_instance_id && request.assignment_scope === 'this_week');
+  const dirty = memo.trim() !== savedMemo || workDue !== savedWorkDue;
+  const savedAssignment = savedPatch?.assignment && typeof savedPatch.assignment === 'object' ? savedPatch.assignment as Record<string, unknown> : null;
+  const assignmentIsExplicit = savedAssignment?.mode === 'request_recipient';
+
+  function propose() {
+    const nextTerms: Record<string, unknown> = { ...attempt.terms, candidate: memo.trim() };
+    if (workDue) {
+      const materialPatch: Record<string, unknown> = {
+        version: 1,
+        work_due_at: new Date(workDue).toISOString(),
+        scheduled_date: workDue.slice(0, 10),
+      };
+      if (request.assignment_task_instance_id) {
+        materialPatch.assignment = { mode: 'request_recipient', targets: attempt.terms?.assignment_targets };
+      }
+      nextTerms.material_patch = materialPatch;
+    } else {
+      delete nextTerms.material_patch;
+    }
+    onAction('edit_terms', nextTerms);
+  }
+
+  return <div className="request-other-actions" aria-label="相談の条件">
+    <p><strong>相談中</strong> — まだTaskは変わりません。文章の相談メモと、実際に反映する具体条件を分けて確認します。</p>
+    <label>相談メモ（自動反映されません）<input aria-label="相談メモ" value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="例：時間なら調整できそう" /></label>
+    <label>変更後の作業期限（具体条件）<input aria-label="変更後の作業期限" type="datetime-local" value={workDue} disabled={weeklyAssignment} onChange={(event) => setWorkDue(event.target.value)} /></label>
+    {weeklyAssignment && <p className="task-item-meta">「今週だけ」は複数のTaskを含むため、1つの期限で全件を書き換えません。担当変更だけをこの条件版で確認し、各日の期限変更は個別Taskの変更相談で扱います。</p>}
+    {request.assignment_task_instance_id && <p className="task-item-meta">担当の具体条件: この依頼で固定された対象Taskを、依頼相手へ変更します。対象Taskとrevisionはサーバー発行の条件版から変更できません。</p>}
+    <button type="button" className="secondary-button" disabled={busy || !dirty} onClick={propose}>具体条件を提案</button>
+    <button type="button" disabled={busy || dirty} onClick={() => onAction('confirm_terms')}>表示中の条件版を確認する</button>
+    <div className="task-item-meta" aria-label="反映される具体条件">
+      <strong>この条件版で反映される内容</strong>
+      <div>作業期限: {savedWorkDue ? `${request.due_at ? formatDateTimeJa(request.due_at) : '未設定'} → ${formatDateTimeJa(String(savedPatch?.work_due_at))}` : '変更なし'}</div>
+      <div>担当: {request.assignment_task_instance_id ? (assignmentIsExplicit ? '固定された対象Task → 依頼相手' : '既存の担当変更条件') : '変更なし'}</div>
+      <div>相談メモ: {savedMemo || 'なし（文章だけではTaskを変更しません）'}</div>
+    </div>
+    <p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? 'もう一人の確認待ち' : '条件の提案・確認待ち'}（条件版 {attempt.terms_revision}）</p>
+  </div>;
+}
 
 export function OutgoingRequestRow({ request, attempt, onChanged }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
@@ -234,7 +279,7 @@ export function OutgoingRequestRow({ request, attempt, onChanged }: { request: R
     finally { setBusy(false); }
   }
   const replyDueAt = responseDeadline(attempt);
-  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={cancel}>キャンセル</button></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms key={attempt.terms_revision} attempt={attempt} busy={busy} onAction={negotiate} />}{request.status === 'accepted' && <AcceptedRequestFollowup request={request} onChanged={onChanged} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
+  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={cancel}>キャンセル</button></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms key={attempt.terms_revision} request={request} attempt={attempt} busy={busy} onAction={negotiate} />}{request.status === 'accepted' && <AcceptedRequestFollowup request={request} onChanged={onChanged} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
 }
 
 function AcceptedRequestFollowup({ request, onChanged }: { request: RequestRow; onChanged: () => Promise<void> | void }) {

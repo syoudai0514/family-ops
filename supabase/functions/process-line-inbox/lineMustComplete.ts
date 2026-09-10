@@ -230,7 +230,7 @@ async function individualRoutinePrompt(ctx: LineMustCompleteContext, sessionId: 
     await ctx.reply("✓ 回答する項目はありません。");
     return;
   }
-  await ctx.reply(buildItemPromptText(next), buildItemQuickReply(sessionId, next.task_instance_id));
+  await ctx.reply(buildItemPromptText(sessionId, next), buildItemQuickReply(sessionId, next.task_instance_id));
 }
 
 async function reconcile(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
@@ -293,14 +293,16 @@ async function openWaiting(ctx: LineMustCompleteContext): Promise<void> {
     await ctx.reply("いま「待ち」にできる未完了タスクはありません。");
     return;
   }
-  const quick = rows.slice(0, 8).map((row) => {
+  const quick = rows.slice(0, 4).flatMap((row) => {
     const id = str(row.id) ?? "";
     const revision = num(row.revision) ?? 1;
     const waiting = row.attention_state === "waiting";
-    return postback(
-      `${waiting ? "再開" : "待ち"}・${(str(row.title) ?? "タスク").slice(0, 12)}`,
-      encodeFields(waiting ? "mc_wait_resume" : "mc_wait_select", { task_id: id, revision }),
-    );
+    const title = (str(row.title) ?? "タスク").slice(0, 10);
+    if (!waiting) return [postback(`待ち・${title}`, encodeFields("mc_wait_select", { task_id: id, revision }))];
+    return [
+      postback(`再開・${title}`, encodeFields("mc_wait_resume", { task_id: id, revision })),
+      postback(`確認日・${title}`, encodeFields("mc_wait_update", { task_id: id, revision })),
+    ];
   });
   await ctx.reply("待ち状態を変えるタスクを選んでください。変更時は、この画面で見た版だけを更新します。", quick);
 }
@@ -309,11 +311,12 @@ async function setWaiting(ctx: LineMustCompleteContext, fields: Record<string, s
   const taskId = fields.task_id;
   const revision = Number(fields.revision);
   if (!taskId || !Number.isFinite(revision)) return;
-  if (action === "set" && !fields.next_check) {
-    await ctx.reply("次に確認するタイミングを選べます。", [
-      postback("明日確認", encodeFields("mc_wait_set", { task_id: taskId, revision, next_check: "tomorrow" })),
-      postback("3日後確認", encodeFields("mc_wait_set", { task_id: taskId, revision, next_check: "3days" })),
-      postback("時刻なしで待ち", encodeFields("mc_wait_set", { task_id: taskId, revision, next_check: "none" })),
+  if ((action === "set" || action === "update") && !fields.next_check) {
+    const nextAction = action === "update" ? "mc_wait_update" : "mc_wait_set";
+    await ctx.reply(action === "update" ? "次の確認日を変更します。" : "次に確認するタイミングを選べます。", [
+      postback("明日確認", encodeFields(nextAction, { task_id: taskId, revision, next_check: "tomorrow" })),
+      postback("3日後確認", encodeFields(nextAction, { task_id: taskId, revision, next_check: "3days" })),
+      postback("時刻なし", encodeFields(nextAction, { task_id: taskId, revision, next_check: "none" })),
     ]);
     return;
   }
@@ -546,6 +549,24 @@ async function transitionRequest(ctx: LineMustCompleteContext, fields: Record<st
   }
 }
 
+async function editConsultationMemo(ctx: LineMustCompleteContext, memo: string): Promise<void> {
+  const views = (await activeRequests(ctx)).filter((view) => ["consulting", "awaiting_confirmation"].includes(view.attempt.state));
+  if (views.length !== 1) {
+    await ctx.reply("相談中のお願いを1件に絞れませんでした。先に「お願いの返事」で対象を確認してください。");
+    return;
+  }
+  const view = views[0];
+  const terms: JsonObject = { ...view.attempt.terms, candidate: memo };
+  const operationId = await deterministicOperationId("line-request-memo", ctx.eventId, view.attempt.id, memo, String(view.attempt.revision));
+  const { error } = await ctx.client.rpc("server_tx_transition_request_v2", {
+    p_actor_id: ctx.actorId, p_operation_id: operationId, p_request_id: view.request.id,
+    p_attempt_id: view.attempt.id, p_action: "edit_terms", p_terms: terms,
+    p_expected_revision: view.attempt.revision, p_expected_terms_revision: view.attempt.terms_revision, p_source: "line",
+  });
+  if (error) { await replyMutationError(ctx, error); return; }
+  await ctx.reply("✓ 相談メモを条件版に保存しました。この文章だけでは担当・Task・作業期限は変わりません。具体的な変更は別に明示して、二人で同じ版を確認します。", [message("お願いを確認", "お願いの返事")]);
+}
+
 async function editStructuredDue(ctx: LineMustCompleteContext, dueIso: string): Promise<void> {
   const views = (await activeRequests(ctx)).filter((view) => ["consulting", "awaiting_confirmation"].includes(view.attempt.state));
   if (views.length !== 1) {
@@ -723,6 +744,11 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
 
 export async function tryHandleLineMustCompleteText(ctx: LineMustCompleteContext, rawText: string): Promise<boolean> {
   const text = rawText.normalize("NFKC").trim();
+  const memoMatch = text.match(/^相談メモ[：:\s]+(.{1,500})$/u);
+  if (memoMatch) {
+    await editConsultationMemo(ctx, memoMatch[1].trim());
+    return true;
+  }
   const dueIso = parseStructuredWorkDue(text);
   if (dueIso) {
     await editStructuredDue(ctx, dueIso);
