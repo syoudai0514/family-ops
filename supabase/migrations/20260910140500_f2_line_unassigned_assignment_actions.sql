@@ -18,7 +18,7 @@ create or replace function public.server_tx_line_assign_unassigned_task_v1(
   p_expected_revision bigint
 ) returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -152,7 +152,7 @@ create or replace function public.server_tx_line_request_unassigned_task_assignm
   p_expected_revision bigint
 ) returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
