@@ -28,7 +28,7 @@ jobs:
           ref: ${{ env.FROZEN_HEAD }}
           fetch-depth: 1
 
-      - name: Verify exact source HEAD
+      - name: Verify exact source and slot-swap assumptions
         shell: bash
         run: |
           set -euo pipefail
@@ -36,6 +36,8 @@ jobs:
           echo "Frozen HEAD: $FROZEN_HEAD"
           echo "Actual HEAD: $actual"
           test "$actual" = "$FROZEN_HEAD"
+          test -d supabase/functions/commit-concierge-duplicate
+          test ! -d supabase/functions/artifact-handoff-relay
 
       - uses: supabase/setup-cli@v1
         with:
@@ -50,37 +52,24 @@ jobs:
             exit 1
           }
 
-      - name: Deploy remaining existing authenticated Edge Functions
+      - name: Remove deployed-only expired artifact relay to free one Free-plan slot
         shell: bash
         run: |
           set -euo pipefail
-          functions=(
-            confirm-request-draft
-            decline-request
-            negotiate-request
-            propose-concierge-candidates
-            respond-request
-          )
-          for fn in "${functions[@]}"; do
-            echo "Deploying $fn from $(git rev-parse HEAD)"
-            supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api
-          done
+          help="$(supabase functions delete --help 2>&1 || true)"
+          if printf '%s' "$help" | grep -q -- '--yes'; then
+            supabase functions delete artifact-handoff-relay --project-ref "$PROJECT_REF" --yes
+          else
+            printf 'y\n' | supabase functions delete artifact-handoff-relay --project-ref "$PROJECT_REF"
+          fi
 
-      - name: Deploy remaining existing worker Edge Functions
+      - name: Deploy candidate commit-concierge-duplicate from frozen HEAD
         shell: bash
         run: |
           set -euo pipefail
-          functions=(
-            dispatch-routine-automation
-            process-line-inbox
-            process-pending-actions
-            send-notifications
-          )
-          for fn in "${functions[@]}"; do
-            echo "Deploying $fn from $(git rev-parse HEAD) with in-handler worker auth"
-            supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
-          done
+          echo "Deploying commit-concierge-duplicate from $(git rev-parse HEAD)"
+          supabase functions deploy commit-concierge-duplicate --project-ref "$PROJECT_REF" --use-api
 
-      - name: Show deployed function state
+      - name: Show final deployed function state
         shell: bash
         run: supabase functions list --project-ref "$PROJECT_REF"
