@@ -630,6 +630,85 @@ async function reproposeRequest(ctx: LineMustCompleteContext, fields: Record<str
   await ctx.reply(`✓ 再提案しました。新しい返事期限: ${formatJst(replyDueAt)}`, [message("お願いを確認", "お願いの返事")]);
 }
 
+function simulationRoleLabel(value: unknown): string {
+  const root = record(value);
+  return str(root?.simulated_display_label) ?? (str(root?.simulated_role) === "papa" ? "🧪 パパ" : "🧪 ママ");
+}
+
+function simulationStateLabel(state: string | null): string {
+  switch (state) {
+    case "pending": return "返事待ち";
+    case "checking": return "確認中";
+    case "consulting": return "相談中";
+    case "awaiting_confirmation": return "条件確認待ち";
+    case "accepted": return "受けました";
+    case "declined": return "断りました";
+    case "cancelled": return "取り消し";
+    case "expired": return "返事期限切れ";
+    default: return state ?? "不明";
+  }
+}
+
+function simulationDirectionLabels(
+  request: JsonObject | null,
+  simulatedLabel: string,
+): { requester: string; recipient: string } {
+  return {
+    requester: str(request?.requester_side) === "simulated" ? simulatedLabel : "あなた",
+    recipient: str(request?.recipient_side) === "simulated" ? simulatedLabel : "あなた",
+  };
+}
+
+function simulationRequestText(root: JsonObject, request: JsonObject): string {
+  const simulatedLabel = simulationRoleLabel(root);
+  const labels = simulationDirectionLabels(request, simulatedLabel);
+  const attempt = record(request.latest_attempt);
+  const title = str(request.title) ?? "お願い";
+  const detail = str(request.message);
+  const state = simulationStateLabel(str(attempt?.state) ?? str(request.status));
+  const lines = [
+    `1人テスト｜${labels.recipient}として確認`,
+    `${labels.requester}からお願いが届いています`,
+    "",
+    title,
+  ];
+  if (detail) lines.push(`内容: ${detail}`);
+  lines.push(
+    `返事期限: ${formatJst(str(attempt?.reply_due_at))}`,
+    `作業期限: ${formatJst(str(request.due_at))}`,
+    `状態: ${state}`,
+    "",
+    `${labels.recipient}として返事してください。`,
+    "※本物の家族・providerには送りません。",
+  );
+  return lines.join("\n");
+}
+
+function simulationControls(
+  contextId: string,
+  revision: number | null,
+  simulatedLabel: string,
+): LineQuickReplyAction[] {
+  const quick: LineQuickReplyAction[] = [
+    postback(`${simulatedLabel}にお願い`, encodeFields("mc_sim_send", {
+      test_context_id: contextId,
+      direction: "operator_to_simulated",
+    })),
+    postback(`${simulatedLabel}からお願い`, encodeFields("mc_sim_send", {
+      test_context_id: contextId,
+      direction: "simulated_to_operator",
+    })),
+    postback("最新のお願いを見る", encodeFields("mc_sim_view", { test_context_id: contextId })),
+  ];
+  if (revision) {
+    quick.push(postback("1人テスト終了", encodeFields("mc_sim_archive", {
+      test_context_id: contextId,
+      revision,
+    })));
+  }
+  return quick;
+}
+
 async function openSimulation(ctx: LineMustCompleteContext): Promise<void> {
   const { data, error } = await ctx.client.rpc("server_tx_get_active_test_simulation_v1", { p_actor_id: ctx.actorId });
   if (error) {
@@ -638,100 +717,171 @@ async function openSimulation(ctx: LineMustCompleteContext): Promise<void> {
   }
   const root = record(data);
   if (root?.active !== true) {
-    await ctx.reply("1人テストを開始する役を選んでください。実行主体はあなたのまま、相手役だけを合成します。実LINE送信・Google provider更新はしません。", [
-      postback("相手役=ママ", encodeFields("mc_sim_open", { role: "mama" })),
-      postback("相手役=パパ", encodeFields("mc_sim_open", { role: "papa" })),
+    await ctx.reply("1人テストを開始する役を選んでください。あなた1人で相手側の画面・返事まで試せます。本物の家族へのLINE送信やGoogle更新はしません。", [
+      postback("ママ役で試す", encodeFields("mc_sim_open", { role: "mama" })),
+      postback("パパ役で試す", encodeFields("mc_sim_open", { role: "papa" })),
     ]);
     return;
   }
   const contextId = str(root.test_context_id);
   const revision = num(root.revision);
   if (!contextId || !revision) return;
-  await ctx.reply(`1人テスト中: ${str(root.simulated_display_label) ?? str(root.simulated_role) ?? "相手役"}\n本番の家族・providerへ副作用は出ません。`, [
-    postback("自分→相手", encodeFields("mc_sim_send", { test_context_id: contextId, direction: "operator_to_simulated" })),
-    postback("相手→自分", encodeFields("mc_sim_send", { test_context_id: contextId, direction: "simulated_to_operator" })),
-    postback("テスト状態", encodeFields("mc_sim_view", { test_context_id: contextId })),
-    postback("テスト終了", encodeFields("mc_sim_archive", { test_context_id: contextId, revision })),
-  ]);
+  const simulatedLabel = simulationRoleLabel(root);
+  await ctx.reply(
+    `1人テスト中：${simulatedLabel}\nあなた1人で、${simulatedLabel}に届くお願い／${simulatedLabel}から届くお願いを確認できます。\n本物の家族・providerへ副作用は出ません。`,
+    simulationControls(contextId, revision, simulatedLabel),
+  );
 }
 
 async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
   if (fields.action === "mc_sim_open") {
     const role = fields.role === "papa" ? "papa" : "mama";
     const operationId = await deterministicOperationId("line-sim-open", ctx.eventId, role);
-    const { error } = await ctx.client.rpc("server_tx_open_test_simulation_interactive_v1", {
+    const { data, error } = await ctx.client.rpc("server_tx_open_test_simulation_interactive_v1", {
       p_actor_id: ctx.actorId,
       p_operation_id: operationId,
       p_simulated_role: role,
       p_label: "LINE one-user simulation",
     });
-    if (error) await replyMutationError(ctx, error);
-    else await ctx.reply("✓ 1人テストを開始しました。『テスト状態』から両側を操作できます。", [message("テスト状態", "テスト状態")]);
+    if (error) {
+      await replyMutationError(ctx, error);
+      return;
+    }
+    const root = record(data);
+    const simulatedLabel = simulationRoleLabel(root ?? { simulated_role: role });
+    await ctx.reply(
+      `✓ 1人テストを開始しました。相手役は ${simulatedLabel} です。本物の家族には送りません。`,
+      [message("テスト画面を見る", "テスト状態")],
+    );
     return;
   }
+
   const contextId = fields.test_context_id;
   if (!contextId) return;
+
   if (fields.action === "mc_sim_send") {
     const direction = fields.direction === "simulated_to_operator" ? "simulated_to_operator" : "operator_to_simulated";
+    const toSimulated = direction === "operator_to_simulated";
+    const title = toSimulated ? "お迎えをお願い" : "洗濯をお願い";
+    const sharedMessage = toSimulated
+      ? "今日のお迎えをお願いできますか？"
+      : "今日の洗濯をお願いできますか？";
     const operationId = await deterministicOperationId("line-sim-send", ctx.eventId, contextId, direction);
     const { error } = await ctx.client.rpc("server_tx_test_simulation_send_request_v1", {
       p_actor_id: ctx.actorId,
       p_test_context_id: contextId,
       p_operation_id: operationId,
       p_direction: direction,
-      p_shared_title: "1人テストのお願い",
-      p_shared_message: "LINE one-user simulation",
+      p_shared_title: title,
+      p_shared_message: sharedMessage,
       p_due_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
     });
-    if (error) await replyMutationError(ctx, error);
-    else await ctx.reply("✓ 合成した相手とのテストお願いを作りました。本番LINE/providerには送りません。", [postback("テスト状態", encodeFields("mc_sim_view", { test_context_id: contextId }))]);
+    if (error) {
+      await replyMutationError(ctx, error);
+      return;
+    }
+
+    const { data: simData } = await ctx.client.rpc("server_tx_get_active_test_simulation_v1", {
+      p_actor_id: ctx.actorId,
+    });
+    const simulatedLabel = simulationRoleLabel(simData);
+    const target = toSimulated ? simulatedLabel : "あなた";
+    const sender = toSimulated ? "あなた" : simulatedLabel;
+    await ctx.reply(
+      `✓ ${sender} → ${target} のテスト用お願いを作りました。\n「${title}」\n本物の家族には送りません。`,
+      [postback(`${target}側で確認`, encodeFields("mc_sim_view", { test_context_id: contextId }))],
+    );
     return;
   }
+
   if (fields.action === "mc_sim_view") {
-    const { data, error } = await ctx.client.rpc("server_tx_get_test_simulation_workspace_v2", { p_actor_id: ctx.actorId, p_test_context_id: contextId });
+    const { data, error } = await ctx.client.rpc("server_tx_get_test_simulation_workspace_v2", {
+      p_actor_id: ctx.actorId,
+      p_test_context_id: contextId,
+    });
     if (error) {
       await replyMutationError(ctx, error);
       return;
     }
     const root = record(data);
-    const requestRows = records(root?.requests ?? []);
+    if (!root) return;
+    const requestRows = records(root.requests ?? []);
     const latest = requestRows[0];
+    const simulatedLabel = simulationRoleLabel(root);
+    const revision = num(root.revision);
     const quick: LineQuickReplyAction[] = [];
-    const latestAttempt = record(latest?.latest_attempt);
-    if (latest && latestAttempt && ["pending", "checking"].includes(str(latestAttempt.state) ?? "")) {
+
+    if (!latest) {
+      await ctx.reply(
+        `1人テスト中：${simulatedLabel}\nまだお願いはありません。\n本物の家族・providerへ副作用は出ません。`,
+        simulationControls(contextId, revision, simulatedLabel),
+      );
+      return;
+    }
+
+    const latestAttempt = record(latest.latest_attempt);
+    if (latestAttempt && ["pending", "checking"].includes(str(latestAttempt.state) ?? "")) {
       const requestId = str(latest.request_id);
       const attemptId = str(latestAttempt.attempt_id);
-      const revision = num(latestAttempt.revision);
+      const attemptRevision = num(latestAttempt.revision);
       const termsRevision = num(latestAttempt.terms_revision);
-      if (requestId && attemptId && revision && termsRevision) {
-        quick.push(postback("受ける", encodeFields("mc_sim_respond", { test_context_id: contextId, request_id: requestId, attempt_id: attemptId, revision, terms_revision: termsRevision, response: "accept" })));
-        quick.push(postback("断る", encodeFields("mc_sim_respond", { test_context_id: contextId, request_id: requestId, attempt_id: attemptId, revision, terms_revision: termsRevision, response: "decline" })));
+      const labels = simulationDirectionLabels(latest, simulatedLabel);
+      if (requestId && attemptId && attemptRevision && termsRevision) {
+        quick.push(postback(`${labels.recipient}として受ける`, encodeFields("mc_sim_respond", {
+          test_context_id: contextId,
+          request_id: requestId,
+          attempt_id: attemptId,
+          revision: attemptRevision,
+          terms_revision: termsRevision,
+          response: "accept",
+        })));
+        quick.push(postback(`${labels.recipient}として断る`, encodeFields("mc_sim_respond", {
+          test_context_id: contextId,
+          request_id: requestId,
+          attempt_id: attemptId,
+          revision: attemptRevision,
+          terms_revision: termsRevision,
+          response: "decline",
+        })));
       }
     }
-    quick.push(postback("自分→相手", encodeFields("mc_sim_send", { test_context_id: contextId, direction: "operator_to_simulated" })));
-    quick.push(postback("相手→自分", encodeFields("mc_sim_send", { test_context_id: contextId, direction: "simulated_to_operator" })));
-    await ctx.reply(`テスト状態\nお願い: ${requestRows.length}件 / タスク: ${records(root?.tasks ?? []).length}件\n本番副作用: ${root?.production_side_effects === false ? "なし" : "確認不可"}`, quick);
+
+    quick.push(...simulationControls(contextId, revision, simulatedLabel).filter((item) =>
+      item.type !== "postback" || !item.data.includes("action=mc_sim_view")
+    ));
+    await ctx.reply(simulationRequestText(root, latest), quick);
     return;
   }
+
   if (fields.action === "mc_sim_respond") {
     const revision = Number(fields.revision);
     const termsRevision = Number(fields.terms_revision);
     if (!fields.request_id || !fields.attempt_id || !Number.isFinite(revision) || !Number.isFinite(termsRevision)) return;
-    const operationId = await deterministicOperationId("line-sim-respond", ctx.eventId, contextId, fields.attempt_id, fields.response ?? "accept");
+    const action = fields.response === "decline" ? "decline" : "accept";
+    const operationId = await deterministicOperationId("line-sim-respond", ctx.eventId, contextId, fields.attempt_id, action);
     const { error } = await ctx.client.rpc("server_tx_test_simulation_respond_request_v1", {
       p_actor_id: ctx.actorId,
       p_test_context_id: contextId,
       p_operation_id: operationId,
       p_request_id: fields.request_id,
       p_attempt_id: fields.attempt_id,
-      p_action: fields.response === "decline" ? "decline" : "accept",
+      p_action: action,
       p_expected_revision: revision,
       p_expected_terms_revision: termsRevision,
     });
-    if (error) await replyMutationError(ctx, error);
-    else await ctx.reply("✓ 合成相手側の返事を記録しました。本番家族への送信はありません。", [postback("テスト状態", encodeFields("mc_sim_view", { test_context_id: contextId }))]);
+    if (error) {
+      await replyMutationError(ctx, error);
+      return;
+    }
+    await ctx.reply(
+      action === "accept"
+        ? "✓ テスト相手として「受ける」を記録しました。本物の家族には送っていません。"
+        : "✓ テスト相手として「断る」を記録しました。本物の家族には送っていません。",
+      [postback("結果を見る", encodeFields("mc_sim_view", { test_context_id: contextId }))],
+    );
     return;
   }
+
   if (fields.action === "mc_sim_archive") {
     const revision = Number(fields.revision);
     if (!Number.isFinite(revision)) return;
