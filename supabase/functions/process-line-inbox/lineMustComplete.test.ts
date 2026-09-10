@@ -222,11 +222,11 @@ Deno.test("LINE one-user simulation shows the actual request instead of develope
   assertStringIncludes(replies[0].text, "作業期限:");
   assertStringIncludes(replies[0].text, "状態: 返事待ち");
   assert(!replies[0].text.includes("お願い: 1件 / タスク: 0件"));
-  assert(!replies[0].quickReplies.some((action) => action.label === "自分→相手" || action.label === "相手→自分"));
-  assert(replies[0].quickReplies.some((action) => action.label === "🧪 ママとして受ける"));
-  assert(replies[0].quickReplies.some((action) => action.label === "🧪 ママとして断る"));
-  assert(replies[0].quickReplies.some((action) => action.label === "🧪 ママにお願い"));
-  assert(replies[0].quickReplies.some((action) => action.label === "🧪 ママからお願い"));
+  assertEquals(replies[0].quickReplies.length, 2);
+  assertEquals(replies[0].quickReplies.map((action) => action.label), ["受ける", "断る"]);
+  assert(!replies[0].quickReplies.some((action) =>
+    action.label.includes("お願い") || action.label.includes("テスト終了")
+  ));
 });
 
 Deno.test("LINE one-user simulation creates a meaningful role-labelled request", async () => {
