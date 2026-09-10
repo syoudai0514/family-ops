@@ -29,8 +29,7 @@ export const cf14Scenarios = [
     entryBoundary: 'PWA Today route opened/revisited by the user at controlled clock times',
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'browser', 'physical-iphone-manual', 'whole-day-scenario'],
     userVisibleAssertion: 'Loading/error/stale/current states and daypart ordering are visible without hiding material Today work on iPhone.',
-    status: 'expected-failing',
-    expectedFailureReason: 'F1 has authored actual Loading/Error/Stale render evidence, but full Today daypart/return/iPhone/whole-day acceptance still belongs to the converged Today implementation plus F2.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-REQUEST-LIFECYCLE',
@@ -40,7 +39,7 @@ export const cf14Scenarios = [
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'edge-api', 'browser', 'line-transport'],
     userVisibleAssertion: 'The user sees one coherent Request lifecycle, with stale/expired attempts failing closed and accepted work joining the linked ToDo.',
     status: 'expected-failing',
-    expectedFailureReason: 'Request canonicalization is converging in another lane; F1 provides lifecycle/stale/expiry fixtures without modifying business logic.',
+    expectedFailureReason: 'Astra XC-03: normal LINE request Other reply hands off to PWA instead of exposing the required consultation lifecycle; XC-02 fixes only PWA sender reachability.',
   },
   {
     scenarioId: 'CF14-HANDOVER-SHARE',
@@ -58,7 +57,8 @@ export const cf14Scenarios = [
     entryBoundary: 'PWA/LINE check-in and daily reconciliation entry',
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'edge-api', 'browser', 'line-transport', 'whole-day-scenario'],
     userVisibleAssertion: 'Bulk completion, exceptions, unknowns and next-day entry preserve the intended task facts from the user-facing flow.',
-    status: 'external-pending',
+    status: 'expected-failing',
+    expectedFailureReason: 'Astra XC-03: LINE Input hands off to PWA and does not expose canonical mostly-done/undo daily reconciliation commands.',
   },
   {
     scenarioId: 'CF14-TASK-QUICK-ADD',
@@ -112,7 +112,8 @@ export const cf14Scenarios = [
     entryBoundary: 'Actual LINE Messaging API webhook/postback and resulting reply/deep-link',
     requiredEvidenceClasses: ['unit-domain', 'db-rpc', 'edge-api', 'line-transport', 'browser', 'cross-channel-concurrency'],
     userVisibleAssertion: 'LINE remains the daily operational entry, shows all own tasks, deep-links to matching PWA state, and avoids duplicate/self-return notifications.',
-    status: 'external-pending',
+    status: 'expected-failing',
+    expectedFailureReason: 'Astra XC-03: required normal LINE input, negotiation, waiting and claim/release entry points remain missing; this is an implementation blocker, not provider evidence pending.',
   },
   {
     scenarioId: 'CF14-Q27-LINE-WEBHOOK-POSTBACK',
@@ -121,7 +122,8 @@ export const cf14Scenarios = [
     entryBoundary: 'Actual LINE Messaging API webhook + postback into one-user test mode',
     requiredEvidenceClasses: ['db-rpc', 'edge-api', 'line-transport'],
     userVisibleAssertion: 'One operator can act as both sides in the LINE test flow while all production spouse/Google/analytics side effects remain fenced.',
-    status: 'external-pending',
+    status: 'expected-failing',
+    expectedFailureReason: 'Astra XC-03: one-user simulation has PWA and RPC entry points but no production LINE webhook/postback route.',
   },
   {
     scenarioId: 'CF14-Q70-RAW-MULTI-INTENT',
@@ -130,8 +132,7 @@ export const cf14Scenarios = [
     entryBoundary: 'Raw natural-language LINE text before candidate JSON exists',
     requiredEvidenceClasses: ['unit-domain', 'edge-api', 'line-transport'],
     userVisibleAssertion: 'One raw message containing multiple intents becomes multiple candidates shown together in one confirmation surface.',
-    status: 'expected-failing',
-    expectedFailureReason: 'F1 adds raw-text corpus/harness; production interpretation remains owned by its implementation lane.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-Q71-RAW-AMBIGUITY',
@@ -140,8 +141,7 @@ export const cf14Scenarios = [
     entryBoundary: 'Raw natural-language LINE text with only one material ambiguity',
     requiredEvidenceClasses: ['unit-domain', 'edge-api', 'line-transport'],
     userVisibleAssertion: 'Only the unresolved field is asked; already-understood content is preserved without repeated confirmation.',
-    status: 'expected-failing',
-    expectedFailureReason: 'F1 authors the raw-language corpus and missing-field contract; production interpretation belongs to another lane.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-NAVIGATION-RETURN',
@@ -186,8 +186,7 @@ export const cf14Scenarios = [
     entryBoundary: 'Rendered PWA anyone-owner page with user button interaction',
     requiredEvidenceClasses: ['db-rpc', 'edge-api', 'browser'],
     userVisibleAssertion: '`誰でもOK` is a distinct assignment type; the user claims with `自分がやる`, takeover identifies the current claimant before confirmation, the claimant can `手放す`, and a deadline never auto-releases the claim.',
-    status: 'expected-failing',
-    expectedFailureReason: 'F1 proves current claim/takeover/release state transitions only. CURRENT UX says `家族が対応中` instead of identifying the claimant, labels release `担当を戻す` instead of approved `手放す`, and deadline non-release still needs DB/domain + clock evidence. These are product/UX gaps, not test-harness gaps.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-NURSERY-ACTUAL-INPUT',
@@ -196,8 +195,7 @@ export const cf14Scenarios = [
     entryBoundary: 'Actual image bytes received at LINE/image intake before OCR or AI candidate construction',
     requiredEvidenceClasses: ['db-rpc', 'edge-api', 'line-transport', 'image-ocr-ai', 'browser'],
     userVisibleAssertion: 'Actual notice images pass classification/OCR/AI with provenance, then one review surface controls confirmation before household data changes.',
-    status: 'expected-failing',
-    expectedFailureReason: 'F1 authors image-byte/provenance evidence harness; final OCR/AI/provider execution requires converged implementation and controlled credentials.',
+    status: 'external-pending',
   },
   {
     scenarioId: 'CF14-GOOGLE-BASELINE',
@@ -234,6 +232,6 @@ export const cf14Scenarios = [
     requiredEvidenceClasses: ['browser', 'line-transport', 'physical-iphone-manual', 'cross-channel-concurrency', 'whole-day-scenario'],
     userVisibleAssertion: 'A family can move from morning brief through daytime changes to evening reconciliation without lost state, duplicate noise or hidden work.',
     status: 'skeleton',
-    expectedFailureReason: 'F1 provides orchestration structure only; final execution waits for all implementation lanes to converge on one exact HEAD.',
+    expectedFailureReason: 'F1 provides orchestration structure only; full-day execution remains unauthored against real transports and Astra XC-03 LINE entry gaps remain unresolved.',
   },
 ];

@@ -45,25 +45,25 @@ The executable manifest is `tests/evidence/cf14/scenarios.mjs`. It validates tha
 
 | Scenario | Requirement IDs | Entry boundary | Required evidence | F1 state |
 | --- | --- | --- | --- | --- |
-| CF14-TODAY-DAY-FLOW | Q1,Q9,Q13,Q15,Q23,Q24,Q35,Q40,Q68,Q75,Q87 | PWA Today route at controlled clock | domain, DB, browser, iPhone, whole-day | expected-failing / real-browser state subset authored; Today+iPhone+whole-day pending |
-| CF14-REQUEST-LIFECYCLE | Q2,Q30,Q36,Q41-Q47,Q51 | PWA + LINE Request entry | domain, DB, Edge, browser, LINE | expected-failing / Request owner |
+| CF14-TODAY-DAY-FLOW | Q1,Q9,Q13,Q15,Q23,Q24,Q35,Q40,Q68,Q75,Q87 | PWA Today route at controlled clock | domain, DB, browser, iPhone, whole-day | external-pending / integrated Today source; iPhone+whole-day evidence pending |
+| CF14-REQUEST-LIFECYCLE | Q2,Q30,Q36,Q41-Q47,Q51 | PWA + LINE Request entry | domain, DB, Edge, browser, LINE | expected-failing / Astra XC-03 LINE consultation entry missing |
 | CF14-HANDOVER-SHARE | Q3,Q16,Q37,Q38,Q48,Q49 | PWA/LINE share/ack | domain, DB, Edge, browser, LINE | external-pending |
-| CF14-CHECKIN-RECONCILIATION | Q5,Q6,Q31,Q53,Q54,Q59-Q61,Q63,Q64,Q76 | PWA/LINE check-in | domain, DB, Edge, browser, LINE, whole-day | external-pending |
+| CF14-CHECKIN-RECONCILIATION | Q5,Q6,Q31,Q53,Q54,Q59-Q61,Q63,Q64,Q76 | PWA/LINE check-in | domain, DB, Edge, browser, LINE, whole-day | expected-failing / Astra XC-03 |
 | CF14-TASK-QUICK-ADD | Q8,Q21,Q22,Q55-Q57,Q69,Q74 | PWA Quick Add/task interaction | domain, DB, Edge, browser | external-pending |
 | CF14-PLANNING-ASSIGNMENT | Q10-Q12,Q50,Q52,Q83-Q86 | assignment/rule change | domain, DB, Edge, browser, LINE, concurrency | external-pending |
 | CF14-EVENT-PLANNING | Q17-Q19 | event planning/review | domain, DB, Edge, browser | external-pending |
 | CF14-HISTORY-ACTUALS | Q7,Q20,Q28,Q29,Q32,Q62 | History/actuals UI | domain, DB, browser | external-pending |
 | CF14-NOTIFICATION-SCHEDULE | Q14,Q25,Q26,Q88 | scheduler → LINE delivery at explicit JST clock | domain, DB, Edge, LINE, whole-day | external-pending |
-| CF14-LINE-DAILY-ENTRY | Q4,Q39,Q65-Q67,Q72,Q73,Q78-Q80 | actual LINE webhook/postback | domain, DB, Edge, LINE, browser, concurrency | external-pending |
-| CF14-Q27-LINE-WEBHOOK-POSTBACK | Q27 | signed LINE-compatible HTTP webhook/postback, then actual provider in F2 | DB, Edge, LINE | external-pending |
-| CF14-Q70-RAW-MULTI-INTENT | Q70 | raw LINE text before candidates | domain, Edge, LINE | expected-failing / interpretation owner |
-| CF14-Q71-RAW-AMBIGUITY | Q71 | raw LINE text with one ambiguity | domain, Edge, LINE | expected-failing / interpretation owner |
+| CF14-LINE-DAILY-ENTRY | Q4,Q39,Q65-Q67,Q72,Q73,Q78-Q80 | actual LINE webhook/postback | domain, DB, Edge, LINE, browser, concurrency | expected-failing / Astra XC-03 |
+| CF14-Q27-LINE-WEBHOOK-POSTBACK | Q27 | signed LINE-compatible HTTP webhook/postback, then actual provider in F2 | DB, Edge, LINE | expected-failing / Astra XC-03 |
+| CF14-Q70-RAW-MULTI-INTENT | Q70 | raw LINE text before candidates | domain, Edge, LINE | external-pending / raw-text transport/provider evidence pending |
+| CF14-Q71-RAW-AMBIGUITY | Q71 | raw LINE text with one ambiguity | domain, Edge, LINE | external-pending / raw-text transport/provider evidence pending |
 | CF14-NAVIGATION-RETURN | Q77 | PWA secondary nav → back/return | browser, iPhone | real Chrome authoring evidence GREEN; physical iPhone pending |
 | CF14-DUPLICATE-TERMINAL-GUARDS | Q81,Q82 | Edge duplicate/stale/terminal mutation | domain, DB, Edge, concurrency | external-pending |
 | CF14-Q58-DEFERRED-DAG | Q58 | domain/schema/user-surface audit | domain | runnable |
 | CF14-SHOPPING-ACTION | Q33 | PWA shopping completion | domain, DB, Edge, browser | external-pending |
-| CF14-Q107-Q109-SHOPPING-INTERACTION | Q107-Q109 | rendered PWA anyone-owner interaction | DB, Edge, browser | **expected-failing / Shopping UX owner** |
-| CF14-NURSERY-ACTUAL-INPUT | Q89-Q106 | representative image bytes before OCR/AI | DB, Edge, LINE, image/OCR/AI, browser | expected-failing / Nursery+provider |
+| CF14-Q107-Q109-SHOPPING-INTERACTION | Q107-Q109 | rendered PWA anyone-owner interaction | DB, Edge, browser | external-pending / integration corrected claimant+release UX |
+| CF14-NURSERY-ACTUAL-INPUT | Q89-Q106 | representative image bytes before OCR/AI | DB, Edge, LINE, image/OCR/AI, browser | external-pending / actual image+OCR/AI provider evidence pending |
 | CF14-GOOGLE-BASELINE | Q34 | controlled Google provider response | DB, Edge, Google, browser | external-pending |
 | CF14-Q110-Q112-GOOGLE-PROVIDER | Q110-Q112 | controlled Google change/delete/duplicate response | DB, Edge, Google, browser | controlled harness authored; real provider pending |
 | CF14-LINE-PWA-CONCURRENT-RACE | cross-cuts Q78,Q79,Q81,Q84,Q108,Q109 | concurrent actual LINE + PWA | DB, Edge, browser, LINE, concurrency | external-pending |
@@ -142,14 +142,30 @@ The harness rejects evidence that loses the explicit `+09:00` clock. Final Q88 a
 - Q108: `引き継ぐ` sends `takeover` and canonical reload converges on the new claimant.
 - Q109: merely rendering a self-claimed item does not release it; a user action is required before `release` is sent.
 
-However, the Requirements/approved UX are stronger and CURRENT does not yet satisfy them:
+The integration candidate corrected claimant disclosure (`claimant_display_name`)
+and the exact `手放す` label. The component tests now use ordinary passing
+assertions, and `tests/sql/71_shopping_anyone_claim_lifecycle.sql` exercises formal
+anyone ownership, claimant disclosure and no deadline-driven release. These old
+product-gap reasons are therefore removed from the executable scenario manifest.
+The scenario is **external-pending**, not F2 PASS: its required evidence classes
+still need final exact-HEAD evidence. LINE claim/release remains separately blocked
+under Astra XC-03 / the LINE daily-entry scenario.
 
-1. **Q108:** takeover must show who is currently acting (`現在○○が対応中`) before takeover. CURRENT only says `現在: 家族が対応中`, so the user cannot tell who already owns the work.
-2. **Q109:** the approved claimant release action is `[手放す]`. CURRENT labels it `担当を戻す`.
-3. **Q109:** deadline arrival must not auto-release a claim. The current component interaction proves only “no release on render”; DB/domain + clock evidence is still required.
-4. **Q107:** `誰でもOK` as a formal assignment type still needs domain/DB evidence in addition to the page interaction.
+## Astra convergence classification (F2 not started)
 
-Therefore Q107-Q109 is **expected-failing / FAIL-PENDING**, even though the state-transition portion is green. The two known Q108/Q109 approved-UX mismatches are executed as Vitest `it.fails` assertions, not skipped TODOs; a product fix that makes them unexpectedly pass therefore forces the test owner to remove the expected-failure marker and reclassify evidence deliberately.
+`external-pending` means required final entry-boundary evidence is missing; it is
+neither implementation-wide approval nor a known product failure. Today, raw-text
+Q70/Q71, Shopping PWA and Nursery provider scenarios must not retain generic
+pre-integration “another lane is converging” failure reasons. Actual image/OCR/AI,
+physical iPhone, provider and transport execution remains F2 work.
+
+Conversely, Request lifecycle, check-in, LINE daily entry and Q27 are
+`expected-failing` because source inspection proves required LINE operations have
+no production entry point (Astra XC-03). Whole-day remains a skeleton. These
+statuses must only be cleared with implementation and entry-point verification.
+The assessor and its missing-evidence / known-defect guards are unchanged. Its
+known-defect regression uses an explicit synthetic defect so correcting Shopping
+does not remove guard coverage.
 
 ## F2 acceptance precedence
 

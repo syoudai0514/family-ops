@@ -182,8 +182,12 @@ test('strict F2 evidence assessment fails missing provider/device boundaries ins
 });
 
 test('known Requirement/UX gap blocks F2 even when every technical evidence class is marked PASS', () => {
-  const scenario = cf14Scenarios.find((candidate) => candidate.scenarioId === 'CF14-Q107-Q109-SHOPPING-INTERACTION');
-  assert.ok(scenario);
+  const scenario = {
+    ...cf14Scenarios.find((candidate) => candidate.scenarioId === 'CF14-Q107-Q109-SHOPPING-INTERACTION'),
+    status: 'expected-failing',
+    expectedFailureReason: 'Synthetic product/UX gaps exercise the acceptance guard independently of current product status.',
+  };
+  assert.ok(scenario.scenarioId);
   const technicalGreen = scenario.requiredEvidenceClasses.map((evidenceClass) => ({
     scenarioId: scenario.scenarioId,
     evidenceClass,

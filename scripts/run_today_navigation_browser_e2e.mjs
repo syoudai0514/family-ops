@@ -251,12 +251,22 @@ async function startChrome() {
     '--disable-default-apps', '--disable-background-networking', '--remote-debugging-port=0',
     `--user-data-dir=${userDataDir}`, 'about:blank',
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  // Drain child pipes while Chrome starts. Keep diagnostics when CI cannot
+  // reach DevTools; a missing browser must never become passing evidence.
+  let chromeOutput = '';
+  const collect = (chunk) => { chromeOutput = (chromeOutput + String(chunk)).slice(-16_000); };
+  child.stdout.on('data', collect);
+  child.stderr.on('data', collect);
   const activePortFile = path.join(userDataDir, 'DevToolsActivePort');
   const port = await waitFor(async () => {
     if (!existsSync(activePortFile)) return null;
     const [line] = (await readFile(activePortFile, 'utf8')).trim().split(/\r?\n/);
     return Number(line) || null;
-  }, { timeoutMs: 10_000, label: 'Chrome DevTools port' });
+  }, { timeoutMs: 45_000, label: 'Chrome DevTools port' }).catch(async (error) => {
+    await writeFile(path.join(ARTIFACT_DIR, 'chrome-startup.log'), chromeOutput || 'Chrome produced no output.');
+    child.kill('SIGKILL');
+    throw new Error(`${error.message} (exit=${child.exitCode})\n${chromeOutput}`);
+  });
   const page = await waitFor(async () => {
     const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
     return list.find((entry) => entry.type === 'page' && entry.webSocketDebuggerUrl) ?? null;
