@@ -12,6 +12,7 @@ declare
   u uuid := gen_random_uuid();
   v uuid := gen_random_uuid();
   hh uuid;
+  d date := (now() at time zone 'Asia/Tokyo')::date;
   ar uuid;
   br uuid;
   t_self uuid;
@@ -41,7 +42,7 @@ begin
     planned_assignee_id,completion_mode,status,source,created_by,
     assignment_mode,assignment_source,planned_assignee_actor_ref_id
   ) values (
-    hh,'manual','朝の着替え準備','other','morning',current_date,now()+interval '1 hour',
+    hh,'manual','朝の着替え準備','other','morning',d,(d::timestamp + time '08:00') at time zone 'Asia/Tokyo',
     null,'whole','todo','f2_line_assignment',u,'unassigned','manual',null
   ) returning id into t_self;
 
@@ -62,7 +63,7 @@ begin
     planned_assignee_id,completion_mode,status,source,created_by,
     assignment_mode,assignment_source,planned_assignee_actor_ref_id
   ) values (
-    hh,'manual','牛乳を買う','other','anytime',current_date,now()+interval '2 hours',
+    hh,'manual','牛乳を買う','other','anytime',d,(d::timestamp + time '12:00') at time zone 'Asia/Tokyo',
     null,'whole','todo','f2_line_assignment',u,'unassigned','manual',null
   ) returning id into t_any;
 
@@ -78,7 +79,7 @@ begin
     planned_assignee_id,completion_mode,status,source,created_by,
     assignment_mode,assignment_source,planned_assignee_actor_ref_id
   ) values (
-    hh,'manual','子どもの着替え準備','other','evening',current_date,now()+interval '3 hours',
+    hh,'manual','子どもの着替え準備','other','evening',d,(d::timestamp + time '20:00') at time zone 'Asia/Tokyo',
     null,'whole','todo','f2_line_assignment',u,'unassigned','manual',null
   ) returning id into t_partner;
 
@@ -98,7 +99,7 @@ begin
     raise exception 'FAIL f2-line-assignment: partner request silently assigned or lost request state';
   end if;
 
-  brief := public.server_read_daily_brief(u,current_date);
+  brief := public.server_read_daily_brief(u,d);
   if not exists (
     select 1
     from jsonb_array_elements(coalesce(brief->'urgent_actions','[]'::jsonb)) x
@@ -128,7 +129,7 @@ begin
     raise exception 'FAIL f2-line-assignment: partner acceptance did not assign exact Task';
   end if;
 
-  brief := public.server_read_daily_brief(u,current_date);
+  brief := public.server_read_daily_brief(u,d);
   if exists (
     select 1
     from jsonb_array_elements(coalesce(brief->'urgent_actions','[]'::jsonb)) x
