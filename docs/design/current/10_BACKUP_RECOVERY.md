@@ -228,3 +228,11 @@ binary data, or Product Owner risk posture changes.
 
 Only after all gates, including canonical merge and post-merge operational
 currency, may CF-11 = PASS and Lane C = COMPLETE.
+
+### Draft candidate safety
+
+Draft PR updates do not run the actual backup/disposable-restore job, because
+that job writes a persistent generation to app-save-hub. Marking a recovery PR
+ready for review can run the pre-merge drill; that transition requires authority
+for the external recovery operation. Ordinary code and document review can keep
+the PR Draft and use offline operational-safety tests.

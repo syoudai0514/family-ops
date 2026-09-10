@@ -2,7 +2,7 @@ name: Household recovery drill
 
 # CF-11 evidence workflow.
 #
-# On a same-repository PR that changes recovery controls, prove the full
+# On a non-draft same-repository PR that changes recovery controls, prove the full
 # right-sized path BEFORE merge:
 # production Family Ops read -> isolated app-save-hub write/read-back ->
 # freshness -> disposable Supabase -> new Auth sign-in -> old/new UUID rebind ->
@@ -13,6 +13,7 @@ name: Household recovery drill
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/backup.yml"
       - ".github/workflows/backup_freshness_alert.yml"
@@ -46,7 +47,8 @@ jobs:
     name: actual backup + disposable restore + authenticated access
     if: >-
       ${{ (github.event_name == 'pull_request' &&
-           github.event.pull_request.head.repo.full_name == github.repository) ||
+           github.event.pull_request.head.repo.full_name == github.repository &&
+           github.event.pull_request.draft == false) ||
           github.event_name == 'workflow_dispatch' ||
           (github.event_name == 'workflow_run' &&
            github.event.workflow_run.conclusion == 'success' &&

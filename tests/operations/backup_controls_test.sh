@@ -112,10 +112,11 @@ grep -Fq 'household_members?user_id=eq.' "$VERIFY_ACCESS" || fail "membership RL
 grep -Fq 'households?id=eq.' "$VERIFY_ACCESS" || fail "household RLS proof missing"
 grep -Fq 'task_instances?household_id=eq.' "$VERIFY_ACCESS" || fail "task RLS proof missing"
 
-# Governance: Product Owner approved, but not Accepted/canonical before merge.
-grep -Fq '**Status:** Product Owner approved / pending canonical merge' "$ADR" || fail "ADR0014 premature canonical status"
-grep -Fq 'After this ADR is merged and becomes Accepted' "$ADR" || fail "ADR0012 merge authority boundary missing"
-grep -Fq 'pending canonical merge' "$DESIGN" || fail "design must remain non-canonical before merge"
+# Governance: ADR0014 was accepted by the actual PR #73 main merge.
+grep -Fq '**Status:** Accepted' "$ADR" || fail "ADR0014 accepted status missing"
+grep -Fq '06a4e6b1a5aefccb8f9353fad294dd895582bc53' "$ADR" || fail "ADR0012 acceptance merge evidence missing"
+grep -Fq 'Canonical — ADR 0014 Accepted via PR #73' "$DESIGN" || fail "recovery design acceptance missing"
+grep -Fq 'github.event.pull_request.draft == false' "$DRILL_WORKFLOW" || fail "draft PR must not trigger persistent recovery writes"
 grep -Fq 'Usable identity recovery' "$DESIGN" || fail "usable family recovery gate missing"
 
 # Unit-regress exact freshness boundary without accessing Supabase.
