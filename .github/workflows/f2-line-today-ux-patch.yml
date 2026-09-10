@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected=a7d3a4c3e2fad3ecbe96e3b5266f47f38f432a64
+          expected=8d26bb34d489c4bccfb108cc68e2e4cf81acfd17
           actual="$(git rev-parse HEAD)"
           echo "expected=$expected"
           echo "actual=$actual"
@@ -36,48 +36,23 @@ jobs:
 
           index = Path('supabase/functions/process-line-inbox/index.ts')
           text = index.read_text()
-          old_import = '''import {
-            tryHandleLineMustCompletePostback,
-            tryHandleLineMustCompleteText,
-          } from "./lineMustComplete.ts";'''
-          new_import = old_import + '''
-          import {
-            appendTodayDetailLinks,
-            todayContextQuickReplies,
-          } from "./lineTodayUx.ts";'''
-          assert text.count(old_import) == 1, 'process-line-inbox import anchor drifted'
-          text = text.replace(old_import, new_import, 1)
+          import_anchor = '} from "./lineMustComplete.ts";'
+          assert text.count(import_anchor) == 1, 'process-line-inbox import anchor drifted'
+          if './lineTodayUx.ts' not in text:
+              text = text.replace(
+                  import_anchor,
+                  import_anchor + '\nimport {\n  appendTodayDetailLinks,\n  todayContextQuickReplies,\n} from "./lineTodayUx.ts";',
+                  1,
+              )
 
-          old_today = '''  if (kind === "today") {
-            const { data, error } = await client.rpc("server_read_line_today_daily_brief", {
-              p_actor_id: actor.user_id,
-            });
-            if (error) {
-              console.error("process-line-inbox: DailyBrief read failed", error.message);
-              await sendConfirmation(
-                client,
-                item,
-                actor,
-                "今日の状況を読み込めませんでした。少し待ってからもう一度送ってください。",
-                menuQuickReplies(),
-              );
-              return;
-            }
-            const text = typeof data === "string" && data.trim()
-              ? data
-              : "今日のおうちノート\\n\\n確認が必要な項目はありません。";
-            await replyOrEnqueuePush(client, {
-              replyToken: item.payload.replyToken,
-              lineUserId: item.source_external_user_id,
-              householdId: actor.household_id,
-              recipientUserId: actor.user_id,
-              text,
-              quickReplyItems: menuQuickReplies(),
-              dedupKey: `line-daily-brief:${item.provider_event_id}`,
-            });
-            return;
-          }'''
-          new_today = '''  if (kind === "today") {
+          start_marker = '  if (kind === "today") {'
+          end_marker = '\n\n  const range = kind === "week"'
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          old_block = text[start:end]
+          assert 'server_read_line_today_daily_brief' in old_block
+          assert 'quickReplyItems: menuQuickReplies()' in old_block
+          new_block = '''  if (kind === "today") {
             const [rendered, structured] = await Promise.all([
               client.rpc("server_read_line_today_daily_brief", { p_actor_id: actor.user_id }),
               client.rpc("server_read_daily_brief", { p_actor_id: actor.user_id, p_local_date: null }),
@@ -99,7 +74,7 @@ jobs:
             const baseText = typeof rendered.data === "string" && rendered.data.trim()
               ? rendered.data
               : "今日のおうちノート\\n\\n確認が必要な項目はありません。";
-            const text = appendTodayDetailLinks(
+            const todayText = appendTodayDetailLinks(
               baseText,
               structured.data,
               Deno.env.get("APP_BASE_URL") ?? "",
@@ -109,27 +84,25 @@ jobs:
               lineUserId: item.source_external_user_id,
               householdId: actor.household_id,
               recipientUserId: actor.user_id,
-              text,
+              text: todayText,
               quickReplyItems: todayContextQuickReplies(structured.data, menuQuickReplies()),
               dedupKey: `line-daily-brief:${item.provider_event_id}`,
             });
             return;
           }'''
-          assert text.count(old_today) == 1, 'Today block anchor drifted'
-          text = text.replace(old_today, new_today, 1)
+          text = text[:start] + new_block + text[end:]
           index.write_text(text)
 
           must = Path('supabase/functions/process-line-inbox/lineMustComplete.ts')
           text = must.read_text()
-          anchor = '''} from "./routineItemFlow.ts";'''
-          addition = anchor + '''
-          import {
-            handleHandoverAckPostback,
-            isHandoverReviewText,
-            openHandoverReview,
-          } from "./lineHandoverFlow.ts";'''
-          assert text.count(anchor) == 1, 'lineMustComplete import anchor drifted'
-          text = text.replace(anchor, addition, 1)
+          import_anchor = '} from "./routineItemFlow.ts";'
+          assert text.count(import_anchor) == 1, 'lineMustComplete import anchor drifted'
+          if './lineHandoverFlow.ts' not in text:
+              text = text.replace(
+                  import_anchor,
+                  import_anchor + '\nimport {\n  handleHandoverAckPostback,\n  isHandoverReviewText,\n  openHandoverReview,\n} from "./lineHandoverFlow.ts";',
+                  1,
+              )
 
           text_anchor = '''  if (isRequestText(text)) {
             await openRequests(ctx);
@@ -172,6 +145,7 @@ jobs:
           set -euo pipefail
           git diff --check
           grep -q 'appendTodayDetailLinks' supabase/functions/process-line-inbox/index.ts
+          grep -q 'todayContextQuickReplies' supabase/functions/process-line-inbox/index.ts
           grep -q 'openHandoverReview' supabase/functions/process-line-inbox/lineMustComplete.ts
           grep -q 'handleHandoverAckPostback' supabase/functions/process-line-inbox/lineMustComplete.ts
 
