@@ -319,6 +319,18 @@ const FIXTURES: Fixture[] = [
     expectedValid: true,
   },
   {
+    name: "scorekeeping period can be removed with the blame clause",
+    raw: "今週ずっと私が洗濯してるんだけど、明日はやってもらえる？",
+    proposed: "明日の洗濯をお願いできる？",
+    expectedValid: true,
+  },
+  {
+    name: "invented relative date is rejected",
+    raw: "迎えお願い",
+    proposed: "今日のお迎えをお願いできる？",
+    expectedValid: false,
+  },
+  {
     name: "invented concrete clock time is rejected",
     raw: "明日の朝ゴミ出しお願い",
     proposed: "明日9時にゴミ出しをお願いします",
