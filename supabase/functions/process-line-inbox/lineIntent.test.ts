@@ -2,6 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1";
 import {
   deterministicLineIntent,
   isLineCreateStarter,
+  isPickupAssignmentChangeText,
   normalizeGeminiLineIntent,
   toTaskSubtasks,
 } from "./lineIntent.ts";
@@ -119,4 +120,20 @@ Deno.test("structured checklist becomes ordered canonical task subtasks on confi
   assertEquals(toTaskSubtasks(["保険証", "保険証", "", 7]), [
     { title: "保険証", required: true, sort_order: 1 },
   ]);
+});
+
+
+Deno.test("pickup assignment-change wording accepts blunt requests but not a bare recollection question", () => {
+  assertEquals(isPickupAssignmentChangeText("9/14のお迎え変われ"), true);
+  assertEquals(isPickupAssignmentChangeText("9/14のお迎え代わって"), true);
+  assertEquals(isPickupAssignmentChangeText("9/14のお迎え交代して"), true);
+  assertEquals(
+    isPickupAssignmentChangeText("9/14の迎え変わってくれるって言ってたよね？よろしく"),
+    true,
+  );
+  assertEquals(
+    isPickupAssignmentChangeText("9/14の迎え変わってくれるって言ってたよね？"),
+    false,
+  );
+  assertEquals(isPickupAssignmentChangeText("9/14のお迎え担当変わった？"), false);
 });

@@ -38,6 +38,26 @@ export function isLineCreateStarter(text: string): boolean {
     );
 }
 
+/**
+ * Clear pickup hand-off language should enter the canonical assignment-change
+ * flow even when the sender is blunt. Read-only routing runs before this
+ * helper; the extra reported-speech guard also prevents a bare recollection
+ * question from becoming a mutation if read-only parsing ever misses it.
+ */
+export function isPickupAssignmentChangeText(text: string): boolean {
+  const value = text.normalize("NFKC").replace(/\s+/g, "");
+  if (!/お?迎え/u.test(value)) return false;
+
+  const recallsPriorPromise =
+    /(?:代|替|変)わってくれるって言ってたよね[?？]?/u.test(value);
+  const explicitProceed =
+    /(?:よろしく|お願い|頼む|頼んだ|じゃあ|そのまま)/u.test(value);
+  if (recallsPriorPromise && !explicitProceed) return false;
+
+  return /(?:お願い|お願いでき|頼(?:む|み|め|んで)|(?:代|替|変)わ(?:って|れ|れる|ってくれ|ってもら)|交代(?:して|しろ|でき)|担当(?:して|代わって|変わって))/u
+    .test(value);
+}
+
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 function jstDateParts(now: Date): { year: number; month: number; day: number } {
