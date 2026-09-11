@@ -14,6 +14,8 @@ export interface TaskChecklistItemProps {
   onEdit: (task: TaskInstance) => void;
   onChanged: () => void;
   showTime?: boolean;
+  /** Optional per-surface key. Today uses this to restore detail state after Back. */
+  expandedStorageKey?: string;
 }
 
 const EVIDENCE_MAX_BYTES = 2 * 1024 * 1024;
@@ -37,6 +39,27 @@ function localClock(value: string | null) {
   }).format(new Date(value));
 }
 
+function storedExpanded(key: string | undefined, fallback: boolean): boolean {
+  if (!key || typeof window === 'undefined') return fallback;
+  try {
+    const value = window.sessionStorage.getItem(key);
+    if (value === '1') return true;
+    if (value === '0') return false;
+  } catch {
+    // Storage can be unavailable in hardened/private contexts. UI still works.
+  }
+  return fallback;
+}
+
+function saveExpanded(key: string | undefined, value: boolean) {
+  if (!key || typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    // Returning to the default expanded state is a safe fallback.
+  }
+}
+
 async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = '';
@@ -54,10 +77,12 @@ export function TaskChecklistItem({
   onEdit,
   onChanged,
   showTime = true,
+  expandedStorageKey,
 }: TaskChecklistItemProps) {
   const completed = task.status === 'completed';
   const editable = task.origin === 'manual' && !completed;
-  const [expanded, setExpanded] = useState(task.completion_mode === 'subtasks' && !completed);
+  const defaultExpanded = task.completion_mode === 'subtasks' && !completed;
+  const [expanded, setExpanded] = useState(() => storedExpanded(expandedStorageKey, defaultExpanded));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actor, setActor] = useState<'self' | 'partner'>('self');
@@ -76,6 +101,14 @@ export function TaskChecklistItem({
   const requiredSubtasks = subtasks.filter((item) => item.required);
   const optionalOnlyChecklist =
     task.completion_mode === 'subtasks' && subtasks.length > 0 && requiredSubtasks.length === 0;
+
+  function toggleExpanded() {
+    setExpanded((value) => {
+      const next = !value;
+      saveExpanded(expandedStorageKey, next);
+      return next;
+    });
+  }
 
   async function withOperation(fn: (operationId: string) => Promise<unknown>): Promise<boolean> {
     setError(null);
@@ -219,7 +252,7 @@ export function TaskChecklistItem({
             type="button"
             className="task-check-control task-progress-control"
             aria-label={`${task.title}のチェック項目を${expanded ? '閉じる' : '開く'}`}
-            onClick={() => setExpanded((value) => !value)}
+            onClick={toggleExpanded}
             disabled={busy}
           >
             {completed ? '✓' : subtasks.length > 0 ? `${doneSubtasks}/${subtasks.length}` : '…'}
@@ -229,7 +262,7 @@ export function TaskChecklistItem({
         <button
           type="button"
           className="task-checklist-content"
-          onClick={() => task.completion_mode === 'subtasks' && setExpanded((value) => !value)}
+          onClick={() => task.completion_mode === 'subtasks' && toggleExpanded()}
           disabled={busy && task.completion_mode === 'subtasks'}
         >
           <strong>{task.title}</strong>
@@ -275,9 +308,7 @@ export function TaskChecklistItem({
               <button type="button" onClick={() => setEditingAssignment(true)} disabled={busy}>担当を調整</button>
             )}
             {editable && (
-              <button type="button" onClick={() => onEdit(task)} disabled={busy}>
-                編集
-              </button>
+              <button type="button" onClick={() => onEdit(task)} disabled={busy}>編集</button>
             )}
             {!editable && !completed && task.origin !== 'manual' && (
               <small className="task-menu-note">定例から作られた項目です</small>
@@ -294,12 +325,7 @@ export function TaskChecklistItem({
             {completed && (
               <button type="button" onClick={() => setEditingEvidence(true)} disabled={busy}>証跡を追加（任意）</button>
             )}
-            <button
-              type="button"
-              className="danger-button"
-              onClick={handleCancel}
-              disabled={busy || completed}
-            >
+            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy || completed}>
               キャンセル
             </button>
           </div>
@@ -367,11 +393,7 @@ export function TaskChecklistItem({
       )}
 
       {evidenceSaved && <p role="status" className="empty-hint">証跡を追加しました。</p>}
-      {error && (
-        <p role="alert" className="error-text task-checklist-error">
-          {error}
-        </p>
-      )}
+      {error && <p role="alert" className="error-text task-checklist-error">{error}</p>}
     </li>
   );
 }

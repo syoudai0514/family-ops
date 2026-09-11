@@ -1,3 +1,4 @@
+import { requestTransitionArgs } from '../_shared/requestTransition.ts';
 // verify_jwt=false — worker class (see supabase/config.toml +
 // EDGE_FUNCTION_AUTH_MATRIX.md "Worker"). docs/design/v6/06_LINE_INTEGRATION.md
 // #3 "Worker process-line-inbox every 1 min handles parse/action."
@@ -38,13 +39,12 @@ import {
   createServiceRoleClient,
   requireWorkerToken,
 } from "../_shared/auth.ts";
+import { attachCanonicalConciergeDuplicate } from "../_shared/conciergeDuplicateMatch.ts";
 import { jsonResponse, withServiceHandler } from "../_shared/handler.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { parseLineText } from "./parser.ts";
 import {
   daypartLabel,
   daypartToLocalTime,
-  extractLineIntent,
 } from "./lineIntent.ts";
 import {
   buildIntentClarificationFlex,
@@ -56,8 +56,7 @@ import {
   buildScheduleSummaryFlex,
 } from "./lineUxBuilders.ts";
 import {
-  deterministicLineConversationCandidates,
-  isMultiIntentMessage,
+  decomposeLineConversationCandidates,
   type LineMultiIntentPendingCandidate,
 } from "./lineMultiIntent.ts";
 import { replyOrEnqueuePush } from "../_shared/lineMessaging.ts";
@@ -88,6 +87,14 @@ import {
   menuQuickReplies,
   readOnlyLineIntent,
 } from "./lineConversation.ts";
+import {
+  tryHandleLineMustCompletePostback,
+  tryHandleLineMustCompleteText,
+} from "./lineMustComplete.ts";
+import {
+  appendTodayDetailLinks,
+  todayContextQuickReplies,
+} from "./lineTodayUx.ts";
 
 const WORKER_ID = `process-line-inbox:${crypto.randomUUID()}`;
 const BATCH_LIMIT = Number(Deno.env.get("LINE_INBOX_BATCH_LIMIT") ?? "25");
@@ -207,17 +214,53 @@ async function sendLineSchedule(
   actor: LineActor,
   kind: "today" | "tomorrow" | "week",
 ): Promise<void> {
-  const today = jstIsoDateOffset(0);
-  const range = kind === "week" ? jstWeekRange() : kind === "tomorrow"
-    ? { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) }
-    : { start: today, end: today };
-  const { data, error } = kind === "today"
-    ? await client.rpc("server_tx_get_today_schedule", { p_actor_id: actor.user_id })
-    : await client.rpc("server_tx_get_week_schedule", {
-      p_actor_id: actor.user_id,
-      p_start_date: range.start,
-      p_end_date: range.end,
-    });
+  if (kind === "today") {
+  const [rendered, structured] = await Promise.all([
+    client.rpc("server_read_line_today_daily_brief", { p_actor_id: actor.user_id }),
+    client.rpc("server_read_daily_brief", { p_actor_id: actor.user_id, p_local_date: null }),
+  ]);
+  if (rendered.error || structured.error) {
+    console.error(
+      "process-line-inbox: DailyBrief read failed",
+      rendered.error?.message ?? structured.error?.message ?? "unknown",
+    );
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      "今日の状況を読み込めませんでした。少し待ってからもう一度送ってください。",
+      menuQuickReplies(),
+    );
+    return;
+  }
+  const baseText = typeof rendered.data === "string" && rendered.data.trim()
+    ? rendered.data
+    : "今日のおうちノート\n\n確認が必要な項目はありません。";
+  const todayText = appendTodayDetailLinks(
+    baseText,
+    structured.data,
+    Deno.env.get("APP_BASE_URL") ?? "",
+  );
+  await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text: todayText,
+    quickReplyItems: todayContextQuickReplies(structured.data, menuQuickReplies()),
+    dedupKey: `line-daily-brief:${item.provider_event_id}`,
+  });
+  return;
+}
+
+  const range = kind === "week"
+    ? jstWeekRange()
+    : { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) };
+  const { data, error } = await client.rpc("server_tx_get_week_schedule", {
+    p_actor_id: actor.user_id,
+    p_start_date: range.start,
+    p_end_date: range.end,
+  });
   if (error) {
     console.error("process-line-inbox: schedule read failed", error.message);
     await sendConfirmation(client, item, actor, "予定を読み込めませんでした。少し待ってからもう一度送ってください。", menuQuickReplies());
@@ -242,7 +285,7 @@ async function sendLineSchedule(
     })),
     ...(schedule.occurrences ?? []).map((entry) => ({ title: entry.title ?? "Google Calendar予定", startsAt: entry.starts_at ?? null })),
   ].sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? ""));
-  const title = kind === "today" ? "今日の予定" : kind === "tomorrow" ? "明日の予定" : "今週の予定";
+  const title = kind === "tomorrow" ? "明日の予定" : "今週の予定";
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
     lineUserId: item.source_external_user_id,
@@ -509,19 +552,38 @@ async function tryHandlePendingReferent(
 
 async function buildMultiIntentPendingCandidates(
   client: SupabaseClient,
+  item: WebhookInboxItem,
   actor: LineActor,
   text: string,
 ): Promise<LineMultiIntentPendingCandidate[]> {
-  const candidates = deterministicLineConversationCandidates(text);
-  if (!isMultiIntentMessage(candidates)) return [];
+  // Whole-utterance AI decomposition is the normal semantic path.
+  // The shared helper alone owns deterministic availability fallback.
+  const interpreted = await decomposeLineConversationCandidates(text);
+  const identified = await Promise.all(interpreted.map(async (candidate) => ({
+    ...candidate,
+    operationId: candidate.operationId ?? await deterministicOperationId(
+      "line-candidate", item.provider_event_id, candidate.candidateId,
+    ),
+  })));
+  const candidates = await Promise.all(identified.map((candidate) =>
+    attachCanonicalConciergeDuplicate(client, actor.household_id, candidate)
+  ));
   const partner = await partnerUserId(client, actor);
   return Promise.all(candidates.map(async (candidate) => {
     const intent = candidate.intent;
     const base = {
       candidate_id: candidate.candidateId,
-      kind: candidate.kind,
+      operation_id: candidate.operationId ?? await deterministicOperationId(
+      "line-candidate", item.provider_event_id, candidate.candidateId,
+    ),
+    kind: candidate.kind,
       title: candidate.title,
       source_text: candidate.sourceText,
+      source_span: candidate.sourceSpan,
+      confidence: candidate.confidence,
+      ambiguous_fields: [...candidate.ambiguousFields],
+      duplicate_match: candidate.duplicateMatch,
+      duplicate_decision: null,
       status: "draft" as const,
       missing_fields: [...candidate.missingFields],
     };
@@ -545,14 +607,18 @@ async function buildMultiIntentPendingCandidates(
       };
     }
     if (candidate.kind === "request") {
+      const explicitRecipient = intent?.targetRole
+        ? await householdUserForRole(client, actor.household_id, intent.targetRole)
+        : null;
+      const recipient = explicitRecipient ?? partner;
       return {
         ...base,
         action_type: "request_create" as const,
-        missing_fields: partner ? base.missing_fields : [...base.missing_fields, "お願いする相手"],
+        missing_fields: recipient ? base.missing_fields : [...base.missing_fields, "お願いする相手"],
         payload: {
           title: candidate.title,
           shared_message: intent?.sharedMessage ?? `${candidate.title}をお願いできますか？`,
-          recipient_user_id: partner,
+          recipient_user_id: recipient,
           scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
           due_local_time: intent?.dueLocalTime ?? null,
         },
@@ -580,8 +646,8 @@ async function tryCreateMultiIntentReview(
   item: WebhookInboxItem,
   actor: LineActor,
   text: string,
+  candidates: LineMultiIntentPendingCandidate[],
 ): Promise<boolean> {
-  const candidates = await buildMultiIntentPendingCandidates(client, actor, text);
   if (candidates.length === 0) return false;
   const operationId = await deterministicOperationId("line-text", item.provider_event_id);
   const { data, error } = await client.rpc("server_tx_create_pending_action", {
@@ -610,6 +676,8 @@ async function tryCreateMultiIntentReview(
         kind: candidate.kind,
         title: candidate.title,
         missingFields: candidate.missing_fields,
+      duplicateMatch: Boolean(candidate.duplicate_match),
+      duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
       })),
     }),
     dedupKey: `line-multi-intent-preview:${item.provider_event_id}`,
@@ -666,9 +734,64 @@ async function cancelMultiIntentCandidate(
       candidates: active.map((candidate) => ({
         candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
         missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+      duplicateMatch: Boolean(candidate.duplicate_match),
+      duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
       })),
     }),
     dedupKey: `line-multi-intent-cancel:${item.provider_event_id}:${candidateId}`,
+  });
+}
+
+async function resolveMultiIntentDuplicate(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  pendingActionId: string,
+  candidateId: string,
+  decision: "existing" | "update" | "separate",
+): Promise<void> {
+  const pending = await getEditablePending(client, actor, pendingActionId);
+  if (!pending || pending.action_type !== "line_multi_intent_review") {
+    await sendConfirmation(client, item, actor, "この候補はすでに更新されています。最新の内容を確認してください。");
+    return;
+  }
+  const rows = Array.isArray(pending.normalized_payload.candidates) ? pending.normalized_payload.candidates : [];
+  let found = false;
+  const candidates = rows.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const candidate = row as Record<string, unknown>;
+    if (candidate.candidate_id !== candidateId) return candidate;
+    if (!candidate.duplicate_match || typeof candidate.duplicate_match !== "object") return candidate;
+    found = true;
+    return { ...candidate, duplicate_decision: decision };
+  });
+  if (!found) {
+    await sendConfirmation(client, item, actor, "この候補には重複の選択は必要ありません。最新の内容を確認してください。");
+    return;
+  }
+  const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
+    ...pending.normalized_payload, candidates,
+  });
+  if (!updated) return;
+  const active = candidates.filter((row): row is Record<string, unknown> =>
+    Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
+  );
+  await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text: "重複候補の扱いを更新しました。",
+    message: buildMultiIntentPreviewFlex({
+      pendingActionId: updated.id,
+      candidates: active.map((candidate) => ({
+        candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
+        missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+        duplicateMatch: Boolean(candidate.duplicate_match),
+        duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
+      })),
+    }),
+    dedupKey: `line-multi-intent-duplicate:${item.provider_event_id}:${candidateId}:${decision}`,
   });
 }
 
@@ -784,7 +907,8 @@ async function tryApplyLineTextEdit(
       await sendConfirmation(client, item, actor, "追加する内容を短く教えてください。例「皮膚科の準備」「ゴミ出し」「牛乳」");
       return true;
     }
-    const inferred = await extractLineIntent(text);
+    const inferredCandidates = await decomposeLineConversationCandidates(text);
+    const inferred = inferredCandidates.length === 1 ? inferredCandidates[0].intent : null;
     const payload = { ...pending.normalized_payload };
     payload.title = inferred?.title ?? value;
     if (inferred) {
@@ -1001,10 +1125,24 @@ async function handlePostback(
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
 
+  if (await tryHandleLineMustCompletePostback({
+    client,
+    actorId: actor.user_id,
+    householdId: actor.household_id,
+    eventId: item.provider_event_id,
+    reply: (text, quickReplies) => sendConfirmation(client, item, actor, text, quickReplies),
+  }, fields)) return;
+
   if (fields.action === "cancel_multi_candidate" && fields.pending_action_id && fields.candidate_id) {
     await cancelMultiIntentCandidate(client, item, actor, fields.pending_action_id, fields.candidate_id);
     return;
   }
+
+if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && fields.candidate_id &&
+    (fields.decision === "existing" || fields.decision === "update" || fields.decision === "separate")) {
+  await resolveMultiIntentDuplicate(client, item, actor, fields.pending_action_id, fields.candidate_id, fields.decision);
+  return;
+}
 
   if (fields.action === "create_partner_invite" && fields.pending_action_id) {
     const pending = await getEditablePending(client, actor, fields.pending_action_id);
@@ -1164,33 +1302,24 @@ async function handlePostback(
     return;
   }
 
-  if (fields.action === "accept_assignment_change" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-assignment-accept", item.provider_event_id);
-    const { error } = await client.rpc("server_tx_accept_assignment_change_request", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_request_id: fields.request_id,
-    });
-    if (error) {
-      console.error("process-line-inbox: accept assignment change failed", error.message);
+  if ((fields.action === "accept_assignment_change" || fields.action === "decline_assignment_change") && fields.request_id) {
+    if (!fields.attempt_id || !fields.revision || !fields.terms_revision) {
+      await sendConfirmation(client, item, actor, "このボタンは古い内容です。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
       return;
     }
-    await sendConfirmation(client, item, actor, "✓ 担当を引き受けました");
-    return;
-  }
-
-  if (fields.action === "decline_assignment_change" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-assignment-decline", item.provider_event_id);
-    const { error } = await client.rpc("server_tx_decline_request", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_request_id: fields.request_id,
-    });
+    const operationId = await deterministicOperationId("line-request-transition", item.provider_event_id);
+    const { data, error } = await client.rpc("server_tx_transition_request_v2", requestTransitionArgs(actor.user_id, operationId, {
+      request_id: fields.request_id, attempt_id: fields.attempt_id,
+      action: fields.action === "accept_assignment_change" ? "accept" : "decline",
+      expected_revision: Number(fields.revision), expected_terms_revision: Number(fields.terms_revision),
+    }, 'line'));
     if (error) {
-      console.error("process-line-inbox: decline assignment change failed", error.message);
+      await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
       return;
     }
-    await sendConfirmation(client, item, actor, "変更はありません。");
+    await sendConfirmation(client, item, actor, data?.reproposal_required
+      ? "この依頼は期限切れです。新しい担当変更のお願いとして再提案してください。"
+      : data?.state === 'accepted' ? "✓ 担当を引き受けました" : "変更はありません。", menuQuickReplies());
     return;
   }
 
@@ -1346,16 +1475,30 @@ async function handleText(
 ): Promise<void> {
   if (await tryClaimLinkToken(client, item.source_external_user_id, text)) return;
   if (!actor) return;
+  if (await tryHandleLineMustCompleteText({
+    client,
+    actorId: actor.user_id,
+    householdId: actor.household_id,
+    eventId: item.provider_event_id,
+    reply: (replyText, quickReplies) => sendConfirmation(client, item, actor, replyText, quickReplies),
+  }, text)) return;
   if (await tryHandleReadOnlyText(client, item, actor, text)) return;
   if (await tryHandlePendingReferent(client, item, actor, text)) return;
   if (await tryApplyLineTextEdit(client, item, actor, text)) return;
-  if (await tryCreateMultiIntentReview(client, item, actor, text)) return;
 
   const starterKind = lineCreationStarterKind(text);
-  const parsed = starterKind ? null : parseLineText(text);
+  const semanticCandidates = starterKind
+    ? []
+    : await buildMultiIntentPendingCandidates(client, item, actor, text);
+  const semanticCandidate = semanticCandidates.length === 1 ? semanticCandidates[0] : null;
+  const needsCandidateReview = semanticCandidates.length > 1 || semanticCandidates.some((candidate) =>
+    candidate.missing_fields.length > 0 || Boolean(candidate.duplicate_match)
+  );
+  if (needsCandidateReview && await tryCreateMultiIntentReview(client, item, actor, text, semanticCandidates)) return;
+
   let assignmentPayload: Record<string, unknown> | null = null;
 
-  if (!parsed && /(?:迎え.*お願い|お願い.*迎え)/.test(text)) {
+  if (!starterKind && /(?:迎え.*お願い|お願い.*迎え)/.test(text)) {
     const scheduledDate = resolveJapanesePickupDate(text);
     const { data: definition } = await client.from("task_definitions").select("id").eq("household_id", actor.household_id).eq("code", "pickup").maybeSingle();
     const { data: task } = definition && scheduledDate
@@ -1391,81 +1534,21 @@ async function handleText(
       due_local_time: due === undefined ? null : due,
       daypart: /朝/.test(text) ? "morning" : /夕方/.test(text) ? "evening" : /夜/.test(text) ? "night" : null,
     };
-  } else if (parsed) {
-    actionType = parsed.actionType;
-    payload = { ...parsed.payload, raw_text: text };
-    if (actionType === "task_create_once" && !payload.planned_assignee_user_id) {
-      payload.planned_assignee_user_id = actor.user_id;
-      payload.target_label = "自分";
-    }
+  } else if (semanticCandidate) {
+    actionType = semanticCandidate.action_type;
+    payload = { ...semanticCandidate.payload, raw_text: text };
   } else {
-    const intent = await extractLineIntent(text);
-    if (!intent) {
-      actionType = "needs_pwa_review";
-      payload = {
-        raw_text: text,
-        scheduled_date: correctionDate(text) ?? jstIsoDateOffset(0),
-        due_local_time: correctionTime(text) ?? null,
-      };
-    } else {
-      const targetUser = intent.targetRole ? await householdUserForRole(client, actor.household_id, intent.targetRole) : null;
-      const dueLocalTime = intent.dueLocalTime ?? daypartToLocalTime(intent.daypart);
-      const roleLabel = intent.targetRole === "papa" ? "パパ" : intent.targetRole === "mama" ? "ママ" : null;
-      if (intent.kind === "shopping") {
-        actionType = "shopping_item_add";
-        payload = {
-          raw_text: text,
-          title: intent.title,
-          purchase_method: /amazon|アマゾン/i.test(text) ? "amazon" : "store",
-          assignee_user_id: targetUser,
-          scheduled_date: intent.scheduledDate,
-          due_local_time: dueLocalTime,
-          daypart: intent.daypart,
-          context: intent.context,
-          calendar_visibility: intent.calendarVisibility,
-          target_label: roleLabel ?? "買い物リスト",
-          parse_source: intent.source,
-        };
-      } else {
-        const recipient = intent.kind === "request" ? (targetUser ?? (await partnerUserId(client, actor))) : null;
-        if (recipient && recipient !== actor.user_id) {
-          actionType = "request_create";
-          payload = {
-            raw_text: text,
-            title: intent.title,
-            shared_message: intent.sharedMessage ?? `${intent.title}をお願いできますか？`,
-            recipient_user_id: recipient,
-            scheduled_date: intent.scheduledDate,
-            due_local_time: dueLocalTime,
-            daypart: intent.daypart,
-            context: intent.context,
-            calendar_visibility: intent.calendarVisibility,
-            target_label: roleLabel ?? "パートナー",
-            parse_source: intent.source,
-          };
-        } else {
-          actionType = "task_create_once";
-          payload = {
-            raw_text: text,
-            title: intent.title,
-            category: "todo",
-            scheduled_date: intent.scheduledDate,
-            due_local_time: dueLocalTime,
-            planned_assignee_user_id: targetUser ?? actor.user_id,
-            routine_phase: "anytime",
-            daypart: intent.daypart,
-            subtasks: intent.subtasks,
-            context: intent.context,
-            calendar_visibility: intent.calendarVisibility,
-            target_label: roleLabel ?? "自分",
-            parse_source: intent.source,
-          };
-        }
-      }
-    }
+    actionType = "needs_pwa_review";
+    payload = {
+      raw_text: text,
+      scheduled_date: correctionDate(text) ?? jstIsoDateOffset(0),
+      due_local_time: correctionTime(text) ?? null,
+    };
   }
 
-  const operationId = await deterministicOperationId("line-text", item.provider_event_id);
+  const operationId = semanticCandidate && !assignmentPayload && !starterKind
+    ? semanticCandidate.operation_id
+    : await deterministicOperationId("line-text", item.provider_event_id);
   const { data: pendingData, error } = await client.rpc("server_tx_create_pending_action", {
     p_actor_id: actor.user_id,
     p_household_id: actor.household_id,

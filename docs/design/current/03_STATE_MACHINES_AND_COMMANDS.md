@@ -292,6 +292,11 @@ Every material terms edit increments `terms_revision` and invalidates prior conf
 
 Accepted only when all required ActorRefs confirm same revision.
 
+Both requester and recipient must have a reachable confirmation control on
+their normal Request surface. Editing local text is not confirmation of that
+text: submit the proposal first, then confirm its persisted terms revision.
+Refreshing one request preserves the surrounding page and other local inputs.
+
 ### 5.4 Reply deadline expiry
 
 Worker `expire-request-attempts` can run periodically.
@@ -506,6 +511,15 @@ Reject:
 
 “latest external wins” path is forbidden.
 
+### Concierge duplicate partial updates
+
+`既存を更新` is a patch of the reviewed canonical entity, not a replacement
+form. Omitted owner, work time, and calendar end retain their current values.
+A date change retains the existing local work time and calendar end time.
+An explicit different owner must use the existing assignment agreement flow;
+duplicate matching itself never establishes household consent. The parent
+operation receipt replays before revision validation after a lost response.
+
 ## 11. Natural language command pipeline
 
 Text/image interpretation is **proposal generation**, not mutation authority.
@@ -632,3 +646,23 @@ Mandatory property/invariant tests:
 - candidate cannot apply over newer target revision
 - simulated actor cannot create production external side effect
 - after semantic point-of-no-return, feature-off cannot restore legacy current-truth mutation/read semantics
+### Lane A implementation contract — CF-01 / CF-12
+
+Request assignment negotiation uses `fn_command_transition_request_attempt_v1` for both channels. The server-issued `terms.assignment_targets` array contains each scoped task ID, observed revision and original assignee ActorRef. Acceptance validates and locks the entire snapshot in task-ID order, then updates every assignment, agreement provenance, linked task and receipt in the same transaction. `assignment_change_request_tasks` is historical input only; new requests do not write or consult it.
+
+Every response carries the observed attempt ID, attempt revision and terms revision. An ID-only legacy acceptance is not upgraded to current consent: it returns stale and asks the person to reopen the current proposal. Expiry closes all four nonterminal states using `RequestAttempt.reply_due_at`, preserving task assignment. A late response returns `reproposal_required`; it cannot revive the old attempt. Periodic expiry uses the same expiry helper as the transition command.
+
+The common reply-deadline proposal rule is: when work lies in the future, propose the earlier of 24 hours after creation or halfway between creation and work; otherwise propose 24 hours after creation. Explicit user-specified future response deadlines take precedence even when later than work. The deadline is proposed once and persisted on the attempt; replay never recalculates it. Work dates remain execution data. This rule implements Q47's configurable automatic proposal; it does not redefine Q30/Q36 agreement semantics.
+
+Implementation verification is tracked in `docs/implementation/LANE-A-REQUEST-CANONICALIZATION.md`. This contract is a review candidate until the independent review gate passes.
+
+
+<!-- XC-03-XC-05-CONVERGENCE -->
+## XC-03 / XC-05 final convergence (2026-09-10)
+
+- LINE MUST-complete actions are thin transport adapters. They always carry the observed aggregate revision/terms revision where the target is revision-bearing and call the same canonical server command as PWA. A stale LINE message fails closed; the adapter never refetches the newest revision and applies an old tap to it.
+- Daily reconciliation uses `server_tx_reconcile_routine_session_v2` and exact-operation undo; individual answers continue through the canonical routine-item command. Waiting uses `server_tx_set_task_waiting`; anyone-owner shopping uses `server_tx_shopping_claim_v2`; Request consultation uses `server_tx_transition_request_v2`.
+- Request consultation prose (`candidate` / consultation memo) is discussion-only. It is never parsed into Task fields. A material pre-acceptance change is represented by `terms.material_patch` version 1. Supported material fields are work due date/time and the exact server-issued assignment-change target set to the request recipient.
+- The UI/LINE must show the concrete material patch before `confirm_terms`. The first confirmation does not mutate Task truth. When both parties confirm the same terms revision, acceptance and material Task application are one SQL transaction. A concurrent Task revision conflict rolls back acceptance and fails closed.
+- A single changed work deadline is intentionally rejected for a multi-occurrence `this_week` assignment scope; that scope may change assignment as one agreement, while per-occurrence date/time changes require individually represented Task changes. This prevents one free-text sentence from collapsing several distinct work deadlines.
+- Request reply deadline remains RequestAttempt-owned and is never rewritten by a work-deadline material patch.

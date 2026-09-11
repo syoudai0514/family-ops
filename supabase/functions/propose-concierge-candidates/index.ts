@@ -1,16 +1,32 @@
-// Issue #54 Concierge proposal surface. This is read-only with respect to
-// Family Ops business objects: it authenticates the actor, then reuses the
-// same AI-first + deterministic-fallback conversation path as LINE. Human
-// confirmation happens elsewhere; this endpoint never commits a business row.
-import { requireUserActor } from "../_shared/auth.ts";
+// Concierge proposal surface. Interpretation is read-only with respect to
+// business objects: one channel-independent AI-first decomposition contract is
+// used by PWA and LINE, then canonical DB rows are consulted only to surface a
+// duplicate decision. No business row is written before human confirmation.
+import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
+import { attachCanonicalConciergeDuplicate } from "../_shared/conciergeDuplicateMatch.ts";
 import { FamilyOpsError } from "../_shared/errors.ts";
 import { jsonResponse, withUserMutationHandler } from "../_shared/handler.ts";
 import { readJsonBody } from "../_shared/rpc.ts";
 import { readOnlyLineIntent } from "../process-line-inbox/lineConversation.ts";
-import { aiFirstLineConversationCandidates } from "../process-line-inbox/lineMultiIntent.ts";
+import {
+  assignCandidateOperationIds,
+  decomposeLineConversationCandidates,
+} from "../process-line-inbox/lineMultiIntent.ts";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+
+async function householdForActor(client: SupabaseClient, actorId: string): Promise<string> {
+  const { data, error } = await client
+    .from("household_members")
+    .select("household_id")
+    .eq("user_id", actorId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.household_id) throw new FamilyOpsError("NOT_HOUSEHOLD_MEMBER", "家庭への参加が必要です", 403);
+  return String(data.household_id);
+}
 
 Deno.serve(withUserMutationHandler(async (req: Request) => {
-  await requireUserActor(req);
+  const actorId = await requireUserActor(req);
   const body = await readJsonBody(req);
   const text = body["text"];
   if (typeof text !== "string" || text.trim().length === 0) {
@@ -25,7 +41,16 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
     return jsonResponse({ read_only_intent: readOnlyIntent, candidates: [], clarification: null });
   }
 
-  const candidates = await aiFirstLineConversationCandidates(text);
+  const client = createServiceRoleClient();
+  const householdId = await householdForActor(client, actorId);
+  const interpreted = await decomposeLineConversationCandidates(text);
+  const matched = await Promise.all(
+    interpreted.map((candidate) => attachCanonicalConciergeDuplicate(client, householdId, candidate)),
+  );
+  // Stable identity is assigned while the candidate is still read-only and is
+  // carried through review/retry. It is never minted by the commit click.
+  const candidates = assignCandidateOperationIds(matched, () => crypto.randomUUID());
+
   return jsonResponse({
     read_only_intent: null,
     candidates,

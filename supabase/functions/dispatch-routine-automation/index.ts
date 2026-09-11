@@ -16,6 +16,9 @@ Deno.serve(withServiceHandler(async (req: Request) => {
 
   const serviceClient = createServiceRoleClient();
 
+  const { error: expiryError } = await serviceClient.rpc("server_tx_expire_request_attempts_v1");
+  if (expiryError) throw new Error("Request expiry processing failed");
+
   const { data, error } = await serviceClient.rpc("server_tx_dispatch_family_ops_automation_v2", {
     p_now_utc: new Date().toISOString(),
   });

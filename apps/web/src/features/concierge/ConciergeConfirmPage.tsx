@@ -2,15 +2,13 @@ import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useHousehold } from '../../app/HouseholdContext';
 import { clearConciergeDraft, type ConciergeCandidate, type ConciergeRouteState } from './conciergeFlow';
-import { commitConciergeCandidates, type ConciergeCommitResult } from './conciergeCommit';
+import { commitConciergeCandidates, type ConciergeCommitResult, type DuplicateDecision } from './conciergeCommit';
 import './concierge.css';
 
 const KIND_LABEL = { task: 'ToDo', request: 'お願い', shopping: '買い物', share: '共有・引き継ぎ', actual: '実績' } as const;
-export type DuplicateDecision = 'existing' | 'update' | 'separate';
 
 export function needsDuplicateDecision(candidate: ConciergeCandidate): boolean {
-  const text = `${candidate.sourceText} ${candidate.title}`;
-  return /(?:同じ|重複|既存|すでに|もうある|似た)/.test(text);
+  return candidate.duplicateMatch !== null;
 }
 
 export function failedCandidateIds(results: ConciergeCommitResult[] | null): string[] {
@@ -32,14 +30,10 @@ export function ConciergeConfirmPage() {
 
   async function commit(selectedCandidates: ConciergeCandidate[], priorResults: ConciergeCommitResult[] = []) {
     setBusy(true);
-    const commitCandidates = selectedCandidates.filter((candidate) => duplicateDecisions[candidate.candidateId] !== 'existing');
-    const existingResults: ConciergeCommitResult[] = selectedCandidates
-      .filter((candidate) => duplicateDecisions[candidate.candidateId] === 'existing')
-      .map((candidate) => ({ candidateId: candidate.candidateId, kind: candidate.kind, title: candidate.title, ok: true, message: '既存を使うため新規登録しません' }));
-    const committed = await commitConciergeCandidates(commitCandidates, {
+    const committed = await commitConciergeCandidates(selectedCandidates, {
       members, me, partner, timeZone: household?.timezone ?? 'Asia/Tokyo',
-    });
-    const replacement = new Map([...existingResults, ...committed].map((item) => [item.candidateId, item]));
+    }, duplicateDecisions);
+    const replacement = new Map(committed.map((item) => [item.candidateId, item]));
     const next = candidates.map((candidate) => replacement.get(candidate.candidateId) ?? priorResults.find((item) => item.candidateId === candidate.candidateId)).filter((item): item is ConciergeCommitResult => Boolean(item));
     setResults(next);
     setBusy(false);
@@ -68,21 +62,22 @@ export function ConciergeConfirmPage() {
     {candidates.map((candidate) => <section key={candidate.candidateId} className="card concierge-candidate"><span className="badge">{KIND_LABEL[candidate.kind]}</span><b>{candidate.title}</b><small>{candidate.sourceText}</small>{candidate.intent?.scheduledDate && <small>対象日：{candidate.intent.scheduledDate}</small>}</section>)}
     {unresolved.length > 0 && <section className="card"><b>ここだけ確認が必要です</b>{unresolved.map((candidate) => <p key={candidate.candidateId}>{candidate.title}：{candidate.missingFields.join(' / ')}</p>)}<button type="button" className="secondary-button" onClick={() => navigate(-1)}>候補へ戻る</button></section>}
     {duplicateCandidates.length > 0 && <section className="card" aria-label="重複候補の確認">
-      <b>重複かもしれない候補を確認</b>
+      <b>既存データと一致する候補を確認</b>
       <p className="page-lead">既存を使う / 既存を更新する / 別物として追加する、のどれかを人が選ぶまで登録しません。</p>
       {duplicateCandidates.map((candidate) => <div key={candidate.candidateId} className="duplicate-review-row">
         <strong>{candidate.title}</strong>
+        {candidate.duplicateMatch && <small>一致: {candidate.duplicateMatch.evidence.matchedTitle}{candidate.duplicateMatch.evidence.matchedDate ? ` / ${candidate.duplicateMatch.evidence.matchedDate}` : ''}（rev {candidate.duplicateMatch.expectedRevision}）</small>}
         <div className="concierge-actions">
           <button type="button" className={duplicateDecisions[candidate.candidateId] === 'existing' ? '' : 'secondary-button'} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'existing' }))}>既存を使う</button>
           <button type="button" className={duplicateDecisions[candidate.candidateId] === 'update' ? '' : 'secondary-button'} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'update' }))}>既存を更新</button>
           <button type="button" className={duplicateDecisions[candidate.candidateId] === 'separate' ? '' : 'secondary-button'} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'separate' }))}>別物として追加</button>
         </div>
       </div>)}
-      <p className="meta">「既存を更新」は現時点では同じ canonical command で人確認後に確定し、provider側の勝手な更新は行いません。</p>
+      <p className="meta">「既存を更新」は表示中のID・revisionへCAS更新します。競合した場合は再確認が必要になり、新規作成へ切り替わりません。</p>
     </section>}
-    {results && <section className="card"><b>{allSaved ? '登録完了' : '登録結果'}</b>{results.map((item) => <p key={item.candidateId}>{item.ok ? '✓' : '!'} {item.title}：{item.message}</p>)}{hasFailures && <><p className="empty-hint">成功した候補はそのまま保持し、失敗した候補だけ再実行できます。</p><button type="button" className="secondary-button" disabled={busy} onClick={() => void retryFailed()}>{busy ? '再試行中…' : '失敗した候補だけ再試行'}</button></>}</section>}
+    {results && <section className="card"><b>{allSaved ? '登録完了' : '登録結果'}</b>{results.map((item) => <p key={item.candidateId}>{item.ok ? '✓' : '!'} {item.title}：{item.message}</p>)}{hasFailures && <><p className="empty-hint">成功した候補はそのまま保持し、失敗した候補だけ同じoperation IDで再実行できます。</p><button type="button" className="secondary-button" disabled={busy} onClick={() => void retryFailed()}>{busy ? '再試行中…' : '失敗した候補だけ再試行'}</button></>}</section>}
     {!results && <button type="button" className="concierge-wide" disabled={busy || unresolved.length > 0 || duplicateUnresolved || candidates.length === 0} onClick={() => void register()}>{busy ? '登録中…' : '登録する'}</button>}
     {allSaved && <button type="button" className="concierge-wide" onClick={() => navigate(state.originPath ?? '/today', { replace: true, state: { restoreScrollY: state.originScrollY ?? 0 } })}>元の画面へ戻る</button>}
-    {!allSaved && !results && <p className="meta">確認後の登録は既存の canonical Edge command を使います。予定外実績も作成→完了を1つのDB transactionで確定します。</p>}
+    {!allSaved && !results && <p className="meta">確認後の登録はcanonical Edge commandを使い、候補作成時のoperation IDを再試行でも維持します。</p>}
   </div>;
 }

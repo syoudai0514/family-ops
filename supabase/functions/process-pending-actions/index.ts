@@ -8,11 +8,11 @@ import { buildPendingActionPreviewFlex } from '../_shared/lineMessageBuilders.ts
 import {
   daypartLabel,
   daypartToLocalTime,
-  extractLineIntent,
   toTaskSubtasks,
 } from '../process-line-inbox/lineIntent.ts';
 import {
   activeMultiIntentCandidates,
+  decomposeLineConversationCandidates,
 } from '../process-line-inbox/lineMultiIntent.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
@@ -51,19 +51,6 @@ interface ExecutionOutcome {
   result_id: string | null;
 }
 
-async function derivedOperationId(parentOperationId: string, suffix: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(`${parentOperationId}:${suffix}`),
-  );
-  const bytes = new Uint8Array(digest).slice(0, 16);
-  // RFC 4122 version/variant bits; same parent+candidate always gives the
-  // same child operation id across lease reclaim and webhook replay.
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = [...bytes].map((part) => part.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
 
 async function userForRole(
   client: SupabaseClient,
@@ -157,7 +144,8 @@ async function prepareDraft(client: SupabaseClient, row: DraftRow): Promise<Prep
 
   const rawText = typeof original.raw_text === 'string' ? original.raw_text.trim() : '';
   if (!rawText) return null;
-  const intent = await extractLineIntent(rawText);
+  const semanticCandidates = await decomposeLineConversationCandidates(rawText);
+  const intent = semanticCandidates.length === 1 ? semanticCandidates[0].intent : null;
   if (!intent) return null;
 
   const roleUser = intent.targetRole
@@ -457,13 +445,32 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
         throw new Error('multi-intent review still needs clarification');
       }
       for (const candidate of candidates) {
-        await execute(client, {
-          ...item,
-          action_type: candidate.action_type,
-          normalized_payload: candidate.payload,
-          operation_id: await derivedOperationId(item.operation_id, candidate.candidate_id),
+      const duplicate = candidate.duplicate_match;
+      const decision = (candidate as typeof candidate & { duplicate_decision?: "existing" | "update" | "separate" | null }).duplicate_decision ?? null;
+      if (duplicate && !decision) throw new Error('multi-intent duplicate still needs a decision');
+      if (duplicate && decision === 'existing') continue;
+      if (duplicate && decision === 'update') {
+        const { error } = await client.rpc('server_tx_commit_concierge_duplicate_update', {
+          p_actor_id: item.actor_id,
+          p_operation_id: candidate.operation_id,
+          p_entity_kind: duplicate.entityKind,
+          p_entity_id: duplicate.entityId,
+          p_expected_revision: duplicate.expectedRevision,
+          p_title: String(candidate.payload.title ?? candidate.title),
+          p_scheduled_date: candidate.payload.scheduled_date ?? null,
+          p_due_local_time: candidate.payload.due_local_time ?? null,
+          p_planned_assignee_user_id: candidate.action_type === 'task_create_once' ? candidate.payload.planned_assignee_user_id ?? null : null,
         });
+        if (error) throw new Error(error.message);
+        continue;
       }
+      await execute(client, {
+        ...item,
+        action_type: candidate.action_type,
+        normalized_payload: candidate.payload,
+        operation_id: candidate.operation_id,
+      });
+    }
       return { result_type: 'multi_intent', result_id: null };
     }
     default:

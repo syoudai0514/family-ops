@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
+import { tokyoLocalDate } from './todayClock';
 
 interface TomorrowPreparationCardProps {
   tomorrowDate: string;
@@ -25,6 +26,12 @@ function formatDate(date: string) {
   }).format(parsed);
 }
 
+function actualTomorrowDate(candidate: string, now = new Date()) {
+  const today = tokyoLocalDate(now);
+  if (candidate > today) return candidate;
+  return tokyoLocalDate(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+}
+
 export function TomorrowPreparationCard({
   tomorrowDate,
   assigneeId,
@@ -36,7 +43,8 @@ export function TomorrowPreparationCard({
   const [busyTitle, setBusyTitle] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const formattedDate = useMemo(() => formatDate(tomorrowDate), [tomorrowDate]);
+  const effectiveTomorrowDate = useMemo(() => actualTomorrowDate(tomorrowDate), [tomorrowDate]);
+  const formattedDate = useMemo(() => formatDate(effectiveTomorrowDate), [effectiveTomorrowDate]);
   const registeredTitles = useMemo(
     () => new Set(existingTitles.map(normalizedTitle)),
     [existingTitles],
@@ -57,7 +65,7 @@ export function TomorrowPreparationCard({
       await callEdgeFunction(EDGE_FUNCTIONS.createHandover, {
         operation_id: newOperationId(),
         title: cleanTitle,
-        scheduled_date: tomorrowDate,
+        scheduled_date: effectiveTomorrowDate,
         planned_assignee_user_id: assigneeId ?? undefined,
       });
       setSuccess(`${cleanTitle} を ${formattedDate} に引き継ぎました。`);

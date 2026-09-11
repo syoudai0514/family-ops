@@ -1,26 +1,49 @@
+import { callGemini } from "../_shared/gemini.ts";
 import {
   deterministicLineIntent,
-  extractLineIntent,
+  normalizeGeminiLineIntent,
   type LineIntent,
   type LineIntentKind,
 } from "./lineIntent.ts";
 
-/** A review candidate stays private until the sender confirms it. */
+export type ConciergeDuplicateMatch = {
+  entityKind: "task" | "shopping" | "request";
+  entityId: string;
+  expectedRevision: number;
+  evidence: {
+    strategy: "canonical_exact";
+    matchedTitle: string;
+    matchedDate: string | null;
+  };
+};
+
+/** Channel-independent semantic candidate. No business mutation occurs here. */
 export type LineConversationCandidate = {
   candidateId: string;
+  operationId: string | null;
   kind: LineIntentKind | "share" | "actual";
   title: string;
   intent: LineIntent | null;
   sourceText: string;
+  sourceSpan: { start: number; end: number } | null;
+  confidence: number | null;
+  ambiguousFields: string[];
   missingFields: string[];
+  duplicateMatch: ConciergeDuplicateMatch | null;
 };
 
 /** Durable, sender-private payload used by the existing pending-action queue. */
 export type LineMultiIntentPendingCandidate = {
   candidate_id: string;
+  operation_id: string;
   kind: LineConversationCandidate["kind"];
   title: string;
   source_text: string;
+  source_span: { start: number; end: number } | null;
+  confidence: number | null;
+  ambiguous_fields: string[];
+  duplicate_match: ConciergeDuplicateMatch | null;
+  duplicate_decision: "existing" | "update" | "separate" | null;
   status: "draft" | "cancelled";
   missing_fields: string[];
   action_type: "task_create_once" | "shopping_item_add" | "request_create" | "handover_create" | "actual_record";
@@ -35,6 +58,7 @@ export function activeMultiIntentCandidates(
     if (!candidate || typeof candidate !== "object") return false;
     const row = candidate as Record<string, unknown>;
     return typeof row.candidate_id === "string" &&
+      typeof row.operation_id === "string" &&
       typeof row.title === "string" &&
       row.status === "draft" &&
       Array.isArray(row.missing_fields) &&
@@ -96,23 +120,35 @@ function fallbackRequestIntent(clause: string, requestTitle: string, now: Date):
   };
 }
 
+function sourceSpan(raw: string, source: string, cursor = 0): { start: number; end: number } | null {
+  const direct = raw.indexOf(source, cursor);
+  const start = direct >= 0 ? direct : raw.indexOf(source);
+  return start >= 0 ? { start, end: start + source.length } : null;
+}
+
 function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandidate, "candidateId">[] {
   const parsed = deterministicLineIntent(clause, now);
   if (parsed) {
     const cleanedTitle = parsed.kind === "shopping" ? parsed.title.replace(/も$/u, "") : parsed.title;
     return [{
+      operationId: null,
       kind: parsed.kind,
       title: cleanedTitle,
       intent: parsed.kind === "shopping" && cleanedTitle !== parsed.title ? { ...parsed, title: cleanedTitle } : parsed,
       sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
       missingFields: parsed.kind === "request" && !parsed.targetRole ? ["assignee"] : [],
+      duplicateMatch: null,
     }];
   }
 
   const lowStock = clause.match(/^(.{1,60}?)(?:が|は)?(?:もう)?なくなりそう/u);
   if (lowStock) return [{
+    operationId: null,
     kind: "shopping", title: title(lowStock[1]), intent: null, sourceText: clause,
-    missingFields: [],
+    sourceSpan: null, confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
   }];
   const request = clause.match(/^(.{1,70}?)(?:を)?(?:お願い(?:します|したい)?|頼める[？?]?)$/u);
   if (request) {
@@ -122,26 +158,28 @@ function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandi
       .trim();
     const intent = fallbackRequestIntent(clause, requestTitle, now);
     return [{
+      operationId: null,
       kind: "request", title: requestTitle, intent, sourceText: clause,
-      missingFields: intent.targetRole ? [] : ["assignee"],
+      sourceSpan: null, confidence: null, ambiguousFields: intent.targetRole ? [] : ["assignee"],
+      missingFields: intent.targetRole ? [] : ["assignee"], duplicateMatch: null,
     }];
   }
   const actual = clause.match(/^(.{1,70}?)(?:を)?(?:やった|した|かけた)(?:よ|済み)?$/u);
   if (actual) return [{
+    operationId: null,
     kind: "actual", title: title(actual[1]), intent: null, sourceText: clause,
-    missingFields: [],
+    sourceSpan: null, confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
   }];
   if (/(?:水遊び|行事|変更|お知らせ|熱|咳|休み)/u.test(clause)) return [{
+    operationId: null,
     kind: "share", title: title(clause), intent: null, sourceText: clause,
-    missingFields: [],
+    sourceSpan: null, confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
   }];
   return [];
 }
 
 function splitConversation(text: string): string[] {
   return text
-    // Preserve spoken/typed correction boundaries before NFKC expands `…`
-    // into ASCII dots; then also handle already-expanded ellipsis forms.
     .replace(/…{2,}/g, "。")
     .normalize("NFKC")
     .replace(/\.{2,}/g, "。")
@@ -168,16 +206,22 @@ function applyCorrection(
   candidates[index] = {
     ...previous,
     sourceText: `${previous.sourceText} / 訂正: ${clause}`,
+    sourceSpan: null,
     intent: { ...previous.intent, scheduledDate },
   };
   return true;
 }
 
-function finalize(candidates: Omit<LineConversationCandidate, "candidateId">[]): LineConversationCandidate[] {
-  return candidates.map((candidate, index) => ({ ...candidate, candidateId: `c${index + 1}` }));
+function finalize(candidates: Omit<LineConversationCandidate, "candidateId">[], rawText: string): LineConversationCandidate[] {
+  let cursor = 0;
+  return candidates.map((candidate, index) => {
+    const span = candidate.sourceSpan ?? sourceSpan(rawText, candidate.sourceText, cursor);
+    if (span) cursor = span.end;
+    return { ...candidate, sourceSpan: span, candidateId: `c${index + 1}` };
+  });
 }
 
-/** Deterministic fallback and regression oracle. */
+/** Deterministic availability fallback and regression oracle. */
 export function deterministicLineConversationCandidates(
   text: string,
   now = new Date(),
@@ -187,37 +231,146 @@ export function deterministicLineConversationCandidates(
     if (applyCorrection(candidates, clause, now)) continue;
     candidates.push(...clauseCandidates(clause, now));
   }
-  return finalize(candidates);
+  return finalize(candidates, text);
+}
+
+function cleanStringArray(value: unknown, max = 8): string[] {
+  if (!Array.isArray(value)) return [];
+  const values: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const cleaned = item.trim().slice(0, 60);
+    if (cleaned && !values.includes(cleaned)) values.push(cleaned);
+    if (values.length >= max) break;
+  }
+  return values;
+}
+
+function parseModelJson(raw: string): Record<string, unknown> | null {
+  try {
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? raw;
+    const parsed = JSON.parse(fenced.trim());
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Strict boundary for the whole-utterance AI decomposition contract. */
+export function normalizeSemanticDecomposition(
+  raw: string,
+  source: string,
+): LineConversationCandidate[] {
+  const parsed = parseModelJson(raw);
+  const rows = parsed && Array.isArray(parsed.candidates) ? parsed.candidates : [];
+  const normalized: Omit<LineConversationCandidate, "candidateId">[] = [];
+  for (const value of rows.slice(0, 8)) {
+    if (!value || typeof value !== "object") return [];
+    const row = value as Record<string, unknown>;
+    const kind = String(row.kind ?? "");
+    if (!["task", "request", "shopping", "share", "actual"].includes(kind)) return [];
+    const candidateTitle = typeof row.title === "string" ? title(row.title) : "";
+    const sourceText = typeof row.source_text === "string" ? row.source_text.trim() : "";
+    if (!candidateTitle || !sourceText || !source.includes(sourceText)) return [];
+    const missingFields = cleanStringArray(row.missing_fields);
+    const ambiguousFields = cleanStringArray(row.ambiguous_fields);
+    const confidence = typeof row.confidence === "number" && row.confidence >= 0 && row.confidence <= 1
+      ? row.confidence
+      : null;
+
+    let intent: LineIntent | null = null;
+    if (kind === "task" || kind === "request" || kind === "shopping") {
+      const intentRaw = JSON.stringify({
+        kind,
+        title: candidateTitle,
+        scheduled_date: row.scheduled_date,
+        due_local_time: row.due_local_time ?? null,
+        daypart: row.daypart ?? null,
+        target_role: row.target_role ?? null,
+        shared_message: kind === "request" ? (row.shared_message ?? null) : null,
+        subtasks: row.subtasks ?? [],
+        context: row.context ?? null,
+        calendar_visibility: row.calendar_visibility ?? "hidden",
+      });
+      const validated = normalizeGeminiLineIntent(intentRaw);
+      if (!validated) return [];
+      intent = { ...validated, source: "gemini" };
+    }
+
+    normalized.push({
+      operationId: null,
+      kind: kind as LineConversationCandidate["kind"],
+      title: candidateTitle,
+      intent,
+      sourceText,
+      sourceSpan: sourceSpan(source, sourceText),
+      confidence,
+      ambiguousFields,
+      missingFields,
+      duplicateMatch: null,
+    });
+  }
+  return finalize(normalized, source);
+}
+
+type SemanticProvider = (text: string, now: Date) => Promise<string | null>;
+
+async function geminiSemanticProvider(text: string, now: Date): Promise<string | null> {
+  const model = Deno.env.get("GEMINI_MODEL_LINE_DECOMPOSITION") ??
+    Deno.env.get("GEMINI_MODEL_LINE_INTENT") ??
+    Deno.env.get("GEMINI_MODEL_REWRITE") ?? "";
+  if (!model) return null;
+  const today = new Date(now.getTime() + JST_OFFSET_MS).toISOString().slice(0, 10);
+  const prompt = [
+    "家庭内オペレーションの自然文を、意味上独立した候補へAI-firstで分解してください。",
+    `今日(Asia/Tokyo)は ${today} です。`,
+    "句読点の有無・読点だけ・口語・「〜して、〜して」に依存せず意味で分ける。",
+    "同じkindが2件以上あっても統合しない。最大8件。入力にない事実は作らない。",
+    "訂正（例:『それ日曜だった』『やっぱ土曜』）は参照先候補を修正し、訂正文を新規候補にしない。",
+    "不明なのが1項目だけなら他の候補/項目を保持し、その項目だけmissing_fields/ambiguous_fieldsへ入れる。",
+    "source_textは必ず入力中の連続した原文部分をそのまま返す。",
+    "kindは task/request/shopping/share/actual。requestは相手への明確な依頼だけ。",
+    "task/request/shoppingは scheduled_date(YYYY-MM-DD), due_local_time, daypart, target_role, shared_message, subtasks, context, calendar_visibility を返す。",
+    "confidenceは0〜1。",
+    'JSONのみ: {"candidates":[{"kind":"task|request|shopping|share|actual","title":"...","source_text":"入力中の原文","scheduled_date":"YYYY-MM-DD","due_local_time":null,"daypart":null,"target_role":null,"shared_message":null,"subtasks":[],"context":null,"calendar_visibility":"hidden","missing_fields":[],"ambiguous_fields":[],"confidence":0.9}]}',
+    `入力: ${JSON.stringify(text)}`,
+  ].join("\n");
+  try {
+    return await callGemini(prompt, model);
+  } catch (error) {
+    console.warn("semantic decomposition unavailable", {
+      code: error instanceof Error ? error.message : "unknown",
+    });
+    return null;
+  }
 }
 
 /**
- * PWA/LINE shared AI-first path. Each actionable clause is sent through the
- * same Gemini-backed extractor used by LINE; deterministic parsing remains an
- * availability fallback. Explicit correction clauses update the immediately
- * preceding candidate instead of becoming a bogus extra task.
+ * The one semantic interpretation entry point shared by LINE and PWA.
+ * Whole-utterance AI decomposition is normal. Deterministic parsing is only
+ * an availability/validation fallback and is never used as a gate before AI.
  */
-export async function aiFirstLineConversationCandidates(
+export async function decomposeLineConversationCandidates(
   text: string,
   now = new Date(),
+  provider: SemanticProvider = geminiSemanticProvider,
 ): Promise<LineConversationCandidate[]> {
-  const candidates: Omit<LineConversationCandidate, "candidateId">[] = [];
-  for (const clause of splitConversation(text)) {
-    if (applyCorrection(candidates, clause, now)) continue;
-    const parsed = await extractLineIntent(clause, now);
-    if (parsed) {
-      const cleanedTitle = parsed.kind === "shopping" ? parsed.title.replace(/も$/u, "") : parsed.title;
-      candidates.push({
-        kind: parsed.kind,
-        title: cleanedTitle,
-        intent: parsed.kind === "shopping" && cleanedTitle !== parsed.title ? { ...parsed, title: cleanedTitle } : parsed,
-        sourceText: clause,
-        missingFields: parsed.kind === "request" && !parsed.targetRole ? ["assignee"] : [],
-      });
-      continue;
-    }
-    candidates.push(...clauseCandidates(clause, now));
+  const raw = await provider(text, now);
+  if (raw) {
+    const candidates = normalizeSemanticDecomposition(raw, text);
+    if (candidates.length > 0) return candidates;
   }
-  return finalize(candidates);
+  return deterministicLineConversationCandidates(text, now);
+}
+
+export function assignCandidateOperationIds(
+  candidates: LineConversationCandidate[],
+  operationIdFor: (candidateId: string) => string,
+): LineConversationCandidate[] {
+  return candidates.map((candidate) => ({
+    ...candidate,
+    operationId: candidate.operationId ?? operationIdFor(candidate.candidateId),
+  }));
 }
 
 export function isMultiIntentMessage(candidates: LineConversationCandidate[]): boolean {

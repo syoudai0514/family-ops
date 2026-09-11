@@ -14,6 +14,7 @@ declare
   v_item uuid;
   v_revision bigint;
   v_result jsonb;
+  v_workspace jsonb;
   v_failed boolean;
 begin
   insert into auth.users(id) values (v_owner),(v_partner);
@@ -86,6 +87,22 @@ begin
   if (select active_claimant_actor_ref_id from public.shopping_items where id=v_item)
      is distinct from v_partner_ref then
     raise exception 'FAIL Q108: takeover did not replace claimant';
+  end if;
+
+  -- The canonical read model must expose the actual claimant identity without
+  -- regressing the canonical writer contract used by Shopping and DailyBrief.
+  v_workspace := public.server_read_shopping_workspace(v_owner);
+  if v_workspace->>'writer_state' is distinct from 'canonical_v1' then
+    raise exception 'FAIL Q108: shopping reader lost canonical_v1 writer state';
+  end if;
+  if not exists (
+    select 1
+    from jsonb_array_elements(v_workspace->'active') item
+    where (item->>'shopping_item_id')::uuid = v_item
+      and item->>'active_claimant_actor_ref_id' = v_partner_ref::text
+      and item->>'active_claimant_display_name' = 'Shopping partner'
+  ) then
+    raise exception 'FAIL Q108: canonical shopping reader did not expose actual claimant display name';
   end if;
 
   -- The old claimant still cannot release after takeover.

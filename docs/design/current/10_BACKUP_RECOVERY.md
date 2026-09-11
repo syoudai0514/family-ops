@@ -1,11 +1,12 @@
-# 10. Backup / Recovery — CF-11 right-size proposal
+# 10. Backup / Recovery — CF-11 right-sized recovery
 
-- **Status:** Product Owner approved / pending canonical merge
-- **Authority when merged:** Requirements Baseline + ADR 0012 + ADR 0013 + ADR 0014
+- **Status:** Canonical — ADR 0014 Accepted via PR #73
+- **Authority:** Requirements Baseline + ADR 0012 + ADR 0013 + ADR 0014
 - **Operating scale:** current two-person household
 
-This branch document is not canonical until the protected PR is merged to
-`main`. CURRENT main authority remains in force until then.
+PR #73 merged this design and ADR 0014 to protected `main` on 2026-09-09
+at `06a4e6b1a5aefccb8f9353fad294dd895582bc53`. Its CF-11 design is canonical;
+operational health still requires fresh workflow evidence.
 
 ## 1. Product outcome
 
@@ -227,3 +228,11 @@ binary data, or Product Owner risk posture changes.
 
 Only after all gates, including canonical merge and post-merge operational
 currency, may CF-11 = PASS and Lane C = COMPLETE.
+
+### Draft candidate safety
+
+Draft PR updates do not run the actual backup/disposable-restore job, because
+that job writes a persistent generation to app-save-hub. Marking a recovery PR
+ready for review can run the pre-merge drill; that transition requires authority
+for the external recovery operation. Ordinary code and document review can keep
+the PR Draft and use offline operational-safety tests.

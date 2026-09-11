@@ -1,8 +1,8 @@
 # おうちノート / Family Ops
-## Requirements & UX Baseline v1.1
+## Requirements & UX Baseline v1.2
 
-- **Status:** Proposed Canonical / Independent Review Round 1 Remediated / Re-review Candidate / NO IMPLEMENTATION
-- **Date:** 2026-09-02
+- **Status:** Proposed Canonical Update / Product-owner requirement integrated / pending review and merge to `main`
+- **Date:** 2026-09-09
 - **Repository:** `syoudai0514/family-ops`
 - **Canonical branch:** `main`
 - **Canonical path:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
@@ -37,6 +37,8 @@
 
 文書のversionは内容の大きな節目を示すために本文metadataで更新するが、canonical pathは変更しない。
 
+**CURRENT mainが保持するversionだけがmerge済みcanonicalである。** feature/docs branch上で次versionを編集している間は、そのbranchの内容を`main`のCURRENTとして扱わない。今回のv1.2はproduct-owner指示をcanonical pathへ統合したreview candidateであり、`main`へmergeされるまではv1.1がmerge済みCURRENTである。
+
 # 2. プロダクトの最上位目的
 
 おうちノートは、単なる家事チェックリストではなく、**家庭運営OS**を目指す。
@@ -51,6 +53,21 @@
 - 実績を残せる一方、夫婦の競争や「やってあげた」感を助長しない。
 - AIは入力と整理を楽にするが、重要な担当変更・人間が確定した予定・外部情報を勝手に上書きしない。
 
+## 2.1 最上位の成功条件 — Product outcome over technical completeness
+
+Family Opsの成功判定で最上位に置くのは、技術的完全性そのものではなく、**本章の目的達成、本文Requirementsの充足、approved final UXとの整合、実際の家族利用での使いやすさ・運用成立**である。
+
+以下を恒久的なacceptance原則とする。
+
+1. **findingを閉じたことだけではPASSにしない。** 個別finding、issue、review comment、test failureを解消していても、その修正が通常日の家族利用を遅くする、迷わせる、通知を増やす、重要情報を埋める、日常LINE導線を不必要にPWAへ追い出す、または既存のapproved interactionを壊す場合は未完了とする。
+2. **技術的GREENは必要条件になり得るが十分条件ではない。** CI GREEN、lint/typecheck/test PASS、schema整合、idempotency、安全性、architectureの美しさだけを理由にproduct/UX PASSを宣言してはならない。
+3. **修正対象の実利用UXは改善し、非対象の主要flowは少なくとも非劣化であること。** 局所最適でFamily Ops全体の家庭運営体験を悪化させない。
+4. **技術都合で既存の目的・Requirement・approved UXを黙って変えない。** より良い技術方式を採るためにproduct behavior変更が必要だと判断した場合は、実装で先に変更せず、変更理由・具体案・影響を提示し、本Baselineを正式に更新してから実装する。
+5. **完了判定はend-to-endで照合する。** 少なくとも `Family Opsの目的 → 対応Requirement → approved UX / CURRENT design → CURRENT implementation → test/evidence → 実利用scenario` を一続きに確認し、どこかが不一致ならPASSにしない。
+6. **要求同士・approved UXとの真の競合は勝手に補完しない。** どちらかを都合よく落とすのではなく、product decisionとして明示的に解消する。
+
+この原則は、security・data integrity・idempotency等を軽視するものではない。それらは家庭運営を安全に成立させるための必要な品質である。ただし、**技術品質はFamily Opsの目的達成を支える手段であり、目的・Requirements・実利用UXを上書きする上位目的ではない。**
+
 # 3. UXの絶対原則
 
 1. **通常ケースを最短にする。** レアケースを扱うために、普段の画面や操作を複雑にしない。
@@ -63,6 +80,7 @@
 8. **PWA操作で画面を壊さない。** 1件更新ごとの全再読込、スクロール先頭戻りは禁止。
 9. **過去の事実を未来ルール変更で書き換えない。** 完了実績・合意履歴・訂正履歴を保持する。
 10. **「できなかった」と「入力していない」を混同しない。** 不明を未達として集計しない。
+11. **技術的PASSをproduct PASSとみなさない。** §2.1のend-to-end成功条件を満たさない修正は、局所的に正しくても完了ではない。
 
 # 4. 家庭コンテキスト
 
@@ -1057,6 +1075,7 @@ PWAの履歴/振り返りの奥に置き、必要ならLINE自然文から呼び
 18. test modeが外部副作用・実ユーザー合意を汚染しないか。
 19. human / Google / image fact / AI inferenceのAuthority原則が一貫しているか。
 20. duplicate webhook / stale LINE action / LINE-PWA同時更新が状態を逆戻りさせないか。
+21. **個別findingを閉じた修正がFamily Opsの目的・Requirements・approved UX・主要実利用flowを悪化させていないか。** `目的 → Requirement → approved UX/CURRENT design → CURRENT implementation → test/evidence → 実利用scenario` のend-to-end照合でPASSできるか。
 
 # 25. 本Baselineでは詳細設計に持ち越す項目
 
@@ -1097,9 +1116,19 @@ PR #39の独立レビューは `GO WITH CONDITIONS` であり、詳細設計前�
 
 本節はreview traceであり、要求の正は各本文sectionである。再レビューで追加条件が出た場合も、採用事項は本文へ統合してから本表を更新する。
 
+# 27. Post-GO canonical update — 2026-09-09 product outcome success criterion
+
+Product Ownerの明示指示により、§2.1とUX原則11へ、**技術的完全性よりFamily Opsの目的達成・Requirements充足・approved UX・実利用UXを上位の成功条件とする**横断要求を追加した。
+
+これは既存Q1-Q112の個別product decisionを変更するものではなく、**すべてのRequirement/Q/findingのacceptance判定にかかる横断gate**である。そのためAppendix Aへ便宜的なQ113を追加せず、Q番号の安定性と既存approved UX auditのprovenanceを維持する。
+
+このv1.2更新が`main`へmergeされるまでは、merge済みCURRENT Baselineはv1.1である。実装者・レビュアーはbranch上のcandidateをCURRENT mainと誤認してはならない。
+
 # Appendix A. Decision Traceability
 
 このAppendixは、要求ヒアリングで確定した主要判断を、レビュー時の抜け漏れ確認用に一覧化したものである。
+
+**§2.1のv1.2成功条件は全Qへ横断適用するnormative acceptance ruleであり、新しいQ番号は持たない。** Appendix AのQ1-Q112およびQ60-1/Q60-2は既存の個別product decision traceとして維持する。
 
 | ID | 決定 |
 |---|---|

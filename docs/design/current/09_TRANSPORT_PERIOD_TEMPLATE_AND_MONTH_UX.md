@@ -1,7 +1,7 @@
 # 09 — Transport period template / occurrence override / Month UX
 
 Status: **CURRENT design contract**  
-Authority: `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`, Appendix A Q1-Q112, accepted ADRs, and the user-approved `family-ops-ux-contract-final-v11-noscript.html` UI / Interaction Contract.
+Authority: `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`, Appendix A Q1-Q112, accepted ADRs, and the exact approved UX source snapshot pinned by `docs/design/current/11_APPROVED_FINAL_UX_CANONICALIZATION.md`.
 
 This document records the concrete transport/Month interaction that was user-confirmed during PR #50. It does not introduce production fixture chores, dates, or assignees from the HTML.
 
@@ -105,9 +105,11 @@ At minimum automated tests must cover:
 11. cross-household assignee rejection
 12. idempotent template mutation does not duplicate a period
 
-## 8. Relationship to the rest of the final HTML contract
+## 8. Relationship to the approved final UX contract
 
-The HTML remains the final UI / Interaction Contract for the broader PR #50 flow. In particular this design does not weaken the existing main path:
+The broader approved UI / Interaction Contract remains pinned, with exact source commit/path/blob/render provenance, by `11_APPROVED_FINAL_UX_CANONICALIZATION.md`. This design is only the concrete transport/Month refinement and does not supersede the rest of that contract.
+
+In particular this design does not weaken the existing main path:
 
 `Today summary → 要対応へのdirect navigation → parent task/subtask → その場完了 → 夜の残り実績 → 全部/大体/個別 → 戻り/state restoration`.
 
