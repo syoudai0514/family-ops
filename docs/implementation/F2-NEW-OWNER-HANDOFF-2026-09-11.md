@@ -15,6 +15,8 @@ First receive the frozen exact HEAD from the control tower, then fresh-read:
 4. CF14 evidence matrix;
 5. CURRENT source/schema for the frozen HEAD.
 
+Do not accept the handoff until the control tower explicitly confirms that the production Supabase runtime has been reconciled with CURRENT main, including the transport dependency migration required by Baseline §28.6 / current design 09 §9.2. PR merge and GREEN CI alone are not deployment evidence.
+
 ## 1. Primary success order
 
 Judge in this order:
@@ -42,7 +44,7 @@ One-user simulation remains available as supplementary isolation/safety evidence
 
 ## 3. First scenario to rerun on the frozen exact HEAD
 
-Start with the scenario that most recently exposed a product defect.
+Start with the scenario that most recently exposed a product defect **only after the control tower confirms the pending transport-dependency production migration is actually applied**.
 
 ### Scenario: one-off pickup assignment change
 
@@ -77,7 +79,7 @@ Expected canonical result:
 
 Capture provider event IDs / postbacks / canonical readback / physical screenshots against the **same exact HEAD**.
 
-Do not use the historical 2026-09-11 accepted request as final proof: it was the defect-discovery run and required a post-fix canonical backfill.
+Do not use the historical 2026-09-11 accepted request as final proof: it was the defect-discovery run. At the corrected handoff snapshot, the dependency-reconcile implementation was merged and GREEN but its production migration had not yet been applied; any later operational repair/backfill is production-consistency work, not final F2 evidence.
 
 ## 4. Next high-value physical scenarios
 
