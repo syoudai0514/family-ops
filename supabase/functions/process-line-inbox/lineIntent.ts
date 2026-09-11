@@ -161,6 +161,10 @@ function targetRole(text: string): LineTargetRole {
   if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return "mama";
   return null;
 }
+function hasExplicitClockToken(text: string): boolean {
+  return /(?:\d{1,2}時(?:\d{1,2}分|半)?|\d{1,2}:\d{2})/u.test(text);
+}
+
 
 function cleanNoun(value: string): string {
   return value
@@ -450,7 +454,23 @@ async function geminiLineIntent(
   try {
     const raw = await callGemini(prompt, model);
     const normalized = normalizeGeminiLineIntent(raw);
-    return normalized ? { ...normalized, source: "gemini" } : null;
+    if (!normalized) return null;
+
+    // Simple purchase language has a deterministic, safer interpretation.
+    // Never let the model turn "牛乳買って" into a partner Request merely
+    // because the Japanese is imperative.
+    const deterministic = deterministicLineIntent(text, now);
+    if (deterministic?.kind === "shopping") return deterministic;
+
+    return {
+      ...normalized,
+      // A recipient/assignee is canonical only when the raw input names one.
+      targetRole: targetRole(text),
+      // Dayparts may remain semantic labels, but a concrete due time requires
+      // an explicit clock token in the user's own text.
+      dueLocalTime: hasExplicitClockToken(text) ? normalized.dueLocalTime : null,
+      source: "gemini",
+    };
   } catch (error) {
     console.warn("process-line-inbox: Gemini intent extraction unavailable", {
       code: error instanceof Error ? error.message : "unknown",
