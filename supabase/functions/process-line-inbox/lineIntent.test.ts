@@ -137,3 +137,20 @@ Deno.test("pickup assignment-change wording accepts blunt requests but not a bar
   );
   assertEquals(isPickupAssignmentChangeText("9/14のお迎え担当変わった？"), false);
 });
+
+
+Deno.test("shopping fallback handles terse low-stock and colloquial buy wording", () => {
+  assertEquals(deterministicLineIntent("牛乳なくなった買っといて", now)?.kind, "shopping");
+  assertEquals(deterministicLineIntent("牛乳なくなった買っといて", now)?.title, "牛乳");
+  assertEquals(deterministicLineIntent("洗剤切れそう、帰り買って", now)?.kind, "shopping");
+  assertEquals(deterministicLineIntent("洗剤切れそう、帰り買って", now)?.title, "洗剤");
+});
+
+Deno.test("shopping fallback preserves explicit quantities and role only when written", () => {
+  const plain = deterministicLineIntent("明日牛乳2本買って", now);
+  assertEquals(plain?.kind, "shopping");
+  assertEquals(plain?.targetRole, null);
+  const assigned = deterministicLineIntent("明日ママに牛乳2本買って", now);
+  assertEquals(assigned?.kind, "shopping");
+  assertEquals(assigned?.targetRole, "mama");
+});
