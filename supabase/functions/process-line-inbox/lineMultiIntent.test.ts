@@ -225,3 +225,55 @@ Deno.test("explicit clock time may survive model normalization", () => {
   ]), raw);
   assertEquals(direct[0].intent?.dueLocalTime, "07:30");
 });
+
+
+Deno.test("fallback splits shopping plus pickup request across a comma", () => {
+  const raw = "牛乳買って、明日のお迎えママお願い";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["shopping", "request"]);
+  assertEquals(candidates[0].intent?.scheduledDate, "2026-09-11");
+  assertEquals(candidates[1].intent?.scheduledDate, "2026-09-12");
+  assertEquals(candidates[1].intent?.targetRole, "mama");
+});
+
+Deno.test("fallback splits share preparation and low-stock shopping", () => {
+  const raw = "保育園から明日水遊びって、タオル準備して、牛乳もなくなる";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["share", "task", "shopping"]);
+  assertEquals(candidates[1].intent?.scheduledDate, "2026-09-12");
+  assertEquals(candidates[2].intent?.scheduledDate, "2026-09-12");
+});
+
+Deno.test("fallback preserves terse task boundaries across commas", () => {
+  const raw = "明日遠足だから水筒帽子着替え準備して、朝ゴミ出し、帰り牛乳買う";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["task", "task", "shopping"]);
+  assertEquals(candidates[1].intent?.daypart, "morning");
+  assertEquals(candidates[2].intent?.scheduledDate, "2026-09-12");
+});
+
+Deno.test("fallback applies comma role correction before later shopping", () => {
+  const raw = "明日迎えはママ、いや違うパパ、牛乳も買って";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["task", "shopping"]);
+  assertEquals(candidates[0].intent?.targetRole, "papa");
+  assertEquals(candidates[0].intent?.scheduledDate, "2026-09-12");
+});
+
+Deno.test("model completed purchase is normalized to actual", () => {
+  const raw = "牛乳買った";
+  const direct = normalizeSemanticDecomposition(model([
+    shopping("牛乳の購入", raw),
+  ]), raw);
+  assertEquals(direct[0].kind, "actual");
+  assertEquals(direct[0].intent, null);
+});
+
+Deno.test("model store visit without a purchase is normalized to task", () => {
+  const raw = "帰り薬局寄る";
+  const direct = normalizeSemanticDecomposition(model([
+    shopping("薬局で薬の購入", raw),
+  ]), raw);
+  assertEquals(direct[0].kind, "task");
+  assertEquals(direct[0].intent?.kind, "task");
+});
