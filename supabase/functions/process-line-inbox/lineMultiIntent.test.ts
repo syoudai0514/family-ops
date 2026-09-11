@@ -277,3 +277,16 @@ Deno.test("model store visit without a purchase is normalized to task", () => {
   assertEquals(direct[0].kind, "task");
   assertEquals(direct[0].intent?.kind, "task");
 });
+
+
+Deno.test("fallback splits punctuation-free appointment preparation and return-stop visit", () => {
+  const raw = "明日11時皮膚科10時出る保険証診察券準備して帰り薬局寄る";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["task", "task"]);
+  assertEquals(candidates[0].title, "皮膚科の準備");
+  assertEquals(candidates[0].intent?.dueLocalTime, "10:00");
+  assertEquals(candidates[0].intent?.context, "皮膚科 11:00");
+  assertEquals(candidates[0].intent?.subtasks, ["保険証", "診察券"]);
+  assertEquals(candidates[1].title, "薬局に寄る");
+  assertEquals(candidates[1].intent?.context, "皮膚科の帰り");
+});
