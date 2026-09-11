@@ -235,6 +235,45 @@ function finalize(candidates: Omit<LineConversationCandidate, "candidateId">[], 
   });
 }
 
+function hasExplicitDateToken(text: string): boolean {
+  return /今日|明日|明後日|[月火水木金土日]曜/u.test(text);
+}
+
+function commaSeparatedCandidates(
+  clause: string,
+  now: Date,
+): Omit<LineConversationCandidate, "candidateId">[] | null {
+  const parts = clause
+    .split(/[、，,]+/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const groups = parts.map((part) => clauseCandidates(part, now));
+  // Split only when every comma-delimited fragment independently carries a
+  // recognized intent. This avoids breaking noun lists such as
+  // "身支度、診察カード、保険証を準備".
+  if (groups.some((group) => group.length === 0)) return null;
+
+  const flattened: Omit<LineConversationCandidate, "candidateId">[] = [];
+  let inheritedDate: string | null = null;
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index];
+    if (hasExplicitDateToken(part)) inheritedDate = explicitDate(part, now);
+    for (const candidate of groups[index]) {
+      if (candidate.intent && inheritedDate && !hasExplicitDateToken(part)) {
+        flattened.push({
+          ...candidate,
+          intent: { ...candidate.intent, scheduledDate: inheritedDate },
+        });
+      } else {
+        flattened.push(candidate);
+      }
+    }
+  }
+  return flattened.length > 1 ? flattened : null;
+}
+
 /** Deterministic availability fallback and regression oracle. */
 export function deterministicLineConversationCandidates(
   text: string,
@@ -243,6 +282,11 @@ export function deterministicLineConversationCandidates(
   const candidates: Omit<LineConversationCandidate, "candidateId">[] = [];
   for (const clause of splitConversation(text)) {
     if (applyCorrection(candidates, clause, now)) continue;
+    const commaCandidates = commaSeparatedCandidates(clause, now);
+    if (commaCandidates) {
+      candidates.push(...commaCandidates);
+      continue;
+    }
     candidates.push(...clauseCandidates(clause, now));
   }
   return finalize(candidates, text);
