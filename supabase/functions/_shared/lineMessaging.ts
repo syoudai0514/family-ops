@@ -65,6 +65,8 @@ export interface ReplyOrEnqueuePushArgs {
   householdId: string;
   recipientUserId: string;
   text: string;
+  /** Optional lightweight conversational message shown before the main result in the same LINE Reply API call. */
+  leadingText?: string;
   message?: Record<string, unknown>;
   quickReplyItems?: LineQuickReplyAction[];
   /** Stable key (e.g. derived from the webhook's provider_event_id) so a redelivered event's fallback push does not double-enqueue. */
@@ -81,13 +83,22 @@ function buildLineMessages(
   text: string,
   quickReplyItems?: LineQuickReplyAction[],
   richMessage?: Record<string, unknown>,
+  leadingText?: string,
 ) {
-  if (richMessage) return [richMessage];
+  const messages: Record<string, unknown>[] = [];
+  if (leadingText?.trim()) messages.push({ type: 'text', text: leadingText.trim() });
+
+  if (richMessage) {
+    messages.push(richMessage);
+    return messages;
+  }
+
   const message: Record<string, unknown> = { type: 'text', text };
   if (quickReplyItems && quickReplyItems.length > 0) {
     message.quickReply = { items: quickReplyItems.map((action) => ({ type: 'action', action })) };
   }
-  return [message];
+  messages.push(message);
+  return messages;
 }
 
 /** {APP_BASE_URL}/checkin/{session_id} -- 06_LINE_INTEGRATION.md #8 "No bearer credential in URL". */
@@ -119,7 +130,7 @@ export async function replyOrEnqueuePush(
         },
         body: JSON.stringify({
           replyToken: args.replyToken,
-          messages: buildLineMessages(args.text, args.quickReplyItems, args.message),
+          messages: buildLineMessages(args.text, args.quickReplyItems, args.message, args.leadingText),
         }),
       });
       if (response.ok) {
@@ -143,7 +154,7 @@ export async function replyOrEnqueuePush(
   const { error } = await serviceClient.rpc('server_tx_enqueue_immediate_line_push', {
     p_household_id: args.householdId,
     p_recipient_user_id: args.recipientUserId,
-    p_text: args.text,
+    p_text: args.leadingText?.trim() ? `${args.leadingText.trim()}\n\n${args.text}` : args.text,
     p_dedup_key: args.dedupKey ?? null,
     p_rich_message: args.message ?? null,
   });

@@ -70,6 +70,36 @@ function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | n
   return null;
 }
 
+export function conversationalScheduleLead(
+  text: string,
+  intent: "today" | "tomorrow" | "week",
+  correction = false,
+): string | null {
+  const value = normalized(text).replace(/[。.!！?？]+$/g, "");
+
+  // Literal shortcuts stay compact; ordinary questions get a lightweight
+  // conversational acknowledgement before the existing detailed result.
+  if (
+    (intent === "today" && value === "今日") ||
+    (intent === "tomorrow" && value === "明日") ||
+    (intent === "week" && value === "今週")
+  ) return null;
+
+  if (correction) {
+    return intent === "today"
+      ? "了解。登録じゃなくて、今日の予定の確認ね。見てみたよ👇"
+      : intent === "tomorrow"
+      ? "了解。登録じゃなくて、明日の予定の確認ね。見てみたよ👇"
+      : "了解。登録じゃなくて、今週の予定の確認ね。見てみたよ👇";
+  }
+
+  return intent === "today"
+    ? "うん、今日の予定見てみたよ！こんな感じ👇"
+    : intent === "tomorrow"
+    ? "うん、明日の予定見てみたよ！こんな感じ👇"
+    : "うん、今週の予定見てみたよ！こんな感じ👇";
+}
+
 export function lineLinkWelcomeText(): string {
   return [
     "✅ LINE連携が完了しました。",

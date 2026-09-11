@@ -81,6 +81,7 @@ import {
 import {
   type CompactScheduleEntry,
   completionHint,
+  conversationalScheduleLead,
   formatScheduleReply,
   type LineCreationKind,
   isAssistantAddressCorrection,
@@ -221,7 +222,7 @@ async function sendLineSchedule(
   item: WebhookInboxItem,
   actor: LineActor,
   kind: "today" | "tomorrow" | "week",
-  intro?: string,
+  leadingText?: string,
 ): Promise<void> {
   if (kind === "today") {
   const [rendered, structured] = await Promise.all([
@@ -250,13 +251,13 @@ async function sendLineSchedule(
     structured.data,
     Deno.env.get("APP_BASE_URL") ?? "",
   );
-  const replyText = intro ? `${intro}\n\n${todayText}` : todayText;
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
     lineUserId: item.source_external_user_id,
     householdId: actor.household_id,
     recipientUserId: actor.user_id,
-    text: replyText,
+    text: todayText,
+    leadingText,
     quickReplyItems: todayContextQuickReplies(structured.data, menuQuickReplies()),
     dedupKey: `line-daily-brief:${item.provider_event_id}`,
   });
@@ -302,7 +303,8 @@ async function sendLineSchedule(
     lineUserId: item.source_external_user_id,
     householdId: actor.household_id,
     recipientUserId: actor.user_id,
-    text: intro ? `${intro}\n\n${scheduleText}` : scheduleText,
+    text: scheduleText,
+    leadingText,
     message: buildScheduleSummaryFlex(title, entries, Deno.env.get("APP_BASE_URL") ?? ""),
     dedupKey: `line-schedule:${item.provider_event_id}`,
   });
@@ -374,7 +376,7 @@ async function tryHandleReadOnlyText(
       item,
       actor,
       intent,
-      correction ? "了解。登録ではなく、予定の確認ですね。" : undefined,
+      conversationalScheduleLead(text, intent, correction) ?? undefined,
     );
   }
   return true;

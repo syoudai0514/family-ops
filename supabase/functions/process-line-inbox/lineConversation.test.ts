@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
+  conversationalScheduleLead,
   formatScheduleReply,
   isAssistantAddressCorrection,
   isLineCorrectionCue,
@@ -42,6 +43,18 @@ Deno.test("conversation correction cues distinguish assistant-address repair fro
   assertEquals(isAssistantAddressCorrection("あなたに言っているよ"), true);
   assertEquals(isAssistantAddressCorrection("おうちノートに聞いてるんだよ"), true);
   assertEquals(isAssistantAddressCorrection("ママにお願いして"), false);
+});
+
+Deno.test("natural schedule questions get a separate conversational lead while literal shortcuts stay compact", () => {
+  assertEquals(conversationalScheduleLead("今日", "today"), null);
+  assertEquals(
+    conversationalScheduleLead("今日なんか予定あったっけ？", "today"),
+    "うん、今日の予定見てみたよ！こんな感じ👇",
+  );
+  assertEquals(
+    conversationalScheduleLead("ちがうよ、今日の予定教えて", "today", true),
+    "了解。登録じゃなくて、今日の予定の確認ね。見てみたよ👇",
+  );
 });
 
 Deno.test("LINE link success message explains what to do next", () => {
