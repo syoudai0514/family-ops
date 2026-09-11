@@ -15,10 +15,22 @@ function normalized(text: string): string {
   return text.normalize("NFKC").replace(/\s+/g, "").trim();
 }
 
+export function isLineCorrectionCue(text: string): boolean {
+  const value = normalized(text).replace(/[。.!！?？]+$/g, "");
+  return /^(?:違う違う|ちがうちがう|違うよ|ちがうよ|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて|そうじゃない|そうじゃないよ)[、,]?/u
+    .test(value) || isAssistantAddressCorrection(text);
+}
+
+export function isAssistantAddressCorrection(text: string): boolean {
+  const value = normalized(text).replace(/[。.!！?？]+$/g, "");
+  return /^(?:(?:あなた|おうちノート|AI|そっち)(?:に|へ)?)(?:聞いてる|聞いている|聞いてんの|言ってる|言っている|言ってんの)(?:んだけど|んだよ|んだけどね|よ)?$/u
+    .test(value);
+}
+
 function normalizedScheduleInquiry(text: string): string {
   return normalized(text)
     .replace(/[。.!！?？]+$/g, "")
-    .replace(/^(?:違う違う|ちがうちがう|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて)[、,]*/u, "")
+    .replace(/^(?:違う違う|ちがうちがう|違うよ|ちがうよ|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて|そうじゃない|そうじゃないよ)[、,]*/u, "")
     .replace(/^ただ/u, "")
     .replace(/きょう/gu, "今日")
     .replace(/あした/gu, "明日")
@@ -28,7 +40,10 @@ function normalizedScheduleInquiry(text: string): string {
     .replace(/しりたい/gu, "知りたい")
     .replace(/みたい/gu, "見たい")
     .replace(/かくにんしたい/gu, "確認したい")
-    .replace(/なに/gu, "何");
+    .replace(/なに/gu, "何")
+    // Speech-to-text / thumb-typing often doubles the question particle:
+    // "今日なんかかよていあったっけ". Treat it as a read, never a write.
+    .replace(/なんかか予定/gu, "なんか予定");
 }
 
 function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | null {
@@ -38,15 +53,35 @@ function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | n
   const kind = match[1] === "今日" ? "today" : match[1] === "明日" ? "tomorrow" : "week";
   const rest = match[2];
 
-  // Preserve the existing one-word shortcuts while expanding natural
-  // questions. These must be caught before the AI mutation classifier;
-  // otherwise a harmless query can become a bogus registration draft.
+  // A phrase that explicitly asks to create/change something is never a read,
+  // even if it contains "予定". This guard keeps the expanded conversational
+  // grammar fail-closed for mutations.
+  if (/(?:追加|登録|作って|作成|変更|消して|削除|送って|お願い|頼んで)/u.test(rest)) return null;
+
+  // Preserve the one-word shortcuts while accepting ordinary questions such
+  // as "今日なんか予定あったっけ？" and "今日って何か予定ある？".
   if (rest === "") return kind;
-  if (/^(?:の)?予定(?:は|を|が)?(?:教えて|知りたい|見たい|確認したい|何(?:が)?ある|どうなってる)?(?:だけ)?$/u.test(rest)) {
-    return kind;
-  }
-  if (/^(?:何(?:が)?ある|どうなってる)(?:の)?$/u.test(rest)) return kind;
+  if (
+    /^(?:って)?(?:(?:なんか|何か))?(?:の)?予定(?:は|を|が)?(?:教えて|知りたい|見たい|確認したい|何(?:が)?ある|何だっけ|なんだっけ|ある|あるの|あるっけ|あった|あったっけ|どう|どうなってる|どうだっけ)?(?:だけ)?$/u
+      .test(rest)
+  ) return kind;
+  if (/^(?:って)?(?:なんか|何か)?(?:何(?:が)?ある|どうなってる|どうだっけ)(?:の)?$/u.test(rest)) return kind;
+  if (/^(?:って)?(?:なんか|何か)?ある(?:の|っけ)?$/u.test(rest)) return kind;
   return null;
+}
+
+export function lineLinkWelcomeText(): string {
+  return [
+    "✅ LINE連携が完了しました。",
+    "",
+    "このLINEには、普段の言葉でそのまま話しかけて大丈夫です。",
+    "・「今日なんか予定あったっけ？」→ 今日の状況を確認",
+    "・「お願いを送りたい」→ 家族へのお願い",
+    "・「牛乳買って」→ 買い物の追加候補",
+    "・「共有」→ 引き継ぎ・共有",
+    "",
+    "まずは「今日」と送ってみてください。",
+  ].join("\n");
 }
 
 export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
