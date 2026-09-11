@@ -814,7 +814,7 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
       p_direction: direction,
       p_shared_title: title,
       p_shared_message: sharedMessage,
-      p_due_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      p_due_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     });
     if (error) {
       await replyMutationError(ctx, error);
