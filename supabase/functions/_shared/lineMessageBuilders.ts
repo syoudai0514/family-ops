@@ -19,6 +19,20 @@ export function rewritePickupRequest(rawText: string): string {
   return `${reason}お迎えをお願いしてもいい？`;
 }
 
+function formatJstMinute(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 type FlexFooterAction =
   | { label: string; data: string; primary?: boolean; type?: "postback" }
   | { label: string; uri: string; primary?: boolean; type: "uri" };
@@ -344,6 +358,7 @@ export function buildAssignmentRequestFlex(
   data: AssignmentChangeLineData,
 ): Record<string, unknown> {
   const scopeLabel = data.scope === "this_week" ? "今週だけ" : "今回だけ";
+  const workScheduleLabel = formatJstMinute(data.workDueAt);
   return {
     type: "flex",
     altText: `${scopeLabel}の担当変更のお願い: ${data.title}`,
@@ -365,6 +380,16 @@ export function buildAssignmentRequestFlex(
           size: "lg",
           wrap: true,
         },
+        ...(workScheduleLabel
+          ? [{
+            type: "text",
+            text: `対象日時: ${workScheduleLabel}`,
+            size: "sm",
+            weight: "bold",
+            color: "#202124",
+            wrap: true,
+          }]
+          : []),
         {
           type: "text",
           text: data.message || "担当を引き受けられますか？",

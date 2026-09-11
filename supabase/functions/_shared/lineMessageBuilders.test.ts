@@ -118,12 +118,13 @@ Deno.test(
   },
 );
 
-Deno.test('request Flex keeps the primary pair compact and adds a PWA other-response path', () => {
+Deno.test('request Flex shows the assignment target date and keeps the primary pair compact', () => {
   const message = buildAssignmentRequestFlex({
     requestId: 'request-compact',
-    title: '今日のお迎え',
+    title: 'お迎え',
     message: 'お願いできますか？',
     scope: 'once',
+    workDueAt: '2026-09-14T09:20:00.000Z',
     otherResponseUrl: 'https://example.test/requests?request=request-compact&response=other',
   }) as {
     contents: {
@@ -135,6 +136,9 @@ Deno.test('request Flex keeps the primary pair compact and adds a PWA other-resp
       };
     };
   };
+  const raw = JSON.stringify(message);
+  assertStringIncludes(raw, '対象日時: 9/14 18:20');
+
   const row = message.contents.footer.contents[0];
   assertEquals((row as { action: { label: string } }).action.label, 'やる');
   const secondaryRow = message.contents.footer.contents[1];
