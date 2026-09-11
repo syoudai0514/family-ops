@@ -164,8 +164,19 @@ const REASON_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
  * Hostile or scorekeeping language is intentionally NOT a hard fact. The
  * rewrite layer is expected to remove it.
  */
+function invariantSourceText(text: string): string {
+  return text
+    // Period words inside explicit scorekeeping ("今週ずっと私が〜してる")
+    // are not request facts. Keeping them as hard invariants would force the
+    // partner-facing rewrite to preserve blame.
+    .replace(
+      /今週ずっと(?:私|俺|僕|こっち)(?:が)?[^、。！？!?]*(?:して|やって|行って|担当して)[^、。！？!?]*/gu,
+      "",
+    );
+}
+
 export function validateInvariant(rawText: string, proposedText: string): InvariantResult {
-  const rawFacts = extractFacts(rawText);
+  const rawFacts = extractFacts(invariantSourceText(rawText));
   const proposedFacts = extractFacts(proposedText);
   const rawSet = new Set(rawFacts);
   const proposedSet = new Set(proposedFacts);
@@ -247,6 +258,7 @@ function buildPrompt(rawText: string, targetType: AiDraftTargetType): string {
     "最優先は『本来伝えるべき用件・理由・日時・数量を保ちつつ、関係を悪化させる圧だけを落とす』ことです。",
     "以下を厳守してください:",
     "- 依頼内容、対象、日時、期限、数量、場所を変えない。『お風呂』を『お風呂の準備』に狭める等も禁止",
+    "- 元文に日付・曜日・時刻が無い場合、『今日』『明日』などを勝手に追加しない",
     "- 入力にない担当、理由、予定、対策、教訓を作らない",
     "- 依頼者自身の現在の事情・制約・体調・負荷が依頼理由なら、短く自然に残す",
     "- 相手の過去の失敗、貸し借り、比較、嫌味、皮肉、決めつけ、人格評価、説教、脅しは相手向け文面から除く",
@@ -257,7 +269,8 @@ function buildPrompt(rawText: string, targetType: AiDraftTargetType): string {
     "- 『ありがとう』『ごめん』等の感情表現を勝手に追加しない",
     "- 依頼者の感情を捏造しない",
     "- 否定/肯定を反転しない",
-    "- request は夫婦LINEとして自然で柔らかくする。過剰敬語（『いただけますでしょうか』等）は避け、『お願いできる？』『お願いできますか？』程度を基本にする",
+    "- request は夫婦LINEとして自然で柔らかくする。過剰敬語や不自然な名詞化（『〜してもらうことはお願いできる？』等）は避け、『お願いできる？』『お願いできますか？』程度を基本にする",
+    "- 『休んで看病して』のように2つの必要行動が結びついている場合、片方を落とさない",
     "- handover は依頼文に変えず、確定済みの事実は確定済みの事実として簡潔に共有する",
     "- 曖昧な対象を勝手に具体化しない。元が『全部』なら『家事全部』などと補わない",
     "",
