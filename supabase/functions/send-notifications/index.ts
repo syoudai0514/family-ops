@@ -38,6 +38,7 @@ import {
   buildAssignmentRequestFlex,
   buildGeneralRequestFlex,
 } from '../_shared/lineMessageBuilders.ts';
+import { findRequestReceivedItem } from './requestNotificationPayload.ts';
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -158,9 +159,7 @@ function buildRichRequestMessage(
 ): Record<string, unknown> | null {
   if (payload?.rich_message) return payload.rich_message;
   const items = payload?.items ?? [];
-  const item = items.find(
-    (candidate) => candidate.type === 'request_received' && Boolean(candidate.payload?.request_id),
-  );
+  const item = findRequestReceivedItem(items);
   if (!item?.payload?.request_id) return null;
   const appBaseUrl = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
   const otherResponseUrl = appBaseUrl ? `${appBaseUrl}/requests?request=${encodeURIComponent(item.payload.request_id)}&response=other` : undefined;
