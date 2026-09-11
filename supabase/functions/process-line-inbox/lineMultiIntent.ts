@@ -97,10 +97,24 @@ function explicitDate(clause: string, now: Date): string {
 }
 
 function explicitRole(clause: string): "papa" | "mama" | null {
-  const correction = clause.match(/(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/u);
-  const token = correction?.[1] ?? clause.match(/パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻/u)?.[0] ?? null;
+  const roleToken = "(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)";
+  const directCorrection = clause.match(
+    new RegExp(`${roleToken}\\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\\s*(${roleToken})`, "u"),
+  );
+  const colloquialCorrections = [
+    ...clause.matchAll(
+      new RegExp(`(?:いや(?:違う)?|やっぱ(?:り)?|訂正(?:して)?)[、,\\s]*(?:相手(?:は)?[、,\\s]*)?(${roleToken})`, "gu"),
+    ),
+  ];
+  const corrected = colloquialCorrections.at(-1)?.[1] ?? directCorrection?.[1] ?? null;
+  const tokens = [...clause.matchAll(new RegExp(roleToken, "gu"))].map((match) => match[0]);
+  const token = corrected ?? tokens.at(-1) ?? null;
   if (!token) return null;
   return /^(?:パパ|父|お父さん)$/u.test(token) ? "papa" : "mama";
+}
+
+function hasExplicitClock(text: string): boolean {
+  return /(?:\d{1,2}時(?:\d{1,2}分|半)?|\d{1,2}:\d{2})/u.test(text);
 }
 
 function fallbackRequestIntent(clause: string, requestTitle: string, now: Date): LineIntent {
@@ -294,7 +308,17 @@ export function normalizeSemanticDecomposition(
       });
       const validated = normalizeGeminiLineIntent(intentRaw);
       if (!validated) return [];
-      intent = { ...validated, source: "gemini" };
+      const sourceRole = explicitRole(sourceText);
+      intent = {
+        ...validated,
+        // A role may only become canonical when the candidate's own source
+        // text names it. This blocks model-invented Papa/Mama assignments.
+        targetRole: sourceRole,
+        // "朝/夜" may remain a daypart, but it must never silently become
+        // 09:00/20:00. A concrete due time requires a concrete clock token.
+        dueLocalTime: hasExplicitClock(sourceText) ? validated.dueLocalTime : null,
+        source: "gemini",
+      };
     }
 
     normalized.push({
@@ -324,15 +348,27 @@ async function geminiSemanticProvider(text: string, now: Date): Promise<string |
   const prompt = [
     "家庭内オペレーションの自然文を、意味上独立した候補へAI-firstで分解してください。",
     `今日(Asia/Tokyo)は ${today} です。`,
-    "句読点の有無・読点だけ・口語・「〜して、〜して」に依存せず意味で分ける。",
-    "同じkindが2件以上あっても統合しない。最大8件。入力にない事実は作らない。",
-    "訂正（例:『それ日曜だった』『やっぱ土曜』）は参照先候補を修正し、訂正文を新規候補にしない。",
+    "最優先: 入力にない担当・時刻・日付・理由・作業を作らない。",
+    "句読点の有無、読点だけ、助詞抜け、口語、音声入力風、話題飛びでも意味で分ける。",
+    "同じkindが2件以上あっても勝手に統合しない。最大8件。",
+    "ただし同一目的の『予定時刻 + 出発時刻 + 準備物』は別タスクに分割しない。準備/対応1候補にまとめ、予定時刻はcontext、出発/準備期限はdue_local_time、持ち物はsubtasksへ入れる。",
+    "例: 『明日11時病院で10時出るから保険証と診察券準備』 -> task『病院の準備』1件。context='病院 11:00', due_local_time='10:00', subtasks=['保険証','診察券']。",
+    "訂正は必ず元候補へ反映し、訂正文を新規候補にしない。",
+    "例: 『土曜に牛乳買う。やっぱ日曜』 -> shopping 1件、scheduled_dateは日曜。source_textは訂正を含む連続原文。",
+    "例: 『明日迎えママお願い。いやパパだった』 -> request 1件、target_role='papa'。source_textは訂正を含む連続原文。",
+    "『ママに』『パパに』『迎えはママ』『相手はママ』等、役割が明記されたrequest/taskは target_role を必ず返す。",
+    "役割が書かれていなければ target_role=null。requestだからといって担当を推測しない。",
+    "買う/買って/買っといて/購入/注文は shopping。命令形でもrequestにしない。",
+    "request は相手への明確な家事・作業依頼だけ。",
+    "actual は実施済み報告、share は予定/状態/お知らせの共有。",
+    "先頭に共通の日付・時間帯があり、その後に複数の用件が連続する場合、その修飾が自然に継続する候補へ引き継ぐ。途中で別の日付が出たら以降は更新する。",
+    "朝/昼/夕方/夜は daypart のみ。具体時刻が書かれていない限り due_local_time=null。09:00/20:00等を推測しない。",
+    "source_textは必ず入力中の連続した原文部分をそのまま返す。役割や訂正が候補の意味に必要なら、それらも含む連続範囲をsource_textにする。",
     "不明なのが1項目だけなら他の候補/項目を保持し、その項目だけmissing_fields/ambiguous_fieldsへ入れる。",
-    "source_textは必ず入力中の連続した原文部分をそのまま返す。",
-    "kindは task/request/shopping/share/actual。requestは相手への明確な依頼だけ。",
     "task/request/shoppingは scheduled_date(YYYY-MM-DD), due_local_time, daypart, target_role, shared_message, subtasks, context, calendar_visibility を返す。",
+    "calendar_visibility は特別な家族予定/病院/園学校行事ならspecial、日常家事・買い物はhidden。",
     "confidenceは0〜1。",
-    'JSONのみ: {"candidates":[{"kind":"task|request|shopping|share|actual","title":"...","source_text":"入力中の原文","scheduled_date":"YYYY-MM-DD","due_local_time":null,"daypart":null,"target_role":null,"shared_message":null,"subtasks":[],"context":null,"calendar_visibility":"hidden","missing_fields":[],"ambiguous_fields":[],"confidence":0.9}]}',
+    'JSONのみ: {"candidates":[{"kind":"task|request|shopping|share|actual","title":"...","source_text":"入力中の連続原文","scheduled_date":"YYYY-MM-DD","due_local_time":null,"daypart":null,"target_role":null,"shared_message":null,"subtasks":[],"context":null,"calendar_visibility":"hidden","missing_fields":[],"ambiguous_fields":[],"confidence":0.9}]}',
     `入力: ${JSON.stringify(text)}`,
   ].join("\n");
   try {
