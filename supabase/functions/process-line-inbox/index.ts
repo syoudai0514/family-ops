@@ -376,7 +376,7 @@ async function tryHandleReadOnlyText(
       item,
       actor,
       intent,
-      conversationalScheduleLead(text, intent, correction),
+      conversationalScheduleLead(text, intent, correction) ?? undefined,
     );
   }
   return true;
