@@ -92,38 +92,35 @@ Canonical locations:
 | LINE link token claim succeeded silently | success + usage welcome | deployed |
 | Request recipient received inert text only | preserve request payload through outbox + canonical `request.received` recognition + actionable Flex | deployed |
 | Same-start transport template resave returned internal error | same-start in-place edit + typed transport errors | deployed |
-| Accepted pickup changed only pickup task | role-dependent same-day task reconciliation merged in PR #84; CI #1045 / Operational Safety #140 GREEN | **production migration not yet applied at this handoff** |
-| Existing already-accepted pickup request predated dependency fix | requires canonical reconciliation only after the production migration exists | **not yet backfilled; do not claim closed** |
+| Accepted pickup changed only pickup task | role-dependent same-day task reconciliation merged in PR #84; CI #1045 / Operational Safety #140 GREEN | migration applied in production |
+| Existing already-accepted pickup request predated dependency fix | one-time canonical reconciliation via the same role-dependency function | completed; 10 dependent tasks updated and audited |
 
 ## 4. Production runtime snapshot before this docs PR
 
-CURRENT main after PR #85 documentation merge:
+Fresh runtime verification after PR #86 correction review:
 
-`9799dddd7ef497cf6ff6b4dad8fdbdc722997fd9`
-
-PR #84 implementation status:
-
+- CURRENT main before this final docs correction: `eff039ad058bb346f534a3814383a504e6804638`
 - PR #84 merged; merge commit `ad5e99d352230a94b1498c1262b32e6956f1a121`
 - PR #84 head `7274444fbef08e940ceacfdb94ef21a146518ad9`
 - CI #1045 GREEN
 - Operational Safety #140 GREEN
-- migration file on main: `20260911141000_transport_assignment_dependency_reconcile.sql`
-- **production Supabase migration readback: NOT APPLIED as of 2026-09-11 16:39 JST**
+- production migration list contains `20260911141000_transport_assignment_dependency_reconcile`
+- `private.fn_reconcile_transport_role_dependents_v1` exists in production and is executable by `service_role`
 
-Relevant production functions at this handoff:
+Relevant production functions:
 
 - `process-line-inbox`: v30 ACTIVE
 - `send-notifications`: v21 ACTIVE
 - `transport-schedule`: v2 ACTIVE
 
-Important runtime consequence:
+Production consistency readback for the defect-discovery pickup request:
 
-- the latest real pickup assignment request was accepted before the dependency-reconcile migration existed;
-- pickup itself moved to the mama test member;
-- the same-day `pickup_assignee` dependents observed during F2 remained on papa at that point;
-- do **not** state that those dependents were already backfilled or that the defect is production-closed.
+- pickup occurrence = mama test member;
+- same-day open `pickup_assignee` dependent tasks = mama test member;
+- 10 dependency reconciliation audit events exist with `reason=transport_role_dependency`;
+- the previously stale dependent assignments were operationally repaired.
 
-Before freezing the next exact F2 HEAD, the control tower must reconcile CURRENT main vs production Supabase, apply the pending migration only after fresh verification, and then decide whether a one-time canonical repair of the already-accepted historical F2 request is needed for production consistency. A fresh final F2 scenario is still required regardless.
+This operational repair closes production consistency for the already-accepted defect-discovery request, but it is **not final F2 acceptance evidence**. The final exact-HEAD F2 run must execute a fresh two-party request/accept flow after the control tower freezes the new exact HEAD.
 
 ## 5. Important distinction: implementation closure vs final F2 evidence
 
@@ -163,13 +160,11 @@ The control tower should perform these in order:
 2. Confirm Baseline §28 and current design 04/09/11 are present.
 3. Confirm all CI / Operational Safety checks for the docs PR are GREEN.
 4. Confirm Vercel production is READY on the new main HEAD.
-5. Confirm relevant Supabase runtime files/schema remain compatible with that HEAD.
-6. **Resolve the pending production deployment gap for `20260911141000_transport_assignment_dependency_reconcile.sql`**. Do not infer deployment from PR merge/CI alone.
-7. If production consistency requires repairing the already-accepted defect-discovery request, use the canonical reconciliation path after the migration is present and record that repair as operational consistency work, **not final F2 evidence**.
-8. Confirm queues/safety after any production mutation.
-9. Freeze **one** exact HEAD for the next F2 run.
-10. Reclassify any old physical evidence from prior HEADs as stale/history where strict exact-head binding requires it.
-11. Hand the frozen HEAD and the new-owner document to the new F2 owner.
+5. Confirm relevant Supabase runtime files/schema remain compatible with that HEAD, including presence of `20260911141000_transport_assignment_dependency_reconcile` and the reconciliation function.
+6. Confirm queues/safety and the already-repaired defect-discovery request remain consistent.
+7. Freeze **one** exact HEAD for the next F2 run.
+8. Reclassify old physical evidence from prior HEADs as stale/history where strict exact-head binding requires it.
+9. Hand the frozen HEAD and the new-owner document to the new F2 owner.
 
 Do not reopen already approved product decisions merely because an old implementation/test encoded different behavior.
 
