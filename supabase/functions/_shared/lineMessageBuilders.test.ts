@@ -42,10 +42,22 @@ Deno.test(
   },
 );
 
-Deno.test('natural pickup request is rewritten into a gentle shared message', () => {
+Deno.test('natural pickup request preserves the requester reason without inventing facts', () => {
   assertEquals(
     rewritePickupRequest('今日ちょっと遅くなるから迎えお願い'),
-    '今日は少し遅くなりそうです。お迎えをお願いしてもいい？',
+    '今日ちょっと遅くなるから、お迎えをお願いしてもいい？',
+  );
+  assertEquals(
+    rewritePickupRequest('仕事でどうしても難しくなりました。9/14のお迎えお願いできる？'),
+    '仕事でどうしても難しくなりました。お迎えをお願いしてもいい？',
+  );
+  assertEquals(
+    rewritePickupRequest('9/14のお迎えお願いできる？'),
+    'お迎えをお願いしてもいい？',
+  );
+  assertEquals(
+    rewritePickupRequest('明日のお迎えお願い'),
+    'お迎えをお願いしてもいい？',
   );
 });
 

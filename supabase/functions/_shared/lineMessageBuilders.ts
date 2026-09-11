@@ -15,8 +15,24 @@ export type AssignmentChangeLineData = {
 };
 
 export function rewritePickupRequest(rawText: string): string {
-  const reason = /遅/.test(rawText) ? "今日は少し遅くなりそうです。" : "";
-  return `${reason}お迎えをお願いしてもいい？`;
+  const normalized = rawText.normalize("NFKC").trim();
+  const pickupIndex = normalized.search(/お?迎え/u);
+  if (pickupIndex < 0) return "お迎えをお願いしてもいい？";
+
+  let context = normalized.slice(0, pickupIndex).trim();
+  context = context.replace(
+    /(?:(?:\d{4}年)?\d{1,2}月\d{1,2}日|\d{4}\/\d{1,2}\/\d{1,2}|\d{1,2}\/\d{1,2}|今日|明日|明後日)(?:の)?\s*$/u,
+    "",
+  ).trim();
+
+  if (!context) return "お迎えをお願いしてもいい？";
+  if (/[。.!！?？]$/u.test(context)) {
+    return `${context}お迎えをお願いしてもいい？`;
+  }
+  if (/(?:から|ので|ため|けど|けれど|が)$/u.test(context)) {
+    return `${context}、お迎えをお願いしてもいい？`;
+  }
+  return `${context}。お迎えをお願いしてもいい？`;
 }
 
 function formatJstMinute(value?: string | null): string | null {
