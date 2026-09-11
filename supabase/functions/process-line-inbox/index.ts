@@ -89,6 +89,7 @@ import {
   lineCreationStarterKind,
   lineLinkWelcomeText,
   menuQuickReplies,
+  pendingConfirmationMessage,
   readOnlyLineIntent,
 } from "./lineConversation.ts";
 import {
@@ -1351,12 +1352,23 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
   }
 
   if (fields.action === "confirm_pending" && fields.pending_action_id) {
+    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+    if (!pending) {
+      await sendConfirmation(client, item, actor, "この下書きはすでに確定・期限切れです。");
+      return;
+    }
     const { error } = await client.rpc("server_tx_confirm_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: fields.pending_action_id });
     if (error) {
       console.error("process-line-inbox: confirm_pending failed", error.message);
       return;
     }
-    await sendConfirmation(client, item, actor, completionHint("✓ 確定しました。"), menuQuickReplies());
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      completionHint(pendingConfirmationMessage(pending.action_type)),
+      menuQuickReplies(),
+    );
     return;
   }
 
