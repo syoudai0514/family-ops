@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   deterministicLineIntent,
+  extractLineIntent,
   isLineCreateStarter,
   isPickupAssignmentChangeText,
   normalizeGeminiLineIntent,
