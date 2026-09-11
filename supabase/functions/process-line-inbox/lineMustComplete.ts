@@ -888,7 +888,7 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
     // LINE Quick Replies are horizontally scrollable, so mixing navigation/test
     // controls here makes the real recipient action hard to discover and tap.
     if (quick.length === 0) {
-      quick.push(message("テスト状態に戻る", "テスト状態"));
+      quick.push(...simulationControls(contextId, simulatedLabel));
     }
     await ctx.reply(simulationRequestText(root, latest), quick);
     return;
