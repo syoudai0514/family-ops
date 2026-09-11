@@ -183,3 +183,45 @@ Deno.test("one candidate remains a normal preview, not a forced group", () => {
   assertEquals(candidates[0].kind, "shopping");
   assertEquals(isMultiIntentMessage(candidates), false);
 });
+
+
+Deno.test("model cannot invent a family role when source text has none", () => {
+  const raw = "明日のお迎えお願い";
+  const direct = normalizeSemanticDecomposition(model([
+    request("お迎え", raw, "mama"),
+  ]), raw);
+  assertEquals(direct[0].intent?.targetRole, null);
+});
+
+Deno.test("explicit family role in source text overrides missing model role", () => {
+  const raw = "ママに明日のお迎えお願い";
+  const direct = normalizeSemanticDecomposition(model([
+    request("お迎え", raw, null),
+  ]), raw);
+  assertEquals(direct[0].intent?.targetRole, "mama");
+});
+
+Deno.test("colloquial role correction selects the final role", () => {
+  const raw = "明日お迎えママお願い。いやパパだった";
+  const direct = normalizeSemanticDecomposition(model([
+    request("お迎え", raw, null),
+  ]), raw);
+  assertEquals(direct[0].intent?.targetRole, "papa");
+});
+
+Deno.test("daypart must not silently become a concrete due time", () => {
+  const raw = "明日朝ゴミ出しお願い";
+  const direct = normalizeSemanticDecomposition(model([
+    request("ゴミ出し", raw, null, { daypart: "morning", due_local_time: "09:00" }),
+  ]), raw);
+  assertEquals(direct[0].intent?.daypart, "morning");
+  assertEquals(direct[0].intent?.dueLocalTime, null);
+});
+
+Deno.test("explicit clock time may survive model normalization", () => {
+  const raw = "明日7時30分までに水筒準備";
+  const direct = normalizeSemanticDecomposition(model([
+    task("水筒準備", raw, { due_local_time: "07:30" }),
+  ]), raw);
+  assertEquals(direct[0].intent?.dueLocalTime, "07:30");
+});
