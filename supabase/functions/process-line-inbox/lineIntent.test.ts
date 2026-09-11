@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   deterministicLineIntent,
-  extractLineIntent,
+  normalizeResolvedGeminiLineIntent,
   isLineCreateStarter,
   isPickupAssignmentChangeText,
   normalizeGeminiLineIntent,
@@ -157,11 +157,10 @@ Deno.test("shopping fallback preserves explicit quantities and role only when wr
 });
 
 
-Deno.test("hiragana family role is recovered from colloquial pickup request", async () => {
-  const got = await extractLineIntent(
+Deno.test("hiragana family role is recovered from colloquial pickup request", () => {
+  const got = normalizeResolvedGeminiLineIntent(
     "あしたままむかえおねがい",
-    now,
-    () => Promise.resolve(JSON.stringify({
+    JSON.stringify({
       kind: "request",
       title: "迎え",
       scheduled_date: "2026-09-12",
@@ -172,17 +171,17 @@ Deno.test("hiragana family role is recovered from colloquial pickup request", as
       subtasks: [],
       context: null,
       calendar_visibility: "hidden",
-    })),
+    }),
+    now,
   );
   assertEquals(got?.targetRole, "mama");
   assertEquals(got?.kind, "request");
 });
 
-Deno.test("role-prefixed noun phrase without a request cue remains an assigned task", async () => {
-  const got = await extractLineIntent(
+Deno.test("role-prefixed noun phrase without a request cue remains an assigned task", () => {
+  const got = normalizeResolvedGeminiLineIntent(
     "ママ明日保険証準備",
-    now,
-    () => Promise.resolve(JSON.stringify({
+    JSON.stringify({
       kind: "request",
       title: "保険証の準備",
       scheduled_date: "2026-09-12",
@@ -193,7 +192,8 @@ Deno.test("role-prefixed noun phrase without a request cue remains an assigned t
       subtasks: [],
       context: null,
       calendar_visibility: "hidden",
-    })),
+    }),
+    now,
   );
   assertEquals(got?.kind, "task");
   assertEquals(got?.targetRole, "mama");
