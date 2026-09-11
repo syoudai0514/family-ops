@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { findRequestReceivedItem, isRequestReceivedType } from './requestNotificationPayload.ts';
+import { findRequestReceivedItem, isRequestReceivedType, requestOutcomeText } from './requestNotificationPayload.ts';
 
 Deno.test('canonical request.received is recognized at LINE worker boundary', () => {
   assertEquals(isRequestReceivedType('request.received'), true);
@@ -26,4 +26,20 @@ Deno.test('canonical assignment request payload remains actionable after outbox 
 
   assertEquals(item?.payload?.request_id, 'req-1');
   assertEquals(item?.payload?.request_kind, 'assignment_change');
+});
+
+
+Deno.test('request outcome notifications state the actual result', () => {
+  assertEquals(
+    requestOutcomeText({ type: 'request.declined', title: 'お願いを更新しました', body: 'お迎え' }),
+    'お願いは「難しい」と返されました。\nお迎え\nお願いは成立していません。',
+  );
+  assertEquals(
+    requestOutcomeText({ type: 'request.accepted', title: 'お願いを更新しました', body: 'お迎え' }),
+    'お願いが引き受けられました。\nお迎え',
+  );
+  assertEquals(
+    requestOutcomeText({ type: 'request.checking', title: '確認中です', body: 'お迎え' }),
+    '相手が確認中です。\nお迎え\nまだ成立していません。',
+  );
 });
