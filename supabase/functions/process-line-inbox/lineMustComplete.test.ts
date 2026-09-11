@@ -444,3 +444,55 @@ Deno.test("LINE one-user simulation accepts a typed role-side alias instead of c
   assertStringIncludes(replies[0].text, "🧪 ママとして確認");
   assertEquals(replies[0].quickReplies.map((action) => action.label), ["受ける", "断る"]);
 });
+
+
+Deno.test("LINE one-user simulation expired request offers two fresh-test actions", async () => {
+  const { ctx, replies } = makeContext((name) => {
+    if (name === "server_tx_get_active_test_simulation_v1") {
+      return {
+        data: {
+          active: true,
+          revision: 4,
+          test_context_id: "test-context-1",
+          simulated_role: "mama",
+          simulated_display_label: "🧪 ママ",
+        },
+        error: null,
+      };
+    }
+    assertEquals(name, "server_tx_get_test_simulation_workspace_v2");
+    return {
+      data: {
+        status: "active",
+        revision: 4,
+        simulated_role: "mama",
+        simulated_display_label: "🧪 ママ",
+        production_side_effects: false,
+        requests: [{
+          title: "お迎えをお願い",
+          message: "今日のお迎えをお願いできますか？",
+          due_at: "2026-09-11T00:30:00.000Z",
+          status: "expired",
+          requester_side: "operator",
+          recipient_side: "simulated",
+          request_id: "request-1",
+          latest_attempt: {
+            state: "expired",
+            attempt_id: "attempt-1",
+            revision: 3,
+            terms_revision: 1,
+            reply_due_at: "2026-09-10T23:30:00.000Z",
+          },
+        }],
+      },
+      error: null,
+    };
+  });
+
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "テスト状態"), true);
+  assertStringIncludes(replies[0].text, "状態: 返事期限切れ");
+  assertEquals(replies[0].quickReplies.map((action) => action.label), [
+    "🧪 ママにお願い",
+    "🧪 ママからお願い",
+  ]);
+});
