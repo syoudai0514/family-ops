@@ -1,6 +1,6 @@
 # AI Natural-Language Robustness Matrix
 
-Status: test architecture / non-product-behavior change  
+Status: implemented regression architecture + F2 remediation  
 Source of truth for product meaning remains `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`.
 
 ## Purpose
@@ -118,3 +118,44 @@ Implementation:
 `supabase/functions/process-line-inbox/lineRobustnessCorpus.test.ts`
 
 The first corpus intentionally encodes desired behavior, not merely current behavior. A failure is a product/implementation finding to classify, not a reason to weaken the expectation.
+
+
+## 2026-09-11 first execution result
+
+Live Gemini API calls: **0**
+
+Baseline run:
+- branch head: `860a2d0e0c0eae174840099e7e0351bf587b801b`
+- CI: #1067
+- robustness corpus: **46 / 56 PASS = 82.1%**
+- full Edge unit suite: **221 passed / 10 failed**
+- Operational Safety: #162 SUCCESS
+
+The 10 baseline failures were:
+
+1. semantic pickup handoff `迎え行ってくれる？` not recognized as assignment change;
+2. recollection `迎えお願いしてたっけ？` incorrectly treated as mutation;
+3. negated request `迎えお願いしなくていい` incorrectly treated as mutation;
+4. scorekeeping pressure `前俺やったし` leaked into partner-facing text;
+5. dismissive assumption `どうせ暇でしょ` leaked into partner-facing text;
+6. coercive strengthener `絶対` leaked into partner-facing text;
+7. fabricated quantity in an AI rewrite was not rejected;
+8. negation-to-affirmation flip was not rejected;
+9. invented reason category was not rejected;
+10. invented gratitude was not rejected.
+
+Remediation:
+- pickup mutation boundary now distinguishes explicit handoff, recollection, and negation;
+- partner-facing fallback rewrite removes scorekeeping/dismissive/coercive pressure while preserving factual reason;
+- rewrite invariant validation is now bidirectional for recognized facts and detects negation polarity, invented gratitude/apology, and invented reason categories;
+- legacy golden fixtures were updated where the previous behavior explicitly documented these safety gaps as accepted boundaries.
+
+Convergence run:
+- branch head: `59db1294343db7797793a433b9a287f7960096a3`
+- CI: #1072
+- robustness corpus: **56 / 56 PASS = 100%**
+- full Edge unit suite: **233 passed / 0 failed**
+- CI jobs: web / DB / Edge / Supabase real-stack = SUCCESS
+- Operational Safety: #167 SUCCESS
+
+The comparison metric is the unchanged 56-case robustness corpus: **82.1% -> 100%**.
