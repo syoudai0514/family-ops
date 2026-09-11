@@ -24,6 +24,7 @@ export function rewritePickupRequest(rawText: string): string {
     /(?:(?:\d{4}年)?\d{1,2}月\d{1,2}日|\d{4}\/\d{1,2}\/\d{1,2}|\d{1,2}\/\d{1,2}|今日|明日|明後日)(?:の)?\s*$/u,
     "",
   ).trim();
+  context = context.replace(/[、，,]+$/u, "").trim();
 
   if (!context) return "お迎えをお願いしてもいい？";
   if (/[。.!！?？]$/u.test(context)) {
