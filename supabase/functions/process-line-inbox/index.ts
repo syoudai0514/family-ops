@@ -45,6 +45,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import {
   daypartLabel,
   daypartToLocalTime,
+  isPickupAssignmentChangeText,
 } from "./lineIntent.ts";
 import {
   buildIntentClarificationFlex,
@@ -1611,7 +1612,7 @@ async function handleText(
 
   let assignmentPayload: Record<string, unknown> | null = null;
 
-  if (!starterKind && /(?:迎え.*お願い|お願い.*迎え)/.test(text)) {
+  if (!starterKind && isPickupAssignmentChangeText(text)) {
     const scheduledDate = resolveJapanesePickupDate(text);
     const { data: definition } = await client.from("task_definitions").select("id").eq("household_id", actor.household_id).eq("code", "pickup").maybeSingle();
     const { data: task } = definition && scheduledDate
