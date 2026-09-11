@@ -62,6 +62,11 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   SHOPPING_PERFORMER_NOT_ASSIGNEE: 409,
   CORRECTION_REASON_REQUIRED: 400,
   RECURRENCE_OVERLAP: 409,
+  TRANSPORT_TEMPLATE_INVALID: 400,
+  TRANSPORT_TEMPLATE_WEEK_INVALID: 400,
+  TRANSPORT_TEMPLATE_START_EXISTS: 409,
+  TRANSPORT_TEMPLATE_NOT_FOUND: 404,
+  TRANSPORT_TEMPLATE_PAST_UPDATE: 409,
   // WP5 additions (Gemini AI-draft boundary):
   AI_INVARIANT_VIOLATION: 422,
   AI_UNAVAILABLE: 503,
@@ -143,6 +148,11 @@ const KNOWN_CODES = new Set([
   "SHOPPING_PERFORMER_NOT_ASSIGNEE",
   "CORRECTION_REASON_REQUIRED",
   "RECURRENCE_OVERLAP",
+  "TRANSPORT_TEMPLATE_INVALID",
+  "TRANSPORT_TEMPLATE_WEEK_INVALID",
+  "TRANSPORT_TEMPLATE_START_EXISTS",
+  "TRANSPORT_TEMPLATE_NOT_FOUND",
+  "TRANSPORT_TEMPLATE_PAST_UPDATE",
   "AI_INVARIANT_VIOLATION",
   "AI_UNAVAILABLE",
   "RAW_INPUT_EXPIRED",
@@ -224,6 +234,15 @@ export function describeCode(code: string): string {
       return "未対応に戻す理由を入力してください";
     case "RECURRENCE_OVERLAP":
       return "同じ曜日・時間帯の設定が重複しています";
+    case "TRANSPORT_TEMPLATE_INVALID":
+    case "TRANSPORT_TEMPLATE_WEEK_INVALID":
+      return "送り迎えの生活パターンを確認してください";
+    case "TRANSPORT_TEMPLATE_START_EXISTS":
+      return "同じ開始日の生活パターンがあります。現在の内容を更新してください";
+    case "TRANSPORT_TEMPLATE_NOT_FOUND":
+      return "更新する生活パターンが見つかりません。最新の内容を読み直してください";
+    case "TRANSPORT_TEMPLATE_PAST_UPDATE":
+      return "過去の生活パターンは直接変更できません。今日以降の開始日を指定してください";
     case "AI_INVARIANT_VIOLATION":
       return "AIの提案内容が元のメモと矛盾しています。内容を確認してください";
     case "AI_UNAVAILABLE":

@@ -14,11 +14,12 @@ declare
   op_create_h2 uuid := gen_random_uuid();
   op_template_a uuid := gen_random_uuid();
   op_template_b uuid := gen_random_uuid();
+  op_template_b_update uuid := gen_random_uuid();
   op_override uuid := gen_random_uuid();
   op_delete_override uuid := gen_random_uuid();
   op_cross_household uuid := gen_random_uuid();
   h1 uuid; h2 uuid; token text; actor1 uuid; actor2 uuid;
-  days_a jsonb; days_b jsonb; r_a jsonb; r_b jsonb; r_override jsonb;
+  days_a jsonb; days_b jsonb; days_b_update jsonb; r_a jsonb; r_b jsonb; r_b_update jsonb; r_override jsonb;
   template_a uuid; template_b uuid; protected_task uuid; override_task uuid;
   before_day jsonb; after_day jsonb; failed boolean;
 begin
@@ -137,6 +138,60 @@ begin
     where id=protected_task and planned_assignee_id=u2 and planned_assignee_actor_ref_id=actor2
       and assignment_source='agreement'
   ) then raise exception 'FAIL new template silently overwrote protected individual agreement'; end if;
+
+  -- Real-use F2 regression: editing a life pattern again with the SAME
+  -- valid_from is an in-place update, not TRANSPORT_TEMPLATE_START_EXISTS.
+  -- Change Thursday only and keep all other weekdays identical.
+  days_b_update := (
+    select jsonb_agg(jsonb_build_object(
+      'weekday',d,
+      'dropoff_user_id',case when d=4 then u1 else u2 end,
+      'pickup_user_id',u1,
+      'dropoff_local_time',case when d=4 then '08:25' else '08:10' end,
+      'pickup_local_time',case when d=4 then '18:05' else '17:40' end
+    ) order by d) from generate_series(1,7) d
+  );
+  r_b_update := public.server_tx_save_transport_template_v2(
+    u1,op_template_b_update,'2026-10-01',days_b_update
+  );
+
+  if (r_b_update->>'template_id')::uuid <> template_b then
+    raise exception 'FAIL same-start resave created a different template';
+  end if;
+  if coalesce((r_b_update->>'updated_existing')::boolean,false) is not true then
+    raise exception 'FAIL same-start resave did not report in-place update';
+  end if;
+  if (select count(*) from public.transport_weekly_templates where household_id=h1)<>2 then
+    raise exception 'FAIL same-start resave duplicated life-pattern period';
+  end if;
+  if not exists(
+    select 1
+    from public.transport_weekly_template_days
+    where template_id=template_b and weekday=4
+      and dropoff_user_id=u1 and pickup_user_id=u1
+      and dropoff_local_time=time '08:25' and pickup_local_time=time '18:05'
+  ) then
+    raise exception 'FAIL same-start resave did not update Thursday matrix';
+  end if;
+  if not exists(
+    select 1
+    from public.recurrence_rules r
+    join public.task_definitions td
+      on td.household_id=r.household_id and td.id=r.task_definition_id
+    where r.transport_template_id=template_b
+      and td.code='dropoff' and r.weekday=4 and r.active
+      and r.planned_assignee_id=u1 and r.scheduled_local_time=time '08:25'
+  ) then
+    raise exception 'FAIL same-start resave did not update Thursday recurrence rule';
+  end if;
+  if not exists(
+    select 1 from public.task_instances
+    where id=protected_task and planned_assignee_id=u2
+      and planned_assignee_actor_ref_id=actor2
+      and assignment_source='agreement'
+  ) then
+    raise exception 'FAIL same-start resave overwrote protected individual agreement';
+  end if;
 
   -- Daily override changes exactly one occurrence; the weekly template row is
   -- unchanged. Deleting the override restores that date to Template B.
