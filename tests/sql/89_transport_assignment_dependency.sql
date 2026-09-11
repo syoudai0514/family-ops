@@ -65,7 +65,7 @@ begin
     planned_assignee_id,completion_mode,status,source,created_by,assignment_mode,
     assignment_source,planned_assignee_actor_ref_id
   ) values(
-    hh,pickup_def,'recurring','お迎え','transport','pickup',chosen_date,
+    hh,pickup_def,'recurring','お迎え','pickup','evening',chosen_date,
     ((chosen_date::text||' 18:20')::timestamp at time zone 'Asia/Tokyo'),
     u1,'whole','todo','test',u1,'person','legacy_snapshot',ar1
   ) returning id into pickup_task;
@@ -75,7 +75,7 @@ begin
     planned_assignee_id,completion_mode,status,source,created_by,assignment_mode,
     assignment_source,planned_assignee_actor_ref_id
   ) values(
-    hh,dropoff_def,'recurring','送り','transport','dropoff',chosen_date,
+    hh,dropoff_def,'recurring','送り','dropoff','morning',chosen_date,
     ((chosen_date::text||' 08:00')::timestamp at time zone 'Asia/Tokyo'),
     u1,'whole','todo','test',u1,'person','legacy_snapshot',ar1
   ) returning id into dropoff_task;
