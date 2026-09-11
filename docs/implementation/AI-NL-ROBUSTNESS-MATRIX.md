@@ -159,3 +159,74 @@ Convergence run:
 - Operational Safety: #167 SUCCESS
 
 The comparison metric is the unchanged 56-case robustness corpus: **82.1% -> 100%**.
+
+
+## 2026-09-12 live Gemini quality campaign
+
+Model observed in the production environment: `gemini-3.1-flash-lite`.
+
+Safety / privacy:
+- real family LINE text used in fixtures or live prompts: **NO**
+- all live prompts were synthetic Japanese
+- observed project limit supplied for this campaign: 15 RPM / 250K TPM / 500 RPD
+- execution was sequential and kept near the requested <=75% RPM envelope
+- 429 responses observed: **0**
+- rate-limit discipline took priority over running one monolithic burst
+
+### Live baseline
+
+Strict product-quality scoring, before remediation:
+
+| Area | PASS | Rate |
+| --- | ---: | ---: |
+| partner-facing rewrite / handover | 76 / 111 | 68.5% |
+| single-intent extraction | 28 / 40 | 70.0% |
+| multi-intent decomposition | 10 / 29 | 34.5% |
+| **overall** | **114 / 180** | **63.3%** |
+
+Important baseline findings included:
+- scorekeeping or blame surviving as polite scorekeeping;
+- useful requester reasons being deleted together with hostile wording;
+- request semantics being narrowed (for example, action -> preparation);
+- shopping commands becoming partner requests;
+- model-invented Papa/Mama assignments;
+- morning/night becoming fabricated concrete clock times;
+- role corrections being lost;
+- completed purchases being treated as future shopping;
+- a store/pharmacy visit inventing a purchase;
+- comma-only and punctuation-free multi-intent messages collapsing into one candidate;
+- appointment time + departure time + preparation being split or flattened incorrectly.
+
+### Remediation principles
+
+The implementation now treats the AI as a semantic helper behind deterministic safety boundaries:
+
+- preserve the actual request, requester reason, date/time, quantity and core action;
+- remove blame, sarcasm, scorekeeping, partner assumptions and predicted partner failure;
+- do not merely rewrite hostility into more polite hostility;
+- never invent dates, roles, quantities, reasons, purchases or clock times;
+- explicit family roles come from the user's source text, not model inference;
+- dayparts do not become concrete times without a concrete clock token;
+- completed purchase language is actual, not future shopping;
+- visiting a store/pharmacy is a task unless a purchase is actually stated;
+- correction language updates the original candidate;
+- deterministic fallback can split safe comma-connected intents;
+- punctuation-free appointment preparation plus a return-stop visit has a deterministic fallback;
+- handover preserves pending next actions, not only already-known state.
+
+### Live convergence
+
+The same 180-case corpus was re-evaluated after the fixes. To respect API quota headroom, failed cases were rerun after each converging fix instead of re-burning the entire corpus after every edit.
+
+Final per-case status under the converged implementation:
+
+| Area | PASS | Rate |
+| --- | ---: | ---: |
+| partner-facing rewrite / handover | **111 / 111** | **100%** |
+| single-intent extraction | **40 / 40** | **100%** |
+| multi-intent decomposition | **29 / 29** | **100%** |
+| **overall** | **180 / 180** | **100%** |
+
+Comparison: **63.3% -> 100%**.
+
+This does not mean arbitrary Japanese is solved. It means every case in the defined synthetic corpus now has a passing final result, with deterministic regression coverage added for the material failures found during the live campaign.
