@@ -1,7 +1,10 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   formatScheduleReply,
+  isAssistantAddressCorrection,
+  isLineCorrectionCue,
   lineCreationStarterKind,
+  lineLinkWelcomeText,
   menuQuickReplies,
   readOnlyLineIntent,
 } from "./lineConversation.ts";
@@ -27,6 +30,26 @@ Deno.test("real-user schedule inquiry variants never become mutation candidates"
   assertEquals(readOnlyLineIntent("明日なにある？"), "tomorrow");
   assertEquals(readOnlyLineIntent("明日の予定を追加したい"), null);
   assertEquals(readOnlyLineIntent("明日の予定を登録"), null);
+  assertEquals(readOnlyLineIntent("今日なんか予定あったっけ？"), "today");
+  assertEquals(readOnlyLineIntent("今日なんかかよていあったっけ？"), "today");
+  assertEquals(readOnlyLineIntent("今日って何か予定ある？"), "today");
+  assertEquals(readOnlyLineIntent("ちがうよ、今日の予定教えて"), "today");
+  assertEquals(readOnlyLineIntent("今日の予定を追加して"), null);
+});
+
+Deno.test("conversation correction cues distinguish assistant-address repair from partner requests", () => {
+  assertEquals(isLineCorrectionCue("ちがうよ、今日の予定教えて"), true);
+  assertEquals(isAssistantAddressCorrection("あなたに言っているよ"), true);
+  assertEquals(isAssistantAddressCorrection("おうちノートに聞いてるんだよ"), true);
+  assertEquals(isAssistantAddressCorrection("ママにお願いして"), false);
+});
+
+Deno.test("LINE link success message explains what to do next", () => {
+  const text = lineLinkWelcomeText();
+  assertStringIncludes(text, "LINE連携が完了しました");
+  assertStringIncludes(text, "今日なんか予定あったっけ？");
+  assertStringIncludes(text, "お願いを送りたい");
+  assertStringIncludes(text, "まずは「今日」");
 });
 
 Deno.test("vague creation starters enter clarification instead of help or fake task", () => {
