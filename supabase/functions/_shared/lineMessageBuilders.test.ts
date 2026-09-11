@@ -52,6 +52,10 @@ Deno.test('natural pickup request preserves the requester reason without inventi
     '仕事でどうしても難しくなりました。お迎えをお願いしてもいい？',
   );
   assertEquals(
+    rewritePickupRequest('仕事でどうしても難しくなったんだけど、9/14のお迎えお願いできるよね？まぁ俺やったし。'),
+    '仕事でどうしても難しくなったんだけど、お迎えをお願いしてもいい？',
+  );
+  assertEquals(
     rewritePickupRequest('9/14のお迎えお願いできる？'),
     'お迎えをお願いしてもいい？',
   );
