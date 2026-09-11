@@ -180,6 +180,16 @@ export function completionHint(text: string): string {
   return `${text}\n\n💡 次もそのまま文章でOKです。「メニュー」でできることを確認できます。`;
 }
 
+export function pendingConfirmationMessage(actionType: string): string {
+  if (actionType === "assignment_change_request") {
+    return "✓ お願いを送りました。\n相手の返事を待っています。担当はまだ変わっていません。";
+  }
+  if (actionType === "request_create") {
+    return "✓ お願いを送りました。\n相手の返事を待っています。";
+  }
+  return "✓ 登録しました。";
+}
+
 export type CompactScheduleEntry = {
   title: string;
   startsAt: string | null;
