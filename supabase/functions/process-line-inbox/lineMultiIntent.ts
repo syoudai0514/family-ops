@@ -117,6 +117,88 @@ function hasExplicitClock(text: string): boolean {
   return /(?:\d{1,2}時(?:\d{1,2}分|半)?|\d{1,2}:\d{2})/u.test(text);
 }
 
+function localTimeFromJapaneseClock(hour: string, minute: string | undefined, half: string | undefined): string {
+  const h = Number(hour);
+  const m = half === "半" ? 30 : Number(minute ?? "0");
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function linkedAppointmentVisitCandidates(
+  clause: string,
+  now: Date,
+): Omit<LineConversationCandidate, "candidateId">[] | null {
+  const match = clause.match(
+    /^(?:(今日|明日|明後日))?(\d{1,2})時([^0-9、。！？!?]+?)(\d{1,2})時(?:(\d{1,2})分|(半))?(?:に)?(?:出る|出発)(.+?)準備(?:して)?(帰り(?:に)?(?:薬局|スーパー|コンビニ|店)(?:に)?(?:寄る|行く))$/u,
+  );
+  if (!match) return null;
+
+  const [, , eventHour, eventNameRaw, departHour, departMinute, departHalf, itemsRaw, visitSource] = match;
+  const eventName = title(eventNameRaw);
+  const scheduledDate = explicitDate(clause, now);
+  const dueLocalTime = localTimeFromJapaneseClock(departHour, departMinute, departHalf);
+  const firstSource = clause.slice(0, clause.length - visitSource.length);
+  const knownItems = [...itemsRaw.matchAll(/保険証|診察券|診察カード|水筒|帽子|着替え|タオル/gu)]
+    .map((item) => item[0]);
+  const subtasks = knownItems.length > 0 ? [...new Set(knownItems)] : [title(itemsRaw)];
+
+  const visitPlace = visitSource
+    .replace(/^帰り(?:に)?/u, "")
+    .replace(/(?:に)?(?:寄る|行く)$/u, "")
+    .trim();
+  if (!eventName || !visitPlace) return null;
+
+  return [
+    {
+      operationId: null,
+      kind: "task",
+      title: `${eventName}の準備`,
+      intent: {
+        kind: "task",
+        title: `${eventName}の準備`,
+        scheduledDate,
+        dueLocalTime,
+        daypart: null,
+        targetRole: explicitRole(firstSource),
+        sharedMessage: null,
+        subtasks,
+        context: `${eventName} ${String(Number(eventHour)).padStart(2, "0")}:00`,
+        calendarVisibility: "special",
+        source: "deterministic",
+      },
+      sourceText: firstSource,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    },
+    {
+      operationId: null,
+      kind: "task",
+      title: `${visitPlace}に寄る`,
+      intent: {
+        kind: "task",
+        title: `${visitPlace}に寄る`,
+        scheduledDate,
+        dueLocalTime: null,
+        daypart: null,
+        targetRole: null,
+        sharedMessage: null,
+        subtasks: [],
+        context: `${eventName}の帰り`,
+        calendarVisibility: "hidden",
+        source: "deterministic",
+      },
+      sourceText: visitSource,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    },
+  ];
+}
+
 function fallbackRequestIntent(clause: string, requestTitle: string, now: Date): LineIntent {
   const role = explicitRole(clause);
   return {
@@ -429,6 +511,13 @@ export function deterministicLineConversationCandidates(
   const candidates: Omit<LineConversationCandidate, "candidateId">[] = [];
   for (const clause of splitConversation(text)) {
     if (applyCorrection(candidates, clause, now)) continue;
+
+    const linkedAppointmentVisit = linkedAppointmentVisitCandidates(clause, now);
+    if (linkedAppointmentVisit) {
+      candidates.push(...linkedAppointmentVisit);
+      continue;
+    }
+
     const commaCandidates = commaSeparatedCandidates(clause, now);
     if (commaCandidates) {
       candidates.push(...commaCandidates);
