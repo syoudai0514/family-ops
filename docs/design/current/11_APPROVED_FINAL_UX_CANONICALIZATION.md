@@ -87,6 +87,29 @@ This is a **global acceptance guard**, not a new screen flow or a new independen
 
 If a future technical change genuinely requires different product behavior, the Baseline must be explicitly changed first and the affected UX clause must be re-approved rather than treating §2.1 as permission to improvise.
 
+### 4.2 2026-09-11 physical F2 approved clarifications
+
+During physical F2 with an iPhone requester, an Android recipient, separate real LINE accounts, and production PWA/Supabase boundaries, the Product Owner explicitly approved the clarifications now recorded in Baseline §28.
+
+These are canonical product decisions, not local implementation exceptions:
+
+- email/password PWA auth remains supported alongside Google auth;
+- successful LINE linking must acknowledge completion and explain representative usage;
+- natural questions/corrections are resolved as read-only/conversation before mutation classification;
+- natural schedule questions may use a two-message conversational lead + canonical detail, while literal shortcuts remain compact;
+- recipient request LINE must expose actionable first-tier controls, not inert text-only delivery;
+- same-start transport template save edits the existing period in place;
+- accepted one-off pickup/dropoff assignment re-resolves unprotected same-day role-derived routine work;
+- physical two-account LINE evidence is required for two-party F2 scenarios; simulation alone is insufficient.
+
+Concrete realization is maintained in:
+
+- `docs/design/current/04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md` §26
+- `docs/design/current/09_TRANSPORT_PERIOD_TEMPLATE_AND_MONTH_UX.md` §9
+- `docs/implementation/CF14-REQUIREMENT-EVIDENCE-MATRIX.md` for exact-HEAD acceptance evidence.
+
+No new Q number is introduced. These clauses clarify and operationalize existing Q4, Q10-Q12, Q27, Q44, Q50-Q52, Q70-Q71, Q73-Q80, Q83-Q85 plus the Baseline cross-cutting authority/safety requirements.
+
 ## 5. Material UX clause → Q mapping
 
 The pinned final audit proves literal 114/114 mapping of Q1-Q112 plus Q60-1/Q60-2 against the fresh-read Baseline version/blob recorded by that audit. The current Baseline may later add cross-cutting governance/acceptance requirements such as §2.1; those are tracked explicitly rather than retroactively pretending the old rendered artifact audited text that did not yet exist.
