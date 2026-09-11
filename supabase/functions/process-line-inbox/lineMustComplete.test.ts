@@ -235,6 +235,10 @@ Deno.test("LINE one-user simulation creates a meaningful role-labelled request",
       assertEquals(args.p_direction, "operator_to_simulated");
       assertEquals(args.p_shared_title, "お迎えをお願い");
       assertEquals(args.p_shared_message, "今日のお迎えをお願いできますか？");
+      const dueMs = Date.parse(String(args.p_due_at));
+      const deltaMs = dueMs - Date.now();
+      assert(deltaMs >= 47 * 60 * 60 * 1000);
+      assert(deltaMs <= 49 * 60 * 60 * 1000);
       return { data: { status: "pending" }, error: null };
     }
     assertEquals(name, "server_tx_get_active_test_simulation_v1");
