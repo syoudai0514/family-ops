@@ -161,11 +161,33 @@ function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandi
   const lowStock = clause.match(
     /^(.{1,60}?)(?:が|は|も)?(?:もう)?(?:なくなりそう|なくなる|なくなった|残り少ない|残りわずか|もうない|ない)$/u,
   );
-  if (lowStock) return [{
-    operationId: null,
-    kind: "shopping", title: title(lowStock[1]), intent: null, sourceText: clause,
-    sourceSpan: null, confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
-  }];
+  if (lowStock) {
+    const shoppingTitle = title(lowStock[1]);
+    return [{
+      operationId: null,
+      kind: "shopping",
+      title: shoppingTitle,
+      intent: {
+        kind: "shopping",
+        title: shoppingTitle,
+        scheduledDate: explicitDate(clause, now),
+        dueLocalTime: null,
+        daypart: null,
+        targetRole: explicitRole(clause),
+        sharedMessage: null,
+        subtasks: [],
+        context: null,
+        calendarVisibility: "hidden",
+        source: "deterministic",
+      },
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    }];
+  }
 
   const tersePreparation = clause.match(
     /^(?:(?:今日|明日|明後日)(?:の)?)?(?:(?:朝|昼|夕方|夜)(?:の)?)?(.{1,60}?)準備(?:して)?$/u,
