@@ -53,12 +53,16 @@ export function isPickupAssignmentChangeText(text: string): boolean {
       .test(value);
   if (negatedRequest) return false;
 
-  const recollectionOnly =
-    /(?:お願いしてたっけ|頼んだっけ|頼んでたっけ|(?:代|替|変)わってくれるって言ってたよね)[?？]?$/u
-      .test(value);
-  const explicitProceed =
-    /(?:よろしく|お願い|頼む|頼んだ|じゃあ|そのまま(?:お願い|よろしく)|やって|行って)/u.test(value);
-  if (recollectionOnly && !explicitProceed) return false;
+  const recollection = value.match(
+    /(?:お願いしてたっけ|頼んだっけ|頼んでたっけ|(?:代|替|変)わってくれるって言ってたよね)[?？]?(.*)$/u,
+  );
+  if (recollection) {
+    const afterRecollection = recollection[1] ?? "";
+    const explicitProceedAfterRecollection =
+      /(?:よろしく|じゃあ|そのまま(?:お願い|よろしく)|お願い|頼む|やって|行って)/u
+        .test(afterRecollection);
+    if (!explicitProceedAfterRecollection) return false;
+  }
 
   return /(?:お願い|お願いでき|頼(?:む|み|め|んで)|(?:代|替|変)わ(?:って|れ|れる|ってくれ|ってもら)|交代(?:して|しろ|でき)|担当(?:して|代わって|変わって)|行ってくれ(?:る|ない))/u
     .test(value);
