@@ -152,14 +152,26 @@ function targetRole(text: string): LineTargetRole {
   // and for a draft correction, so keep it deterministic instead of relying
   // on the model to infer Japanese contrast grammar every time.
   const correction = text.match(
-    /(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
+    /(?:パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)/,
   );
   if (correction) {
-    return /^(?:パパ|父|お父さん)$/.test(correction[1]) ? "papa" : "mama";
+    return /^(?:パパ|ぱぱ|父|お父さん)$/.test(correction[1]) ? "papa" : "mama";
   }
-  if (/(?:パパ|父|お父さん)/.test(text)) return "papa";
+  if (/(?:パパ|ぱぱ|父|お父さん)/.test(text)) return "papa";
   if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return "mama";
+
+  const compact = text.normalize("NFKC").replace(/\s+/g, "");
+  if (
+    !/(?:その|この|あの)まま/u.test(compact) &&
+    /まま/u.test(compact) &&
+    /(?:おねがい|お願い|むかえ|迎え|してほしい|して欲しい|タスク)/u.test(compact)
+  ) return "mama";
   return null;
+}
+
+function hasExplicitRequestCue(text: string): boolean {
+  return /(?:お願い|おねがい|してほしい|して欲しい|やって|やっといて|してくれ|してもら|頼(?:む|んで)|変わって|代わって|行ってくれ)/u
+    .test(text);
 }
 function hasExplicitClockToken(text: string): boolean {
   return /(?:\d{1,2}時(?:\d{1,2}分|半)?|\d{1,2}:\d{2})/u.test(text);
@@ -438,6 +450,8 @@ async function geminiLineIntent(
     "例: 『明日牛乳2本買って』 -> kind=shopping, title='牛乳2本', target_role=null。",
     "例: 『今日夜食器洗いやってほしい』 -> kind=request, target_role=null。担当を推測しない。",
     "例: 『明日ママにゴミ出してほしい』 -> kind=request, target_role=mama。",
+    "例: 『ママ明日保険証準備』 -> kind=task, target_role=mama。役割名があるだけでrequestにしない。",
+    "例: 『あしたままむかえおねがい』 -> kind=request, target_role=mama。ひらがなの家族roleも文脈から読む。",
     "例: 『明日Amazonでオムツ注文する』 -> kind=shopping。",
     "daypart は morning/noon/evening/night/null。朝/夜だけから具体的な時刻を作らない。",
     "scheduled_date は YYYY-MM-DD。明示が無い場合は今日。",
@@ -462,10 +476,18 @@ async function geminiLineIntent(
     const deterministic = deterministicLineIntent(text, now);
     if (deterministic?.kind === "shopping") return deterministic;
 
+    const explicitTargetRole = targetRole(text);
+    const assignedTaskWithoutRequestCue =
+      normalized.kind === "request" &&
+      explicitTargetRole !== null &&
+      !hasExplicitRequestCue(text);
+
     return {
       ...normalized,
+      kind: assignedTaskWithoutRequestCue ? "task" : normalized.kind,
       // A recipient/assignee is canonical only when the raw input names one.
-      targetRole: targetRole(text),
+      targetRole: explicitTargetRole,
+      sharedMessage: assignedTaskWithoutRequestCue ? null : normalized.sharedMessage,
       // Dayparts may remain semantic labels, but a concrete due time requires
       // an explicit clock token in the user's own text.
       dueLocalTime: hasExplicitClockToken(text) ? normalized.dueLocalTime : null,
