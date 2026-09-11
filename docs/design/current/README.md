@@ -1,17 +1,17 @@
 # Family Ops Detailed Design — Canonical
 
-- **Status:** Accepted / Canonical Detailed Design on CURRENT `main`, with CF-09/CF-10 governance updates included in the integration candidate and pending final main-merge decision
+- **Status:** Accepted / Canonical Detailed Design on CURRENT `main`, including CF-09/CF-10 governance and the 2026-09-11 physical-F2 approved clarifications
 - **Accepted baseline:** 2026-09-02 (ADR 0013 package)
 - **CF-11 recovery:** Accepted on CURRENT `main` after PR #73 merge, 2026-09-09
 - **Requirements Source of Truth:** `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 - **Governance:** ADR 0012 Accepted / ADR 0013 Accepted / ADR 0014 Accepted
-- **Integration base main:** `06a4e6b1a5aefccb8f9353fad294dd895582bc53`
+- **Runtime rule:** always fresh-read CURRENT `main`; historical SHA values below are provenance only
 
 このディレクトリは、accepted RequirementsをCURRENT implementationへ安全に落とすための**canonical detailed design**である。固定pathを正として使用し、`FINAL` / `V2` / `LATEST` の平行コピーを作らない。product behavior変更ならRequirements Baseline、architecture scope変更ならaccepted ADR / current designを同じ変更単位で更新する。
 
 CURRENT `main` ではPR #73のmergeによりADR 0014 / `10_BACKUP_RECOVERY.md` がcanonicalとなり、CF-11のright-sized household recovery designが受理済みである。旧R2/age前提はこのscopeではsupersedeされる。provider credential/sessionまで復旧できると誤解してはならない。
 
-今回のintegration candidateでは、Product Owner承認済みCF-09 channel responsibility matrixとCF-10 approved-final-UX canonicalization、およびBaseline v1.2 product-outcome acceptance guardをこの固定pathへ統合している。これらは**integration candidate上では統合済み**だが、mainへmergeされるまではCURRENT main canonicalとは区別する。Release GOやproduction承認を意味しない。
+CURRENT canonical pathには、Product Owner承認済みCF-09 channel responsibility matrix、CF-10 approved-final-UX canonicalization、Baseline v1.2 product-outcome acceptance guard、および2026-09-11 physical F2で明示承認された補足要求を統合する。Release GOやF2 PASSは、これらの文書が存在するだけでは成立せず、exact-HEADの実利用証跡で別途判定する。
 
 ---
 
@@ -64,16 +64,16 @@ Provider mutation ownership must remain singular; orphan evidence is not a writa
 1. `01_ARCHITECTURE_AND_DOMAIN_BOUNDARIES.md`
 2. `02_DATA_MODEL_AND_MIGRATION.md`
 3. `03_STATE_MACHINES_AND_COMMANDS.md`
-4. `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md`
+4. `04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md` — §26に2026-09-11 physical-F2 LINE/PWA approved clarifications
 5. `05_GOOGLE_IMAGE_AI_AUTHORITY_PRIVACY.md`
 6. `06_TEST_MODE_CONCURRENCY_OBSERVABILITY.md`
 7. `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md` — implementation/release gates, including product-outcome / real-use acceptance
 8. `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md`
 9. `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`
-10. `09_TRANSPORT_PERIOD_TEMPLATE_AND_MONTH_UX.md`
+10. `09_TRANSPORT_PERIOD_TEMPLATE_AND_MONTH_UX.md` — §9にsame-start edit / transport-role dependent reassignment clarifications
 11. `10_BACKUP_RECOVERY.md` — ADR 0014 accepted right-sized household recovery contract on CURRENT main
 12. `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — CF-09 M01-M26 classifications Product Owner approved; integration candidate, not Release GO
-13. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` — exact approved UX snapshot/provenance/Q mapping registry; subordinate to Baseline
+13. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` — exact approved UX snapshot/provenance/Q mapping registry; §4.2にphysical-F2 approved clarifications; subordinate to Baseline
 
 Review instruction/history documents remain audit-only and are not CURRENT requirements/design authorities.
 
@@ -124,7 +124,7 @@ Permanent implementation acceptance expectations:
 ### Requirements
 
 - Baseline v1.1: final independent re-review `GO`, merged under ADR 0012.
-- Integration candidate v1.2: Product Owner success criterion integrated; pending final review/main-merge decision.
+- Baseline v1.2 success criterion is canonical on CURRENT main; 2026-09-11 physical-F2 Product Owner clarifications are integrated through Baseline §28 in the accompanying canonical docs update.
 
 ### Detailed design
 
@@ -141,8 +141,8 @@ Permanent implementation acceptance expectations:
 
 ### CF-09 channel responsibility
 
-- Product Owner approved all 26 M01-M26 classifications on 2026-09-09.
-- Approval scope is classification semantics only; not implementation-wide approval, Release GO, production approval, or main merge approval.
+- Product Owner approved all 26 M01-M26 classifications on 2026-09-09; they are now part of the canonical current-design path.
+- Approval scope is classification semantics only; not implementation-wide approval or Release/F2 GO.
 
 ---
 

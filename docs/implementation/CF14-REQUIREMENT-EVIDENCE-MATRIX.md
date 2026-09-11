@@ -198,6 +198,32 @@ The default CI suite runs both F1 authoring self-tests and the real-browser auth
 
 A product defect discovered by these tests is not repaired in F1 unless it is test/evidence infrastructure itself. The defect is attributed to the owning implementation lane.
 
+## 2026-09-11 physical two-account F2 authority update
+
+Physical F2 now has a real two-party topology available:
+
+- requester: real papa LINE on iPhone;
+- recipient: separate real mama test LINE on Android;
+- recipient PWA: Android PWA authenticated as the mama test member;
+- both identities are members of the same production household used for F2.
+
+This changes the evidence expectation for two-party scenarios. One-user simulation remains useful for safe rehearsal and isolated UX checks, but it is no longer sufficient final evidence for request/assignment scenarios that materially require two distinct participants.
+
+At final exact-HEAD acceptance, the two-party request/assignment evidence must include:
+
+1. requester raw LINE input;
+2. requester confirmation surface;
+3. real recipient LINE delivery with actionable `やる / 難しい / その他の返答` path;
+4. recipient real postback;
+5. canonical request/attempt state readback;
+6. resulting task assignment readback;
+7. PWA readback of the same state where the scenario affects Today;
+8. for pickup/dropoff agreements, readback proving same-day unprotected role-derived dependent tasks were re-resolved and protected occurrences were not overwritten.
+
+Physical runs performed on earlier candidate/main HEADs remain useful defect-discovery history but are **stale for strict final PASS** after HEAD changes. The final F2 owner must rerun required evidence on the newly frozen exact HEAD.
+
+Specific product remediations discovered during this physical run are now canonical in Baseline §28 and current design 04 §26 / design 09 §9. They must not be downgraded back to 'test-only behavior'.
+
 ## F2 exact-HEAD evidence payload
 
 The strict runner defaults to `tests/evidence/cf14/evidence/current.json` and requires both the payload and every PASS record to be bound to the exact runtime Git HEAD:

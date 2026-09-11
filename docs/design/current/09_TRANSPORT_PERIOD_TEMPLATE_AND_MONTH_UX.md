@@ -114,3 +114,46 @@ In particular this design does not weaken the existing main path:
 `Today summary → 要対応へのdirect navigation → parent task/subtask → その場完了 → 夜の残り実績 → 全部/大体/個別 → 戻り/state restoration`.
 
 The transport changes are integrated into that same PWA/LINE product rather than forming a separate scheduler UI.
+
+## 9. Physical F2 approved transport clarifications — 2026-09-11
+
+### 9.1 Same-start save is an in-place edit
+
+When the user edits a current/future weekly transport template and saves again with the same `valid_from`, the command updates that existing period in place. It does not create a duplicate period and must not surface a generic internal error merely because the start date already exists.
+
+Protected occurrence semantics from §2 remain unchanged.
+
+### 9.2 One-off transport agreement re-resolves role-derived work
+
+When a one-off assignment-change request for the actual `pickup` or `dropoff` occurrence is accepted, same-day routine occurrences whose recurrence strategy depends on that transport role are re-resolved after the accepted assignment is applied.
+
+- accepted pickup -> `pickup_assignee` follows the new pickup actor;
+- accepted pickup -> `nonpickup_adult` resolves to the one other adult when unique;
+- accepted dropoff -> `dropoff_assignee` follows the new dropoff actor.
+
+This is not a second user confirmation. The household already approved the dependency when it chose the role-based strategy.
+
+Only open, rule-derived, unprotected occurrences are eligible. Do not overwrite:
+
+- `assignment_source='agreement'` or equivalent individual agreement;
+- explicit transport occurrence override;
+- explicit claim/takeover state;
+- cancelled/completed/otherwise terminal work;
+- fixed-assignee rules.
+
+A one-off agreement changes only that day's resolved occurrences. It does not rewrite the recurrence strategy or later dates.
+
+If `nonpickup_adult` is ambiguous because more than one alternative adult is eligible, fail closed and require clarification rather than choosing arbitrarily.
+
+Dependent changes are auditable task events tied back to the request/attempt that caused them.
+
+### 9.3 Regression additions
+
+In addition to §7, automated coverage must prove:
+
+13. same-`valid_from` resave keeps one template and increments/updates it;
+14. accepted pickup one-off moves unprotected `pickup_assignee` occurrences;
+15. accepted pickup flips unique `nonpickup_adult` occurrences;
+16. accepted dropoff moves unprotected `dropoff_assignee` occurrences;
+17. protected agreement/override is not rewritten;
+18. one-off transport acceptance does not mutate the base recurrence strategy.

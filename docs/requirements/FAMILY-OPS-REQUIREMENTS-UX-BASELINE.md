@@ -1124,6 +1124,112 @@ Product Ownerの明示指示により、§2.1とUX原則11へ、**技術的完�
 
 このv1.2更新が`main`へmergeされるまでは、merge済みCURRENT Baselineはv1.1である。実装者・レビュアーはbranch上のcandidateをCURRENT mainと誤認してはならない。
 
+# 28. Physical F2で明示承認された補足要求 — 2026-09-11
+
+本節は、実iPhone / Android / 実LINE 2アカウントを用いたF2中にProduct Ownerが明示承認した内容を、会話内だけに残さずcanonical Requirementsへ昇格するものである。
+
+本節はQ1-Q112およびQ60-1/Q60-2を置き換えず、既存決定を実利用境界で具体化する。矛盾する旧実装・旧テスト・旧handoffがある場合は、本Baseline本文 + 本節を優先する。
+
+## 28.1 PWA認証と家庭参加
+
+- PWAは **Google認証だけに限定しない**。メールアドレス + パスワードによる新規登録/ログインをGoogle認証と併存させる。
+- 同一householdの成人メンバーが異なる認証方式を使ってよい。認証providerの違いは `papa / mama` 等のfamily role、household membership、LINE紐付けの意味を変えない。
+- メール認証で作成したユーザーも、正式なhousehold membershipを経て通常メンバーとして扱う。テスト用別端末/別LINEのためにGoogleアカウント共有を強制しない。
+
+## 28.2 LINE連携完了は無言にしない
+
+LINE連携コードのclaimが成功した場合、ユーザーが成功可否を推測しなくてよいこと。
+
+最低限:
+
+- `LINE連携が完了しました` 等の明示的成功応答
+- このLINEで可能な代表操作の短い例
+- 最初に試せる安全なread-only操作（例: `今日`）
+
+を同じLINE上で返す。
+
+コードを受理したのに返信がなく、後から別操作が動くことでしか成功を判断できないUXはNG。
+
+## 28.3 LINE自然文は「質問/訂正」を作成系より先に解釈する
+
+自然文LINE入力では、少なくとも以下をmutation候補より先に判定する。
+
+- 予定・状態の質問
+- `違う / そうじゃなくて` 等の訂正
+- `あなたに聞いている / おうちノートに言っている` 等、システム自身への問い直し
+
+例:
+
+`今日なんか予定あったっけ？`
+
+はToday/read-only問い合わせであり、タスク登録draftやパートナーへのお願いdraftにしてはならない。
+
+直前に誤解釈draftが存在し、その後の訂正が明確に「登録ではなく質問」を示す場合、そのsuperseded draftを安全に破棄し、本来のread-only回答へ戻せること。
+
+自然文の予定質問には、会話感を損なわない短いacknowledgementを先に返し、その後に既存のcanonical詳細結果を返してよい。Product Ownerが承認した既定は **2メッセージ（軽い会話コメント → 詳細）**。一方、固定shortcut `今日` 等は冗長な会話コメントを足さず従来どおりcompactに返してよい。
+
+## 28.4 LINEで届くお願いは、その場で返答可能であること
+
+Request / 担当変更の受取LINEは、単なる通知テキストでは不十分。
+
+Baseline §7.2 / Q44の第一階層:
+
+- `[やる]`
+- `[難しい]`
+- `[その他の返答]`
+
+を、**実際に押せるLINE UI**として受取メッセージから到達可能にする。
+
+`request.received` のpayload（request/attempt/revision/terms revision/request kind等）が通知transport途中で失われ、受取側が状態変更できない状態はRequirement未充足とする。
+
+## 28.5 同じ開始日の生活パターン再保存は「編集」
+
+transport weekly templateについて、現在日または未来の同一 `valid_from` のperiodを再保存する操作は、新しい期間を重複追加する操作ではなく **既存periodの編集** と扱う。
+
+- 同じ開始日のtemplateを重複作成しない。
+- protected individual agreement / occurrence overrideは従来どおり保護する。
+- ユーザーにgeneric `内部エラー` を返さない。
+- 過去の閉じた履歴を黙って書き換える用途には使わない。
+
+## 28.6 送り/お迎え担当変更成立時のrole-derived task追随
+
+家庭がtask ruleとして既に、
+
+- `pickup_assignee`
+- `nonpickup_adult`
+- `dropoff_assignee`
+
+を選択している場合、そのrule自体が「送迎担当に追随する」という人の事前確定意思である。
+
+したがって、**1回限りの送り/お迎え担当変更が正式合意された時**は、同日のrole-derived taskをもう一度確認させず自動再解決する。
+
+- pickup変更成立 → 同日の `pickup_assignee` を新pickup担当へ、`nonpickup_adult` を新pickup担当以外の一意な成人へ再解決。
+- dropoff変更成立 → 同日の `dropoff_assignee` を新dropoff担当へ再解決。
+- 再解決対象はopenかつrule-derivedで、個別に強いauthorityを持たないoccurrenceのみ。
+- `fixed`、個別合意済み (`agreement`)、明示override、claim済み、取消/完了等のprotected occurrenceをsilent overwriteしない。
+- `nonpickup_adult` の候補が一意に決まらない家庭では推測せずfail closed / human clarificationへ送る。
+- 1回限り合意でrecurrence strategyや翌日以降の基本曜日ルールを書き換えない。
+- dependent reassignmentは監査履歴を残す。
+
+「お迎えだけママへ変わったが、夕食/風呂/洗濯等の `pickup_assignee` taskが元担当のまま」は不整合であり、PASSにしない。
+
+## 28.7 F2の2者LINE証跡
+
+1人simulationは補助的なUX/安全確認として残してよいが、**実際に2者の相互作用を要求するF2 scenarioをsimulationだけでPASSにしない**。
+
+Request/担当変更等の2者scenarioは、少なくとも最終acceptanceで:
+
+- requester側の実LINEアカウント
+- recipient側の別実LINEアカウント
+- 実Webhook/postback
+- canonical state readback
+- 必要なPWA反映
+
+を同一exact HEADへ紐づけて証跡化する。
+
+Android PWA + 別LINEアカウントをrecipient実機として使ってよい。
+
+---
 # Appendix A. Decision Traceability
 
 このAppendixは、要求ヒアリングで確定した主要判断を、レビュー時の抜け漏れ確認用に一覧化したものである。
