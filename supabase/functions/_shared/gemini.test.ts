@@ -295,6 +295,42 @@ const FIXTURES: Fixture[] = [
     expectedValid: false,
   },
   {
+    name: "today synonym is semantically preserved",
+    raw: "今日はお風呂お願い",
+    proposed: "本日のお風呂をお願いできますか",
+    expectedValid: true,
+  },
+  {
+    name: "duration suffix paraphrase is semantically preserved",
+    raw: "今から30分だけ子どもの相手して",
+    proposed: "今から30分間、子どもの相手をお願いできますか",
+    expectedValid: true,
+  },
+  {
+    name: "mimetic katakana is not treated as a proper-noun fact",
+    raw: "今週ずっとバタバタでしんどい。寝かしつけお願い",
+    proposed: "今週ずっとしんどいので、寝かしつけをお願いできますか",
+    expectedValid: true,
+  },
+  {
+    name: "hostile forget-negation can be removed without polarity failure",
+    raw: "絶対忘れないで。明日の水筒準備して",
+    proposed: "明日の水筒の準備をお願いします",
+    expectedValid: true,
+  },
+  {
+    name: "invented concrete clock time is rejected",
+    raw: "明日の朝ゴミ出しお願い",
+    proposed: "明日9時にゴミ出しをお願いします",
+    expectedValid: false,
+  },
+  {
+    name: "seconds duration accepts 秒 and 秒間 equivalence",
+    raw: "丸いベロ100秒",
+    proposed: "丸いベロを100秒間",
+    expectedValid: true,
+  },
+  {
     name: "identical text is always valid",
     raw: "5月10日に牛乳を2本買ってきて",
     proposed: "5月10日に牛乳を2本買ってきて",
