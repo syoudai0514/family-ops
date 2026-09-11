@@ -259,10 +259,10 @@ const FIXTURES: Fixture[] = [
     expectedValid: true,
   },
   {
-    name: "no facts in raw: proposed adding an unconstrained quantity does not fail (known scope boundary - only checks raw->proposed, not fabrication)",
+    name: "no facts in raw: fabricated quantity is rejected",
     raw: "牛乳買ってきて",
     proposed: "牛乳を3本買ってきて",
-    expectedValid: true,
+    expectedValid: false,
   },
   {
     name: "digits without a recognized unit are not treated as a quantity fact (phone-number-shaped input)",
@@ -277,10 +277,22 @@ const FIXTURES: Fixture[] = [
     expectedValid: true,
   },
   {
-    name: "negation flip is not detected by this fact-only check (documented scope boundary, not a false negative)",
+    name: "negation flip is rejected",
     raw: "明日は集合しなくていい",
     proposed: "明日は集合してください",
-    expectedValid: true,
+    expectedValid: false,
+  },
+  {
+    name: "invented gratitude is rejected",
+    raw: "迎えお願い",
+    proposed: "いつもありがとう。迎えをお願いします",
+    expectedValid: false,
+  },
+  {
+    name: "invented health reason replacing work reason is rejected",
+    raw: "仕事で難しいから迎えお願い",
+    proposed: "体調が悪いので迎えをお願いします",
+    expectedValid: false,
   },
   {
     name: "identical text is always valid",

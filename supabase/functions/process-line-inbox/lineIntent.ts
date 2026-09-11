@@ -48,13 +48,23 @@ export function isPickupAssignmentChangeText(text: string): boolean {
   const value = text.normalize("NFKC").replace(/\s+/g, "");
   if (!/お?迎え/u.test(value)) return false;
 
-  const recallsPriorPromise =
-    /(?:代|替|変)わってくれるって言ってたよね[?？]?/u.test(value);
-  const explicitProceed =
-    /(?:よろしく|お願い|頼む|頼んだ|じゃあ|そのまま)/u.test(value);
-  if (recallsPriorPromise && !explicitProceed) return false;
+  const negatedRequest =
+    /(?:お願いし(?:なくていい|ないで|なくて大丈夫)|頼ま(?:なくていい|ないで)|(?:代|替|変)わら(?:なくていい|ないで)|交代し(?:なくていい|ないで)|担当変(?:更)?し(?:なくていい|ないで)|そのままで)/u
+      .test(value);
+  if (negatedRequest) return false;
 
-  return /(?:お願い|お願いでき|頼(?:む|み|め|んで)|(?:代|替|変)わ(?:って|れ|れる|ってくれ|ってもら)|交代(?:して|しろ|でき)|担当(?:して|代わって|変わって))/u
+  const recollection = value.match(
+    /(?:お願いしてたっけ|頼んだっけ|頼んでたっけ|(?:代|替|変)わってくれるって言ってたよね)[?？]?(.*)$/u,
+  );
+  if (recollection) {
+    const afterRecollection = recollection[1] ?? "";
+    const explicitProceedAfterRecollection =
+      /(?:よろしく|じゃあ|そのまま(?:お願い|よろしく)|お願い|頼む|やって|行って)/u
+        .test(afterRecollection);
+    if (!explicitProceedAfterRecollection) return false;
+  }
+
+  return /(?:お願い|お願いでき|頼(?:む|み|め|んで)|(?:代|替|変)わ(?:って|れ|れる|ってくれ|ってもら)|交代(?:して|しろ|でき)|担当(?:して|代わって|変わって)|行ってくれ(?:る|ない))/u
     .test(value);
 }
 

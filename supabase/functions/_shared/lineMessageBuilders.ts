@@ -14,6 +14,26 @@ export type AssignmentChangeLineData = {
   otherResponseUrl?: string;
 };
 
+function softenPickupContext(value: string): string {
+  return value
+    // Do not forward scorekeeping pressure such as "前俺やったし".
+    .replace(
+      /(?:まあ|まぁ)?(?:この前|前回|前)?(?:は)?(?:俺|僕|私|自分|こっち)(?:が)?(?:やった|やってる|やったんだ)(?:し|から)?/gu,
+      "",
+    )
+    // Do not forward assumptions that diminish the recipient's situation.
+    .replace(
+      /どうせ(?:暇|空いてる|時間(?:ある|あるでしょ)|何もない)(?:でしょ|だろ|よね)?/gu,
+      "",
+    )
+    // Remove coercive strengtheners while preserving the factual reason around them.
+    .replace(/(?:絶対|当然)(?:に)?/gu, "")
+    .replace(/[、，,]+$/u, "")
+    .replace(/^[、，,。.!！?？\s]+/u, "")
+    .replace(/([。.!！?？])[、，,。.!！?？\s]+/gu, "$1")
+    .trim();
+}
+
 export function rewritePickupRequest(rawText: string): string {
   const normalized = rawText.normalize("NFKC").trim();
   const pickupIndex = normalized.search(/お?迎え/u);
@@ -24,7 +44,7 @@ export function rewritePickupRequest(rawText: string): string {
     /(?:(?:\d{4}年)?\d{1,2}月\d{1,2}日|\d{4}\/\d{1,2}\/\d{1,2}|\d{1,2}\/\d{1,2}|今日|明日|明後日)(?:の)?\s*$/u,
     "",
   ).trim();
-  context = context.replace(/[、，,]+$/u, "").trim();
+  context = softenPickupContext(context);
 
   if (!context) return "お迎えをお願いしてもいい？";
   if (/[。.!！?？]$/u.test(context)) {
