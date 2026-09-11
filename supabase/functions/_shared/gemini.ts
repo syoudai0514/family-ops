@@ -95,8 +95,9 @@ function addDateFacts(text: string, facts: Set<string>): void {
   ];
   for (const [pattern, key] of relative) if (pattern.test(text)) facts.add(key);
 
-  for (const match of text.matchAll(/(\d{1,2})時(?!間)(?:(\d{1,2})分)?/g)) {
-    facts.add(`time:${Number(match[1])}:${String(Number(match[2] ?? "0")).padStart(2, "0")}`);
+  for (const match of text.matchAll(/(\d{1,2})時(?!間)(?:(\d{1,2})分|(半))?/g)) {
+    const minute = match[3] === "半" ? 30 : Number(match[2] ?? "0");
+    facts.add(`time:${Number(match[1])}:${String(minute).padStart(2, "0")}`);
   }
   for (const match of text.matchAll(/(?:^|\D)(\d{1,2}):(\d{2})(?!\d)/g)) {
     facts.add(`time:${Number(match[1])}:${match[2]}`);
