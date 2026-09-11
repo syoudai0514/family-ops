@@ -337,6 +337,18 @@ const FIXTURES: Fixture[] = [
     expectedValid: false,
   },
   {
+    name: "immediate timing must not disappear",
+    raw: "今のうちに明日の持ち物確認して",
+    proposed: "明日の持ち物を確認してもらえる？",
+    expectedValid: false,
+  },
+  {
+    name: "immediate timing synonyms are equivalent",
+    raw: "今から掃除お願い",
+    proposed: "今すぐ掃除をお願いできる？",
+    expectedValid: true,
+  },
+  {
     name: "half-hour and numeric minute notation are equivalent",
     raw: "14時半に出る",
     proposed: "14時30分に出発します",
