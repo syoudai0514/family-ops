@@ -425,6 +425,39 @@ export function normalizeGeminiLineIntent(
   };
 }
 
+export function normalizeResolvedGeminiLineIntent(
+  text: string,
+  raw: string,
+  now: Date,
+): LineIntent | null {
+  const normalized = normalizeGeminiLineIntent(raw);
+  if (!normalized) return null;
+
+  // Simple purchase language has a deterministic, safer interpretation.
+  // Never let the model turn "牛乳買って" into a partner Request merely
+  // because the Japanese is imperative.
+  const deterministic = deterministicLineIntent(text, now);
+  if (deterministic?.kind === "shopping") return deterministic;
+
+  const explicitTargetRole = targetRole(text);
+  const assignedTaskWithoutRequestCue =
+    normalized.kind === "request" &&
+    explicitTargetRole !== null &&
+    !hasExplicitRequestCue(text);
+
+  return {
+    ...normalized,
+    kind: assignedTaskWithoutRequestCue ? "task" : normalized.kind,
+    // A recipient/assignee is canonical only when the raw input names one.
+    targetRole: explicitTargetRole,
+    sharedMessage: assignedTaskWithoutRequestCue ? null : normalized.sharedMessage,
+    // Dayparts may remain semantic labels, but a concrete due time requires
+    // an explicit clock token in the user's own text.
+    dueLocalTime: hasExplicitClockToken(text) ? normalized.dueLocalTime : null,
+    source: "gemini",
+  };
+}
+
 async function geminiLineIntent(
   text: string,
   now: Date,
@@ -467,32 +500,7 @@ async function geminiLineIntent(
   ].join("\n");
   try {
     const raw = await callGemini(prompt, model);
-    const normalized = normalizeGeminiLineIntent(raw);
-    if (!normalized) return null;
-
-    // Simple purchase language has a deterministic, safer interpretation.
-    // Never let the model turn "牛乳買って" into a partner Request merely
-    // because the Japanese is imperative.
-    const deterministic = deterministicLineIntent(text, now);
-    if (deterministic?.kind === "shopping") return deterministic;
-
-    const explicitTargetRole = targetRole(text);
-    const assignedTaskWithoutRequestCue =
-      normalized.kind === "request" &&
-      explicitTargetRole !== null &&
-      !hasExplicitRequestCue(text);
-
-    return {
-      ...normalized,
-      kind: assignedTaskWithoutRequestCue ? "task" : normalized.kind,
-      // A recipient/assignee is canonical only when the raw input names one.
-      targetRole: explicitTargetRole,
-      sharedMessage: assignedTaskWithoutRequestCue ? null : normalized.sharedMessage,
-      // Dayparts may remain semantic labels, but a concrete due time requires
-      // an explicit clock token in the user's own text.
-      dueLocalTime: hasExplicitClockToken(text) ? normalized.dueLocalTime : null,
-      source: "gemini",
-    };
+    return normalizeResolvedGeminiLineIntent(text, raw, now);
   } catch (error) {
     console.warn("process-line-inbox: Gemini intent extraction unavailable", {
       code: error instanceof Error ? error.message : "unknown",
