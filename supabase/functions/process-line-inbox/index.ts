@@ -83,7 +83,10 @@ import {
   completionHint,
   formatScheduleReply,
   type LineCreationKind,
+  isAssistantAddressCorrection,
+  isLineCorrectionCue,
   lineCreationStarterKind,
+  lineLinkWelcomeText,
   menuQuickReplies,
   readOnlyLineIntent,
 } from "./lineConversation.ts";
@@ -162,19 +165,24 @@ async function resolveActor(client: SupabaseClient, lineUserId: string | null): 
   return (data as LineActor | null) ?? null;
 }
 
+type LinkTokenClaim = "not_token" | "claimed" | "rejected";
+
 async function tryClaimLinkToken(
   client: SupabaseClient,
   sourceExternalUserId: string | null,
   text: string,
-): Promise<boolean> {
+): Promise<LinkTokenClaim> {
   const trimmed = text.trim();
-  if (!LINK_TOKEN_RE.test(trimmed) || !sourceExternalUserId) return false;
+  if (!LINK_TOKEN_RE.test(trimmed) || !sourceExternalUserId) return "not_token";
   const { error } = await client.rpc("server_tx_claim_line_link_token", {
     p_source_external_user_id: sourceExternalUserId,
     p_raw_token: trimmed,
   });
-  if (error) console.warn("process-line-inbox: link token claim rejected", error.message);
-  return true;
+  if (error) {
+    console.warn("process-line-inbox: link token claim rejected", error.message);
+    return "rejected";
+  }
+  return "claimed";
 }
 
 async function sendConfirmation(
@@ -213,6 +221,7 @@ async function sendLineSchedule(
   item: WebhookInboxItem,
   actor: LineActor,
   kind: "today" | "tomorrow" | "week",
+  intro?: string,
 ): Promise<void> {
   if (kind === "today") {
   const [rendered, structured] = await Promise.all([
@@ -241,12 +250,13 @@ async function sendLineSchedule(
     structured.data,
     Deno.env.get("APP_BASE_URL") ?? "",
   );
+  const replyText = intro ? `${intro}\n\n${todayText}` : todayText;
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
     lineUserId: item.source_external_user_id,
     householdId: actor.household_id,
     recipientUserId: actor.user_id,
-    text: todayText,
+    text: replyText,
     quickReplyItems: todayContextQuickReplies(structured.data, menuQuickReplies()),
     dedupKey: `line-daily-brief:${item.provider_event_id}`,
   });
@@ -286,12 +296,13 @@ async function sendLineSchedule(
     ...(schedule.occurrences ?? []).map((entry) => ({ title: entry.title ?? "Google Calendar予定", startsAt: entry.starts_at ?? null })),
   ].sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? ""));
   const title = kind === "tomorrow" ? "明日の予定" : "今週の予定";
+  const scheduleText = formatScheduleReply(title, entries);
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
     lineUserId: item.source_external_user_id,
     householdId: actor.household_id,
     recipientUserId: actor.user_id,
-    text: formatScheduleReply(title, entries),
+    text: intro ? `${intro}\n\n${scheduleText}` : scheduleText,
     message: buildScheduleSummaryFlex(title, entries, Deno.env.get("APP_BASE_URL") ?? ""),
     dedupKey: `line-schedule:${item.provider_event_id}`,
   });
@@ -305,6 +316,21 @@ async function tryHandleReadOnlyText(
 ): Promise<boolean> {
   const intent = readOnlyLineIntent(text);
   if (!intent) return false;
+
+  const correction = isLineCorrectionCue(text);
+  if (correction) {
+    const pending = await getLineConversationPending(client, actor, item.source_external_user_id);
+    if (pending?.status === "draft") {
+      const { error } = await client.rpc("server_tx_cancel_pending_action", {
+        p_actor_id: actor.user_id,
+        p_pending_action_id: pending.id,
+      });
+      if (error) {
+        console.warn("process-line-inbox: could not clear superseded draft", error.message);
+      }
+    }
+  }
+
   if (intent === "menu") {
     await replyOrEnqueuePush(client, {
       replyToken: item.payload.replyToken,
@@ -343,7 +369,13 @@ async function tryHandleReadOnlyText(
       dedupKey: `line-management:${item.provider_event_id}`,
     });
   } else {
-    await sendLineSchedule(client, item, actor, intent);
+    await sendLineSchedule(
+      client,
+      item,
+      actor,
+      intent,
+      correction ? "了解。登録ではなく、予定の確認ですね。" : undefined,
+    );
   }
   return true;
 }
@@ -457,7 +489,8 @@ function isPendingReferentQuestion(text: string): boolean {
 }
 
 function isPendingCorrection(text: string): boolean {
-  return /(?:だった|じゃなくて|ではなくて|に変更|にして|だけやめて|取り消|キャンセル)/.test(text);
+  return /(?:だった|じゃなくて|ではなくて|に変更|にして|だけやめて|取り消|キャンセル)/.test(text) ||
+    isAssistantAddressCorrection(text);
 }
 
 function pendingStateLabel(status: string): string {
@@ -485,6 +518,57 @@ async function tryHandlePendingReferent(
 
   if (isPendingReferentQuestion(text)) {
     await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」の件です。${pendingStateLabel(pending.status)}です。`);
+    return true;
+  }
+
+  if (isAssistantAddressCorrection(text)) {
+    if (pending.status !== "draft") {
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        `了解。私への質問ですね。ただ「${pendingTitle(pending)}」は${pendingStateLabel(pending.status)}なので、必要なら新しく聞いてください。`,
+      );
+      return true;
+    }
+
+    const candidates = [
+      pending.normalized_payload.raw_text,
+      pending.normalized_payload.source_text,
+      pending.normalized_payload.title,
+    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    const inferred = candidates
+      .map((value) => readOnlyLineIntent(value))
+      .find((value): value is "today" | "tomorrow" | "week" =>
+        value === "today" || value === "tomorrow" || value === "week"
+      );
+
+    const { error } = await client.rpc("server_tx_cancel_pending_action", {
+      p_actor_id: actor.user_id,
+      p_pending_action_id: pending.id,
+    });
+    if (error) {
+      console.warn("process-line-inbox: assistant-address correction cancel failed", error.message);
+      return false;
+    }
+
+    if (inferred) {
+      await sendLineSchedule(
+        client,
+        item,
+        actor,
+        inferred,
+        "了解。パートナーへのお願いではなく、私への質問ですね。",
+      );
+    } else {
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        "了解。パートナーへのお願いではなく、私への質問ですね。知りたいことをそのまま聞いてください。",
+        menuQuickReplies(),
+      );
+    }
     return true;
   }
 
@@ -1473,7 +1557,22 @@ async function handleText(
   actor: LineActor | null,
   text: string,
 ): Promise<void> {
-  if (await tryClaimLinkToken(client, item.source_external_user_id, text)) return;
+  const linkClaim = await tryClaimLinkToken(client, item.source_external_user_id, text);
+  if (linkClaim !== "not_token") {
+    if (linkClaim === "claimed") {
+      const linkedActor = await resolveActor(client, item.source_external_user_id);
+      if (linkedActor) {
+        await sendConfirmation(
+          client,
+          item,
+          linkedActor,
+          lineLinkWelcomeText(),
+          menuQuickReplies(),
+        );
+      }
+    }
+    return;
+  }
   if (!actor) return;
   if (await tryHandleLineMustCompleteText({
     client,
