@@ -30,3 +30,21 @@ export function findRequestReceivedItem<T extends RequestNotificationItem>(items
       candidate.payload.request_id.length > 0,
   );
 }
+
+
+export function requestOutcomeText(item: RequestNotificationItem): string | null {
+  const subject = item.body?.trim() || item.title?.trim() || "お願い";
+  if (item.type === "request.accepted") {
+    return `お願いが引き受けられました。\n${subject}`;
+  }
+  if (item.type === "request.declined") {
+    return `お願いは「難しい」と返されました。\n${subject}\nお願いは成立していません。`;
+  }
+  if (item.type === "request.checking") {
+    return `相手が確認中です。\n${subject}\nまだ成立していません。`;
+  }
+  if (item.type === "request.cancelled") {
+    return `お願いが取り消されました。\n${subject}`;
+  }
+  return null;
+}
