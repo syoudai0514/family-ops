@@ -38,7 +38,7 @@ import {
   buildAssignmentRequestFlex,
   buildGeneralRequestFlex,
 } from '../_shared/lineMessageBuilders.ts';
-import { findRequestReceivedItem } from './requestNotificationPayload.ts';
+import { findRequestReceivedItem, requestOutcomeText } from './requestNotificationPayload.ts';
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -138,9 +138,10 @@ function buildBundledText(
   const blocks =
     items.length > 0
       ? items.map((item) => {
+          const outcome = requestOutcomeText(item);
           const title = item.title ?? '';
           const body = item.body ?? '';
-          let block = body && body !== title ? `${title}\n${body}` : title;
+          let block = outcome ?? (body && body !== title ? `${title}\n${body}` : title);
           if (type === 'routine' && item.session_id && !seenSessionIds.has(item.session_id)) {
             seenSessionIds.add(item.session_id);
             block += `\n${buildCheckinLink(item.session_id)}`;
