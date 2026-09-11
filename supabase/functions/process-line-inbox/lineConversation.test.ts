@@ -7,6 +7,7 @@ import {
   lineCreationStarterKind,
   lineLinkWelcomeText,
   menuQuickReplies,
+  pendingConfirmationMessage,
   readOnlyLineIntent,
 } from "./lineConversation.ts";
 
@@ -106,4 +107,17 @@ Deno.test("schedule reply remains compact", () => {
   );
   assertStringIncludes(text, "10:30 予定1（P）");
   assertStringIncludes(text, "ほか1件");
+});
+
+
+Deno.test("pending confirmation copy preserves request negotiation state", () => {
+  assertEquals(
+    pendingConfirmationMessage("assignment_change_request"),
+    "✓ お願いを送りました。\n相手の返事を待っています。担当はまだ変わっていません。",
+  );
+  assertEquals(
+    pendingConfirmationMessage("request_create"),
+    "✓ お願いを送りました。\n相手の返事を待っています。",
+  );
+  assertEquals(pendingConfirmationMessage("task_create_once"), "✓ 登録しました。");
 });
