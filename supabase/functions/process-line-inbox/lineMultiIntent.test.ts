@@ -183,3 +183,110 @@ Deno.test("one candidate remains a normal preview, not a forced group", () => {
   assertEquals(candidates[0].kind, "shopping");
   assertEquals(isMultiIntentMessage(candidates), false);
 });
+
+
+Deno.test("model cannot invent a family role when source text has none", () => {
+  const raw = "明日のお迎えお願い";
+  const direct = normalizeSemanticDecomposition(model([
+    request("お迎え", raw, "mama"),
+  ]), raw);
+  assertEquals(direct[0].intent?.targetRole, null);
+});
+
+Deno.test("explicit family role in source text overrides missing model role", () => {
+  const raw = "ママに明日のお迎えお願い";
+  const direct = normalizeSemanticDecomposition(model([
+    request("お迎え", raw, null),
+  ]), raw);
+  assertEquals(direct[0].intent?.targetRole, "mama");
+});
+
+Deno.test("colloquial role correction selects the final role", () => {
+  const raw = "明日お迎えママお願い。いやパパだった";
+  const direct = normalizeSemanticDecomposition(model([
+    request("お迎え", raw, null),
+  ]), raw);
+  assertEquals(direct[0].intent?.targetRole, "papa");
+});
+
+Deno.test("daypart must not silently become a concrete due time", () => {
+  const raw = "明日朝ゴミ出しお願い";
+  const direct = normalizeSemanticDecomposition(model([
+    request("ゴミ出し", raw, null, { daypart: "morning", due_local_time: "09:00" }),
+  ]), raw);
+  assertEquals(direct[0].intent?.daypart, "morning");
+  assertEquals(direct[0].intent?.dueLocalTime, null);
+});
+
+Deno.test("explicit clock time may survive model normalization", () => {
+  const raw = "明日7時30分までに水筒準備";
+  const direct = normalizeSemanticDecomposition(model([
+    task("水筒準備", raw, { due_local_time: "07:30" }),
+  ]), raw);
+  assertEquals(direct[0].intent?.dueLocalTime, "07:30");
+});
+
+
+Deno.test("fallback splits shopping plus pickup request across a comma", () => {
+  const raw = "牛乳買って、明日のお迎えママお願い";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["shopping", "request"]);
+  assertEquals(candidates[0].intent?.scheduledDate, "2026-09-11");
+  assertEquals(candidates[1].intent?.scheduledDate, "2026-09-12");
+  assertEquals(candidates[1].intent?.targetRole, "mama");
+});
+
+Deno.test("fallback splits share preparation and low-stock shopping", () => {
+  const raw = "保育園から明日水遊びって、タオル準備して、牛乳もなくなる";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["share", "task", "shopping"]);
+  assertEquals(candidates[1].intent?.scheduledDate, "2026-09-12");
+  assertEquals(candidates[2].intent?.scheduledDate, "2026-09-12");
+});
+
+Deno.test("fallback preserves terse task boundaries across commas", () => {
+  const raw = "明日遠足だから水筒帽子着替え準備して、朝ゴミ出し、帰り牛乳買う";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["task", "task", "shopping"]);
+  assertEquals(candidates[1].intent?.daypart, "morning");
+  assertEquals(candidates[2].intent?.scheduledDate, "2026-09-12");
+});
+
+Deno.test("fallback applies comma role correction before later shopping", () => {
+  const raw = "明日迎えはママ、いや違うパパ、牛乳も買って";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["task", "shopping"]);
+  assertEquals(candidates[0].intent?.targetRole, "papa");
+  assertEquals(candidates[0].intent?.scheduledDate, "2026-09-12");
+});
+
+Deno.test("model completed purchase is normalized to actual", () => {
+  const raw = "牛乳買った";
+  const direct = normalizeSemanticDecomposition(model([
+    shopping("牛乳の購入", raw),
+  ]), raw);
+  assertEquals(direct[0].kind, "actual");
+  assertEquals(direct[0].intent, null);
+});
+
+Deno.test("model store visit without a purchase is normalized to task", () => {
+  const raw = "帰り薬局寄る";
+  const direct = normalizeSemanticDecomposition(model([
+    shopping("薬局で薬の購入", raw),
+  ]), raw);
+  assertEquals(direct[0].kind, "task");
+  assertEquals(direct[0].intent?.kind, "task");
+});
+
+
+Deno.test("fallback splits punctuation-free appointment preparation and return-stop visit", () => {
+  const raw = "明日11時皮膚科10時出る保険証診察券準備して帰り薬局寄る";
+  const candidates = deterministicLineConversationCandidates(raw, new Date("2026-09-11T03:00:00Z"));
+  assertEquals(candidates.map((candidate) => candidate.kind), ["task", "task"]);
+  assertEquals(candidates[0].title, "皮膚科の準備");
+  assertEquals(candidates[0].intent?.dueLocalTime, "10:00");
+  assertEquals(candidates[0].intent?.context, "皮膚科 11:00");
+  assertEquals(candidates[0].intent?.subtasks, ["保険証", "診察券"]);
+  assertEquals(candidates[1].title, "薬局に寄る");
+  assertEquals(candidates[1].intent?.context, "皮膚科の帰り");
+});

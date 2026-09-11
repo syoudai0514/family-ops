@@ -97,10 +97,106 @@ function explicitDate(clause: string, now: Date): string {
 }
 
 function explicitRole(clause: string): "papa" | "mama" | null {
-  const correction = clause.match(/(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/u);
-  const token = correction?.[1] ?? clause.match(/パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻/u)?.[0] ?? null;
+  const roleToken = "(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)";
+  const directCorrection = clause.match(
+    new RegExp(`${roleToken}\\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\\s*(${roleToken})`, "u"),
+  );
+  const colloquialCorrections = [
+    ...clause.matchAll(
+      new RegExp(`(?:いや(?:違う)?|やっぱ(?:り)?|訂正(?:して)?)[、,\\s]*(?:相手(?:は)?[、,\\s]*)?(${roleToken})`, "gu"),
+    ),
+  ];
+  const corrected = colloquialCorrections.at(-1)?.[1] ?? directCorrection?.[1] ?? null;
+  const tokens = [...clause.matchAll(new RegExp(roleToken, "gu"))].map((match) => match[0]);
+  const token = corrected ?? tokens.at(-1) ?? null;
   if (!token) return null;
   return /^(?:パパ|父|お父さん)$/u.test(token) ? "papa" : "mama";
+}
+
+function hasExplicitClock(text: string): boolean {
+  return /(?:\d{1,2}時(?:\d{1,2}分|半)?|\d{1,2}:\d{2})/u.test(text);
+}
+
+function localTimeFromJapaneseClock(hour: string, minute: string | undefined, half: string | undefined): string {
+  const h = Number(hour);
+  const m = half === "半" ? 30 : Number(minute ?? "0");
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function linkedAppointmentVisitCandidates(
+  clause: string,
+  now: Date,
+): Omit<LineConversationCandidate, "candidateId">[] | null {
+  const match = clause.match(
+    /^(?:(今日|明日|明後日))?(\d{1,2})時([^0-9、。！？!?]+?)(\d{1,2})時(?:(\d{1,2})分|(半))?(?:に)?(?:出る|出発)(.+?)準備(?:して)?(帰り(?:に)?(?:薬局|スーパー|コンビニ|店)(?:に)?(?:寄る|行く))$/u,
+  );
+  if (!match) return null;
+
+  const [, , eventHour, eventNameRaw, departHour, departMinute, departHalf, itemsRaw, visitSource] = match;
+  const eventName = title(eventNameRaw);
+  const scheduledDate = explicitDate(clause, now);
+  const dueLocalTime = localTimeFromJapaneseClock(departHour, departMinute, departHalf);
+  const firstSource = clause.slice(0, clause.length - visitSource.length);
+  const knownItems = [...itemsRaw.matchAll(/保険証|診察券|診察カード|水筒|帽子|着替え|タオル/gu)]
+    .map((item) => item[0]);
+  const subtasks = knownItems.length > 0 ? [...new Set(knownItems)] : [title(itemsRaw)];
+
+  const visitPlace = visitSource
+    .replace(/^帰り(?:に)?/u, "")
+    .replace(/(?:に)?(?:寄る|行く)$/u, "")
+    .trim();
+  if (!eventName || !visitPlace) return null;
+
+  return [
+    {
+      operationId: null,
+      kind: "task",
+      title: `${eventName}の準備`,
+      intent: {
+        kind: "task",
+        title: `${eventName}の準備`,
+        scheduledDate,
+        dueLocalTime,
+        daypart: null,
+        targetRole: explicitRole(firstSource),
+        sharedMessage: null,
+        subtasks,
+        context: `${eventName} ${String(Number(eventHour)).padStart(2, "0")}:00`,
+        calendarVisibility: "special",
+        source: "deterministic",
+      },
+      sourceText: firstSource,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    },
+    {
+      operationId: null,
+      kind: "task",
+      title: `${visitPlace}に寄る`,
+      intent: {
+        kind: "task",
+        title: `${visitPlace}に寄る`,
+        scheduledDate,
+        dueLocalTime: null,
+        daypart: null,
+        targetRole: null,
+        sharedMessage: null,
+        subtasks: [],
+        context: `${eventName}の帰り`,
+        calendarVisibility: "hidden",
+        source: "deterministic",
+      },
+      sourceText: visitSource,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    },
+  ];
 }
 
 function fallbackRequestIntent(clause: string, requestTitle: string, now: Date): LineIntent {
@@ -144,12 +240,129 @@ function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandi
     }];
   }
 
-  const lowStock = clause.match(/^(.{1,60}?)(?:が|は)?(?:もう)?なくなりそう/u);
-  if (lowStock) return [{
-    operationId: null,
-    kind: "shopping", title: title(lowStock[1]), intent: null, sourceText: clause,
-    sourceSpan: null, confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
-  }];
+  const lowStock = clause.match(
+    /^(.{1,60}?)(?:が|は|も)?(?:もう)?(?:なくなりそう|なくなる|なくなった|残り少ない|残りわずか|もうない|ない)$/u,
+  );
+  if (lowStock) {
+    const shoppingTitle = title(lowStock[1]);
+    return [{
+      operationId: null,
+      kind: "shopping",
+      title: shoppingTitle,
+      intent: {
+        kind: "shopping",
+        title: shoppingTitle,
+        scheduledDate: explicitDate(clause, now),
+        dueLocalTime: null,
+        daypart: null,
+        targetRole: explicitRole(clause),
+        sharedMessage: null,
+        subtasks: [],
+        context: null,
+        calendarVisibility: "hidden",
+        source: "deterministic",
+      },
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    }];
+  }
+
+  const tersePreparation = clause.match(
+    /^(?:(?:今日|明日|明後日)(?:の)?)?(?:(?:朝|昼|夕方|夜)(?:の)?)?(.{1,60}?)準備(?:して)?$/u,
+  );
+  if (tersePreparation) {
+    const item = title(tersePreparation[1]);
+    return [{
+      operationId: null,
+      kind: "task",
+      title: `${item}準備`,
+      intent: {
+        kind: "task",
+        title: `${item}準備`,
+        scheduledDate: explicitDate(clause, now),
+        dueLocalTime: null,
+        daypart: /朝/u.test(clause) ? "morning" : /昼/u.test(clause) ? "noon" : /夕方/u.test(clause) ? "evening" : /夜/u.test(clause) ? "night" : null,
+        targetRole: explicitRole(clause),
+        sharedMessage: null,
+        subtasks: [],
+        context: null,
+        calendarVisibility: "hidden",
+        source: "deterministic",
+      },
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    }];
+  }
+
+  const terseTask = clause.match(
+    /^(?:(?:今日|明日|明後日)(?:の)?)?(?:(朝|昼|夕方|夜)(?:に|は|の)?)?(ゴミ出し)$/u,
+  );
+  if (terseTask) {
+    const daypart = terseTask[1] === "朝" ? "morning" : terseTask[1] === "昼" ? "noon" : terseTask[1] === "夕方" ? "evening" : terseTask[1] === "夜" ? "night" : null;
+    return [{
+      operationId: null,
+      kind: "task",
+      title: terseTask[2],
+      intent: {
+        kind: "task",
+        title: terseTask[2],
+        scheduledDate: explicitDate(clause, now),
+        dueLocalTime: null,
+        daypart,
+        targetRole: explicitRole(clause),
+        sharedMessage: null,
+        subtasks: [],
+        context: null,
+        calendarVisibility: "hidden",
+        source: "deterministic",
+      },
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    }];
+  }
+
+  const pickupRole = clause.match(
+    /^(?:(?:今日|明日|明後日)(?:の)?)?お?迎え(?:は|担当(?:は)?)?(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)$/u,
+  );
+  if (pickupRole) {
+    const role = /^(?:パパ|父|お父さん)$/u.test(pickupRole[1]) ? "papa" : "mama";
+    return [{
+      operationId: null,
+      kind: "task",
+      title: "お迎え",
+      intent: {
+        kind: "task",
+        title: "お迎え",
+        scheduledDate: explicitDate(clause, now),
+        dueLocalTime: null,
+        daypart: null,
+        targetRole: role,
+        sharedMessage: null,
+        subtasks: [],
+        context: null,
+        calendarVisibility: "special",
+        source: "deterministic",
+      },
+      sourceText: clause,
+      sourceSpan: null,
+      confidence: null,
+      ambiguousFields: [],
+      missingFields: [],
+      duplicateMatch: null,
+    }];
+  }
   const request = clause.match(/^(.{1,70}?)(?:を)?(?:お願い(?:します|したい)?|頼める[？?]?)$/u);
   if (request) {
     const requestTitle = title(request[1])
@@ -193,6 +406,32 @@ function correctionDate(clause: string, now: Date): string | null {
   return match ? dateFromToken(match[1], now) : null;
 }
 
+function correctionRole(clause: string): "papa" | "mama" | null {
+  const match = clause.match(
+    /(?:いや(?:違う)?|やっぱ(?:り)?|訂正(?:して)?)[、,\s]*(?:相手(?:は)?[、,\s]*)?(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/u,
+  );
+  if (!match) return null;
+  return /^(?:パパ|父|お父さん)$/u.test(match[1]) ? "papa" : "mama";
+}
+
+function applyRoleCorrection(
+  candidates: Omit<LineConversationCandidate, "candidateId">[],
+  clause: string,
+): boolean {
+  const role = correctionRole(clause);
+  if (!role || candidates.length === 0) return false;
+  const index = candidates.length - 1;
+  const previous = candidates[index];
+  if (!previous.intent) return false;
+  candidates[index] = {
+    ...previous,
+    sourceText: `${previous.sourceText}、${clause}`,
+    sourceSpan: null,
+    intent: { ...previous.intent, targetRole: role },
+  };
+  return true;
+}
+
 function applyCorrection(
   candidates: Omit<LineConversationCandidate, "candidateId">[],
   clause: string,
@@ -221,6 +460,49 @@ function finalize(candidates: Omit<LineConversationCandidate, "candidateId">[], 
   });
 }
 
+function hasExplicitDateToken(text: string): boolean {
+  return /今日|明日|明後日|[月火水木金土日]曜/u.test(text);
+}
+
+function commaSeparatedCandidates(
+  clause: string,
+  now: Date,
+): Omit<LineConversationCandidate, "candidateId">[] | null {
+  const parts = clause
+    .split(/[、，,]+/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const flattened: Omit<LineConversationCandidate, "candidateId">[] = [];
+  let inheritedDate: string | null = null;
+
+  for (const part of parts) {
+    if (hasExplicitDateToken(part)) inheritedDate = explicitDate(part, now);
+
+    if (applyRoleCorrection(flattened, part)) continue;
+    if (applyCorrection(flattened, part, now)) continue;
+
+    const group = clauseCandidates(part, now);
+    // Split only when every comma-delimited fragment independently carries a
+    // recognized intent or correction. This avoids breaking noun lists such as
+    // "身支度、診察カード、保険証を準備".
+    if (group.length === 0) return null;
+
+    for (const candidate of group) {
+      if (candidate.intent && inheritedDate && !hasExplicitDateToken(part)) {
+        flattened.push({
+          ...candidate,
+          intent: { ...candidate.intent, scheduledDate: inheritedDate },
+        });
+      } else {
+        flattened.push(candidate);
+      }
+    }
+  }
+  return flattened.length > 1 ? flattened : null;
+}
+
 /** Deterministic availability fallback and regression oracle. */
 export function deterministicLineConversationCandidates(
   text: string,
@@ -229,6 +511,18 @@ export function deterministicLineConversationCandidates(
   const candidates: Omit<LineConversationCandidate, "candidateId">[] = [];
   for (const clause of splitConversation(text)) {
     if (applyCorrection(candidates, clause, now)) continue;
+
+    const linkedAppointmentVisit = linkedAppointmentVisitCandidates(clause, now);
+    if (linkedAppointmentVisit) {
+      candidates.push(...linkedAppointmentVisit);
+      continue;
+    }
+
+    const commaCandidates = commaSeparatedCandidates(clause, now);
+    if (commaCandidates) {
+      candidates.push(...commaCandidates);
+      continue;
+    }
     candidates.push(...clauseCandidates(clause, now));
   }
   return finalize(candidates, text);
@@ -267,11 +561,24 @@ export function normalizeSemanticDecomposition(
   for (const value of rows.slice(0, 8)) {
     if (!value || typeof value !== "object") return [];
     const row = value as Record<string, unknown>;
-    const kind = String(row.kind ?? "");
+    let kind = String(row.kind ?? "");
     if (!["task", "request", "shopping", "share", "actual"].includes(kind)) return [];
-    const candidateTitle = typeof row.title === "string" ? title(row.title) : "";
+    let candidateTitle = typeof row.title === "string" ? title(row.title) : "";
     const sourceText = typeof row.source_text === "string" ? row.source_text.trim() : "";
     if (!candidateTitle || !sourceText || !source.includes(sourceText)) return [];
+
+    if (kind === "shopping" && /(?:買った|購入した|注文した)(?:よ|済み)?$/u.test(sourceText)) {
+      kind = "actual";
+      candidateTitle = title(sourceText.replace(/^(?:今日|明日|明後日)(?:の)?/u, ""));
+    }
+    if (
+      kind === "shopping" &&
+      /(?:薬局|スーパー|コンビニ|店)(?:に)?(?:寄る|行く)$/u.test(sourceText) &&
+      !/(?:買|購入|注文|なくな|残り少|もうない)/u.test(sourceText)
+    ) {
+      kind = "task";
+      candidateTitle = title(sourceText.replace(/^帰り(?:に)?/u, ""));
+    }
     const missingFields = cleanStringArray(row.missing_fields);
     const ambiguousFields = cleanStringArray(row.ambiguous_fields);
     const confidence = typeof row.confidence === "number" && row.confidence >= 0 && row.confidence <= 1
@@ -294,7 +601,17 @@ export function normalizeSemanticDecomposition(
       });
       const validated = normalizeGeminiLineIntent(intentRaw);
       if (!validated) return [];
-      intent = { ...validated, source: "gemini" };
+      const sourceRole = explicitRole(sourceText);
+      intent = {
+        ...validated,
+        // A role may only become canonical when the candidate's own source
+        // text names it. This blocks model-invented Papa/Mama assignments.
+        targetRole: sourceRole,
+        // "朝/夜" may remain a daypart, but it must never silently become
+        // 09:00/20:00. A concrete due time requires a concrete clock token.
+        dueLocalTime: hasExplicitClock(sourceText) ? validated.dueLocalTime : null,
+        source: "gemini",
+      };
     }
 
     normalized.push({
@@ -324,15 +641,36 @@ async function geminiSemanticProvider(text: string, now: Date): Promise<string |
   const prompt = [
     "家庭内オペレーションの自然文を、意味上独立した候補へAI-firstで分解してください。",
     `今日(Asia/Tokyo)は ${today} です。`,
-    "句読点の有無・読点だけ・口語・「〜して、〜して」に依存せず意味で分ける。",
-    "同じkindが2件以上あっても統合しない。最大8件。入力にない事実は作らない。",
-    "訂正（例:『それ日曜だった』『やっぱ土曜』）は参照先候補を修正し、訂正文を新規候補にしない。",
+    "最優先: 入力にない担当・時刻・日付・理由・作業を作らない。",
+    "句読点の有無、読点だけ、助詞抜け、口語、音声入力風、話題飛びでも意味で分ける。",
+    "句読点が全く無くても動詞・対象・担当の切れ目から独立用件を分ける。",
+    "例: 『明日ママ迎えお願い牛乳買ってゴミ出しもやる』 -> request『迎え』 + shopping『牛乳』 + task『ゴミ出し』の3候補。",
+    "過去形の『買った』『注文した』はshopping予定ではなくactual。『薬局寄る』『スーパー行く』は、購入物が書かれていなければtaskであり、買う物を捏造しない。",
+    "例: 『今日洗濯した食器片付けた牛乳買った』 -> actualを3候補。",
+    "例: 『明日11時皮膚科10時出る保険証診察券準備して帰り薬局寄る』 -> 病院準備task + 薬局に寄るtask。薬の購入を捏造しない。",
+    "同じkindが2件以上あっても勝手に統合しない。最大8件。",
+    "読点・カンマでつながっていても意味が別なら必ず別候補にする。1候補のsource_textへ別intentの文言を巻き込まない。",
+    "例: 『牛乳買って、明日のお迎えママお願い』 -> shopping『牛乳』 + request『お迎え』の2候補。shoppingのsource_textは『牛乳買って』だけ、requestは『明日のお迎えママお願い』だけ。",
+    "例: 『洗濯したよ、牛乳なくなりそう、明日遠足だって』 -> actual『洗濯』 + shopping『牛乳』 + share『明日遠足』の3候補。",
+    "ただし同一目的の『予定時刻 + 出発時刻 + 準備物』は別タスクに分割しない。準備/対応1候補にまとめ、予定時刻はcontext、出発/準備期限はdue_local_time、持ち物はsubtasksへ入れる。",
+    "例: 『明日11時病院で10時出るから保険証と診察券準備』 -> task『病院の準備』1件。context='病院 11:00', due_local_time='10:00', subtasks=['保険証','診察券']。",
+    "訂正は必ず元候補へ反映し、訂正文を新規候補にしない。",
+    "例: 『土曜に牛乳買う。やっぱ日曜』 -> shopping 1件、scheduled_dateは日曜。source_textは訂正を含む連続原文。",
+    "例: 『明日迎えママお願い。いやパパだった』 -> request 1件、target_role='papa'。source_textは訂正を含む連続原文。",
+    "例: 『明日迎えはママ、いや違うパパ、牛乳も買って』 -> 迎え候補のtarget_roleはpapaへ訂正 + shopping『牛乳』。",
+    "『ママに』『パパに』『迎えはママ』『相手はママ』等、役割が明記されたrequest/taskは target_role を必ず返す。",
+    "役割が書かれていなければ target_role=null。requestだからといって担当を推測しない。",
+    "買う/買って/買っといて/購入/注文は shopping。命令形でもrequestにしない。",
+    "request は相手への明確な家事・作業依頼だけ。",
+    "actual は実施済み報告、share は予定/状態/お知らせの共有。",
+    "先頭に共通の日付・時間帯があり、その後に複数の用件が連続する場合、その修飾が自然に継続する候補へ引き継ぐ。途中で別の日付が出たら以降は更新する。",
+    "朝/昼/夕方/夜は daypart のみ。具体時刻が書かれていない限り due_local_time=null。09:00/20:00等を推測しない。",
+    "source_textは必ず入力中の連続した原文部分をそのまま返す。役割や訂正が候補の意味に必要なら、それらも含む連続範囲をsource_textにする。",
     "不明なのが1項目だけなら他の候補/項目を保持し、その項目だけmissing_fields/ambiguous_fieldsへ入れる。",
-    "source_textは必ず入力中の連続した原文部分をそのまま返す。",
-    "kindは task/request/shopping/share/actual。requestは相手への明確な依頼だけ。",
     "task/request/shoppingは scheduled_date(YYYY-MM-DD), due_local_time, daypart, target_role, shared_message, subtasks, context, calendar_visibility を返す。",
+    "calendar_visibility は特別な家族予定/病院/園学校行事ならspecial、日常家事・買い物はhidden。",
     "confidenceは0〜1。",
-    'JSONのみ: {"candidates":[{"kind":"task|request|shopping|share|actual","title":"...","source_text":"入力中の原文","scheduled_date":"YYYY-MM-DD","due_local_time":null,"daypart":null,"target_role":null,"shared_message":null,"subtasks":[],"context":null,"calendar_visibility":"hidden","missing_fields":[],"ambiguous_fields":[],"confidence":0.9}]}',
+    'JSONのみ: {"candidates":[{"kind":"task|request|shopping|share|actual","title":"...","source_text":"入力中の連続原文","scheduled_date":"YYYY-MM-DD","due_local_time":null,"daypart":null,"target_role":null,"shared_message":null,"subtasks":[],"context":null,"calendar_visibility":"hidden","missing_fields":[],"ambiguous_fields":[],"confidence":0.9}]}',
     `入力: ${JSON.stringify(text)}`,
   ].join("\n");
   try {

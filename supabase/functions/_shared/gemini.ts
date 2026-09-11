@@ -38,45 +38,112 @@ export interface InvariantResult {
 // call cannot run in this environment (no real GEMINI_API_KEY provisioned).
 // ---------------------------------------------------------------------------
 
-const DATE_PATTERNS: RegExp[] = [
+const ABSOLUTE_DATE_PATTERNS: RegExp[] = [
   /\d{4}年\d{1,2}月\d{1,2}日/g,
   /\d{1,2}月\d{1,2}日/g,
   /\d{4}-\d{2}-\d{2}/g,
   /\d{1,2}\/\d{1,2}(?:\/\d{2,4})?/g,
-  /(?:月|火|水|木|金|土|日)曜日?/g,
-  /(?:今日|明日|明後日|今週|来週|再来週|今夜|今朝)/g,
-  /\d{1,2}時(?:\d{1,2}分)?/g,
 ];
 
-const QUANTITY_PATTERN =
-  /\d+(?:\.\d+)?\s?(?:個|本|袋|パック|枚|回|人分|人|冊|台|匹|杯|セット|kg|g|ml|L|l|円|時間|分間)/g;
-
-// Proper-noun-like tokens: katakana runs (common for brand/product/place
-// names in Japanese) and capitalized Latin words (e.g. imported brand
-// names, English place names).
-const KATAKANA_PATTERN = /[ァ-ヴー]{2,}/g;
 const LATIN_PROPER_NOUN_PATTERN = /\b[A-Z][a-zA-Z]{1,}\b/g;
+const KATAKANA_TOKEN_PATTERN = /[ァ-ヴー]{2,}/g;
 
-const FACT_PATTERNS: RegExp[] = [
-  ...DATE_PATTERNS,
-  QUANTITY_PATTERN,
-  KATAKANA_PATTERN,
-  LATIN_PROPER_NOUN_PATTERN,
-];
+function isRepeatedMimetic(token: string): boolean {
+  if (token.length < 4 || token.length % 2 !== 0) return false;
+  const half = token.length / 2;
+  return token.slice(0, half) === token.slice(half);
+}
 
-// Extracts every date/quantity/proper-noun-like token from `text`, deduped.
-// Exported for direct fixture-level testing.
+function normalizedUnit(unit: string): string {
+  if (unit === "分間") return "分";
+  if (unit === "秒間") return "秒";
+  if (unit === "l") return "L";
+  return unit;
+}
+
+function addQuantityFacts(text: string, facts: Set<string>): void {
+  const quantity = /(\d+(?:\.\d+)?)\s?(個|本|袋|パック|枚|回|人分|人|冊|台|匹|杯|セット|kg|g|ml|L|l|円|時間|分間|秒間|秒)/g;
+  for (const match of text.matchAll(quantity)) {
+    facts.add(`qty:${match[1]}${normalizedUnit(match[2])}`);
+  }
+  // Bare "N分" is also a duration, except when it is the minute component
+  // of a clock expression such as "8時20分".
+  for (const match of text.matchAll(/(\d+)分(?!間)/g)) {
+    const prefix = text.slice(Math.max(0, (match.index ?? 0) - 4), match.index ?? 0);
+    if (/\d{1,2}時$/.test(prefix)) continue;
+    facts.add(`qty:${match[1]}分`);
+  }
+}
+
+function addDateFacts(text: string, facts: Set<string>): void {
+  for (const pattern of ABSOLUTE_DATE_PATTERNS) {
+    for (const match of text.match(pattern) ?? []) facts.add(`date:${match}`);
+  }
+  for (const match of text.matchAll(/([月火水木金土日])曜日?/g)) {
+    facts.add(`weekday:${match[1]}`);
+  }
+
+  const relative: Array<[RegExp, string]> = [
+    [/(?:今すぐ|今から|今のうちに)/u, "rel:immediate"],
+    [/(?:今日|本日)/u, "rel:today"],
+    [/明日/u, "rel:tomorrow"],
+    [/明後日/u, "rel:day_after_tomorrow"],
+    [/再来週/u, "rel:week_after_next"],
+    [/来週/u, "rel:next_week"],
+    [/今週/u, "rel:this_week"],
+    [/(?:今夜|今日の夜)/u, "rel:tonight"],
+    [/(?:今朝|今日の朝)/u, "rel:this_morning"],
+  ];
+  for (const [pattern, key] of relative) if (pattern.test(text)) facts.add(key);
+
+  for (const match of text.matchAll(/(\d{1,2})時(?!間)(?:(\d{1,2})分|(半))?/g)) {
+    const minute = match[3] === "半" ? 30 : Number(match[2] ?? "0");
+    facts.add(`time:${Number(match[1])}:${String(minute).padStart(2, "0")}`);
+  }
+  for (const match of text.matchAll(/(?:^|\D)(\d{1,2}):(\d{2})(?!\d)/g)) {
+    facts.add(`time:${Number(match[1])}:${match[2]}`);
+  }
+}
+
+function addIdentityFacts(text: string, facts: Set<string>): void {
+  if (/(?:パパ|父|お父さん)/u.test(text)) facts.add("role:papa");
+  if (/(?:ママ|母|お母さん|妻|嫁さん|奥さん)/u.test(text)) facts.add("role:mama");
+
+  for (const match of text.matchAll(LATIN_PROPER_NOUN_PATTERN)) {
+    facts.add(`latin:${match[0]}`);
+  }
+  for (const match of text.matchAll(KATAKANA_TOKEN_PATTERN)) {
+    const token = match[0];
+    if (isRepeatedMimetic(token)) continue;
+    const next = text.slice((match.index ?? 0) + token.length);
+    // A katakana run is only a hard identity/location fact when Japanese
+    // grammar anchors it as such. Treating every katakana word as a proper
+    // noun made ordinary words such as バタバタ / ギリギリ hard invariants.
+    if (/^(?:で|に|へ|から|と)/u.test(next)) facts.add(`katakana:${token}`);
+  }
+}
+
+// Extracts canonical hard facts rather than raw substrings. This allows safe
+// paraphrases such as 今日 -> 本日 and 30分 -> 30分間 while still rejecting
+// changed dates, quantities, times and anchored identities.
 export function extractFacts(text: string): string[] {
   const facts = new Set<string>();
-  for (const pattern of FACT_PATTERNS) {
-    const matches = text.match(pattern) ?? [];
-    for (const m of matches) facts.add(m);
-  }
+  addDateFacts(text, facts);
+  addQuantityFacts(text, facts);
+  addIdentityFacts(text, facts);
   return [...facts];
 }
 
-const NEGATION_PATTERN =
-  /(?:しなくていい|しないで|しなくて大丈夫|なくていい|ないで|不要|やめて|キャンセル|取り消|変更しない|そのままで)/u;
+function negationFacts(text: string): Set<string> {
+  const facts = new Set<string>();
+  if (/(?:し|やら|行か|出さ|買わ|持た|飲ま|食べ|片付け|変更し|お願いし)なくていい/u.test(text)) {
+    facts.add("neg:not_required");
+  }
+  if (/(?:キャンセル|取り消(?:し|して)?)/u.test(text)) facts.add("neg:cancel");
+  if (/(?:そのままで|変更しないで|変えないで)/u.test(text)) facts.add("neg:keep");
+  if (/不要/u.test(text)) facts.add("neg:not_required");
+  return facts;
+}
 
 const GRATITUDE_APOLOGY_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   { label: "gratitude", pattern: /(?:ありがとう|感謝して|感謝です)/u },
@@ -84,34 +151,52 @@ const GRATITUDE_APOLOGY_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
 ];
 
 const REASON_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
-  { label: "work_reason", pattern: /(?:仕事|勤務|会議|残業|出社|退勤|業務)/u },
-  { label: "health_reason", pattern: /(?:体調|具合|発熱|熱が|頭痛|腹痛|病気|通院)/u },
+  { label: "work_reason", pattern: /(?:仕事|勤務|会議|残業|出社|会社|在宅|退勤|業務|締切)/u },
+  { label: "health_reason", pattern: /(?:体調|具合|発熱|熱が|頭痛|腹痛|病気|通院|腰が痛|しんど)/u },
+  { label: "transport_reason", pattern: /(?:電車|遅延|渋滞|交通)/u },
 ];
 
 /**
  * Deterministic post-model invariant validation.
  *
- * The validator is intentionally stricter than a one-way "facts preserved"
- * check:
- * - raw facts may not disappear;
- * - new date/quantity/proper-noun-like facts may not be invented;
- * - explicit negative directives may not flip to positive (or vice versa);
- * - gratitude/apology may not be fabricated;
- * - a new reason category may not be invented.
+ * Hard invariants are semantic facts, not surface wording:
+ * - dates / clock times / quantities / anchored identities may not disappear
+ *   or be invented;
+ * - explicit "do not / no longer needed / cancel / keep as-is" semantics may
+ *   not flip;
+ * - gratitude/apology and unrelated reason categories may not be fabricated.
  *
- * This is a safety boundary, not a Japanese-style grader. Naturalness remains
- * a model/canary concern; product facts and semantic polarity are deterministic.
+ * Hostile or scorekeeping language is intentionally NOT a hard fact. The
+ * rewrite layer is expected to remove it.
  */
+function invariantSourceText(text: string): string {
+  return text
+    // Period words inside explicit scorekeeping ("今週ずっと私が〜してる")
+    // are not request facts. Keeping them as hard invariants would force the
+    // partner-facing rewrite to preserve blame.
+    .replace(
+      /今週ずっと(?:私|俺|僕|こっち)(?:が)?[^、。！？!?]*(?:して|やって|行って|担当して)[^、。！？!?]*/gu,
+      "",
+    );
+}
+
 export function validateInvariant(rawText: string, proposedText: string): InvariantResult {
-  const rawFacts = extractFacts(rawText);
+  const rawFacts = extractFacts(invariantSourceText(rawText));
   const proposedFacts = extractFacts(proposedText);
-  const missingFacts = rawFacts.filter((fact) => !proposedText.includes(fact));
-  const inventedFacts = proposedFacts.filter((fact) => !rawText.includes(fact));
+  const rawSet = new Set(rawFacts);
+  const proposedSet = new Set(proposedFacts);
+  const missingFacts = rawFacts.filter((fact) => !proposedSet.has(fact));
+  const inventedFacts = proposedFacts.filter((fact) => !rawSet.has(fact));
   const semanticViolations: string[] = [];
 
-  const rawNegated = NEGATION_PATTERN.test(rawText);
-  const proposedNegated = NEGATION_PATTERN.test(proposedText);
-  if (rawNegated !== proposedNegated) semanticViolations.push("negation_polarity_changed");
+  const rawNegation = negationFacts(rawText);
+  const proposedNegation = negationFacts(proposedText);
+  for (const fact of rawNegation) {
+    if (!proposedNegation.has(fact)) semanticViolations.push(`negation_lost:${fact}`);
+  }
+  for (const fact of proposedNegation) {
+    if (!rawNegation.has(fact)) semanticViolations.push(`negation_invented:${fact}`);
+  }
 
   for (const marker of GRATITUDE_APOLOGY_PATTERNS) {
     if (marker.pattern.test(proposedText) && !marker.pattern.test(rawText)) {
@@ -172,22 +257,88 @@ function extractJsonBlock(text: string): string {
 }
 
 function buildPrompt(rawText: string, targetType: AiDraftTargetType): string {
-  const targetLabel = targetType === "request" ? "パートナーへの依頼メッセージ" : "パートナーへの引き継ぎメモ";
-  // Rules mirror docs/design/v6/05_AI_GEMINI.md §4's forbidden-transform list
-  // verbatim (no addition of gratitude/apology, no fabricated emotion, no
-  // quantity/date change, no negation flip, no change of who it's for, no
-  // strengthening the original request).
+  const jsonRule = '- 出力は必ず次のJSON形式のみ: {"shared_text": string, "warnings": string[]}';
+
+  if (targetType === "handover") {
+    return [
+      "あなたは家庭内の引き継ぎメモを、事実を変えずに短く読みやすく整えるアシスタントです。",
+      "handoverは依頼ではありません。確定済みの事実・状態・予定・残量・実施状況を共有するメモです。",
+      "以下を厳守してください:",
+      "- 質問形・依頼形・命令形に変えない。『お願いできる？』『〜してね』『〜してもらえる？』は禁止",
+      "- 元文が単なる事実なら、単なる事実のまま共有する",
+      "- 日付、時刻、数量、担当、否定、変更有無、実施済み/未実施を変えない",
+      "- 入力にない理由、感情、予定、対策、担当、教訓を作らない",
+      "- 元文に依頼語が混ざっていてもhandover自体を依頼メッセージへ変換しない。ただし『次の人が記録』『寝る前に様子を見る』など未実施の次アクションは削らず、handover上の次行動として残す",
+      "- 『また言うけど』『絶対忘れないで』等の責め・圧は削除し、事実だけ残す",
+      "- 薬や体調等は診断・助言を追加せず、元文の観察事実だけ共有する",
+      "- 自然な家族LINEの短いメモにする",
+      "",
+      "例:",
+      "入力: また言うけど、薬は朝晩2回。絶対忘れないで。",
+      "handover: 薬は朝晩2回。",
+      "入力: 昨日も出なかった。便秘気味。今日は水分多めにしてる。",
+      "handover: 昨日も便が出ておらず、便秘気味。今日は水分を多めにしている。",
+      "入力: 保育園から明日水遊びって。タオルと着替え必要。",
+      "handover: 明日は保育園で水遊び。タオルと着替えが必要。",
+      "入力: 薬飲ませたけどまだ記録してない。次の人記録お願い。",
+      "handover: 薬は飲ませ済み。記録はまだなので、次の人は記録する.",
+      "入力: 子ども少し咳。熱はなし。寝る前に様子見て。",
+      "handover: 子どもは少し咳があり、熱はなし。寝る前に様子を見る。",
+      "入力: 明日の迎え18時20分パパ。変更なし。",
+      "handover: 明日18時20分のお迎えはパパ。変更なし。",
+      "",
+      jsonRule,
+      "",
+      "元のテキスト:",
+      '"""',
+      rawText,
+      '"""',
+    ].join("\n");
+  }
+
   return [
-    `あなたは家庭内の${targetLabel}を柔らかく言い換えるアシスタントです。`,
-    "以下のルールを厳守してください:",
-    "- 「ありがとう」「ごめん」等の感情表現を勝手に追加しない",
+    "あなたは家庭内のパートナーへの依頼メッセージを、相手が責められた・見下された・借りを返せと言われたと感じにくい自然な家族LINEへ整えるアシスタントです。",
+    "最優先は『本来伝えるべき用件・理由・日時・数量を保ちつつ、関係を悪化させる圧だけを落とす』ことです。",
+    "以下を厳守してください:",
+    "- 依頼内容、対象、日時、期限、数量、場所、動作の意味を変えない。『お風呂』を『お風呂の準備』に狭める、『覚えておいて』を『予定を登録して』に変える等は禁止",
+    "- 元文に日付・曜日・時刻が無い場合、『今日』『明日』などを勝手に追加しない",
+    "- 『今すぐ』『今から』『今のうちに』のような実行タイミングは、圧ではなく用件の一部なので落とさない",
+    "- 入力にない担当、理由、予定、対策、教訓を作らない",
+    "- 依頼者自身の現在の事情・制約・体調・負荷が依頼理由なら、短く自然に残す",
+    "- 相手の過去の失敗、貸し借り、比較、嫌味、皮肉、決めつけ、人格評価、説教、脅しは相手向け文面から除く",
+    "- 『前回は私がやった』『いつも私ばかり』『どうせ暇』『また忘れる』『今度こそ』『普通できる』『文句言わずに』等を、丁寧な言葉へ置換して残すのも禁止",
+    "- 相手への非難と依頼者自身の事情が混在する場合、非難だけ落として事情は残す",
+    "- 過去の相手行動を現在の依頼の根拠として突きつけない",
+    "- 将来のしつけ・改善要求を勝手に追加しない。今回の用件だけを伝える",
+    "- 『ありがとう』『ごめん』等の感情表現を勝手に追加しない",
     "- 依頼者の感情を捏造しない",
-    "- 数量を変更しない",
-    "- 期限や日付を変更しない",
     "- 否定/肯定を反転しない",
-    "- 依頼対象を変更しない",
-    "- 元の要求を強めない",
-    '- 出力は必ず次のJSON形式のみ: {"shared_text": string, "warnings": string[]}',
+    "- 夫婦LINEとして自然で柔らかくする。過剰敬語や不自然な名詞化（『〜してもらうことはお願いできる？』等）は避け、『お願いできる？』『お願いできますか？』程度を基本にする",
+    "- 『休んで看病して』のように2つの必要行動が結びついている場合、片方を落とさない",
+    "- 曖昧な対象を勝手に具体化しない。元が『全部』なら『家事全部』などと補わない",
+    "",
+    "例:",
+    "入力: 前は俺がやったんだから、明日の迎えくらいそっちがやってよ。",
+    "request: 明日のお迎えをお願いできる？",
+    "入力: 仕事で今日は余裕ないし、前も私がやったから、寝かしつけお願い。",
+    "request: 今日は仕事で余裕がないので、寝かしつけをお願いできる？",
+    "入力: 昨日も私が片付けたし、今日はもう片付けたくない。夕飯後お願い。",
+    "request: 今日は夕飯後の片付けをお願いできる？",
+    "入力: どうせ家にいるんでしょ。明日の荷物受け取っといて。",
+    "request: 明日の荷物の受け取りをお願いできる？",
+    "入力: また寝落ちする前に洗濯物だけ干しといて。",
+    "request: 寝る前に洗濯物を干しておいてもらえる？",
+    "入力: またギリギリになるの嫌だから、今のうちに明日の持ち物確認して。",
+    "request: 今のうちに明日の持ち物を確認してもらえる？",
+    "入力: どうせまた忘れるだろうから、明日9時の病院ちゃんと覚えといて。",
+    "request: 明日9時の病院、覚えておいてもらえる？",
+    "入力: 昨日も私が片付けたし、今日はもう片付けたくない。夕飯後お願い。",
+    "request: 今日は夕飯後の片付けをお願いできる？",
+    "注意: 『また寝落ち』『また忘れる』のような相手への失敗予測は、そのまま丁寧語にせず、中立な期限・用件だけを残す。",
+    "入力: 今週ずっとバタバタでしんどい。今日は寝かしつけ代わってくれると助かる。",
+    "request: 今週ずっとバタバタしていてしんどいので、今日は寝かしつけをお願いできる？",
+    "",
+    jsonRule,
     "",
     "元のテキスト:",
     '"""',

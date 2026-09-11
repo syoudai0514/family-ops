@@ -152,15 +152,31 @@ function targetRole(text: string): LineTargetRole {
   // and for a draft correction, so keep it deterministic instead of relying
   // on the model to infer Japanese contrast grammar every time.
   const correction = text.match(
-    /(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
+    /(?:パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)/,
   );
   if (correction) {
-    return /^(?:パパ|父|お父さん)$/.test(correction[1]) ? "papa" : "mama";
+    return /^(?:パパ|ぱぱ|父|お父さん)$/.test(correction[1]) ? "papa" : "mama";
   }
-  if (/(?:パパ|父|お父さん)/.test(text)) return "papa";
+  if (/(?:パパ|ぱぱ|父|お父さん)/.test(text)) return "papa";
   if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return "mama";
+
+  const compact = text.normalize("NFKC").replace(/\s+/g, "");
+  if (
+    !/(?:その|この|あの)まま/u.test(compact) &&
+    /まま/u.test(compact) &&
+    /(?:おねがい|お願い|むかえ|迎え|してほしい|して欲しい|タスク)/u.test(compact)
+  ) return "mama";
   return null;
 }
+
+function hasExplicitRequestCue(text: string): boolean {
+  return /(?:お願い|おねがい|してほしい|して欲しい|やって|やっといて|してくれ|してもら|頼(?:む|んで)|変わって|代わって|行ってくれ)/u
+    .test(text);
+}
+function hasExplicitClockToken(text: string): boolean {
+  return /(?:\d{1,2}時(?:\d{1,2}分|半)?|\d{1,2}:\d{2})/u.test(text);
+}
+
 
 function cleanNoun(value: string): string {
   return value
@@ -240,7 +256,7 @@ export function deterministicLineIntent(
       .test(
         normalized,
       );
-  const shoppingSignal = /(?:買って|買う|購入|注文して|注文する)/.test(
+  const shoppingSignal = /(?:買って(?:きて)?|買っといて|買っとく|買う|購入|注文して|注文する)/.test(
     normalized,
   );
 
@@ -248,8 +264,14 @@ export function deterministicLineIntent(
     const item = cleanNoun(
       normalized
         .replace(/(?:Amazon|アマゾン)で?/gi, "")
-        .replace(/(?:買って|買う|購入して|購入する|注文して|注文する).*/u, ""),
-    );
+        .replace(/(?:買って(?:きて)?|買っといて|買っとく|買う|購入して|購入する|注文して|注文する).*/u, ""),
+    )
+      .replace(
+        /(?:が|は)?(?:もう)?(?:ない|なくなった|なくなりそう|切れそう|切れた)(?:[、,\s]*(?:帰り|帰りに))?$/u,
+        "",
+      )
+      .replace(/[、,\s]*(?:帰り|帰りに)$/u, "")
+      .trim();
     if (item.length >= 1 && item.length <= 80) {
       return {
         kind: "shopping",
@@ -403,6 +425,39 @@ export function normalizeGeminiLineIntent(
   };
 }
 
+export function normalizeResolvedGeminiLineIntent(
+  text: string,
+  raw: string,
+  now: Date,
+): LineIntent | null {
+  const normalized = normalizeGeminiLineIntent(raw);
+  if (!normalized) return null;
+
+  // Simple purchase language has a deterministic, safer interpretation.
+  // Never let the model turn "牛乳買って" into a partner Request merely
+  // because the Japanese is imperative.
+  const deterministic = deterministicLineIntent(text, now);
+  if (deterministic?.kind === "shopping") return deterministic;
+
+  const explicitTargetRole = targetRole(text);
+  const assignedTaskWithoutRequestCue =
+    normalized.kind === "request" &&
+    explicitTargetRole !== null &&
+    !hasExplicitRequestCue(text);
+
+  return {
+    ...normalized,
+    kind: assignedTaskWithoutRequestCue ? "task" : normalized.kind,
+    // A recipient/assignee is canonical only when the raw input names one.
+    targetRole: explicitTargetRole,
+    sharedMessage: assignedTaskWithoutRequestCue ? null : normalized.sharedMessage,
+    // Dayparts may remain semantic labels, but a concrete due time requires
+    // an explicit clock token in the user's own text.
+    dueLocalTime: hasExplicitClockToken(text) ? normalized.dueLocalTime : null,
+    source: "gemini",
+  };
+}
+
 async function geminiLineIntent(
   text: string,
   now: Date,
@@ -414,20 +469,30 @@ async function geminiLineIntent(
   const prompt = [
     "家庭内タスク管理LINEの自然文を、送信者が確認できる1件の安全なアクションへ構造化してください。",
     `今日(Asia/Tokyo)は ${today} です。`,
-    "重要: 作業の実行日と、病院・行事などの予定日は区別する。",
-    "例: 「明日11時から藤沢の皮膚科。10時には出発必要なので子供の身支度、診察カード、保険証を準備」は、",
-    "title「皮膚科の準備」、scheduled_date は明日、due_local_time は「10:00」、",
-    "subtasks は「子供の身支度」「診察カード」「保険証」、context は「藤沢の皮膚科 11:00」とする。",
-    "予定そのものを新しいGoogle Calendar予定として作らない。入力に書かれていない事実・時刻・担当を作らない。",
-    "kind は task/request/shopping のいずれか。相手に「してほしい」「お願い」など明確な依頼表現がある場合だけ request。担当名が出ただけでは request にしない。「パパのタスクとして追加」は task。",
-    "target_role は papa/mama/null。嫁さん・妻・奥さんは mama。",
-    "daypart は morning/noon/evening/night/null。",
+    "入力にない事実・時刻・担当を絶対に作らない。",
+    "kind は task/request/shopping のいずれか。",
+    "shopping を最優先で意味判定する。買う/買って/買っといて/購入/注文/日用品や食品の在庫切れ+お願いは shopping。命令形でも request にしない。",
+    "request は相手に家事・作業をしてほしい明確な依頼。買い物行為は上記どおり shopping。",
+    "task は自分/指定担当のToDo・準備・予定対応。担当名が出ただけでは request にしない。",
+    "target_role は入力にパパ/ママ等の役割語が明示された場合だけ papa/mama。役割語がなければ必ず null。requestだからといってpartnerを推測して埋めない。",
+    "『ママじゃなくてパパ』等の訂正は後ろの役割を採用する。『パパ薬飲ませる』のように助詞が省略され意味が曖昧なら、パパを薬の対象だと勝手に解釈しない。",
+    "嫁さん・妻・奥さんは mama。",
+    "作業の実行日と、病院・行事などの予定日は区別する。",
+    "病院/行事の開始時刻・出発時刻・持ち物準備が同じ目的なら、予定そのものを別タスク化せず、準備タスク1件にまとめる。",
+    "例: 『明日11時から藤沢の皮膚科。10時には出発必要なので子供の身支度、診察カード、保険証を準備』 -> title『皮膚科の準備』, scheduled_date=明日, due_local_time='10:00', subtasks=['子供の身支度','診察カード','保険証'], context='藤沢の皮膚科 11:00'。",
+    "例: 『明日牛乳2本買って』 -> kind=shopping, title='牛乳2本', target_role=null。",
+    "例: 『今日夜食器洗いやってほしい』 -> kind=request, target_role=null。担当を推測しない。",
+    "例: 『明日ママにゴミ出してほしい』 -> kind=request, target_role=mama。",
+    "例: 『ママ明日保険証準備』 -> kind=task, target_role=mama。役割名があるだけでrequestにしない。",
+    "例: 『あしたままむかえおねがい』 -> kind=request, target_role=mama。ひらがなの家族roleも文脈から読む。",
+    "例: 『明日Amazonでオムツ注文する』 -> kind=shopping。",
+    "daypart は morning/noon/evening/night/null。朝/夜だけから具体的な時刻を作らない。",
     "scheduled_date は YYYY-MM-DD。明示が無い場合は今日。",
-    "due_local_time は入力にある実行期限・出発時刻を HH:MM で返す。無ければ null。",
-    "title は80文字以内の短い行動名。メタ文言「タスクとして追加して」は入れない。",
+    "due_local_time は入力に明示された実行期限・出発時刻だけを HH:MM で返す。具体時刻が無ければ null。",
+    "title は80文字以内の短い行動/買い物名。『なくなった』『切れそう』等の在庫説明やメタ文言はtitleへ混ぜない。",
     "subtasks は実際にチェックできる持ち物・手順だけを最大5件。無ければ空配列。",
     "context は予定の場所・開始時刻等の短い補足だけ。無ければnull。",
-    "calendar_visibility は、病院・習い事・学校/保育園行事・特別な持ち物など家族予定として見通しとGoogle Calendarに出すべき一回限りの対応だけ special。それ以外の日常タスクは hidden。タイトルの単語だけで判断せず、入力全体の意味だけで選ぶ。",
+    "calendar_visibility は、病院・習い事・学校/保育園行事・特別な持ち物など家族予定として見通しとGoogle Calendarに出すべき一回限りの対応だけ special。それ以外の日常タスクは hidden。",
     "shared_message は request のときだけ、事実を増やさず柔らかい依頼文。それ以外null。",
     '必ずJSONのみ: {"kind":"task|request|shopping","title":"...","scheduled_date":"YYYY-MM-DD","due_local_time":"HH:MM|null","daypart":"morning|noon|evening|night|null","target_role":"papa|mama|null","shared_message":"...|null","subtasks":["..."],"context":"...|null","calendar_visibility":"special|hidden"}',
     "",
@@ -435,8 +500,7 @@ async function geminiLineIntent(
   ].join("\n");
   try {
     const raw = await callGemini(prompt, model);
-    const normalized = normalizeGeminiLineIntent(raw);
-    return normalized ? { ...normalized, source: "gemini" } : null;
+    return normalizeResolvedGeminiLineIntent(text, raw, now);
   } catch (error) {
     console.warn("process-line-inbox: Gemini intent extraction unavailable", {
       code: error instanceof Error ? error.message : "unknown",

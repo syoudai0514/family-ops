@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   deterministicLineIntent,
+  normalizeResolvedGeminiLineIntent,
   isLineCreateStarter,
   isPickupAssignmentChangeText,
   normalizeGeminiLineIntent,
@@ -136,4 +137,65 @@ Deno.test("pickup assignment-change wording accepts blunt requests but not a bar
     false,
   );
   assertEquals(isPickupAssignmentChangeText("9/14のお迎え担当変わった？"), false);
+});
+
+
+Deno.test("shopping fallback handles terse low-stock and colloquial buy wording", () => {
+  assertEquals(deterministicLineIntent("牛乳なくなった買っといて", now)?.kind, "shopping");
+  assertEquals(deterministicLineIntent("牛乳なくなった買っといて", now)?.title, "牛乳");
+  assertEquals(deterministicLineIntent("洗剤切れそう、帰り買って", now)?.kind, "shopping");
+  assertEquals(deterministicLineIntent("洗剤切れそう、帰り買って", now)?.title, "洗剤");
+});
+
+Deno.test("shopping fallback preserves explicit quantities and role only when written", () => {
+  const plain = deterministicLineIntent("明日牛乳2本買って", now);
+  assertEquals(plain?.kind, "shopping");
+  assertEquals(plain?.targetRole, null);
+  const assigned = deterministicLineIntent("明日ママに牛乳2本買って", now);
+  assertEquals(assigned?.kind, "shopping");
+  assertEquals(assigned?.targetRole, "mama");
+});
+
+
+Deno.test("hiragana family role is recovered from colloquial pickup request", () => {
+  const got = normalizeResolvedGeminiLineIntent(
+    "あしたままむかえおねがい",
+    JSON.stringify({
+      kind: "request",
+      title: "迎え",
+      scheduled_date: "2026-09-12",
+      due_local_time: null,
+      daypart: null,
+      target_role: null,
+      shared_message: "迎えをお願いできますか？",
+      subtasks: [],
+      context: null,
+      calendar_visibility: "hidden",
+    }),
+    now,
+  );
+  assertEquals(got?.targetRole, "mama");
+  assertEquals(got?.kind, "request");
+});
+
+Deno.test("role-prefixed noun phrase without a request cue remains an assigned task", () => {
+  const got = normalizeResolvedGeminiLineIntent(
+    "ママ明日保険証準備",
+    JSON.stringify({
+      kind: "request",
+      title: "保険証の準備",
+      scheduled_date: "2026-09-12",
+      due_local_time: null,
+      daypart: null,
+      target_role: "mama",
+      shared_message: "保険証の準備をお願いできますか？",
+      subtasks: [],
+      context: null,
+      calendar_visibility: "hidden",
+    }),
+    now,
+  );
+  assertEquals(got?.kind, "task");
+  assertEquals(got?.targetRole, "mama");
+  assertEquals(got?.sharedMessage, null);
 });
