@@ -85,6 +85,13 @@ Family Opsの最終成功条件は技術的完全性単独ではない。Baselin
 - This approval is **not** implementation-wide approval, Release GO, production approval, or main-merge approval.
 - PR/branch remains review-ready and unmerged until the normal governance/review path completes.
 
+### 2026-09-11 — Physical F2 Product Owner clarifications
+
+- Real iPhone/Android + separate LINE-account F2 exposed several real-use gaps.
+- Product Owner explicitly approved the resulting behavior now integrated into Baseline §28.
+- Covered areas: email/password auth coexistence, LINE-link success acknowledgement, read-only/correction-before-mutation routing, conversational two-message schedule response, actionable request recipient controls, same-start transport template edit, transport-role dependent task reconciliation, and real two-account evidence expectations.
+- These decisions are no longer valid only as chat/PR implementation context; downstream design/review/F2 must read Baseline §28.
+- No new Q number was created; §28 operationalizes existing Q decisions and cross-cutting safety/authority requirements.
 ## Detailed-design carryover from final review
 
 The following three `MEDIUM` findings do **not** change the Requirements Baseline and did not block the v1.1 merge. They must be carried into detailed-design acceptance criteria without adding unnecessary domain states.
