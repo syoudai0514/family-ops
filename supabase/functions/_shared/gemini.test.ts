@@ -337,6 +337,12 @@ const FIXTURES: Fixture[] = [
     expectedValid: false,
   },
   {
+    name: "half-hour and numeric minute notation are equivalent",
+    raw: "14時半に出る",
+    proposed: "14時30分に出発します",
+    expectedValid: true,
+  },
+  {
     name: "seconds duration accepts 秒 and 秒間 equivalence",
     raw: "丸いベロ100秒",
     proposed: "丸いベロを100秒間",
