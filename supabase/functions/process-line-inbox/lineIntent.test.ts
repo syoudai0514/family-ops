@@ -154,3 +154,47 @@ Deno.test("shopping fallback preserves explicit quantities and role only when wr
   assertEquals(assigned?.kind, "shopping");
   assertEquals(assigned?.targetRole, "mama");
 });
+
+
+Deno.test("hiragana family role is recovered from colloquial pickup request", async () => {
+  const got = await extractLineIntent(
+    "あしたままむかえおねがい",
+    now,
+    () => Promise.resolve(JSON.stringify({
+      kind: "request",
+      title: "迎え",
+      scheduled_date: "2026-09-12",
+      due_local_time: null,
+      daypart: null,
+      target_role: null,
+      shared_message: "迎えをお願いできますか？",
+      subtasks: [],
+      context: null,
+      calendar_visibility: "hidden",
+    })),
+  );
+  assertEquals(got?.targetRole, "mama");
+  assertEquals(got?.kind, "request");
+});
+
+Deno.test("role-prefixed noun phrase without a request cue remains an assigned task", async () => {
+  const got = await extractLineIntent(
+    "ママ明日保険証準備",
+    now,
+    () => Promise.resolve(JSON.stringify({
+      kind: "request",
+      title: "保険証の準備",
+      scheduled_date: "2026-09-12",
+      due_local_time: null,
+      daypart: null,
+      target_role: "mama",
+      shared_message: "保険証の準備をお願いできますか？",
+      subtasks: [],
+      context: null,
+      calendar_visibility: "hidden",
+    })),
+  );
+  assertEquals(got?.kind, "task");
+  assertEquals(got?.targetRole, "mama");
+  assertEquals(got?.sharedMessage, null);
+});
