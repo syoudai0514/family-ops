@@ -80,6 +80,18 @@ begin
   ) then
     raise exception 'FAIL dd7-notification: urgent request not bridged independently';
   end if;
+  if not exists (
+    select 1
+    from private.notification_outbox o
+    cross join lateral jsonb_array_elements(coalesce(o.payload->'items','[]'::jsonb)) item
+    where o.household_id = v_hh_id
+      and o.recipient_user_id = v_mama
+      and o.type = 'request.received'
+      and item->>'type' = 'request.received'
+      and item->'payload'->>'request_id' = v_req->>'request_id'
+  ) then
+    raise exception 'FAIL dd7-notification: canonical request payload lost at LINE outbox bridge';
+  end if;
   if (select count(*) from private.notification_outbox
       where household_id = v_hh_id and recipient_user_id = v_mama and status = 'queued') < 2 then
     raise exception 'FAIL dd7-notification: urgent request was incorrectly folded into unrelated bundle';
