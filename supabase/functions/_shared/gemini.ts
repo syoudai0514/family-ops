@@ -28,6 +28,8 @@ export interface AiDraftProposal {
 export interface InvariantResult {
   valid: boolean;
   missingFacts: string[];
+  inventedFacts: string[];
+  semanticViolations: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -73,15 +75,62 @@ export function extractFacts(text: string): string[] {
   return [...facts];
 }
 
-// Every date/quantity/proper-noun-like token found in `rawText` must also
-// appear verbatim in `proposedText` — dropped or altered (e.g. "3個" ->
-// "5個": the exact substring "3個" is gone) facts both fail validation.
-// Facts absent from the raw text impose no constraint (a purely stylistic
-// rewrite of a fact-free sentence is always valid).
+const NEGATION_PATTERN =
+  /(?:しなくていい|しないで|しなくて大丈夫|なくていい|ないで|不要|やめて|キャンセル|取り消|変更しない|そのままで)/u;
+
+const GRATITUDE_APOLOGY_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: "gratitude", pattern: /(?:ありがとう|感謝して|感謝です)/u },
+  { label: "apology", pattern: /(?:ごめん|すみません|申し訳)/u },
+];
+
+const REASON_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: "work_reason", pattern: /(?:仕事|勤務|会議|残業|出社|退勤|業務)/u },
+  { label: "health_reason", pattern: /(?:体調|具合|発熱|熱が|頭痛|腹痛|病気|通院)/u },
+];
+
+/**
+ * Deterministic post-model invariant validation.
+ *
+ * The validator is intentionally stricter than a one-way "facts preserved"
+ * check:
+ * - raw facts may not disappear;
+ * - new date/quantity/proper-noun-like facts may not be invented;
+ * - explicit negative directives may not flip to positive (or vice versa);
+ * - gratitude/apology may not be fabricated;
+ * - a new reason category may not be invented.
+ *
+ * This is a safety boundary, not a Japanese-style grader. Naturalness remains
+ * a model/canary concern; product facts and semantic polarity are deterministic.
+ */
 export function validateInvariant(rawText: string, proposedText: string): InvariantResult {
-  const facts = extractFacts(rawText);
-  const missingFacts = facts.filter((f) => !proposedText.includes(f));
-  return { valid: missingFacts.length === 0, missingFacts };
+  const rawFacts = extractFacts(rawText);
+  const proposedFacts = extractFacts(proposedText);
+  const missingFacts = rawFacts.filter((fact) => !proposedText.includes(fact));
+  const inventedFacts = proposedFacts.filter((fact) => !rawText.includes(fact));
+  const semanticViolations: string[] = [];
+
+  const rawNegated = NEGATION_PATTERN.test(rawText);
+  const proposedNegated = NEGATION_PATTERN.test(proposedText);
+  if (rawNegated !== proposedNegated) semanticViolations.push("negation_polarity_changed");
+
+  for (const marker of GRATITUDE_APOLOGY_PATTERNS) {
+    if (marker.pattern.test(proposedText) && !marker.pattern.test(rawText)) {
+      semanticViolations.push(`invented_${marker.label}`);
+    }
+  }
+
+  for (const reason of REASON_PATTERNS) {
+    if (reason.pattern.test(proposedText) && !reason.pattern.test(rawText)) {
+      semanticViolations.push(`invented_${reason.label}`);
+    }
+  }
+
+  return {
+    valid: missingFacts.length === 0 && inventedFacts.length === 0 && semanticViolations.length === 0,
+    missingFacts,
+    inventedFacts,
+    semanticViolations,
+  };
 }
 
 // ---------------------------------------------------------------------------
