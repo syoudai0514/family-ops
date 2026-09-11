@@ -582,3 +582,49 @@ At detailed design review, walkthrough at least:
 10. `今回は不要` vs `できなかった` display/history separation
 11. weekend/holiday 09:00
 12. quota fallback while critical state remains visible
+## 26. Physical F2 approved LINE/PWA clarifications — 2026-09-11
+
+These are concrete realizations of the canonical Baseline §28 and are CURRENT design, not test-only shortcuts.
+
+### 26.1 Successful LINE linking
+
+A successful link-token claim replies on LINE immediately with:
+
+- an explicit success statement;
+- a short list of representative things the user can say/do;
+- a safe first read-only example such as `今日`.
+
+Silent success is not acceptable.
+
+### 26.2 Conversational read-only before mutation
+
+Natural-language routing checks ordinary schedule/state questions and correction cues before mutation classification.
+
+Examples that must remain read-only:
+
+- `今日なんか予定あったっけ？`
+- `ちがうよ、今日の予定教えて`
+- `あなたに言っているよ` when it clearly repairs a prior misinterpretation.
+
+A natural schedule question uses two LINE message objects in one Reply API call when the reply token is available:
+
+1. lightweight conversational acknowledgement;
+2. the existing canonical detailed schedule/Today result.
+
+Literal shortcuts such as `今日` stay compact and do not need the conversational lead.
+
+If an explicit correction supersedes an erroneous draft, the stale draft is cancelled through the canonical pending-action path before the read-only answer is returned.
+
+### 26.3 Request notification must be actionable
+
+`request.received` is not satisfied by a text-only push. The notification transport must preserve enough canonical request payload to render the recipient's first-tier actions:
+
+- `やる`
+- `難しい`
+- `その他の返答`
+
+The action postbacks carry the current request/attempt/revision boundary and fail closed if stale.
+
+### 26.4 Two-account F2
+
+For two-party request/assignment acceptance, final physical F2 uses separate real LINE identities. One-user simulation remains useful for isolation/safety rehearsal but cannot substitute for the two-party transport/postback proof.
