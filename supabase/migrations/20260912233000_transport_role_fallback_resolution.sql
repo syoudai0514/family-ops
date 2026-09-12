@@ -330,7 +330,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path=''
-as $$
+as $transport_trigger$
 declare
   v_row public.task_instances%rowtype;
   v_code text;
@@ -377,7 +377,7 @@ begin
   if tg_op='DELETE' then return old; end if;
   return new;
 end;
-$;
+$transport_trigger$;
 
 revoke all on function private.fn_transport_role_anchor_reconcile_trigger_v1()
   from public,anon,authenticated;
