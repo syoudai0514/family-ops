@@ -150,3 +150,12 @@ Deno.test("NL-STRUCT-002: unavailable semantic provider still permits determinis
   );
   assertEquals(candidates.length > 0, true);
 });
+
+Deno.test("NL-STRUCT-003: malformed semantic output still permits deterministic availability fallback", async () => {
+  const candidates = await decomposeLineConversationCandidates(
+    "明日の迎えお願い",
+    new Date("2026-09-12T00:00:00Z"),
+    () => Promise.resolve("not-json"),
+  );
+  assertEquals(candidates.length > 0, true);
+});
