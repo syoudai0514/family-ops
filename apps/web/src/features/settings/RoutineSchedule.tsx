@@ -463,7 +463,7 @@ function EveningRoutineEditor({
                   )}
                   {row.strategy !== 'fixed' && (
                     <label>
-                      送迎がない日の担当（任意）
+                      平日に送迎がない日の担当（任意）
                       <select
                         value={row.fallbackAssigneeId}
                         onChange={(event) =>
@@ -477,7 +477,7 @@ function EveningRoutineEditor({
                           </option>
                         ))}
                       </select>
-                      <small className="empty-hint">送り・お迎えがない日だけ使います。送迎担当がいる日はそちらを優先します。</small>
+                      <small className="empty-hint">土日は送迎がなければ「誰でもOK」になります。平日に送迎担当がいない場合だけこの担当を使います。</small>
                     </label>
                   )}
                   {weekdayChecks(row, (weekday) => toggleDay(row.code, weekday))}
@@ -778,7 +778,7 @@ export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandl
               )}
               {row.strategy !== 'fixed' && (
                 <label>
-                  送迎がない日の担当（任意）
+                  平日に送迎がない日の担当（任意）
                   <select
                     value={row.fallbackAssigneeId}
                     onChange={(event) =>
@@ -798,7 +798,7 @@ export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandl
                       </option>
                     ))}
                   </select>
-                  <small className="empty-hint">送りがない日だけ使います。</small>
+                  <small className="empty-hint">土日は送りがなければ「誰でもOK」になります。平日に送り担当がいない場合だけ使います。</small>
                 </label>
               )}
               {weekdayChecks(row, (weekday) =>
