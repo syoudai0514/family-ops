@@ -95,6 +95,7 @@ import {
   menuQuickReplies,
   pendingConfirmationMessage,
   readOnlyLineIntent,
+  transportAssignmentCorrectionCode,
 } from "./lineConversation.ts";
 import {
   ambiguousAddresseeReply,
@@ -628,6 +629,80 @@ async function tryHandlePendingReferent(
   const time = correctionTime(text);
   const replacementTitle = lineConversationalReplacementTitle(text);
   if (!role && !date && time === undefined && !replacementTitle) return false;
+
+  if (pending.action_type === "assignment_change_request") {
+    const payload: Record<string, unknown> = { ...pending.normalized_payload, line_edit_mode: false };
+    if (time !== undefined) {
+      await sendConfirmation(client, item, actor, "担当変更の時刻は元の予定に連動しています。時刻だけは変更せず、元の下書きを残しました。");
+      return true;
+    }
+
+    if (role) {
+      const recipient = role === "self" ? actor.user_id : await householdUserForRole(client, actor.household_id, role);
+      if (!recipient) {
+        await sendConfirmation(client, item, actor, "お願いする家族が見つかりません。元の下書きは変更していません。");
+        return true;
+      }
+      if (recipient === actor.user_id) {
+        const { error } = await client.rpc("server_tx_cancel_pending_action", {
+          p_actor_id: actor.user_id,
+          p_pending_action_id: pending.id,
+        });
+        if (error) return false;
+        await sendConfirmation(client, item, actor, "担当を自分のままにする内容なので、この担当変更のお願いは取り消しました。");
+        return true;
+      }
+      payload.recipient_user_id = recipient;
+      payload.target_label = role === "papa" ? "パパ" : "ママ";
+    }
+
+    if (replacementTitle || date) {
+      const code = replacementTitle ? transportAssignmentCorrectionCode(replacementTitle) : null;
+      if (replacementTitle && !code) {
+        await sendConfirmation(client, item, actor, "担当変更の対象を特定できませんでした。「送り」か「お迎え」のように対象だけ教えてください。元の下書きは変更していません。");
+        return true;
+      }
+      let definitionId: string | null = null;
+      if (code) {
+        const { data } = await client.from("task_definitions").select("id").eq("household_id", actor.household_id).eq("code", code).maybeSingle();
+        definitionId = typeof data?.id === "string" ? data.id : null;
+      } else if (typeof payload.task_id === "string") {
+        const { data } = await client.from("task_instances").select("task_definition_id").eq("household_id", actor.household_id).eq("id", payload.task_id).maybeSingle();
+        definitionId = typeof data?.task_definition_id === "string" ? data.task_definition_id : null;
+      }
+      const targetDate = date ?? (typeof payload.scheduled_date === "string" ? payload.scheduled_date : null);
+      if (!definitionId || !targetDate) {
+        await sendConfirmation(client, item, actor, "変更後の担当予定を特定できませんでした。元の下書きは変更していません。");
+        return true;
+      }
+      const { data: targetTask } = await client.from("task_instances")
+        .select("id,title,due_at,scheduled_date")
+        .eq("household_id", actor.household_id)
+        .eq("task_definition_id", definitionId)
+        .eq("scheduled_date", targetDate)
+        .eq("planned_assignee_id", actor.user_id)
+        .in("status", ["todo", "in_progress"])
+        .maybeSingle();
+      if (!targetTask) {
+        await sendConfirmation(client, item, actor, "その日・内容に一致する変更可能な担当予定が見つかりません。元の下書きは変更していません。");
+        return true;
+      }
+      const oldTitle = typeof payload.title === "string" ? payload.title : "";
+      payload.task_id = targetTask.id;
+      payload.title = targetTask.title;
+      payload.due_at = targetTask.due_at;
+      payload.scheduled_date = targetTask.scheduled_date;
+      if (typeof payload.shared_message === "string" && oldTitle) {
+        payload.shared_message = payload.shared_message.replaceAll(oldTitle, String(targetTask.title));
+      }
+    }
+
+    const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload);
+    if (!updated) return false;
+    await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
+    return true;
+  }
+
   const payload: Record<string, unknown> = { ...pending.normalized_payload, line_edit_mode: false };
   if (date) payload.scheduled_date = date;
   if (time !== undefined) {
