@@ -16,7 +16,7 @@ vi.mock('./useTodayClock', () => ({
 vi.mock('./useTodayData', () => ({
   useTodayData: () => ({
     status: 'ready', loading: false, refreshing: false, error: null, lastUpdatedAt: Date.now(),
-    urgentActions: [], exceptions: [], tasks: [morningOpen],
+    urgentActions: [], urgentTasksById: new Map(), exceptions: [], tasks: [morningOpen],
     taskGroups: { morning: [morningOpen], daytime: [], evening: [], optional: [] },
     waitingTasks: [], waitingRefsByTaskId: new Map(), carryoverTasks: [], alreadyHandledTasks: [],
     subtasksByTaskId: new Map(), executionTargetsByTaskId: new Map(), incomingRequests: [], requestAttemptsByRequestId: new Map(),
