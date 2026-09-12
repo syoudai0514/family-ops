@@ -98,9 +98,12 @@ function explicitDate(clause: string, now: Date): string {
 }
 
 function explicitRole(clause: string): "papa" | "mama" | null {
-  // Accept speech-input hiragana roles while never treating "このまま" /
-  // "そのまま" / "あのまま" as Mama.
-  const roleSource = clause.replace(/(?:この|その|あの)まま/gu, "");
+  // Accept speech-input hiragana roles while avoiding ordinary lexical
+  // uses of "まま" that must never invent Mama as a canonical recipient.
+  const roleSource = clause.replace(
+    /(?:この|その|あの|ありの)まま|わがまま|気まま|思うまま|なるがまま|ままなら/gu,
+    "",
+  );
   const roleToken = "(?:パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)";
   const directCorrection = roleSource.match(
     new RegExp(`${roleToken}\\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\\s*(${roleToken})`, "u"),
