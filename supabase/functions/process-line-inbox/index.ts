@@ -89,10 +89,15 @@ import {
   isLineCorrectionCue,
   lineCreationStarterKind,
   lineLinkWelcomeText,
+  lineNonMutationDisposition,
   menuQuickReplies,
   pendingConfirmationMessage,
   readOnlyLineIntent,
 } from "./lineConversation.ts";
+import {
+  ambiguousAddresseeReply,
+  buildAssistantConversationReply,
+} from "./lineAssistantConversation.ts";
 import {
   tryHandleLineMustCompletePostback,
   tryHandleLineMustCompleteText,
@@ -1599,6 +1604,15 @@ async function handleText(
   if (await tryHandleReadOnlyText(client, item, actor, text)) return;
   if (await tryHandlePendingReferent(client, item, actor, text)) return;
   if (await tryApplyLineTextEdit(client, item, actor, text)) return;
+
+  const nonMutationDisposition = lineNonMutationDisposition(text);
+  if (nonMutationDisposition) {
+    const reply = nonMutationDisposition === "ambiguous"
+      ? ambiguousAddresseeReply()
+      : await buildAssistantConversationReply(text);
+    await sendConfirmation(client, item, actor, reply);
+    return;
+  }
 
   const starterKind = lineCreationStarterKind(text);
   const semanticCandidates = starterKind
