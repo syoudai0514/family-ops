@@ -43,8 +43,8 @@ export function normalizeHiraganaMamaRole(value: string): string {
       break;
     }
     result += value.slice(cursor, index);
-    const before = value.slice(0, index);
-    const after = value.slice(index + 2);
+    const before = value.slice(0, index).trimEnd();
+    const after = value.slice(index + 2).trimStart();
     const roleBefore = index === 0 || beforeTokens.some((token) => before.endsWith(token));
     const roleAfter = after.length === 0 || afterTokens.some((token) => after.startsWith(token));
     if (roleBefore && roleAfter) result += "ママ";
