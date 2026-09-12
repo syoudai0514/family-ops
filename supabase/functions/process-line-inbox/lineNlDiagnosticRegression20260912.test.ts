@@ -3,6 +3,7 @@ import {
   isConversationOnlyCandidateSource,
   lineNonMutationDisposition,
   linePendingFollowUpKind,
+  transportAssignmentCorrectionCode,
 } from "./lineConversation.ts";
 import { normalizeSemanticDecomposition } from "./lineMultiIntent.ts";
 
@@ -208,4 +209,13 @@ Deno.test("independent review: genuine hiragana Mama role recovery remains intac
   );
   assertEquals(normalized.length, 1);
   assertEquals(normalized[0].intent?.targetRole, "mama");
+});
+
+
+Deno.test("independent review: transport kind corrections map only canonical pickup/dropoff labels", () => {
+  assertEquals(transportAssignmentCorrectionCode("送り"), "dropoff");
+  assertEquals(transportAssignmentCorrectionCode("おくり"), "dropoff");
+  assertEquals(transportAssignmentCorrectionCode("お迎え"), "pickup");
+  assertEquals(transportAssignmentCorrectionCode("むかえ"), "pickup");
+  assertEquals(transportAssignmentCorrectionCode("ゴミ出し"), null);
 });
