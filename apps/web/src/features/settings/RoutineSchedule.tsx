@@ -211,6 +211,7 @@ type EditableRule = {
   weekdays: number[];
   strategy: 'dropoff_assignee' | 'pickup_assignee' | 'nonpickup_adult' | 'fixed';
   fixedAssigneeId: string;
+  fallbackAssigneeId: string;
   localTime: string;
   taskCode?: string;
   originalWeekdays?: number[];
@@ -272,7 +273,7 @@ function EveningRoutineEditor({
         supabase
           .from('recurrence_rules')
           .select(
-            'task_definition_id, weekday, assignee_strategy, planned_assignee_id, scheduled_local_time',
+            'task_definition_id, weekday, assignee_strategy, planned_assignee_id, fallback_assignee_id, scheduled_local_time',
           )
           .eq('household_id', householdId)
           .eq('active', true),
@@ -295,6 +296,7 @@ function EveningRoutineEditor({
           weekday: number;
           assignee_strategy: EditableRule['strategy'];
           planned_assignee_id: string | null;
+          fallback_assignee_id: string | null;
           scheduled_local_time: string | null;
         }>;
         const groups = groupRecurrencePatterns(matched);
@@ -310,6 +312,7 @@ function EveningRoutineEditor({
               originalWeekdays: [],
               strategy: 'pickup_assignee',
               fixedAssigneeId: '',
+              fallbackAssigneeId: '',
               localTime: '20:00',
             },
           ];
@@ -323,6 +326,7 @@ function EveningRoutineEditor({
           originalWeekdays: group.map((item) => item.weekday),
           strategy: group[0].assignee_strategy,
           fixedAssigneeId: group[0].planned_assignee_id ?? '',
+          fallbackAssigneeId: group[0].fallback_assignee_id ?? '',
           localTime: group[0].scheduled_local_time?.slice(0, 5) ?? '20:00',
         }));
       }),
@@ -370,7 +374,9 @@ function EveningRoutineEditor({
             row.weekdays.map((weekday) => ({
               weekday,
               assignee_strategy: row.strategy,
-              planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
+              planned_assignee_user_id: row.strategy === 'fixed'
+                ? row.fixedAssigneeId
+                : row.fallbackAssigneeId || undefined,
               scheduled_local_time: row.localTime,
             })),
           ),
@@ -455,6 +461,25 @@ function EveningRoutineEditor({
                       </select>
                     </label>
                   )}
+                  {row.strategy !== 'fixed' && (
+                    <label>
+                      送迎がない日の担当（任意）
+                      <select
+                        value={row.fallbackAssigneeId}
+                        onChange={(event) =>
+                          update(row.code, { fallbackAssigneeId: event.target.value })
+                        }
+                      >
+                        <option value="">未設定のまま</option>
+                        {members.map((member) => (
+                          <option key={member.user_id} value={member.user_id}>
+                            {member.profile?.display_name ?? '家族'}
+                          </option>
+                        ))}
+                      </select>
+                      <small className="empty-hint">送り・お迎えがない日だけ使います。送迎担当がいる日はそちらを優先します。</small>
+                    </label>
+                  )}
                   {weekdayChecks(row, (weekday) => toggleDay(row.code, weekday))}
                 </>
               )}
@@ -509,7 +534,7 @@ export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandl
         supabase
           .from('recurrence_rules')
           .select(
-            'task_definition_id, weekday, assignee_strategy, planned_assignee_id, scheduled_local_time',
+            'task_definition_id, weekday, assignee_strategy, planned_assignee_id, fallback_assignee_id, scheduled_local_time',
           )
           .eq('household_id', householdId)
           .eq('active', true),
@@ -530,6 +555,7 @@ export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandl
           weekday: number;
           assignee_strategy: EditableRule['strategy'];
           planned_assignee_id: string | null;
+          fallback_assignee_id: string | null;
           scheduled_local_time: string | null;
         }>;
         const first = matched[0];
@@ -541,6 +567,7 @@ export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandl
           weekdays: matched.map((rule) => rule.weekday),
           strategy: first?.assignee_strategy === 'fixed' ? 'fixed' : 'dropoff_assignee',
           fixedAssigneeId: first?.planned_assignee_id ?? '',
+          fallbackAssigneeId: first?.fallback_assignee_id ?? '',
           localTime: first?.scheduled_local_time?.slice(0, 5) ?? '07:00',
         };
       });
@@ -568,7 +595,9 @@ export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandl
             rules: row.weekdays.map((weekday) => ({
               weekday,
               assignee_strategy: row.strategy,
-              planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
+              planned_assignee_user_id: row.strategy === 'fixed'
+                ? row.fixedAssigneeId
+                : row.fallbackAssigneeId || undefined,
               scheduled_local_time: row.localTime,
             })),
           },
@@ -647,7 +676,9 @@ export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandl
           rules: row.weekdays.map((weekday) => ({
             weekday,
             assignee_strategy: row.strategy,
-            planned_assignee_user_id: row.strategy === 'fixed' ? row.fixedAssigneeId : undefined,
+            planned_assignee_user_id: row.strategy === 'fixed'
+                ? row.fixedAssigneeId
+                : row.fallbackAssigneeId || undefined,
             scheduled_local_time: row.localTime,
           })),
         })),
@@ -743,6 +774,31 @@ export const MorningPreparationEditor = forwardRef<MorningPreparationEditorHandl
                       </option>
                     ))}
                   </select>
+                </label>
+              )}
+              {row.strategy !== 'fixed' && (
+                <label>
+                  送迎がない日の担当（任意）
+                  <select
+                    value={row.fallbackAssigneeId}
+                    onChange={(event) =>
+                      setRows((current) =>
+                        current.map((item) =>
+                          item.id === row.id
+                            ? { ...item, fallbackAssigneeId: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                  >
+                    <option value="">未設定のまま</option>
+                    {members.map((member) => (
+                      <option key={member.user_id} value={member.user_id}>
+                        {member.profile?.display_name ?? '家族'}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="empty-hint">送りがない日だけ使います。</small>
                 </label>
               )}
               {weekdayChecks(row, (weekday) =>

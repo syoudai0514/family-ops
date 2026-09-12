@@ -1,10 +1,12 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Today } from './Today';
 import { useTodayData } from './useTodayData';
 import { usePendingActions } from './usePendingActions';
 import { useTodayClock } from './useTodayClock';
+import { callEdgeFunction } from '../../lib/apiClient';
+import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 
 vi.mock('./useTodayData', () => ({ useTodayData: vi.fn() }));
 vi.mock('./usePendingActions', () => ({ usePendingActions: vi.fn() }));
@@ -34,11 +36,13 @@ const task = (id: string, title: string) => ({
 const morning = task('morning-1', '朝の残り');
 const evening = task('evening-1', '夜の残り');
 const waiting = { ...task('waiting-1', '返事待ち'), attention_state: 'waiting' };
+const urgent = { ...task('urgent-1', '担当を決める'), planned_assignee_id: null, assignment_mode: 'unassigned', revision: 4 };
 
 function data(overrides: Record<string, unknown> = {}) {
   return {
     status: 'ready', loading: false, refreshing: false, error: null, lastUpdatedAt: Date.now(),
     urgentActions: [{ kind: 'assignment_needed', task_id: 'urgent-1', title: '担当を決める' }],
+    urgentTasksById: new Map([['urgent-1', urgent]]),
     exceptions: [{ kind: 'schedule_change', event_id: 'exception-1', title: '保育園が短縮' }],
     tasks: [morning, evening],
     taskGroups: { morning: [morning], daytime: [], evening: [evening], optional: [] },
@@ -69,9 +73,12 @@ const pendingBase = {
 const mockToday = vi.mocked(useTodayData);
 const mockPending = vi.mocked(usePendingActions);
 const mockClock = vi.mocked(useTodayClock);
+const mockCallEdgeFunction = vi.mocked(callEdgeFunction);
 
 describe('Today first-flow priority contract', () => {
   beforeEach(() => {
+    mockCallEdgeFunction.mockReset();
+    mockCallEdgeFunction.mockResolvedValue({});
     mockToday.mockReturnValue(data());
     mockPending.mockReturnValue(pendingBase);
     mockClock.mockReturnValue({ now: new Date('2026-09-09T11:00:00Z'), localDate: '2026-09-09', daypart: 'evening' });
@@ -118,6 +125,26 @@ describe('Today first-flow priority contract', () => {
     expect(morningSummary.compareDocumentPosition(waitingSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(waitingSection.compareDocumentPosition(remainingHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(remainingHeading.compareDocumentPosition(tomorrowSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('lets an unassigned Today item open a real assignment action instead of a dead end', async () => {
+    mockPending.mockReturnValue({ ...pendingBase, pendingActions: [] });
+    render(<MemoryRouter><Today /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole('button', { name: '担当を決める' }));
+    expect(screen.getByRole('button', { name: '自分が担当' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '自分が担当' }));
+    await waitFor(() => expect(mockCallEdgeFunction).toHaveBeenCalledWith(
+      EDGE_FUNCTIONS.changeTaskAssignment,
+      {
+        operation_id: expect.any(String),
+        task_id: 'urgent-1',
+        assignee_user_id: 'user-1',
+        already_agreed: true,
+        expected_revision: 4,
+      },
+    ));
   });
 
   it('does not render the Empty success surface while pending-action state is loading or failed', () => {

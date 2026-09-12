@@ -26,6 +26,7 @@ describe('groupRecurrencePatterns', () => {
         weekday: 7,
         assignee_strategy: 'nonpickup_adult',
         planned_assignee_id: null,
+        fallback_assignee_id: 'mama',
         scheduled_local_time: '18:45:00',
       },
     ]);
@@ -35,5 +36,25 @@ describe('groupRecurrencePatterns', () => {
       '19:30:00',
       '18:45:00',
     ]);
+  });
+
+  it('does not merge role rules that have different fallback assignees', () => {
+    const groups = groupRecurrencePatterns([
+      {
+        weekday: 6,
+        assignee_strategy: 'pickup_assignee',
+        planned_assignee_id: null,
+        fallback_assignee_id: 'papa',
+        scheduled_local_time: '20:00:00',
+      },
+      {
+        weekday: 7,
+        assignee_strategy: 'pickup_assignee',
+        planned_assignee_id: null,
+        fallback_assignee_id: 'mama',
+        scheduled_local_time: '20:00:00',
+      },
+    ]);
+    expect(groups).toHaveLength(2);
   });
 });

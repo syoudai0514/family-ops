@@ -170,6 +170,7 @@ export interface TodayTaskGroups {
 
 interface TodaySnapshot {
   urgentActions: DailyBriefAction[];
+  urgentTasksById: Map<string, TodayTaskInstance>;
   exceptions: DailyBriefException[];
   tasks: TodayTaskInstance[];
   taskGroups: TodayTaskGroups;
@@ -215,6 +216,7 @@ const EMPTY_MORNING_SUMMARY: DailyBriefMorningSummary = { completedCount: 0, tot
 function emptySnapshot(): TodaySnapshot {
   return {
     urgentActions: [],
+    urgentTasksById: new Map(),
     exceptions: [],
     tasks: [],
     taskGroups: EMPTY_GROUPS,
@@ -297,6 +299,8 @@ export function useTodayData(householdId: string | null, userId: string | null):
       if (briefError) throw briefError;
       const brief = (briefData ?? {}) as DailyBriefPayload;
 
+      const urgentActions = brief.urgent_actions ?? [];
+      const urgentTaskIds = unique(urgentActions.map((item) => item.task_id));
       const taskIds = unique((brief.tasks ?? []).map((item) => item.task_id));
       const waitingRefs = brief.waiting_checks ?? [];
       const waitingIds = unique(waitingRefs.map((item) => item.task_id));
@@ -310,9 +314,8 @@ export function useTodayData(householdId: string | null, userId: string | null):
         ...(groupRefs.evening ?? []).map((item) => item.task_id),
         ...(groupRefs.optional ?? []).map((item) => item.task_id),
       ]);
-      const allTaskIds = unique([...taskIds, ...waitingIds, ...carryoverIds, ...handledIds, ...groupedIds]);
+      const allTaskIds = unique([...taskIds, ...urgentTaskIds, ...waitingIds, ...carryoverIds, ...handledIds, ...groupedIds]);
 
-      const urgentActions = brief.urgent_actions ?? [];
       const requestActions = urgentActions.filter((item) => Boolean(item.request_id && item.attempt_id));
       const requestIds = unique(requestActions.map((item) => item.request_id));
       const handoverRefs = brief.active_infos ?? brief.handovers ?? [];
@@ -384,6 +387,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const requestRows = (requestRes.data ?? []) as RequestRow[];
       const nextSnapshot: TodaySnapshot = {
         urgentActions,
+        urgentTasksById: new Map(urgentTaskIds.map((id) => [id, taskById.get(id)]).filter((entry): entry is [string, TodayTaskInstance] => Boolean(entry[1]))),
         exceptions: brief.exceptions ?? [],
         tasks: hydrate(taskIds),
         taskGroups: {
