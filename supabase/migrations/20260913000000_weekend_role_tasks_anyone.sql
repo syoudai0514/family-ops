@@ -552,7 +552,8 @@ begin
     select jsonb_build_object(
       'morning',coalesce(v_brief#>'{own_task_groups,morning}','[]'::jsonb)
         ||coalesce(jsonb_agg(item order by item->>'due_at',item->>'title')
-          filter(where item->>'routine_phase'='morning'),'[]'::jsonb),
+          filter(where item->>'routine_phase'='morning'
+            and coalesce(item->>'expectation','normal')<>'optional'),'[]'::jsonb),
       'daytime',coalesce(v_brief#>'{own_task_groups,daytime}','[]'::jsonb)
         ||coalesce(jsonb_agg(item order by item->>'due_at',item->>'title')
           filter(where coalesce(item->>'routine_phase','') not in ('morning','evening')
