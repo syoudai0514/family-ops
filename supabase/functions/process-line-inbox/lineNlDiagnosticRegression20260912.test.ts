@@ -4,6 +4,7 @@ import {
   lineNonMutationDisposition,
   linePendingFollowUpKind,
 } from "./lineConversation.ts";
+import { normalizeSemanticDecomposition } from "./lineMultiIntent.ts";
 
 Deno.test("diagnostic no-send wording-only: neighboring paraphrases remain non-mutating", () => {
   assertEquals(lineNonMutationDisposition("誰にも送信せず文案だけ整えて"), "assistant_conversation");
@@ -133,4 +134,78 @@ Deno.test("fresh diagnostic colloquial cancel: current pending request can be wi
   assertEquals(linePendingFollowUpKind("やっぱ今のなしで"), "cancel");
   assertEquals(linePendingFollowUpKind("やっぱり今のお願いなし"), "cancel");
   assertEquals(linePendingFollowUpKind("時間だけ8時にして"), "edit");
+});
+
+
+Deno.test("independent review: scoped no-send does not swallow a separate explicit family action", () => {
+  assertEquals(
+    lineNonMutationDisposition("この文はまだ送らない、牛乳はパパに買ってもらって"),
+    null,
+  );
+  assertEquals(
+    lineNonMutationDisposition("これは送らないで、それとは別にママにゴミ出しお願い"),
+    null,
+  );
+});
+
+Deno.test("independent review: unscoped no-send still blocks an otherwise actionable request", () => {
+  assertEquals(
+    lineNonMutationDisposition("ママにゴミ出しお願い、でもまだ送らないで"),
+    "assistant_conversation",
+  );
+});
+
+Deno.test("independent review: lexical まま never invents Mama as addressee", () => {
+  assertEquals(
+    lineNonMutationDisposition("わがまま言って悪いけどこれお願いできる？"),
+    "ambiguous",
+  );
+  const normalized = normalizeSemanticDecomposition(
+    JSON.stringify({
+      candidates: [{
+        kind: "request",
+        title: "これ",
+        source_text: "わがまま言って悪いけどこれお願いできる？",
+        scheduled_date: "2026-09-12",
+        due_local_time: null,
+        daypart: null,
+        target_role: "mama",
+        shared_message: "これをお願いできますか？",
+        subtasks: [],
+        context: null,
+        calendar_visibility: "hidden",
+        missing_fields: [],
+        ambiguous_fields: [],
+        confidence: 0.9,
+      }],
+    }),
+    "わがまま言って悪いけどこれお願いできる？",
+  );
+  assertEquals(normalized, []);
+});
+
+Deno.test("independent review: genuine hiragana Mama role recovery remains intact", () => {
+  const normalized = normalizeSemanticDecomposition(
+    JSON.stringify({
+      candidates: [{
+        kind: "request",
+        title: "お迎え",
+        source_text: "ままにむかえおねがい",
+        scheduled_date: "2026-09-12",
+        due_local_time: null,
+        daypart: null,
+        target_role: "mama",
+        shared_message: "お迎えをお願いできますか？",
+        subtasks: [],
+        context: null,
+        calendar_visibility: "hidden",
+        missing_fields: [],
+        ambiguous_fields: [],
+        confidence: 0.9,
+      }],
+    }),
+    "ままにむかえおねがい",
+  );
+  assertEquals(normalized.length, 1);
+  assertEquals(normalized[0].intent?.targetRole, "mama");
 });
