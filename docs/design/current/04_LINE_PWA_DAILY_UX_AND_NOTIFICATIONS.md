@@ -265,6 +265,9 @@ Rules:
 - conflict returns current state card inline
 - waiting state updates inline without moving scroll unexpectedly
 - URL supports `date`, `group`, `task`, `request`, `event`, `candidate` context
+- `assignment_needed` is an actionable state, not an informational dead end. PWA Today exposes a direct assignment-resolution control for the exact task and preserves CAS/revision semantics.
+- role-derived tasks use the live same-day transport assignee when resolvable; if the transport leg is absent/cancelled/unassigned, an explicitly configured recurrence fallback is used. If neither exists, the task remains unassigned and the actionable control is shown.
+- when transport truth changes, open unprotected same-day role-derived tasks converge to the new resolved/fallback/unassigned state; mixed stale snapshots are not allowed.
 
 ## 11. Deep links
 
@@ -583,6 +586,7 @@ At detailed design review, walkthrough at least:
 8. oral pickup change + `[違う]`
 9. LINE/PWA same task concurrent completion
 10. `今回は不要` vs `できなかった` display/history separation
+11. transport absent/cancelled -> role-derived fallback/unassigned convergence -> PWA direct resolution
 11. weekend/holiday 09:00
 12. quota fallback while critical state remains visible
 ## 26. Physical F2 approved LINE/PWA clarifications — 2026-09-11
