@@ -122,3 +122,23 @@ Final automated evidence before documentation-only closeout:
 - all Edge Deno tests/lint/type-check/auth-matrix, web lint/typecheck/test/build, DB tests, and real local Supabase integration GREEN.
 
 Additional live Gemini calls in PR #99: **0**. The historical live campaign remains 180/180. PR #99 did not redeploy the production `test-simulation` canary or create a paid Supabase branch while Physical F2 was active; safe isolated L2 re-validation is deferred to a release/canary point where it cannot interfere with production/F2.
+
+
+### Independent final-review additions
+
+The independent review of PR #99 added permanent guards for failure classes
+that were not adequately represented by the original lane closeout:
+
+- **scoped meta + independent action:** a no-send/no-register clause may suppress
+  only its own referent; a separate explicit family action must survive;
+- **hiragana-role lexical collisions:** `まま` role recovery must not infer
+  Mama from ordinary words such as `わがまま` or `気まま`;
+- **assignment correction truth:** preview title/date/recipient must remain
+  bound to the canonical assignment task occurrence; no visible-only edit may
+  leave `task_id` pointing at a different task;
+- **assistant mutation-claim truth:** conversation-only replies may advise or
+  draft wording but must never claim that Family Ops sent/notified/registered
+  something it did not execute.
+
+These are now covered by diagnostic/permanent regressions in addition to the
+sealed 12-case final held-out set.
