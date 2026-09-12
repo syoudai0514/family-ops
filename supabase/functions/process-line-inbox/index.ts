@@ -978,9 +978,12 @@ async function resolveMultiIntentDuplicate(
 
 function correctionRole(text: string): "papa" | "mama" | "self" | null {
   const contrast = text.match(
-    /(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
+    /(?:自分|パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(自分|パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
   );
-  if (contrast) return /^(?:パパ|父|お父さん)$/.test(contrast[1]) ? "papa" : "mama";
+  if (contrast) {
+    if (contrast[1] === "自分") return "self";
+    return /^(?:パパ|父|お父さん)$/.test(contrast[1]) ? "papa" : "mama";
+  }
   if (/(?:自分|自分に|自分へ)/.test(text)) return "self";
   if (/(?:パパ|父|お父さん)/.test(text)) return "papa";
   if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return "mama";
