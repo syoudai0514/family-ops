@@ -84,6 +84,7 @@ type OutboxItem = {
     due_at?: string | null;
     accept_pending_action_id?: string;
     decline_pending_action_id?: string;
+    recipient_label?: string;
   };
 };
 
@@ -116,6 +117,40 @@ type RunSummary = {
   quota_refreshed: boolean;
   quota_refresh_skipped_reason: string | null;
 };
+
+async function enrichRequestOutcomeItems(
+  serviceClient: SupabaseClient,
+  payload: ClaimedNotification['payload'],
+): Promise<void> {
+  const items = payload?.items ?? [];
+  for (const item of items) {
+    if (item.type !== 'request.accepted' || !item.payload?.request_id) continue;
+    const { data: request, error } = await serviceClient.from('requests')
+      .select('household_id,request_kind,assignment_scope,due_at,recipient_id')
+      .eq('id', item.payload.request_id)
+      .maybeSingle();
+    if (error || !request) continue;
+
+    let recipientLabel = '依頼相手';
+    if (request.recipient_id) {
+      const { data: member } = await serviceClient.from('household_members')
+        .select('family_role')
+        .eq('household_id', request.household_id)
+        .eq('user_id', request.recipient_id)
+        .maybeSingle();
+      if (member?.family_role === 'mama') recipientLabel = 'ママ';
+      else if (member?.family_role === 'papa') recipientLabel = 'パパ';
+    }
+
+    item.payload = {
+      ...item.payload,
+      request_kind: request.request_kind ?? item.payload.request_kind,
+      scope: request.assignment_scope === 'this_week' ? 'this_week' : 'once',
+      due_at: request.due_at ?? item.payload.due_at ?? null,
+      recipient_label: recipientLabel,
+    };
+  }
+}
 
 // Builds one LINE text message per outbox row, folding every bundled item
 // (docs/design/v6/06_LINE_INTEGRATION.md #11 "same recipient + same
@@ -390,6 +425,7 @@ async function sendOne(
     );
   }
 
+  await enrichRequestOutcomeItems(serviceClient, item.payload);
   const richMessage = buildRichRequestMessage(item.payload);
   const { text, sessionIds } = buildBundledText(item.payload, item.type);
   const quickReply = item.type === 'routine' ? buildRoutineQuickReply(sessionIds) : undefined;
