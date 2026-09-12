@@ -9,12 +9,29 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   const actorId = await requireUserActor(req);
   const body = await readJsonBody(req);
   const operationId = requireOperationId(body);
-  if (typeof body.task_id !== 'string' || typeof body.assignee_user_id !== 'string' ||
-      typeof body.expected_revision !== 'number' || !Number.isSafeInteger(body.expected_revision) ||
-      body.already_agreed !== true) {
-    throw new FamilyOpsError('INVALID_INPUT', 'task_id, assignee_user_id, expected_revision and already_agreed=true are required', 400);
+  if (typeof body.task_id !== 'string' ||
+      typeof body.expected_revision !== 'number' || !Number.isSafeInteger(body.expected_revision)) {
+    throw new FamilyOpsError('INVALID_INPUT', 'task_id and expected_revision are required', 400);
   }
   const service = createServiceRoleClient();
+
+  if (typeof body.claim_action === 'string') {
+    if (!['claim', 'release', 'takeover'].includes(body.claim_action)) {
+      throw new FamilyOpsError('INVALID_INPUT', 'claim_action is invalid', 400);
+    }
+    return jsonResponse(await callServerTx(service, 'server_tx_task_anyone_claim_v1', {
+      p_actor_id: actorId,
+      p_operation_id: operationId,
+      p_task_id: body.task_id,
+      p_action: body.claim_action,
+      p_expected_revision: body.expected_revision,
+      p_source: 'pwa',
+    }));
+  }
+
+  if (typeof body.assignee_user_id !== 'string' || body.already_agreed !== true) {
+    throw new FamilyOpsError('INVALID_INPUT', 'assignee_user_id and already_agreed=true are required', 400);
+  }
   const { data: actorMember, error: actorError } = await service
     .from('household_members').select('household_id').eq('user_id', actorId).maybeSingle();
   if (actorError || !actorMember) throw new FamilyOpsError('NOT_HOUSEHOLD_MEMBER', '世帯情報を確認できません。', 403);
