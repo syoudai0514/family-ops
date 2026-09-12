@@ -170,6 +170,92 @@ function RequestQuickActions({
   );
 }
 
+function AssignmentNeededQuickAction({
+  title,
+  task,
+  userId,
+  partnerId,
+  onChanged,
+}: {
+  title: string;
+  task?: TaskInstance;
+  userId: string | null | undefined;
+  partnerId: string | null | undefined;
+  onChanged: () => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(action: 'self' | 'partner') {
+    if (!task || !userId) {
+      setError('最新状態を読み直してください。');
+      return;
+    }
+    if (action === 'partner' && !partnerId) {
+      setError('お願いできる相手を確認できません。');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (action === 'self') {
+        await callEdgeFunction(EDGE_FUNCTIONS.changeTaskAssignment, {
+          operation_id: newOperationId(),
+          task_id: task.id,
+          assignee_user_id: userId,
+          already_agreed: true,
+          expected_revision: task.revision ?? 1,
+        });
+      } else {
+        await callEdgeFunction(EDGE_FUNCTIONS.createAssignmentChangeRequest, {
+          operation_id: newOperationId(),
+          task_id: task.id,
+          recipient_user_id: partnerId,
+          scope: 'once',
+          shared_message: 'この担当をお願いできますか？',
+        });
+      }
+      setOpen(false);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '担当を更新できませんでした。最新状態を読み直してください。');
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="request-item">
+      <strong>{title}</strong>
+      <p className="task-item-meta">
+        担当がまだ決まっていません。ここから担当を決められます。
+      </p>
+      {!open ? (
+        <button type="button" className="secondary-button" disabled={busy || !task} onClick={() => setOpen(true)}>
+          担当を決める
+        </button>
+      ) : (
+        <div className="request-other-actions">
+          <button type="button" disabled={busy} onClick={() => void run('self')}>自分が担当</button>
+          {partnerId && (
+            <button type="button" className="secondary-button" disabled={busy} onClick={() => void run('partner')}>
+              相手にお願い
+            </button>
+          )}
+          <button type="button" className="text-button" disabled={busy} onClick={() => setOpen(false)}>戻る</button>
+          <p className="task-item-meta">
+            「相手にお願い」は、相手が引き受けるまで担当を変更しません。
+          </p>
+        </div>
+      )}
+      {!task && <p role="alert" className="error-text">対象の最新状態を読み込み直してください。</p>}
+      {error && <p role="alert" className="error-text">{error}</p>}
+    </li>
+  );
+}
+
 function scheduleLabel(item: DailyBriefScheduleItem): string {
   if (item.is_all_day) return `終日 ${item.title ?? '名称未設定'}`;
   if (!item.starts_at) return item.title ?? '名称未設定';
@@ -308,11 +394,21 @@ export function Today() {
             />
           ))}
           {nonRequestUrgent.map((action, index) => (
-            <li className="request-item" key={`${action.kind ?? 'urgent'}:${action.task_id ?? index}`}>
-              <strong>{action.title ?? '確認が必要です'}</strong>
-              {action.kind === 'assignment_needed' && <p className="task-item-meta">担当がまだ決まっていません。</p>}
-              {action.kind === 'waiting_risk' && <p className="task-item-meta">待ち状態ですが、期限への影響を確認してください。</p>}
-            </li>
+            action.kind === 'assignment_needed' && action.task_id ? (
+              <AssignmentNeededQuickAction
+                key={`assignment_needed:${action.task_id}`}
+                title={action.title ?? '担当を決める項目'}
+                task={data.urgentTasksById.get(action.task_id)}
+                userId={user?.id}
+                partnerId={partner?.user_id}
+                onChanged={data.refresh}
+              />
+            ) : (
+              <li className="request-item" key={`${action.kind ?? 'urgent'}:${action.task_id ?? index}`}>
+                <strong>{action.title ?? '確認が必要です'}</strong>
+                {action.kind === 'waiting_risk' && <p className="task-item-meta">待ち状態ですが、期限への影響を確認してください。</p>}
+              </li>
+            )
           ))}
           {pending.pendingActions.map((action) => (
             <PendingActionCard
