@@ -1,179 +1,107 @@
 # Family Ops / おうちノート
 # AI Natural-Language Quality Results — 2026-09-12
 
-- **Status:** IN PROGRESS — baseline checkpoint
+- **Status:** IMPLEMENTATION / L0-L1 QUALITY CLOSEOUT COMPLETE
 - **Starting CURRENT main:** `d123dc5f4a38392c0e5d8d07ffe5df11b10bdbc2`
 - **Branch:** `test/ai-nl-addressee-coverage-2026-09-12`
 - **PR:** #99
 - **Issue:** #97
 - **Physical F2:** not executed by this lane
 
-## 1. Documentation set
+## 1. Existing evidence baseline
 
-- Coverage matrix: `docs/implementation/AI-NL-COVERAGE-MATRIX-2026-09-12.md`
-- Gap plan: `docs/implementation/AI-NL-GAP-TEST-PLAN-2026-09-12.md`
-- Result report: this file
-- Existing robustness record: `docs/implementation/AI-NL-ROBUSTNESS-MATRIX.md`
+CURRENT main already carried a live Gemini campaign of 180 aggregate cases: rewrite/handover 111, single-intent 40, multi-intent 29. That campaign moved from 114/180 to 180/180. The committed zero-live robustness layer contains 56 units. The exact wording of all 180 historical live rows is not committed, so subcategory detail remains UNKNOWN and is not invented here.
 
-## 2. Existing evidence baseline
+## 2. Coverage-driven work in PR #99
 
-Verified from CURRENT repository:
+The lane did not use a fixed “500 cases” target. It concentrated on the material gap: **AI/おうちノート本人への質問・相談・文章レビュー vs 家族への実際の依頼/登録**, including mixed utterances, ambiguity, correction direction, multi-turn repair/cancel, and broken/speech Japanese.
 
-- live Gemini campaign: 180 aggregate cases;
-  - rewrite/handover 111;
-  - single-intent 40;
-  - multi-intent 29;
-  - original baseline 114/180;
-  - converged 180/180.
-- zero-live robustness layer: 56 units, converged 56/56.
-- exact wording for the full 180 live corpus is not committed on CURRENT main; subcategory-level case detail remains UNKNOWN and is not treated as proven.
-- Physical F2 overlap is representative real-entry proof only; this lane does not execute Physical F2.
+Initial development baseline at `952468cb16facd25b19fb66124d468d4c9dd9db8`:
 
-## 3. Coverage-derived additional plan
+- 36 addressee/broken-speech cases executed;
+- PASS 5 / 36;
+- FAIL 31 / 36;
+- 29 addressee/conversation-action leakage failures;
+- 2 hiragana role-recovery failures.
 
-- development: 44 unique scenarios;
-- held-out: 12 unique scenarios;
-- total additional unique scenarios: 56;
-- first-pass live Gemini ceiling: <=42 calls.
+This HIGH finding was shared to Physical F2 control tower Issue #96. No unrelated Physical F2 work was stopped.
 
-No fixed 500-case target is used.
+## 3. Implemented behavior
 
-## 4. Baseline semantic execution — checkpoint 1
+PR #99 now provides:
 
-### Exact baseline head
+1. deterministic fail-closed recognition for AI consultation/advice, draft review, explicit no-send/no-register/no-notify, unsafe generic recipient ambiguity, and correction direction;
+2. preservation of explicit family actions and role/date/time facts;
+3. source-span filtering so mixed AI-conversation + family-action input keeps only authorized action spans;
+4. assistant-conversation replies that never claim a family mutation occurred;
+5. 2–4 turn pending-action repair/edit/cancel behavior;
+6. speech/kana/colloquial role handling;
+7. semantic-provider distinction between a **valid `candidates=[]` no-action result** and unavailable/malformed provider output. A valid semantic no-action result is authoritative and does not fall back into deterministic mutation; only unavailable/invalid model output uses the deterministic availability fallback.
 
-`952468cb16facd25b19fb66124d468d4c9dd9db8`
+The last item closes the structural HIGH discovered during review: model-understood “no business action” can no longer be silently converted back into an action merely because the normalized candidate list is empty.
 
-### Added corpus at this checkpoint
+## 4. Regression and held-out methodology
 
-`supabase/functions/process-line-inbox/lineAddresseeQualityCorpus.test.ts`
+Development and diagnostic corpora were deliberately separated from held-out acceptance.
 
-Development cases exercised so far:
+- `lineAddresseeQualityCorpus.test.ts`: 36 development scenarios.
+- `lineConversationContextQuality.test.ts`: multi-turn development scenarios and direction-sensitive assertions.
+- `lineNlDiagnosticRegression20260912.test.ts`: permanent neighboring paraphrases/counterexamples for failure classes.
+- earlier held-out sets (`lineNlHeldOut20260912`, V2, V3, and `lineNlFreshHeldOut20260912`) became **diagnostic** whenever their failures were used to tune implementation. They are not claimed as untouched final held-out evidence.
+- `lineNlFinalHeldOut20260912.test.ts`: 12 fresh scenarios, sealed only after CI #1140 was fully green. No implementation was tuned from these rows.
 
-- addressee: 28;
-- broken/speech Japanese: 8;
-- total: 36.
+Final fresh held-out result: **12 / 12 PASS** in CI #1141.
 
-The remaining 8 planned development cases are multi-turn scenarios and are not counted as executed yet.
+The final set covers indirect tone advice, pre-send review, no-send meta intent, generic-recipient ambiguity, explicit spouse action, explicit shopping action, mixed semantic spans, valid semantic no-action, family→AI repair, AI→family reverse correction, colloquial cancel, and concrete pending edit.
 
-### Result
+## 5. Final automated evidence
 
-**PASS 5 / 36**
-**FAIL 31 / 36**
-**baseline success rate: 13.9%**
+Pre-final convergence head `cd5fcf2a03360b319f90e2323c59064a15c3b5f9`:
 
-GitHub Actions CI #1104:
+- CI #1140: **SUCCESS**;
+- Operational Safety #235: **SUCCESS**;
+- all edge Deno tests, lint/type-check/auth-matrix, web lint/typecheck/test/build, DB suite, and real local Supabase integration: PASS.
 
-- edge Deno lint: PASS;
-- edge Deno type-check: PASS;
-- edge Deno unit tests: **FAIL** due to the new semantic corpus;
-- unit summary at the failure point: **265 passed / 31 failed**;
-- Operational Safety CI #199: PASS;
-- unrelated web/db jobs observed GREEN at the time of this checkpoint; full CI #1104 final conclusion was not yet claimed here.
+Fresh final held-out head `110560569caa07485d5655a8fdb80640bafb7699`:
 
-### Failure taxonomy
+- CI #1141: **SUCCESS**;
+- Operational Safety #236: **SUCCESS**;
+- fresh held-out: **12 / 12 PASS**;
+- existing development/diagnostic/robustness suites remained GREEN.
 
-| Taxonomy | Count | Severity | Meaning |
-| --- | ---: | --- | --- |
-| addressee / conversation-only action leakage | 29 | HIGH | model-returned task/request/share candidates for AI-directed advice/question/meta-no-send/mixed/ambiguous spans are currently accepted by the semantic boundary |
-| hiragana family-role loss | 2 | HIGH for recipient correctness | explicit `まま` in model source span is not preserved by `lineMultiIntent.ts` explicit-role normalization |
-| **Total failures** | **31** | | |
+No migration was added by this lane.
 
-### What passed
+## 6. Live Gemini decision
 
-Five cases already behaved correctly:
+Additional live Gemini calls from PR #99: **0**.
 
-- three clear explicit family requests;
-- one reverse correction from AI to wife/family request;
-- one speech-like final-role correction.
+This is intentional, not an omitted test disguised as PASS. The project currently has no isolated committed AI-NL canary runner. The production `test-simulation` function is the normal one-person simulation function, not the temporary Gemini canary used by the earlier 180-case campaign. Running the new PR implementation live would therefore require either:
 
-This is important evidence against a blanket fix. The correct solution must preserve explicit family action while blocking only conversation/meta/ambiguous action leakage.
+- temporarily mutating/deploying a production Edge Function while Physical F2 is active; or
+- creating a paid Supabase branch.
 
-## 5. Concrete implementation defect demonstrated
+Neither was authorized for this lane. The lane therefore did **not** spend Gemini quota or create a production/F2 interference risk merely to manufacture a live number. Existing historical live evidence remains 180/180; new addressee/context semantics are proven at L0/L1 and fresh held-out level, with live re-validation deferred to a safe isolated canary/release verification point.
 
-CURRENT semantic normalization accepts only operation kinds:
+Google Gemini project quota rules are project-scoped; the lane preserved the requested <=6 RPM / <=11 aggregate policy and 150–200 RPD headroom by making no additional calls.
 
-- task;
-- request;
-- shopping;
-- share;
-- actual.
+## 7. Severity / gates at closeout
 
-It has no explicit conversation/no-action candidate contract. If a model returns an operation candidate for:
-
-- “これどう思う？”
-- “妻にどう言えば角立たない？”
-- “これはまだ送らないで”
-- “相手には送らず文章だけ考えて”
-- “迎えお願いできると思う？”
-
-the current strict normalizer can still accept that candidate when source-span/fact shape is otherwise valid.
-
-For mixed utterances, it also accepts the conversation-only span alongside the legitimate explicit family-action span.
-
-This is a genuine safety-boundary defect, not merely missing test coverage.
-
-## 6. F2 impact / escalation
-
-Severity: **HIGH**.
-
-Control tower Issue #96 received an immediate finding comment from this baseline.
-
-Action:
-
-- do not globally stop unrelated Physical F2;
-- do not accept the natural-LINE read-only/mutation/addressee boundary on the pre-fix implementation;
-- if later handler/live testing proves an explicit no-send/no-register utterance actually triggers partner notification or executes business mutation, escalate to BLOCKER.
-
-## 7. Planned fix shape
-
-The planned remediation is deliberately two-layered:
-
-1. **deterministic fail-closed safety boundary**
-   - direct AI consultation/question;
-   - explicit no-send/no-register/draft-only;
-   - clearly ambiguous generic recipient;
-   - assistant-address correction;
-   - preserves clear family-action counterexamples.
-
-2. **semantic-provider / candidate boundary**
-   - prompt explicitly excludes conversation-only spans from operation candidates;
-   - candidate normalization rejects conversation-only/conditional/meta spans even if the model returns them;
-   - mixed utterances may retain explicit actionable spans while discarding conversation-only spans;
-   - no role is invented;
-   - hiragana role variants are normalized only when present in source.
-
-No one-case regex fix is acceptable.
-
-## 8. Live Gemini
-
-Not executed yet in this lane.
-
-- total calls: 0;
-- peak RPM: 0;
-- 429: 0;
-- RPD headroom: unchanged by this lane.
-
-L0/L1 regression must converge before live quota is used.
-
-## 9. Current severity count
-
-- BLOCKER: 0 observed
-- HIGH: 2 failure classes / 31 failing scenarios
-- MEDIUM: 0 new
-- LOW: 0 new
-
-## 10. Current gates
-
+- BLOCKER: **0**
+- HIGH: **0 unresolved**
+- MEDIUM: **0 unresolved**
 - Coverage inventory: PASS
-- Gap plan: PASS
-- Baseline L0/L1 semantic corpus: **FAIL as expected; defect reproduced**
-- Fix: PENDING
-- 8 multi-turn development scenarios: PENDING
-- 12 held-out scenarios: PENDING
-- live Gemini: PENDING
-- targeted tests: PENDING
-- full CI final: PENDING
-- main merge: NO
-- production deploy: NO
-- documentation complete: NO
+- Coverage-driven development corpus: PASS
+- Multi-turn/context regression: PASS
+- Structural valid-empty semantic boundary: PASS
+- Diagnostic neighbor/counterexample regression: PASS
+- Fresh final held-out: **PASS 12/12**
+- Full CI: **PASS (#1141)**
+- Operational Safety: **PASS (#236)**
+- Physical F2: NOT EXECUTED BY THIS LANE
+- Main merge: NO
+- Production deploy: NO
+- Additional live Gemini: NOT EXECUTED FOR SAFETY/ISOLATION REASON ABOVE
+
+## 8. Remaining release action
+
+PR #99 is ready for independent review / release decision. Main and production remain untouched by this lane. If a safe isolated Gemini canary is later available, run only the semantic-risk subset (AI consultation vs family action, mixed spans, ambiguity, broken speech) rather than replaying a fixed arbitrary case count.
