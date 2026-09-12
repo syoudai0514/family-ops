@@ -143,6 +143,13 @@ export function linePendingFollowUpKind(text: string): LinePendingFollowUpKind {
   return null;
 }
 
+export function transportAssignmentCorrectionCode(title: string): "pickup" | "dropoff" | null {
+  const value = semanticNormalized(title);
+  if (/^(?:お?迎え|むかえ)$/u.test(value)) return "pickup";
+  if (/^(?:送り|おくり)$/u.test(value)) return "dropoff";
+  return null;
+}
+
 export function lineConversationalReplacementTitle(text: string): string | null {
   if (isAssistantAddressCorrection(text)) return null;
   const match = text.trim().match(/^(?:違う違う|ちがうちがう|違うよ|ちがうよ|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて)[、,\s]*(.{1,40}?)[。！!？?]?$/u);
