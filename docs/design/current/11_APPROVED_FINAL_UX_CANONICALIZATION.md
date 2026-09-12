@@ -110,6 +110,26 @@ Concrete realization is maintained in:
 
 No new Q number is introduced. These clauses clarify and operationalize existing Q4, Q10-Q12, Q27, Q44, Q50-Q52, Q70-Q71, Q73-Q80, Q83-Q85 plus the Baseline cross-cutting authority/safety requirements.
 
+### 4.3 2026-09-12 AI-vs-family addressee safety clarification
+
+The Product Owner explicitly clarified the natural-language boundary now recorded in canonical Baseline §28.3:
+
+- speaking **to おうちノート / AI** for advice, evaluation, wording help, or state confirmation is not the same as asking a family member to act;
+- explicit `do not send / do not register / draft only` language blocks mutation/notification even when family/action words are present;
+- a mixed AI-conversation + family-action utterance keeps only the explicitly authorized family-action span as a business candidate;
+- omitted/ambiguous recipient is fail-closed rather than defaulting a partner;
+- correction direction matters: family → AI repair cancels the superseded draft, while AI → family reverse correction may deliberately enter the normal action path;
+- multi-turn edits/cancellation must preserve one coherent pending action and must not leave stale actionable drafts.
+
+This does not create a new independent UX authority or a new Q number. It concretizes the existing universal-input / ambiguity / Request safety decisions under current Baseline §28.3.
+
+Detailed realization is maintained in:
+
+- `docs/design/current/04_LINE_PWA_DAILY_UX_AND_NOTIFICATIONS.md` §26.2;
+- `docs/implementation/AI-NL-COVERAGE-MATRIX-2026-09-12.md`;
+- `docs/implementation/AI-NL-GAP-TEST-PLAN-2026-09-12.md`;
+- `docs/implementation/AI-NL-QUALITY-RESULTS-2026-09-12.md`.
+
 ## 5. Material UX clause → Q mapping
 
 The pinned final audit proves literal 114/114 mapping of Q1-Q112 plus Q60-1/Q60-2 against the fresh-read Baseline version/blob recorded by that audit. The current Baseline may later add cross-cutting governance/acceptance requirements such as §2.1; those are tracked explicitly rather than retroactively pretending the old rendered artifact audited text that did not yet exist.
