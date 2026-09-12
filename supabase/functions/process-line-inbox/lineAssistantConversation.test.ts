@@ -18,7 +18,13 @@ Deno.test("assistant conversation invalid provider output fails safely to a non-
     "これはまだ送らないで",
     () => Promise.resolve("not-json"),
   );
-  assertStringIncludes(reply, "送信や登録はしません");
+  assertStringIncludes(reply, "送信・通知・登録はしません");
+});
+
+Deno.test("assistant conversation fallback preserves explicit no-notify draft-only constraint", () => {
+  const reply = assistantConversationFallback("通知しないで下書きだけ作って");
+  assertStringIncludes(reply, "相談・下書き");
+  assertStringIncludes(reply, "送信・通知・登録はしません");
 });
 
 Deno.test("assistant conversation fallback gives useful wording guidance rather than claiming mutation", () => {
@@ -33,5 +39,5 @@ Deno.test("ambiguous addressee asks only the missing boundary and confirms no mu
   assertStringIncludes(reply, "私への相談");
   assertStringIncludes(reply, "家族へのお願い");
   assertStringIncludes(reply, "まだ送らず");
-  assertStringIncludes(reply, "登録もしていません");
+  assertStringIncludes(reply, "通知・登録もしていません");
 });
