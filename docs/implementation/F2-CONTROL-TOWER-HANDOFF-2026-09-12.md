@@ -202,6 +202,25 @@ Approved remediation:
 
 Affected PWA/Today evidence is stale after the fix merges and must be recaptured on the new exact HEAD.
 
+## 7.3 2026-09-13 weekend-anyone product refinement
+
+After PR #103 fixed stale/unknown transport-role convergence, Product Owner clarified the actual household rule:
+
+- Saturday/Sunday both adults are normally home;
+- if there is no live transport assignee, recurring role-derived work should be `誰でもOK`, not Papa-fixed and not `担当未定`;
+- this explicitly includes Shino medication and medication/bowel-record routines that continue on weekends.
+
+Implementation acceptance for the replacement exact HEAD:
+- weekend + live transport -> live role assignee still wins;
+- weekend + no live transport -> open unprotected role-derived tasks converge to `assignment_mode=anyone`;
+- Shino AM/PM medication and AM/PM medication/bowel records follow the same weekend behavior;
+- unclaimed anyone tasks are visible to both adults but are not `assignment_needed`;
+- PWA and LINE support claim/release/takeover without rewriting recurrence;
+- claim is required before PWA execution controls become active;
+- weekday fallback behavior remains unchanged.
+
+Affected weekend Today/PWA evidence on PR #103's exact HEAD is stale and must be recaptured after this refinement is merged/deployed.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.
