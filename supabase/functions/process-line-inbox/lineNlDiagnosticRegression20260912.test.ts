@@ -220,3 +220,14 @@ Deno.test("independent review: transport kind corrections map only canonical pic
   assertEquals(transportAssignmentCorrectionCode("むかえ"), "pickup");
   assertEquals(transportAssignmentCorrectionCode("ゴミ出し"), null);
 });
+
+
+Deno.test("independent review: hiragana Mama recovery uses role context", () => {
+  assertEquals(normalizeHiraganaMamaRole("ままにむかえおねがい").includes("ママ"), true);
+  assertEquals(normalizeHiraganaMamaRole("明日ままにお迎えお願い").includes("ママ"), true);
+  assertEquals(normalizeHiraganaMamaRole("ままじゃなくてぱぱ").includes("ママ"), true);
+  assertEquals(normalizeHiraganaMamaRole("わがまま言って").includes("ママ"), false);
+  assertEquals(normalizeHiraganaMamaRole("ままごとの片付け").includes("ママ"), false);
+  assertEquals(normalizeHiraganaMamaRole("このままお願い").includes("ママ"), false);
+  assertEquals(normalizeHiraganaMamaRole("気ままに決めて").includes("ママ"), false);
+});
