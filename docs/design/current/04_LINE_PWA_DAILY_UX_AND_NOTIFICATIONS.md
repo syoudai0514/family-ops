@@ -330,9 +330,12 @@ share/handover shortcut.
 
 Incoming request first layer:
 
-`[やる] [難しい] [その他の返答]`
+- light request: `[やる] [難しい] [その他の返答]`
+- assignment change: `[引き受ける] [難しい] [相談する]`
 
-Other:
+For an assignment change, `引き受ける` opens one final confirmation before any canonical mutation. That confirmation shows the target/date/time/scope and, for transport changes, tells the recipient that same-day role-derived household work will also re-resolve. `相談する` remains in LINE and enters consultation without changing the current assignment.
+
+Light-request `その他の返答` may still expose:
 
 - 確認してみる
 - コメント付きで難しい
@@ -619,11 +622,10 @@ If an explicit correction supersedes an erroneous draft, the stale draft is canc
 
 `request.received` is not satisfied by a text-only push. The notification transport must preserve enough canonical request payload to render the recipient's first-tier actions:
 
-- `やる`
-- `難しい`
-- `その他の返答`
+- light request: `やる / 難しい / その他の返答`
+- assignment change: `引き受ける / 難しい / 相談する`
 
-The action postbacks carry the current request/attempt/revision boundary and fail closed if stale.
+Assignment-change `引き受ける` is a non-mutating prompt first. The second explicit confirmation carries the current request/attempt/revision boundary and performs the acceptance. The confirmation states the concrete target/date/time/scope and material same-day role-derived impact when present. `相談する` transitions to the canonical consultation flow and remains LINE-completable. All action postbacks fail closed if stale.
 
 ### 26.4 Two-account F2
 

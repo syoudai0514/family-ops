@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import {
+  buildAssignmentAcceptanceConfirmFlex,
   buildAssignmentRequestFlex,
   buildAssignmentSenderPreviewFlex,
   buildPendingActionPreviewFlex,
@@ -18,7 +19,7 @@ Deno.test('assignment change Flex uses only canonical request ID in postbacks', 
   const raw = JSON.stringify(message);
   assertStringIncludes(
     raw,
-    'action=accept_assignment_change&request_id=0d7b9b6b-9aee-4c92-802e-111111111111',
+    'action=prompt_accept_assignment_change&request_id=0d7b9b6b-9aee-4c92-802e-111111111111',
   );
   assertStringIncludes(
     raw,
@@ -156,10 +157,29 @@ Deno.test('request Flex shows the assignment target date and keeps the primary p
   assertStringIncludes(raw, '対象日時: 9/14 18:20');
 
   const row = message.contents.footer.contents[0];
-  assertEquals((row as { action: { label: string } }).action.label, 'やる');
+  assertEquals((row as { action: { label: string } }).action.label, '引き受ける');
   const secondaryRow = message.contents.footer.contents[1];
   assertEquals((secondaryRow as { layout: string }).layout, 'horizontal');
-  assertEquals((secondaryRow as { contents: Array<{ action: { label: string } }> }).contents.map((button) => button.action.label), ['難しい', 'その他の返答']);
+  assertEquals((secondaryRow as { contents: Array<{ action: { label: string } }> }).contents.map((button) => button.action.label), ['難しい', '相談する']);
+});
+
+Deno.test('assignment acceptance confirmation is explicit and carries material transport impact', () => {
+  const raw = JSON.stringify(buildAssignmentAcceptanceConfirmFlex({
+    requestId: 'req-confirm',
+    attemptId: 'attempt-confirm',
+    revision: 3,
+    termsRevision: 2,
+    title: 'お迎え',
+    workDueAt: '2026-09-14T09:20:00.000Z',
+    scope: 'once',
+    hasDependentChanges: true,
+  }));
+  assertStringIncludes(raw, '引き受ける内容の確認');
+  assertStringIncludes(raw, '対象日時: 9/14 18:20');
+  assertStringIncludes(raw, '今回だけ');
+  assertStringIncludes(raw, 'この送迎に連動する当日の家事も担当が切り替わります。');
+  assertStringIncludes(raw, 'action=accept_assignment_change&request_id=req-confirm');
+  assertStringIncludes(raw, 'action=cancel_accept_assignment_change&request_id=req-confirm');
 });
 
 Deno.test(

@@ -191,7 +191,7 @@ function statusLabel(status: RequestRow['status']): string {
 }
 
 function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; initialShowOther?: boolean }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [showOther, setShowOther] = useState(initialShowOther);
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [showOther, setShowOther] = useState(initialShowOther); const [confirmAccept, setConfirmAccept] = useState(false);
   async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
     setBusy(true); setError(null);
@@ -199,6 +199,7 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
       const functionName = kind === 'checking' || kind === 'consult' ? EDGE_FUNCTIONS.respondRequest : kind === 'accept' && request.assignment_task_instance_id ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
       const result = await callEdgeFunction<{ reproposal_required?: boolean }>(functionName, { operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision, ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}) });
       if (result.reproposal_required) setError('この依頼は期限切れです。新しい担当変更のお願いを作成してください。');
+      if (kind === 'accept') setConfirmAccept(false);
       await onChanged();
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
@@ -211,7 +212,41 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
   const replyDueAt = responseDeadline(attempt);
-  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {request.assignment_task_instance_id ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && attempt.state !== 'consulting' && attempt.state !== 'awaiting_confirmation' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button><button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button><button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>その他の返答</button></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && showOther && <div className="request-other-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button><CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} /><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button><p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms key={attempt.terms_revision} request={request} attempt={attempt} busy={busy} onAction={negotiate} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
+  const isAssignmentChange = Boolean(request.assignment_task_instance_id);
+  const isActive = Boolean(attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active');
+  return <li className="request-item">
+    <div>
+      <strong>{request.shared_title}</strong> — {isAssignmentChange ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}
+      {request.shared_message && <p>{request.shared_message}</p>}
+      {replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}
+      {request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}
+    </div>
+    {isActive && attempt?.state !== 'consulting' && attempt?.state !== 'awaiting_confirmation' && !confirmAccept && (
+      <div className="task-item-actions">
+        {isAssignmentChange
+          ? <button type="button" disabled={busy} onClick={() => setConfirmAccept(true)}>引き受ける</button>
+          : <button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button>}
+        <button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button>
+        {isAssignmentChange
+          ? <button type="button" className="text-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button>
+          : <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>その他の返答</button>}
+      </div>
+    )}
+    {isActive && isAssignmentChange && confirmAccept && (
+      <div className="request-other-actions" aria-label="担当変更の最終確認">
+        <p><strong>この担当変更を引き受けますか？</strong></p>
+        <p className="task-item-meta">{request.due_at ? `${formatDateTimeJa(request.due_at)} / ` : ''}{request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}</p>
+        <p className="task-item-meta">確定すると、この担当があなたに変わります。送り/お迎えに連動する当日の家事がある場合は、既存ルールどおり担当も切り替わります。</p>
+        <div className="task-item-actions">
+          <button type="button" disabled={busy} onClick={() => respond('accept')}>引き受ける</button>
+          <button type="button" className="text-button" disabled={busy} onClick={() => setConfirmAccept(false)}>戻る</button>
+        </div>
+      </div>
+    )}
+    {isActive && !isAssignmentChange && showOther && <div className="request-other-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button><CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} /><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button><p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p></div>}
+    {isActive && attempt && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms key={attempt.terms_revision} request={request} attempt={attempt} busy={busy} onAction={negotiate} />}
+    {error && <p role="alert" className="error-text">{error}</p>}
+  </li>;
 }
 
 function CommentedDecline({ busy, onSubmit }: { busy: boolean; onSubmit: (comment: string) => void }) { const [comment, setComment] = useState(''); return <div className="request-comment-row"><input aria-label="難しい理由（任意）" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="コメント付きで難しい" /><button type="button" className="secondary-button" disabled={busy} onClick={() => onSubmit(comment)}>コメント付きで難しい</button></div>; }

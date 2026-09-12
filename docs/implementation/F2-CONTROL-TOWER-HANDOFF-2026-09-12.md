@@ -173,6 +173,20 @@ After acceptance, verify:
 - sender receives explicit accepted outcome
 - PWA Today matches canonical state
 
+## 7.1 2026-09-12 physical F2 material UX remediation
+
+The two-account pickup run on frozen HEAD `d123dc5f4a38392c0e5d8d07ffe5df11b10bdbc2` successfully proved the underlying transport/canonical assignment transition, but exposed four material user-facing findings before the scenario could be accepted as final PASS:
+
+1. assignment-change recipient action `やる` did not describe the consequence clearly;
+2. one tap accepted and mutated assignment with no final mis-tap guard;
+3. `その他の返答` handed assignment consultation to PWA instead of completing the normal consultation path in LINE;
+4. requester accepted notification only identified `お迎え`, so concurrent requests could not be distinguished safely.
+
+Product Owner approved remediation on 2026-09-12:
+`引き受ける / 難しい / 相談する` for assignment changes, one final accept confirmation, LINE consultation, and context-rich acceptance notifications.
+
+Therefore every pickup-flow physical artifact captured on `d123dc5f...` is **DEFECT-DISCOVERY HISTORY / STALE FOR FINAL PASS** once this remediation merges. After merge/deploy, fresh-read CURRENT main/runtime, freeze the new exact HEAD, restore a clean pickup precondition, and rerun the affected two-party scenario from the actual Papa LINE entry.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.
