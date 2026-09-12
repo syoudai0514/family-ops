@@ -87,6 +87,7 @@ import {
   type LineCreationKind,
   isAssistantAddressCorrection,
   isLineCorrectionCue,
+  lineConversationalReplacementTitle,
   lineCreationStarterKind,
   lineLinkWelcomeText,
   lineNonMutationDisposition,
@@ -625,7 +626,7 @@ async function tryHandlePendingReferent(
   const role = correctionRole(text);
   const date = correctionDate(text);
   const time = correctionTime(text);
-  const replacementTitle = conversationalCorrectionTitle(text);
+  const replacementTitle = lineConversationalReplacementTitle(text);
   if (!role && !date && time === undefined && !replacementTitle) return false;
   const payload: Record<string, unknown> = { ...pending.normalized_payload, line_edit_mode: false };
   if (date) payload.scheduled_date = date;
@@ -938,18 +939,6 @@ function correctionTitle(text: string): string | null {
   if (!match) return null;
   const title = match[1].replace(/\s+/g, " ").trim();
   return title.length > 0 && title.length <= 80 ? title : null;
-}
-
-function conversationalCorrectionTitle(text: string): string | null {
-  if (isAssistantAddressCorrection(text)) return null;
-  const match = text.trim().match(
-    /^(?:違う違う|ちがうちがう|違うよ|ちがうよ|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて)[、,\s]*(.{1,40}?)[。！!？?]?$/u,
-  );
-  if (!match) return null;
-  const replacement = match[1].replace(/\s+/g, " ").trim();
-  if (!replacement || /^(?:今日|明日|明後日|朝|昼|夕方|夜|\d{1,2}時)/u.test(replacement)) return null;
-  if (/^(?:パパ|ぱぱ|ママ|まま|父|母|お父さん|お母さん|妻)$/u.test(replacement)) return null;
-  return replacement;
 }
 
 async function updateEditablePending(
