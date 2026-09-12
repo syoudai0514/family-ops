@@ -3,6 +3,7 @@ import {
   isConversationOnlyCandidateSource,
   lineNonMutationDisposition,
   linePendingFollowUpKind,
+  normalizeHiraganaMamaRole,
   transportAssignmentCorrectionCode,
 } from "./lineConversation.ts";
 import { normalizeSemanticDecomposition } from "./lineMultiIntent.ts";
