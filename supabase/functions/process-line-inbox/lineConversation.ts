@@ -35,12 +35,12 @@ function hasExplicitFamilyRole(value: string): boolean {
 }
 
 function hasConversationAdviceCue(value: string): boolean {
-  return /(?:どう思う|どうおもう|どうかな|どうするのが(?:いい|良い|よい)(?:と思う|とおもう)?|どう(?:言|い)えば|なんて(?:言|い)えば|どう頼めば|どうたのめば|どう頼む|どうたのむ|どう伝える|どうつたえる|どんな言い方|どんないいかた|どういう言い方|どういういいかた|お願いできる(?:と)?思う|お願いできる(?:と)?おもう|おねがいできる(?:と)?おもう|お願いできそう(?:かな|か)?|おねがいできそう(?:かな|か)?|お願いできるかな|おねがいできるかな|頼めそう(?:かな|か)?|たのめそう(?:かな|か)?|頼むなら.*(?:言い方|いいかた)|たのむなら.*(?:言い方|いいかた))/u
+  return /(?:どう思う|どうおもう|どうかな|どうするのが(?:いい|良い|よい)(?:と思う|とおもう)?|どう(?:言|い)えば|どう(?:言|い)うのが(?:いい|良い|よい|自然)|なんて(?:言|い)えば|どう頼めば|どうたのめば|どう頼む|どうたのむ|どう(?:頼|たの)むのが(?:いい|良い|よい|自然)|どう伝える|どうつたえる|どんな言い方|どんないいかた|どういう言い方|どういういいかた|お願いできる(?:と)?思う|お願いできる(?:と)?おもう|おねがいできる(?:と)?おもう|お願いできそう(?:かな|か)?|おねがいできそう(?:かな|か)?|お願いできるかな|おねがいできるかな|頼めそう(?:かな|か)?|たのめそう(?:かな|か)?|頼むなら.*(?:言い方|いいかた)|たのむなら.*(?:言い方|いいかた))/u
     .test(value);
 }
 
 function hasHardNoMutationCue(value: string): boolean {
-  return /(?:まだ)?(?:送らないで|おくらないで|送らず|おくらず|送らない|おくらない)|(?:送信|そうしん)(?:は|を)?(?:しないで|しない|せず)|(?:送る|おくる)(?:の|のは|のも)?まだ|(?:登録せず|登録しない|登録なし|とうろくせず|とうろくしない|とうろくなし)|(?:相談だけ|そうだんだけ)|(?:文章|文案|文面|言い方|いいかた)(?:だけ)?(?:一緒に|いっしょに)?(?:考えて|かんがえて|整えて|ととのえて)|(?:送る|おくる)か(?:は)?あとで(?:決める|きめる)|(?:送って|おくって|登録して|とうろくして)(?:じゃなくて|ではなくて)(?:相談|そうだん|質問|しつもん)/u
+  return /(?:まだ)?(?:送らないで|おくらないで|送らず|おくらず|送らない|おくらない)|(?:送信|そうしん)(?:は|を)?(?:しないで|しない|せず)|(?:通知|つうち)(?:は|を)?(?:しないで|しない|せず|なし)|(?:送る|おくる)(?:の|のは|のも)?まだ|(?:登録せず|登録しない|登録なし|とうろくせず|とうろくしない|とうろくなし)|(?:相談だけ|そうだんだけ)|(?:下書き|したがき)(?:だけ)?(?:作って|つくって|考えて|かんがえて|整えて|ととのえて)|(?:文章|文案|文面|言い方|いいかた)(?:だけ)?(?:一緒に|いっしょに)?(?:考えて|かんがえて|整えて|ととのえて)|(?:送る|おくる)か(?:は)?あとで(?:決める|きめる)|(?:送って|おくって|登録して|とうろくして)(?:じゃなくて|ではなくて)(?:相談|そうだん|質問|しつもん)/u
     .test(value);
 }
 
@@ -50,14 +50,21 @@ function hasAssistantAddressCue(value: string): boolean {
     /(?:妻|ママ|まま|パパ|ぱぱ)(?:じゃなくて|ではなくて)(?:AI|エーアイ|あなた|おうちノート)(?:に|へ)?(?:聞|き|相談|そうだん)/u
       .test(roleSafeValue(value)) ||
     /(?:お願い|おねがい|依頼|いらい|送る|おくる|登録|とうろく)(?:じゃない|ではない|じゃなくて|ではなくて)[、,]?(?:あなた|AI|エーアイ|おうちノート)(?:に|へ)?(?:相談|そうだん|聞|き)/u
+      .test(value) ||
+    /(?:家族|相手|パートナー)(?:に|へ)?(?:送る|おくる|伝える|つたえる)(?:ん)?(?:じゃなくて|ではなくて)[、,]?(?:AI|エーアイ|あなた|おうちノート)(?:に|へ)?(?:相談|そうだん|聞|き)/u
       .test(value);
 }
 
 function hasDraftReviewCue(value: string): boolean {
-  return /^(?:この|その|あの)?(?:文章|文面|メッセージ|文案)(?:を)?(?:見て|みて|直して|なおして|整えて|ととのえて|チェックして)$/u
-    .test(value) ||
-    /^(?:この|その|あの)?(?:言い方|いいかた)(?:を|だけ)?(?:見て|みて|直して|なおして|整えて|ととのえて|考えて|かんがえて|チェックして)$/u
-      .test(value) ||
+  const prefix = "(?:まず|先に|ちょっと|一回|いったん)?";
+  return new RegExp(
+    `^${prefix}(?:この|その|あの)?(?:文章|文面|メッセージ|文案)(?:を)?(?:見て|みて|直して|なおして|整えて|ととのえて|チェックして)$`,
+    "u",
+  ).test(value) ||
+    new RegExp(
+      `^${prefix}(?:この|その|あの)?(?:言い方|いいかた)(?:を|だけ)?(?:見て|みて|直して|なおして|整えて|ととのえて|考えて|かんがえて|チェックして)$`,
+      "u",
+    ).test(value) ||
     /(?:言い方|いいかた)(?:だけ)?(?:一緒に|いっしょに)?(?:整えて|ととのえて|考えて|かんがえて)$/u.test(value);
 }
 
@@ -70,7 +77,7 @@ function stripLeadingCorrectionCue(value: string): string {
 
 function hasExplicitFamilyActionCue(value: string): boolean {
   if (hasConversationAdviceCue(value) || hasHardNoMutationCue(value)) return false;
-  if (/(?:大丈夫そう|問題なさそう|よさそう|良さそう|できそう|可能そう)なら/u.test(value)) return false;
+  if (/(?:もし)?(?:大丈夫|大丈夫そう|問題なさそう|よさそう|良さそう|できそう|可能そう)なら/u.test(value)) return false;
   if (/(?:するとしたら|するとすれば|頼むなら|たのむなら|お願いするなら|おねがいするなら)/u.test(value)) {
     return false;
   }
@@ -102,14 +109,14 @@ function clauseDisposition(text: string): ClauseDisposition {
   }
 
   // A conditional desire is not yet authorization to create/send the action.
-  if (/(?:大丈夫そう|問題なさそう|よさそう|良さそう|できそう|可能そう)なら.*(?:お願い|おねがい|頼|たの)/u.test(value)) {
+  if (/(?:もし)?(?:大丈夫|大丈夫そう|問題なさそう|よさそう|良さそう|できそう|可能そう)なら.*(?:お願い|おねがい|頼|たの)/u.test(value)) {
     return "assistant_conversation";
   }
 
   if (hasExplicitFamilyActionCue(value)) return "explicit_family_action";
 
   if (
-    /^(?:これ|それ|そっち|こっち)(?:お願いできる|おねがいできる|いける|どう|どうする)$/u.test(value) ||
+    /^(?:これ|それ|そっち|こっち)(?:お願いできる|おねがいできる|頼める|たのめる|いける|任せていい|まかせていい|どう|どうする)$/u.test(value) ||
     /^(?:今日|きょう)どうする$/u.test(value)
   ) return "ambiguous";
 
@@ -137,6 +144,11 @@ function semanticClauses(text: string): string[] {
  * intentionally not a general intent classifier.
  */
 export function lineNonMutationDisposition(text: string): LineNonMutationDisposition | null {
+  const wholeValue = semanticNormalized(text);
+  // Explicit no-send/no-register/no-notify/draft-only meta instructions are
+  // stronger than any action words elsewhere in the utterance.
+  if (hasHardNoMutationCue(wholeValue)) return "assistant_conversation";
+
   const dispositions = semanticClauses(text).map(clauseDisposition);
   // Mixed input must continue into semantic decomposition so explicit family
   // actions survive; conversation-only source spans are filtered separately.
@@ -217,6 +229,11 @@ export function isAssistantAddressCorrection(text: string): boolean {
 
     if (
       /^(?:お願い|おねがい|依頼|いらい|送って|おくって|送る|おくる|登録して|とうろくして|登録|とうろく)(?:じゃない|ではない|じゃなくて|ではなくて)[、,]?(?:あなた|AI|おうちノート)(?:に|へ)?(?:相談(?:してる|している|中)?|そうだん(?:してる|している|中)?|質問|しつもん|聞いてる|きいてる)?$/u
+        .test(candidate)
+    ) return true;
+
+    if (
+      /^(?:家族|相手|パートナー)(?:に|へ)?(?:送る|おくる|伝える|つたえる)(?:ん)?(?:じゃなくて|ではなくて)[、,]?(?:AI|エーアイ|あなた|おうちノート)(?:に|へ)?(?:相談(?:してる|している|中)?|そうだん(?:してる|している|中)?|聞いてる|きいてる)?$/u
         .test(candidate)
     ) return true;
 
