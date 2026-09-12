@@ -1631,6 +1631,17 @@ async function handleText(
   const semanticCandidates = starterKind
     ? []
     : await buildMultiIntentPendingCandidates(client, item, actor, text);
+
+  // A zero-candidate semantic result must not silently become a generic
+  // mutation draft. High-confidence pickup handoff remains an explicit
+  // deterministic action boundary; everything else fails closed to the
+  // assistant conversation path. This also makes provider-unavailable /
+  // unrecognized free text safe instead of inventing a mutation kind.
+  if (!starterKind && semanticCandidates.length === 0 && !isPickupAssignmentChangeText(text)) {
+    await sendConfirmation(client, item, actor, await buildAssistantConversationReply(text));
+    return;
+  }
+
   const semanticCandidate = semanticCandidates.length === 1 ? semanticCandidates[0] : null;
   const needsCandidateReview = semanticCandidates.length > 1 || semanticCandidates.some((candidate) =>
     candidate.missing_fields.length > 0 || Boolean(candidate.duplicate_match)
@@ -1737,7 +1748,7 @@ async function processItem(client: SupabaseClient, item: WebhookInboxItem): Prom
 }
 
 Deno.serve(
-  withServiceHandler(async (req: Request) => {
+  withServiceHandler(async (req) => {
     requireWorkerToken(req);
     const client = createServiceRoleClient();
     const { data: batchData, error: claimError } = await client.rpc("server_tx_claim_webhook_inbox_batch", {
