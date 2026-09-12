@@ -79,6 +79,11 @@ function clauseDisposition(text: string): ClauseDisposition {
     return "assistant_conversation";
   }
 
+  // A conditional desire is not yet authorization to create/send the action.
+  if (/(?:よさそう|良さそう|できそう|可能そう)なら.*(?:お願い|おねがい|頼|たの)/u.test(value)) {
+    return "assistant_conversation";
+  }
+
   if (hasExplicitFamilyActionCue(value)) return "explicit_family_action";
 
   if (
@@ -86,7 +91,10 @@ function clauseDisposition(text: string): ClauseDisposition {
     /^(?:今日|きょう)どうする$/u.test(value)
   ) return "ambiguous";
 
-  if (/^(?:これ|それ|そっち|こっち).*(?:どう思う|どうおもう|どう)$/u.test(value)) {
+  if (
+    /^(?:これ|それ|そっち|こっち).*(?:どう思う|どうおもう|どう)$/u.test(value) ||
+    /^(?:この|その|あの)?文章(?:どう|どう思う|どうおもう)$/u.test(value)
+  ) {
     return "assistant_conversation";
   }
 
