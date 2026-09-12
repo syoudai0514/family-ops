@@ -136,6 +136,24 @@ export function isLineCorrectionCue(text: string): boolean {
     .test(value) || isAssistantAddressCorrection(text);
 }
 
+export type LinePendingFollowUpKind =
+  | "referent_question"
+  | "assistant_repair"
+  | "cancel"
+  | "edit"
+  | null;
+
+export function linePendingFollowUpKind(text: string): LinePendingFollowUpKind {
+  const value = semanticNormalized(text);
+  if (/^(?:なにを|何を|何を受け付けたの|さっきの何|それ)[？?]?$/u.test(value)) {
+    return "referent_question";
+  }
+  if (isAssistantAddressCorrection(text)) return "assistant_repair";
+  if (/(?:だけやめて|取り消|キャンセル)/u.test(value)) return "cancel";
+  if (/(?:だった|じゃなくて|ではなくて|に変更|にして)/u.test(value)) return "edit";
+  return null;
+}
+
 export function isAssistantAddressCorrection(text: string): boolean {
   const value = semanticNormalized(text);
   if (
