@@ -199,6 +199,7 @@ declare
   v_dep record;
   v_desired_user uuid;
   v_desired_actor_ref uuid;
+  v_desired_mode text;
   v_previous_user uuid;
   v_previous_actor_ref uuid;
   v_previous_mode text;
@@ -258,11 +259,11 @@ begin
       end if;
     end if;
 
+    v_desired_mode:=case when v_desired_user is null then 'unassigned' else 'person' end;
+
     if v_dep.planned_assignee_id is not distinct from v_desired_user
        and v_dep.planned_assignee_actor_ref_id is not distinct from v_desired_actor_ref
-       and coalesce(v_dep.assignment_mode,
-         case when v_desired_user is null then 'unassigned' else 'person' end)
-         = case when v_desired_user is null then 'unassigned' else 'person' end then
+       and coalesce(v_dep.assignment_mode,v_desired_mode)=v_desired_mode then
       continue;
     end if;
 
@@ -275,7 +276,7 @@ begin
     update public.task_instances
     set planned_assignee_id=v_desired_user,
         planned_assignee_actor_ref_id=v_desired_actor_ref,
-        assignment_mode=case when v_desired_user is null then 'unassigned' else 'person' end,
+        assignment_mode=v_desired_mode,
         assignment_source='legacy_snapshot',
         revision=revision+1
     where household_id=p_household_id and id=v_dep.id
@@ -296,7 +297,7 @@ begin
         'previous_assignment_mode',v_previous_mode,
         'previous_assignee_user_id',v_previous_user,
         'previous_assignee_actor_ref_id',v_previous_actor_ref,
-        'assignment_mode',case when v_desired_user is null then 'unassigned' else 'person' end,
+        'assignment_mode',v_desired_mode,
         'assignee_user_id',v_desired_user,
         'assignee_actor_ref_id',v_desired_actor_ref,
         'previous_revision',v_previous_revision,
