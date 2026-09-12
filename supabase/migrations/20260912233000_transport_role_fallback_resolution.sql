@@ -351,7 +351,9 @@ begin
     return new;
   end if;
 
-  if tg_op='DELETE' then
+  if tg_op='INSERT' then
+    v_should_reconcile:=true;
+  elsif tg_op='DELETE' then
     v_should_reconcile:=true;
   elsif tg_op='UPDATE' then
     -- Do not duplicate the normal open-assigned A->B request path; that path
@@ -382,6 +384,11 @@ $transport_trigger$;
 revoke all on function private.fn_transport_role_anchor_reconcile_trigger_v1()
   from public,anon,authenticated;
 
+drop trigger if exists task_transport_role_reconcile_insert on public.task_instances;
+create trigger task_transport_role_reconcile_insert
+after insert on public.task_instances
+for each row execute function private.fn_transport_role_anchor_reconcile_trigger_v1();
+
 drop trigger if exists task_transport_role_reconcile_update on public.task_instances;
 create trigger task_transport_role_reconcile_update
 after update of status,planned_assignee_id,planned_assignee_actor_ref_id,assignment_mode
@@ -392,6 +399,64 @@ drop trigger if exists task_transport_role_reconcile_delete on public.task_insta
 create trigger task_transport_role_reconcile_delete
 after delete on public.task_instances
 for each row execute function private.fn_transport_role_anchor_reconcile_trigger_v1();
+
+-- Direct already-agreed task assignment is another valid transport mutation path.
+-- Request acceptance has its own request-scoped dependency reconciler; this wrapper
+-- covers the explicit PWA/LINE direct command without changing that audit path.
+create or replace function public.server_tx_change_task_assignment(
+  p_actor_id uuid,
+  p_operation_id uuid,
+  p_task_id uuid,
+  p_assignment_mode text,
+  p_assignee_actor_ref_id uuid,
+  p_already_agreed boolean,
+  p_expected_revision bigint
+) returns jsonb
+language plpgsql
+set search_path=''
+as $assignment_wrapper$
+declare
+  v_context jsonb;
+  v_result jsonb;
+  v_task record;
+begin
+  v_context:=private.fn_require_production_actor_context_v1(p_actor_id);
+
+  v_result:=private.fn_command_change_task_assignment_v1(
+    (v_context->>'household_id')::uuid,
+    p_actor_id,
+    (v_context->>'actor_ref_id')::uuid,
+    null,
+    p_task_id,
+    p_assignment_mode,
+    p_assignee_actor_ref_id,
+    p_already_agreed,
+    p_expected_revision,
+    p_operation_id,
+    'pwa'
+  );
+
+  select ti.household_id,ti.scheduled_date,td.code
+    into v_task
+  from public.task_instances ti
+  join public.task_definitions td
+    on td.household_id=ti.household_id and td.id=ti.task_definition_id
+  where ti.id=p_task_id
+    and ti.household_id=(v_context->>'household_id')::uuid;
+
+  if found and v_task.code in ('pickup','dropoff') then
+    perform private.fn_reconcile_transport_role_date_v1(
+      v_task.household_id,
+      v_task.scheduled_date,
+      v_task.code,
+      'direct_transport_assignment',
+      p_task_id
+    );
+  end if;
+
+  return v_result;
+end;
+$assignment_wrapper$;
 
 -- Keep the existing API signature. For role-derived strategies the existing
 -- p_planned_assignee_user_id parameter now means explicit fallback; for fixed
