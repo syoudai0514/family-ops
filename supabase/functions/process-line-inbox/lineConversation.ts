@@ -15,6 +15,113 @@ function normalized(text: string): string {
   return text.normalize("NFKC").replace(/\s+/g, "").trim();
 }
 
+export type LineNonMutationDisposition = "assistant_conversation" | "ambiguous";
+
+type ClauseDisposition = "assistant_conversation" | "ambiguous" | "explicit_family_action" | null;
+
+function semanticNormalized(text: string): string {
+  return normalized(text).replace(/[。.!！?？]+$/g, "");
+}
+
+function roleSafeValue(value: string): string {
+  // "まま" can be a hiragana family role, but demonstratives such as
+  // "このまま" / "そのまま" are not role mentions.
+  return value.replace(/(?:この|その|あの)まま/gu, "");
+}
+
+function hasExplicitFamilyRole(value: string): boolean {
+  return /(?:パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)/u
+    .test(roleSafeValue(value));
+}
+
+function hasConversationAdviceCue(value: string): boolean {
+  return /(?:どう思う|どうおもう|どうするのが(?:いい|良い|よい)(?:と思う|とおもう)?|どう(?:言|い)えば|なんて(?:言|い)えば|どう頼めば|どうたのめば|どう伝える|どうつたえる|どんな言い方|どんないいかた|お願いできる(?:と)?思う|お願いできる(?:と)?おもう|おねがいできる(?:と)?おもう|頼むなら.*(?:言い方|いいかた)|たのむなら.*(?:言い方|いいかた))/u
+    .test(value);
+}
+
+function hasHardNoMutationCue(value: string): boolean {
+  return /(?:まだ)?(?:送らないで|おくらないで|送らず|おくらず|送らない|おくらない)|(?:登録せず|登録しない|登録なし|とうろくせず|とうろくしない|とうろくなし)|(?:相談だけ|そうだんだけ)|(?:文章だけ考えて|ぶんしょうだけかんがえて)|(?:送る|おくる)か(?:は)?あとで(?:決める|きめる)|(?:送って|おくって|登録して|とうろくして)(?:じゃなくて|ではなくて)(?:相談|そうだん|質問|しつもん)/u
+    .test(value);
+}
+
+function hasAssistantAddressCue(value: string): boolean {
+  return /(?:^|[、,])(?:あなた|おうちノート|AI|エーアイ|そっち)(?:に|へ)?(?:相談|そうだん|聞|き|言|い)/u
+    .test(value) ||
+    /(?:妻|ママ|まま|パパ|ぱぱ)(?:じゃなくて|ではなくて)(?:AI|エーアイ|あなた|おうちノート)(?:に|へ)?(?:聞|き|相談|そうだん)/u
+      .test(roleSafeValue(value));
+}
+
+function hasExplicitFamilyActionCue(value: string): boolean {
+  if (hasConversationAdviceCue(value) || hasHardNoMutationCue(value)) return false;
+  if (/(?:よさそう|良さそう|できそう|可能そう)なら/u.test(value)) return false;
+  if (/(?:するとしたら|するとすれば|頼むなら|たのむなら|お願いするなら|おねがいするなら)/u.test(value)) {
+    return false;
+  }
+
+  const familyRole = hasExplicitFamilyRole(value);
+  const explicitAction =
+    /(?:お願い(?:して|したい|できる)?|おねがい(?:して|したい|できる)?|頼(?:む|んで|みたい)|たの(?:む|んで|みたい)|してほしい|して欲しい|やって|やっといて|買って|かって|聞いて|きいて|伝えて|つたえて|迎え|むかえ|送り|おくり)/u
+      .test(value);
+  if (familyRole && explicitAction) return true;
+
+  // Concrete family-operation request without an explicit role can still be
+  // a valid two-adult-household request. Generic pronouns stay ambiguous.
+  if (/^(?:これ|それ|そっち|こっち)/u.test(value)) return false;
+  return /(?:迎え|むかえ|送り|おくり|ゴミ出し|ごみ出し|洗濯|食器|風呂|ふろ|買い物|牛乳).*(?:お願い|おねがい|頼|たの|やって|して|買って|かって)/u
+    .test(value);
+}
+
+function clauseDisposition(text: string): ClauseDisposition {
+  const value = semanticNormalized(text);
+  if (!value) return null;
+
+  if (hasHardNoMutationCue(value) || hasConversationAdviceCue(value) || hasAssistantAddressCue(value)) {
+    return "assistant_conversation";
+  }
+
+  if (hasExplicitFamilyActionCue(value)) return "explicit_family_action";
+
+  if (
+    /^(?:これ|それ|そっち|こっち)(?:お願いできる|おねがいできる|いける|どう|どうする)$/u.test(value) ||
+    /^(?:今日|きょう)どうする$/u.test(value)
+  ) return "ambiguous";
+
+  if (/^(?:これ|それ|そっち|こっち).*(?:どう思う|どうおもう|どう)$/u.test(value)) {
+    return "assistant_conversation";
+  }
+
+  return null;
+}
+
+function semanticClauses(text: string): string[] {
+  const clauses = text
+    .split(/[。！？!?、,]+/u)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return clauses.length > 0 ? clauses : [text.trim()];
+}
+
+/**
+ * High-confidence fail-closed boundary before any pending action is created.
+ * Returning null means "let the existing operation pipeline decide"; it is
+ * intentionally not a general intent classifier.
+ */
+export function lineNonMutationDisposition(text: string): LineNonMutationDisposition | null {
+  const dispositions = semanticClauses(text).map(clauseDisposition);
+  // Mixed input must continue into semantic decomposition so explicit family
+  // actions survive; conversation-only source spans are filtered separately.
+  if (dispositions.includes("explicit_family_action")) return null;
+  if (dispositions.includes("assistant_conversation")) return "assistant_conversation";
+  if (dispositions.includes("ambiguous")) return "ambiguous";
+  return null;
+}
+
+/** Reject only high-confidence conversation/meta/ambiguous model source spans. */
+export function isConversationOnlyCandidateSource(text: string): boolean {
+  const disposition = clauseDisposition(text);
+  return disposition === "assistant_conversation" || disposition === "ambiguous";
+}
+
 export function isLineCorrectionCue(text: string): boolean {
   const value = normalized(text).replace(/[。.!！?？]+$/g, "");
   return /^(?:違う違う|ちがうちがう|違うよ|ちがうよ|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて|そうじゃない|そうじゃないよ)[、,]?/u
@@ -22,8 +129,18 @@ export function isLineCorrectionCue(text: string): boolean {
 }
 
 export function isAssistantAddressCorrection(text: string): boolean {
-  const value = normalized(text).replace(/[。.!！?？]+$/g, "");
-  return /^(?:(?:あなた|おうちノート|AI|そっち)(?:に|へ)?)(?:聞いてる|聞いている|聞いてんの|言ってる|言っている|言ってんの)(?:んだけど|んだよ|んだけどね|よ)?$/u
+  const value = semanticNormalized(text);
+  if (
+    /^(?:(?:あなた|おうちノート|AI|そっち)(?:に|へ)?)(?:聞いてる|聞いている|聞いてんの|きいてる|言ってる|言っている|言ってんの)(?:んだけど|んだよ|んだけどね|よ)?$/u
+      .test(value)
+  ) return true;
+
+  if (
+    /^(?:妻|ママ|まま|パパ|ぱぱ)(?:じゃなくて|ではなくて)(?:AI|あなた|おうちノート)(?:に|へ)?(?:聞いてる|聞いている|きいてる|相談|そうだん)(?:んだけど|んだよ|よ)?$/u
+      .test(roleSafeValue(value))
+  ) return true;
+
+  return /^(?:送って|おくって|登録して|とうろくして)(?:じゃなくて|ではなくて)(?:相談|そうだん|質問|しつもん)$/u
     .test(value);
 }
 
