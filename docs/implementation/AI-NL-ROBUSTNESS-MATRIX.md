@@ -131,8 +131,11 @@ that were not adequately represented by the original lane closeout:
 
 - **scoped meta + independent action:** a no-send/no-register clause may suppress
   only its own referent; a separate explicit family action must survive;
-- **hiragana-role lexical collisions:** `まま` role recovery must not infer
-  Mama from ordinary words such as `わがまま` or `気まま`;
+- **hiragana-role lexical collisions:** `まま` role recovery uses contextual
+  role boundaries rather than an open-ended lexical deny-list, so ordinary
+  words such as `わがまま`, `気まま`, `このまま`, and `ままごと`
+  cannot infer Mama while genuine speech input such as `ままに...` remains
+  recoverable;
 - **assignment correction truth:** preview title/date/recipient must remain
   bound to the canonical assignment task occurrence; no visible-only edit may
   leave `task_id` pointing at a different task;
