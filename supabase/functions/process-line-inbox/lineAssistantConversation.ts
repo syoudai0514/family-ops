@@ -4,7 +4,7 @@ export type AssistantConversationProvider = (text: string) => Promise<string | n
 
 function claimsMutationWasPerformed(reply: string): boolean {
   const value = reply.normalize("NFKC").replace(/\s+/g, "");
-  return /(?:送信|通知|登録|依頼|共有)(?:しました|したよ|済みです|完了しました|しておきました)|(?:送って|送り|お願いして|頼んで)(?:おきました|おいたよ)|(?:家族|相手|パートナー|ママ|パパ)(?:に|へ)?.{0,20}(?:送った|通知した|登録した|依頼した)/u
+  return /(?:送信|通知|登録|依頼|共有)(?:しました|したよ|済みです|完了しました|しておきました)|(?:送った|送ったよ|送りました|送っておきました|送付しました|お願いしました|お願いしておきました|頼みました|頼んでおきました)|(?:家族|相手|パートナー|ママ|パパ)(?:に|へ)?.{0,20}(?:送った|送りました|通知した|登録した|依頼した|お願いした|頼んだ)/u
     .test(value);
 }
 
