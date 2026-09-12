@@ -44,3 +44,63 @@ Deno.test("diagnostic wording review: review spans are conversation-only", () =>
 Deno.test("diagnostic wording review: explicit family request is not review-only", () => {
   assertEquals(isConversationOnlyCandidateSource("ママに洗濯お願いして"), false);
 });
+
+Deno.test("v3 diagnostic advice phrasing: how-to-say variants remain conversation", () => {
+  assertEquals(lineNonMutationDisposition("夫に頼むならどう言うのが自然？"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("家族にお願いする時どう言うのがいいかな"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("こういう時どう頼むのがいい？"), "assistant_conversation");
+});
+
+Deno.test("v3 diagnostic advice phrasing counterexample: direct family instruction remains actionable", () => {
+  assertEquals(lineNonMutationDisposition("ママにこう言って、迎えお願いして"), null);
+});
+
+Deno.test("v3 diagnostic draft-only and notification meta: neighboring variants dominate action words", () => {
+  assertEquals(lineNonMutationDisposition("通知しないで下書きだけ作って"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("まだ通知せず文案だけ考えて"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("送る前のしたがきだけつくって"), "assistant_conversation");
+});
+
+Deno.test("v3 diagnostic draft-only counterexample: explicit send after review remains actionable", () => {
+  assertEquals(lineNonMutationDisposition("下書きはOK、ママに送って"), null);
+});
+
+Deno.test("v3 diagnostic ambiguous generic recipient: nearby generic requests remain fail-closed", () => {
+  assertEquals(lineNonMutationDisposition("これ頼める？"), "ambiguous");
+  assertEquals(lineNonMutationDisposition("それたのめる？"), "ambiguous");
+  assertEquals(lineNonMutationDisposition("これ任せていい？"), "ambiguous");
+});
+
+Deno.test("v3 diagnostic ambiguous generic recipient counterexample: explicit role is actionable", () => {
+  assertEquals(lineNonMutationDisposition("これママに頼める？"), null);
+});
+
+Deno.test("v3 diagnostic conditional desire: 'if okay' remains consultation until authorized", () => {
+  assertEquals(lineNonMutationDisposition("もし大丈夫なら妻に頼みたい、どうかな"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("大丈夫ならパパにお願いしたいんだけど相談"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("可能そうならママに頼みたい、まだ送らないで"), "assistant_conversation");
+});
+
+Deno.test("v3 diagnostic conditional desire counterexample: explicit go-ahead is actionable", () => {
+  assertEquals(lineNonMutationDisposition("大丈夫だからパパにお願いして"), null);
+});
+
+Deno.test("v3 diagnostic generic family-to-AI repair: nearby formulations repair pending action", () => {
+  assertEquals(linePendingFollowUpKind("違う、相手に送るんじゃなくてAIに相談"), "assistant_repair");
+  assertEquals(linePendingFollowUpKind("いや、パートナーに伝えるんじゃなくておうちノートに相談"), "assistant_repair");
+  assertEquals(linePendingFollowUpKind("家族に送るのではなくAIに相談中"), "assistant_repair");
+});
+
+Deno.test("v3 diagnostic generic family-to-AI repair counterexample: AI-to-family reversal is actionable", () => {
+  assertEquals(lineNonMutationDisposition("AIへの相談じゃなくて妻にお願いしたい"), null);
+});
+
+Deno.test("v3 diagnostic review discourse markers: leading filler does not turn review into share/action", () => {
+  assertEquals(isConversationOnlyCandidateSource("まず言い方見て"), true);
+  assertEquals(isConversationOnlyCandidateSource("ちょっと文面チェックして"), true);
+  assertEquals(isConversationOnlyCandidateSource("一回その文案整えて"), true);
+});
+
+Deno.test("v3 diagnostic review discourse counterexample: explicit family action remains action", () => {
+  assertEquals(isConversationOnlyCandidateSource("まずママに洗濯お願いして"), false);
+});
