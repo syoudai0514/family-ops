@@ -132,6 +132,25 @@ begin
     raise exception 'FAIL transport fallback: restored pickup did not regain precedence';
   end if;
 
+  -- Explicit already-agreed A -> B transport change must also re-resolve dependents.
+  perform public.server_tx_change_task_assignment(
+    u1,gen_random_uuid(),pickup_task,'person',ar2,true,
+    (select revision from public.task_instances where id=pickup_task)
+  );
+  if (select planned_assignee_id from public.task_instances where id=laundry_task) is distinct from u2
+     or (select planned_assignee_id from public.task_instances where id=cleaning_task) is distinct from u2 then
+    raise exception 'FAIL transport fallback: direct pickup assignment did not re-resolve dependents';
+  end if;
+
+  perform public.server_tx_change_task_assignment(
+    u1,gen_random_uuid(),pickup_task,'person',ar1,true,
+    (select revision from public.task_instances where id=pickup_task)
+  );
+  if (select planned_assignee_id from public.task_instances where id=laundry_task) is distinct from u1
+     or (select planned_assignee_id from public.task_instances where id=cleaning_task) is distinct from u1 then
+    raise exception 'FAIL transport fallback: direct pickup restoration did not re-resolve dependents';
+  end if;
+
   -- Protected occurrence must remain untouched when transport disappears again.
   update public.task_instances
   set assignment_source='agreement',
