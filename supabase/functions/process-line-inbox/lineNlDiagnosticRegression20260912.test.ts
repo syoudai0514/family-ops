@@ -231,3 +231,15 @@ Deno.test("independent review: hiragana Mama recovery uses role context", () => 
   assertEquals(normalizeHiraganaMamaRole("このままお願い").includes("ママ"), false);
   assertEquals(normalizeHiraganaMamaRole("気ままに決めて").includes("ママ"), false);
 });
+
+
+Deno.test("independent review: scoped no-send survives conjunction before separate family action", () => {
+  assertEquals(
+    lineNonMutationDisposition("この文はまだ送らないけど牛乳はパパに買ってもらって"),
+    null,
+  );
+  assertEquals(
+    lineNonMutationDisposition("この文はまだ送らないけれどママにゴミ出しお願い"),
+    null,
+  );
+});
