@@ -371,7 +371,10 @@ begin
 
   return case when tg_op='DELETE' then old else new end;
 end;
-$$;
+$;
+
+revoke all on function private.fn_transport_role_anchor_reconcile_trigger_v1()
+  from public,anon,authenticated;
 
 drop trigger if exists task_transport_role_reconcile_update on public.task_instances;
 create trigger task_transport_role_reconcile_update
