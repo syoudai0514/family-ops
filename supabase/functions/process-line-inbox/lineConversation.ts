@@ -55,7 +55,7 @@ export function normalizeHiraganaMamaRole(value: string): string {
 
 function roleSafeValue(value: string): string {
   return normalizeHiraganaMamaRole(value);
-
+}
 
 function hasExplicitFamilyRole(value: string): boolean {
   return /(?:パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)/u.test(roleSafeValue(value));
