@@ -159,6 +159,27 @@ Deno.test("LINE shopping discovery uses canonical read model and claim uses cano
   assertEquals(calls.map((call) => call.name), ["server_read_shopping_workspace", "server_tx_shopping_claim_v2"]);
 });
 
+Deno.test("LINE anyone task postback uses canonical task claim writer", async () => {
+  const { ctx, calls, replies } = makeContext((name, args) => {
+    assertEquals(name, "server_tx_task_anyone_claim_v1");
+    assertEquals(args.p_task_id, "task-anyone-1");
+    assertEquals(args.p_action, "claim");
+    assertEquals(args.p_expected_revision, 6);
+    assertEquals(args.p_source, "line");
+    return { data: { revision: 7 }, error: null };
+  });
+
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_task_anyone",
+    task_id: "task-anyone-1",
+    revision: "6",
+    claim_action: "claim",
+  }), true);
+
+  assertEquals(calls.map((call) => call.name), ["server_tx_task_anyone_claim_v1"]);
+  assertStringIncludes(replies[0].text, "自分がやる");
+});
+
 Deno.test("LINE one-user simulation entry stays explicitly sandboxed", async () => {
   const { ctx, calls, replies } = makeContext((name) => {
     if (name === "server_tx_get_active_test_simulation_v1") {
