@@ -44,8 +44,11 @@ begin
     raise exception 'FAIL transport fallback: required definitions missing';
   end if;
 
-  chosen_date:=(now() at time zone 'Asia/Tokyo')::date;
-  dow:=extract(isodow from chosen_date)::int;
+  -- This regression proves weekday fallback semantics. Weekend behavior is
+  -- covered separately by 91_weekend_role_tasks_anyone.sql.
+  chosen_date:=(now() at time zone 'Asia/Tokyo')::date
+    + ((8-extract(isodow from (now() at time zone 'Asia/Tokyo')::date)::int)%7);
+  dow:=1;
 
   insert into public.task_instances(
     household_id,task_definition_id,origin,title,category,routine_phase,scheduled_date,due_at,
