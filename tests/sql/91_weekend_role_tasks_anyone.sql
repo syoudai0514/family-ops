@@ -42,6 +42,17 @@ begin
   select id into ar2 from public.domain_actor_refs
   where household_id=hh and actor_kind='real_user' and real_user_id=u2;
 
+  -- Shino medication definitions are household-specific production setup, not
+  -- part of the generic household bootstrap. Seed the same semantic shapes in
+  -- this isolated regression household so the weekend rule is tested directly.
+  insert into public.task_definitions(
+    household_id,code,title,category,routine_phase,completion_mode,task_kind,
+    include_in_routine_line,created_by
+  ) values
+    (hh,'med_shino_constipation_am','詩乃（便秘）の薬','health','morning','whole','morning_chore',true,u1),
+    (hh,'med_shino_constipation_pm','詩乃（便秘）の薬','health','evening','whole','evening_chore',true,u1)
+  on conflict do nothing;
+
   select id into med_am from public.task_definitions
   where household_id=hh and code='med_shino_constipation_am';
   select id into med_pm from public.task_definitions
