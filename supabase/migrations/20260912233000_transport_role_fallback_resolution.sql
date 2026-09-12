@@ -336,14 +336,19 @@ declare
   v_code text;
   v_should_reconcile boolean:=false;
 begin
-  v_row:=case when tg_op='DELETE' then old else new end;
+  if tg_op='DELETE' then
+    v_row:=old;
+  else
+    v_row:=new;
+  end if;
 
   select td.code into v_code
   from public.task_definitions td
   where td.household_id=v_row.household_id and td.id=v_row.task_definition_id;
 
   if v_code not in ('pickup','dropoff') then
-    return case when tg_op='DELETE' then old else new end;
+    if tg_op='DELETE' then return old; end if;
+    return new;
   end if;
 
   if tg_op='DELETE' then
@@ -369,7 +374,8 @@ begin
     );
   end if;
 
-  return case when tg_op='DELETE' then old else new end;
+  if tg_op='DELETE' then return old; end if;
+  return new;
 end;
 $;
 
