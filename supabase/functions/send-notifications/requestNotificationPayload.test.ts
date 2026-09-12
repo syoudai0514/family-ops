@@ -39,6 +39,20 @@ Deno.test('request outcome notifications state the actual result', () => {
     'お願いが引き受けられました。\nお迎え',
   );
   assertEquals(
+    requestOutcomeText({
+      type: 'request.accepted',
+      title: 'お願いを更新しました',
+      body: 'お迎え',
+      payload: {
+        request_kind: 'assignment_change',
+        scope: 'once',
+        due_at: '2026-09-14T09:20:00.000Z',
+        recipient_label: 'ママ',
+      },
+    }),
+    '✓ ママが引き受けました\n9/14 18:20 お迎え\n今回だけ\n担当変更は確定しています。',
+  );
+  assertEquals(
     requestOutcomeText({ type: 'request.checking', title: '確認中です', body: 'お迎え' }),
     '相手が確認中です。\nお迎え\nまだ成立していません。',
   );
