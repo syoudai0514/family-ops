@@ -26,6 +26,54 @@ alter table public.recurrence_rules
 comment on column public.recurrence_rules.fallback_assignee_id is
   'Explicit household fallback used only when a role-derived assignee cannot resolve from live same-day transport truth.';
 
+create unique index if not exists domain_actor_refs_system_household_idx
+  on public.domain_actor_refs(household_id)
+  where actor_kind='system';
+
+create or replace function private.fn_household_system_actor_ref_v1(
+  p_household_id uuid
+) returns uuid
+language plpgsql
+security definer
+set search_path=''
+as $system_actor$
+declare
+  v_actor_ref uuid;
+begin
+  select id into v_actor_ref
+  from public.domain_actor_refs
+  where household_id=p_household_id
+    and actor_kind='system'
+    and test_context_id is null
+  order by id
+  limit 1;
+
+  if v_actor_ref is null then
+    insert into public.domain_actor_refs(household_id,actor_kind)
+    values(p_household_id,'system')
+    on conflict (household_id) where actor_kind='system' do nothing;
+
+    select id into v_actor_ref
+    from public.domain_actor_refs
+    where household_id=p_household_id
+      and actor_kind='system'
+      and test_context_id is null
+    order by id
+    limit 1;
+  end if;
+
+  if v_actor_ref is null then
+    raise exception 'SYSTEM_ACTOR_NOT_AVAILABLE';
+  end if;
+  return v_actor_ref;
+end;
+$system_actor$;
+
+revoke all on function private.fn_household_system_actor_ref_v1(uuid)
+  from public,anon,authenticated;
+grant execute on function private.fn_household_system_actor_ref_v1(uuid)
+  to service_role;
+
 create or replace function private.fn_resolve_transport_role_assignee_v1(
   p_household_id uuid,
   p_date date,
@@ -57,6 +105,7 @@ begin
   where ti.household_id=p_household_id
     and ti.scheduled_date=p_date
     and td.code=v_code
+    and ti.test_context_id is null
     and ti.status in ('todo','in_progress')
     and coalesce(ti.assignment_mode,'person')='person'
     and ti.planned_assignee_id is not null
@@ -200,6 +249,7 @@ declare
   v_desired_user uuid;
   v_desired_actor_ref uuid;
   v_desired_mode text;
+  v_audit_actor_ref uuid;
   v_previous_user uuid;
   v_previous_actor_ref uuid;
   v_previous_mode text;
@@ -212,6 +262,8 @@ begin
     raise exception 'INVALID_INPUT';
   end if;
 
+  v_audit_actor_ref:=private.fn_household_system_actor_ref_v1(p_household_id);
+
   for v_dep in
     select ti.*,rr.assignee_strategy,rr.fallback_assignee_id
     from public.task_instances ti
@@ -219,6 +271,7 @@ begin
       on rr.household_id=ti.household_id and rr.id=ti.recurrence_rule_id
     where ti.household_id=p_household_id
       and ti.scheduled_date=p_date
+      and ti.test_context_id is null
       and ti.status in ('todo','in_progress')
       and coalesce(ti.assignment_source,'legacy_snapshot')='legacy_snapshot'
       and ti.active_claimant_actor_ref_id is null
@@ -286,7 +339,7 @@ begin
       household_id,task_instance_id,actor_id,actor_ref_id,test_context_id,
       event_type,payload,source,idempotency_key
     ) values(
-      p_household_id,v_dep.id,null,null,null,
+      p_household_id,v_dep.id,null,v_audit_actor_ref,null,
       'edited',
       jsonb_build_object(
         'reason','transport_role_fallback_reconcile',
@@ -340,6 +393,11 @@ begin
     v_row:=old;
   else
     v_row:=new;
+  end if;
+
+  if v_row.test_context_id is not null then
+    if tg_op='DELETE' then return old; end if;
+    return new;
   end if;
 
   select td.code into v_code
@@ -660,6 +718,7 @@ begin
     join public.recurrence_rules rr
       on rr.household_id=ti.household_id and rr.id=ti.recurrence_rule_id
     where ti.status in ('todo','in_progress')
+      and ti.test_context_id is null
       and rr.assignee_strategy in ('pickup_assignee','dropoff_assignee','nonpickup_adult')
   loop
     perform private.fn_reconcile_transport_role_date_v1(
