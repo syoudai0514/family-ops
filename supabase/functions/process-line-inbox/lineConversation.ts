@@ -149,8 +149,12 @@ export function linePendingFollowUpKind(text: string): LinePendingFollowUpKind {
     return "referent_question";
   }
   if (isAssistantAddressCorrection(text)) return "assistant_repair";
-  if (/(?:だけやめて|取り消|キャンセル)/u.test(value)) return "cancel";
-  if (/(?:だった|じゃなくて|ではなくて|に変更|にして)/u.test(value)) return "edit";
+  if (/(?:だけやめて|取り消|キャンセル|やっぱ(?:り)?(?:さっきの)?なし|さっきのなし|やっぱなし)/u.test(value)) {
+    return "cancel";
+  }
+  if (/(?:だった|じゃなくて|ではなくて|に変更|にして)/u.test(value) || isLineCorrectionCue(text)) {
+    return "edit";
+  }
   return null;
 }
 
