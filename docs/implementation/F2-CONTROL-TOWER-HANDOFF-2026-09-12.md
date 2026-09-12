@@ -158,7 +158,7 @@ Recipient assignment-change card must expose:
 - 今回だけ
 - softened message/reason
 - explanation that assignment does not change before acceptance
-- first tier: `やる / 難しい / その他の返答`
+- first tier for assignment change: `引き受ける / 難しい / 相談する`
 
 Before acceptance, canonical task assignment must remain Papa.
 
@@ -186,6 +186,21 @@ Product Owner approved remediation on 2026-09-12:
 `引き受ける / 難しい / 相談する` for assignment changes, one final accept confirmation, LINE consultation, and context-rich acceptance notifications.
 
 Therefore every pickup-flow physical artifact captured on `d123dc5f...` is **DEFECT-DISCOVERY HISTORY / STALE FOR FINAL PASS** once this remediation merges. After merge/deploy, fresh-read CURRENT main/runtime, freeze the new exact HEAD, restore a clean pickup precondition, and rerun the affected two-party scenario from the actual Papa LINE entry.
+
+## 7.2 2026-09-12 Android PWA transport-role finding
+
+On exact HEAD `3fa849eef535a1e95d9a198ab2d6499e6d73050f`, the two-party 9/21 pickup change correctly reassigned the pickup occurrence and its same-day `pickup_assignee` dependents. Android PWA Today then exposed a separate CURRENT-day defect on 9/12: the transport template has no Saturday pickup/dropoff, but open role-derived routines contained a mixed stale snapshot (some Papa, some unassigned), and `assignment_needed` cards had no usable PWA resolution action.
+
+Classification: **IMPLEMENTATION DEFECT**, separate from the successful 9/21 assignment-change dependency proof.
+
+Approved remediation:
+- explicit recurrence fallback assignee for role-derived strategies;
+- live transport > explicit fallback > unassigned, never guessed;
+- cancellation/unassignment triggers same-day convergence of open unprotected dependents;
+- true unassigned Today cards provide direct assignment resolution;
+- backfill only where historical transport ownership gives deterministic evidence; do not invent a person where there is no evidence.
+
+Affected PWA/Today evidence is stale after the fix merges and must be recaptured on the new exact HEAD.
 
 ## 8. Remaining F2 work after pickup scenario
 
