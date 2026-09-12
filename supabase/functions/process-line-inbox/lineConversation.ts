@@ -23,15 +23,39 @@ function semanticNormalized(text: string): string {
   return normalized(text).replace(/[。.!！?？]+$/g, "");
 }
 
-function roleSafeValue(value: string): string {
-  // Hiragana "まま" is accepted as Mama for speech-input recovery, but it
-  // also appears inside ordinary Japanese words. Remove common lexical uses
-  // before role matching so "わがまま" etc. cannot invent a family recipient.
-  return value.replace(
-    /(?:この|その|あの|ありの)まま|わがまま|気まま|思うまま|なるがまま|ままなら/gu,
-    "",
-  );
+export function normalizeHiraganaMamaRole(value: string): string {
+  const beforeTokens = [
+    "今日", "明日", "明後日", "相手は",
+    "いや", "いや違う", "やっぱ", "やっぱり", "訂正", "訂正して", "、", ",",
+  ];
+  const afterTokens = [
+    "に", "へ", "が", "は", "じゃなくて", "ではなくて",
+    "お願い", "おねがい", "頼", "たの", "迎え", "むかえ", "送り", "おくり",
+    "、", ",",
+  ];
+
+  let cursor = 0;
+  let result = "";
+  while (cursor < value.length) {
+    const index = value.indexOf("まま", cursor);
+    if (index < 0) {
+      result += value.slice(cursor);
+      break;
+    }
+    result += value.slice(cursor, index);
+    const before = value.slice(0, index);
+    const after = value.slice(index + 2);
+    const roleBefore = index === 0 || beforeTokens.some((token) => before.endsWith(token));
+    const roleAfter = after.length === 0 || afterTokens.some((token) => after.startsWith(token));
+    if (roleBefore && roleAfter) result += "ママ";
+    cursor = index + 2;
+  }
+  return result;
 }
+
+function roleSafeValue(value: string): string {
+  return normalizeHiraganaMamaRole(value);
+
 
 function hasExplicitFamilyRole(value: string): boolean {
   return /(?:パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)/u.test(roleSafeValue(value));
