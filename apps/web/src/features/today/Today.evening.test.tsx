@@ -42,7 +42,7 @@ vi.mock('../../app/HouseholdContext', () => ({
 vi.mock('./useTodayData', () => ({
   useTodayData: () => ({
     status: 'ready', loading: false, refreshing: false, error: null, lastUpdatedAt: Date.now(),
-    urgentActions: [], exceptions: [],
+    urgentActions: [], urgentTasksById: new Map(), exceptions: [],
     tasks: [unresolvedMorning],
     taskGroups: { morning: [unresolvedMorning], daytime: [], evening: [], optional: [] },
     waitingTasks: [], waitingRefsByTaskId: new Map(), carryoverTasks: [], alreadyHandledTasks: [completedMorning],

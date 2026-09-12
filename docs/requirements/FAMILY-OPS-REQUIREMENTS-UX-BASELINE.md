@@ -223,6 +223,20 @@ claim者が対応不能・連絡不能でも家庭作業を止めないため、
 
 `誰でもOK` をclaimして完了しても担当外サポートには数えない。
 
+## 6.6 role-derived担当のfallback
+
+`pickup_assignee / dropoff_assignee / nonpickup_adult` は、対応する送迎occurrenceが存在し、openかつ担当確定している日はその送迎truthへ追随する。
+
+一方、**その日に送迎自体がない・取消済み・担当未定で、roleを解決できない場合に備えて、ruleは任意の明示fallback担当を持てる**。
+
+- fallbackはユーザーが明示設定した世帯メンバーだけを使い、AIや実装が推測して補完しない。
+- 実送迎担当が解決できる日はfallbackより実送迎truthを優先する。
+- 送迎が取消/未設定へ変化した場合、同日のopenなrule-derived taskをfallbackへ再解決する。fallbackがなければ `担当未定` にする。
+- `fixed`、個別合意済み、明示override、claim/takeover、完了/取消等のprotected occurrenceはsilent overwriteしない。
+- transport occurrenceとrole-derived taskの状態変更順序によって、同じ日・同じstrategyのtaskが「旧担当と未定」で混在してはならない。
+- 真に `担当未定` が残る場合、Today/PWAは理由だけ表示して行き止まりにせず、その場で担当調整へ進める。
+
+
 # 7. お願いと担当調整
 
 ## 7.1 種類を分ける
@@ -1241,8 +1255,9 @@ transport weekly templateについて、現在日または未来の同一 `valid
 - `nonpickup_adult` の候補が一意に決まらない家庭では推測せずfail closed / human clarificationへ送る。
 - 1回限り合意でrecurrence strategyや翌日以降の基本曜日ルールを書き換えない。
 - dependent reassignmentは監査履歴を残す。
+- 送迎occurrenceが取消/未設定になった場合も§6.6に従って同日role-derived taskを再解決し、明示fallbackがあればfallback、なければ担当未定へ収束させる。
 
-「お迎えだけママへ変わったが、夕食/風呂/洗濯等の `pickup_assignee` taskが元担当のまま」は不整合であり、PASSにしない。
+「お迎えだけママへ変わったが、夕食/風呂/洗濯等の `pickup_assignee` taskが元担当のまま」、または「同じ日の同じrole-derived strategyで旧担当と未定が混在」は不整合であり、PASSにしない。
 
 ## 28.7 F2の2者LINE証跡
 
@@ -1339,7 +1354,7 @@ Android PWA + 別LINEアカウントをrecipient実機として使ってよい�
 | Q66 | LINE個別入力は例外だけ答えるのを基本にし、1件ずつmodeも可。 |
 | Q67 | 自分のタスクはLINEに全部書き、順番と強調で読みやすくする。 |
 | Q68 | 相手は要約、家庭運営に重要なものだけ具体表示。 |
-| Q69 | 担当未定で登録可能。期限接近で担当決定を強調。 |
+| Q69 | 担当未定で登録可能。期限接近で担当決定を強調し、Today/PWAからその場で担当調整へ進める。role-derived taskは送迎roleが解決不能な日に明示fallbackを使え、fallbackもなければ担当未定へfail closedする。 |
 | Q70 | 1メッセージの複数意図を分解し、1画面でまとめて確認。 |
 | Q71 | 曖昧な箇所だけ質問。 |
 | Q72 | 家庭用語を学習。ただしルール自動変更はしない。 |
