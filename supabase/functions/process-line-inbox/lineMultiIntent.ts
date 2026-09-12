@@ -554,6 +554,23 @@ function parseModelJson(raw: string): Record<string, unknown> | null {
   }
 }
 
+function isValidSemanticNoActionResult(raw: string, source: string): boolean {
+  const parsed = parseModelJson(raw);
+  if (!parsed || !Array.isArray(parsed.candidates)) return false;
+  const rows = parsed.candidates.slice(0, 8);
+  if (rows.length === 0) return true;
+
+  return rows.every((value) => {
+    if (!value || typeof value !== "object") return false;
+    const row = value as Record<string, unknown>;
+    const kind = String(row.kind ?? "");
+    if (!["task", "request", "shopping", "share", "actual"].includes(kind)) return false;
+    const candidateTitle = typeof row.title === "string" ? title(row.title) : "";
+    const sourceText = typeof row.source_text === "string" ? row.source_text.trim() : "";
+    return Boolean(candidateTitle && sourceText && source.includes(sourceText) && isConversationOnlyCandidateSource(sourceText));
+  });
+}
+
 /** Strict boundary for the whole-utterance AI decomposition contract. */
 export function normalizeSemanticDecomposition(
   raw: string,
@@ -702,6 +719,8 @@ async function geminiSemanticProvider(text: string, now: Date): Promise<string |
  * The one semantic interpretation entry point shared by LINE and PWA.
  * Whole-utterance AI decomposition is normal. Deterministic parsing is only
  * an availability/validation fallback and is never used as a gate before AI.
+ * A valid semantic no-action result is authoritative and must not be turned
+ * back into a mutation by deterministic availability fallback.
  */
 export async function decomposeLineConversationCandidates(
   text: string,
@@ -712,6 +731,7 @@ export async function decomposeLineConversationCandidates(
   if (raw) {
     const candidates = normalizeSemanticDecomposition(raw, text);
     if (candidates.length > 0) return candidates;
+    if (isValidSemanticNoActionResult(raw, text)) return [];
   }
   return deterministicLineConversationCandidates(text, now);
 }
