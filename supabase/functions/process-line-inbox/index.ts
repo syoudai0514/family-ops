@@ -70,6 +70,7 @@ import {
   type RoutineSessionItem,
 } from "./routineItemFlow.ts";
 import {
+  buildAssignmentAcceptanceConfirmFlex,
   buildAssignmentSenderPreviewFlex,
   buildPendingActionPreviewFlex,
   rewritePickupRequest,
@@ -1401,6 +1402,124 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     return;
   }
 
+  if (fields.action === "prompt_accept_assignment_change" && fields.request_id) {
+    if (!fields.attempt_id || !fields.revision || !fields.terms_revision) {
+      await sendConfirmation(client, item, actor, "このボタンは古い内容です。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
+      return;
+    }
+    const expectedRevision = Number(fields.revision);
+    const expectedTermsRevision = Number(fields.terms_revision);
+    const { data: request } = await client.from("requests")
+      .select("id,request_kind,status,shared_title,due_at,assignment_scope,recipient_id,assignment_task_instance_id")
+      .eq("household_id", actor.household_id)
+      .eq("id", fields.request_id)
+      .eq("recipient_id", actor.user_id)
+      .maybeSingle();
+    const { data: attempt } = await client.from("request_attempts")
+      .select("id,state,revision,terms_revision")
+      .eq("household_id", actor.household_id)
+      .eq("request_id", fields.request_id)
+      .eq("id", fields.attempt_id)
+      .maybeSingle();
+    if (!request || request.request_kind !== "assignment_change" || request.status !== "pending"
+      || !attempt || !["pending", "checking"].includes(String(attempt.state))
+      || Number(attempt.revision) !== expectedRevision
+      || Number(attempt.terms_revision) !== expectedTermsRevision) {
+      await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
+      return;
+    }
+
+    let hasDependentChanges = false;
+    if (request.assignment_task_instance_id) {
+      const { data: anchor } = await client.from("task_instances")
+        .select("scheduled_date,task_definition_id")
+        .eq("household_id", actor.household_id)
+        .eq("id", request.assignment_task_instance_id)
+        .maybeSingle();
+      if (anchor?.task_definition_id && anchor.scheduled_date) {
+        const { data: definition } = await client.from("task_definitions")
+          .select("code")
+          .eq("household_id", actor.household_id)
+          .eq("id", anchor.task_definition_id)
+          .maybeSingle();
+        const strategies = definition?.code === "pickup"
+          ? ["pickup_assignee", "nonpickup_adult"]
+          : definition?.code === "dropoff"
+          ? ["dropoff_assignee"]
+          : [];
+        if (strategies.length > 0) {
+          const { data: rules } = await client.from("recurrence_rules")
+            .select("id")
+            .eq("household_id", actor.household_id)
+            .in("assignee_strategy", strategies);
+          const ruleIds = (rules ?? []).map((row) => row.id);
+          if (ruleIds.length > 0) {
+            const { count } = await client.from("task_instances")
+              .select("id", { count: "exact", head: true })
+              .eq("household_id", actor.household_id)
+              .eq("scheduled_date", anchor.scheduled_date)
+              .in("recurrence_rule_id", ruleIds)
+              .in("status", ["todo", "in_progress"]);
+            hasDependentChanges = (count ?? 0) > 0;
+          }
+        }
+      }
+    }
+
+    await replyOrEnqueuePush(client, {
+      replyToken: item.payload.replyToken,
+      lineUserId: item.source_external_user_id,
+      householdId: actor.household_id,
+      recipientUserId: actor.user_id,
+      text: "引き受ける内容を確認してください。",
+      message: buildAssignmentAcceptanceConfirmFlex({
+        requestId: fields.request_id,
+        attemptId: fields.attempt_id,
+        revision: expectedRevision,
+        termsRevision: expectedTermsRevision,
+        title: String(request.shared_title ?? "担当変更"),
+        workDueAt: typeof request.due_at === "string" ? request.due_at : null,
+        scope: request.assignment_scope === "this_week" ? "this_week" : "once",
+        hasDependentChanges,
+      }),
+      dedupKey: `line-assignment-accept-prompt:${item.provider_event_id}`,
+    });
+    return;
+  }
+
+  if (fields.action === "cancel_accept_assignment_change") {
+    await sendConfirmation(client, item, actor, "戻りました。担当は変更していません。", [
+      { type: "message", label: "お願いを確認", text: "お願いの返事", displayText: "お願いの返事" },
+    ]);
+    return;
+  }
+
+  if (fields.action === "consult_assignment_change" && fields.request_id) {
+    if (!fields.attempt_id || !fields.revision || !fields.terms_revision) {
+      await sendConfirmation(client, item, actor, "このボタンは古い内容です。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
+      return;
+    }
+    const operationId = await deterministicOperationId("line-request-transition", item.provider_event_id);
+    const { data, error } = await client.rpc("server_tx_transition_request_v2", requestTransitionArgs(actor.user_id, operationId, {
+      request_id: fields.request_id,
+      attempt_id: fields.attempt_id,
+      action: "consult",
+      expected_revision: Number(fields.revision),
+      expected_terms_revision: Number(fields.terms_revision),
+    }, "line"));
+    if (error) {
+      await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
+      return;
+    }
+    await sendConfirmation(client, item, actor,
+      data?.state === "consulting"
+        ? "相談中にしました。担当はまだ変わっていません。\n条件や懸念は「相談メモ: 18:30なら行けます」のように、このトークへそのまま送れます。"
+        : "お願いの状態を更新しました。最新の内容を確認してください。",
+      [{ type: "message", label: "条件を確認", text: "お願いの返事", displayText: "お願いの返事" }],
+    );
+    return;
+  }
+
   if ((fields.action === "accept_assignment_change" || fields.action === "decline_assignment_change") && fields.request_id) {
     if (!fields.attempt_id || !fields.revision || !fields.terms_revision) {
       await sendConfirmation(client, item, actor, "このボタンは古い内容です。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
@@ -1416,9 +1535,25 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
       return;
     }
+    let acceptedText = "✓ 引き受けました";
+    if (data?.state === "accepted") {
+      const { data: requestSummary } = await client.from("requests")
+        .select("shared_title,due_at,assignment_scope")
+        .eq("household_id", actor.household_id)
+        .eq("id", fields.request_id)
+        .maybeSingle();
+      const dueLabel = requestSummary?.due_at
+        ? new Intl.DateTimeFormat("ja-JP", {
+          timeZone: "Asia/Tokyo", month: "numeric", day: "numeric",
+          hour: "2-digit", minute: "2-digit", hour12: false,
+        }).format(new Date(String(requestSummary.due_at)))
+        : null;
+      const scopeLabel = requestSummary?.assignment_scope === "this_week" ? "今週だけ" : "今回だけ";
+      acceptedText = `✓ 引き受けました\n${dueLabel ? dueLabel + " " : ""}${String(requestSummary?.shared_title ?? "担当変更")}\n${scopeLabel}`;
+    }
     await sendConfirmation(client, item, actor, data?.reproposal_required
       ? "この依頼は期限切れです。新しい担当変更のお願いとして再提案してください。"
-      : data?.state === 'accepted' ? "✓ 担当を引き受けました" : "変更はありません。", menuQuickReplies());
+      : data?.state === "accepted" ? acceptedText : "変更はありません。", menuQuickReplies());
     return;
   }
 
