@@ -27,7 +27,11 @@ Test whether Family Ops understands and safely rewrites realistic Japanese that 
 - mixed request / shopping / task / share / actual;
 - ambiguous in exactly one field;
 - negative / cancellation / no-change;
-- conversational follow-up referring to the immediately previous draft.
+- conversational follow-up referring to the immediately previous draft;
+- direct questions / consultation addressed to おうちノート itself;
+- explicit no-send / no-register meta instructions;
+- mixed AI-conversation + family-action utterances;
+- ambiguous or omitted addressee / recipient.
 
 Do not copy real family LINE messages.
 Use only newly generated synthetic examples that reflect generic linguistic characteristics.
@@ -60,19 +64,37 @@ For intent/decomposition, grade:
 
 ## 3. Corpus strategy
 
-Expand beyond the completed 180-case live corpus.
+Do **not** choose a fixed corpus size in advance.
 
-Recommended next corpus:
-- 150 hostile / sarcastic / guilt / blame rewrites
-- 100 colloquial short forms / omissions / hiragana / speech-input noise
-- 100 long multi-intent / punctuation-free / topic-jump inputs
-- 75 correction / follow-up / previous-context inputs
-- 50 negation / cancellation / read-only boundary inputs
-- 25 rare fact-integrity traps
+First inventory:
+- the completed 180-case live corpus at the level that CURRENT evidence can actually reproduce;
+- the zero-live robustness layer;
+- related CURRENT regression tests;
+- Physical F2 overlap.
 
-Target: roughly 500 synthetic cases.
+Then classify every material semantic area as `STRONG / ADEQUATE / THIN / MISSING` and add cases only for THIN/MISSING gaps.
 
-Run deterministic/injected-provider layers first, then live Gemini only for the cases that actually test model quality.
+The 2026-09-12 fresh inventory is recorded in:
+- `AI-NL-COVERAGE-MATRIX-2026-09-12.md`
+- `AI-NL-GAP-TEST-PLAN-2026-09-12.md`
+
+That inventory found the broad rewrite/fact layers already strong enough that hundreds of additional random cases would be low-value. The highest-value gaps are:
+- AI itself vs family-member addressee;
+- explicit no-send/no-register meta intent;
+- mixed AI-conversation + family action;
+- omitted/ambiguous recipient;
+- multi-turn correction/cancellation;
+- broken/speech Japanese around those boundaries.
+
+Current coverage-derived plan:
+- development: 44 unique scenarios;
+- held-out: 12 unique scenarios;
+- total additional: 56 unique scenarios;
+- planned first-pass live Gemini subset: <=42 calls.
+
+Minimal pairs and fact guards are cross-cutting tags and must not be double-counted as extra semantic cases.
+
+Run deterministic/injected-provider layers first, then live Gemini only where actual model meaning-understanding is the property under test.
 
 ## 4. Gemini project budget
 

@@ -5,6 +5,10 @@ import {
   type LineIntent,
   type LineIntentKind,
 } from "./lineIntent.ts";
+import {
+  isConversationOnlyCandidateSource,
+  normalizeHiraganaMamaRole,
+} from "./lineConversation.ts";
 
 export type ConciergeDuplicateMatch = {
   entityKind: "task" | "shopping" | "request";
@@ -97,20 +101,21 @@ function explicitDate(clause: string, now: Date): string {
 }
 
 function explicitRole(clause: string): "papa" | "mama" | null {
-  const roleToken = "(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)";
-  const directCorrection = clause.match(
+  const roleSource = normalizeHiraganaMamaRole(clause);
+  const roleToken = "(?:パパ|ぱぱ|父|お父さん|ママ|まま|母|お母さん|嫁さん|奥さん|妻)";
+  const directCorrection = roleSource.match(
     new RegExp(`${roleToken}\\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\\s*(${roleToken})`, "u"),
   );
   const colloquialCorrections = [
-    ...clause.matchAll(
+    ...roleSource.matchAll(
       new RegExp(`(?:いや(?:違う)?|やっぱ(?:り)?|訂正(?:して)?)[、,\\s]*(?:相手(?:は)?[、,\\s]*)?(${roleToken})`, "gu"),
     ),
   ];
   const corrected = colloquialCorrections.at(-1)?.[1] ?? directCorrection?.[1] ?? null;
-  const tokens = [...clause.matchAll(new RegExp(roleToken, "gu"))].map((match) => match[0]);
+  const tokens = [...roleSource.matchAll(new RegExp(roleToken, "gu"))].map((match) => match[0]);
   const token = corrected ?? tokens.at(-1) ?? null;
   if (!token) return null;
-  return /^(?:パパ|父|お父さん)$/u.test(token) ? "papa" : "mama";
+  return /^(?:パパ|ぱぱ|父|お父さん)$/u.test(token) ? "papa" : "mama";
 }
 
 function hasExplicitClock(text: string): boolean {
@@ -550,6 +555,23 @@ function parseModelJson(raw: string): Record<string, unknown> | null {
   }
 }
 
+function isValidSemanticNoActionResult(raw: string, source: string): boolean {
+  const parsed = parseModelJson(raw);
+  if (!parsed || !Array.isArray(parsed.candidates)) return false;
+  const rows = parsed.candidates.slice(0, 8);
+  if (rows.length === 0) return true;
+
+  return rows.every((value) => {
+    if (!value || typeof value !== "object") return false;
+    const row = value as Record<string, unknown>;
+    const kind = String(row.kind ?? "");
+    if (!["task", "request", "shopping", "share", "actual"].includes(kind)) return false;
+    const candidateTitle = typeof row.title === "string" ? title(row.title) : "";
+    const sourceText = typeof row.source_text === "string" ? row.source_text.trim() : "";
+    return Boolean(candidateTitle && sourceText && source.includes(sourceText) && isConversationOnlyCandidateSource(sourceText));
+  });
+}
+
 /** Strict boundary for the whole-utterance AI decomposition contract. */
 export function normalizeSemanticDecomposition(
   raw: string,
@@ -566,6 +588,12 @@ export function normalizeSemanticDecomposition(
     let candidateTitle = typeof row.title === "string" ? title(row.title) : "";
     const sourceText = typeof row.source_text === "string" ? row.source_text.trim() : "";
     if (!candidateTitle || !sourceText || !source.includes(sourceText)) return [];
+
+    // Model output is advisory, not authority. Even if Gemini labels a span as
+    // task/request/share, a source span that is clearly addressed to the
+    // assistant, explicitly says not to send/register, or has an unsafe
+    // generic addressee must never become a business-action candidate.
+    if (isConversationOnlyCandidateSource(sourceText)) continue;
 
     if (kind === "shopping" && /(?:買った|購入した|注文した)(?:よ|済み)?$/u.test(sourceText)) {
       kind = "actual";
@@ -642,6 +670,11 @@ async function geminiSemanticProvider(text: string, now: Date): Promise<string |
     "家庭内オペレーションの自然文を、意味上独立した候補へAI-firstで分解してください。",
     `今日(Asia/Tokyo)は ${today} です。`,
     "最優先: 入力にない担当・時刻・日付・理由・作業を作らない。",
+    "ユーザーがAI/おうちノート自身へ質問・相談・評価・文章作成相談をしている部分は、task/request/shopping/share/actual候補にしない。",
+    "『送らないで』『送らず』『登録せず』『相談だけ』『文章だけ考えて』などのmeta指示はmutation禁止。入力全体がその相談だけなら candidates=[] を返す。",
+    "『妻にどう言えば角立たない？』『迎えお願いできると思う？』はAIへの相談でありrequestではない。一方『妻に迎えお願いして』『迎えお願いできる？』は明確な家族向けactionなら候補化してよい。",
+    "AIへの相談と家族向けactionが同じ入力にある場合、相談部分を候補へ巻き込まず、明示された家族向けactionのsource_textだけ候補化する。条件付きの『よさそうならお願いしたい』はまだactionにしない。",
+    "相手/主語が『これ』『それ』『そっち』等だけで危険に曖昧な場合はrecipientを推測せず、そのspanは候補化しない。",
     "句読点の有無、読点だけ、助詞抜け、口語、音声入力風、話題飛びでも意味で分ける。",
     "句読点が全く無くても動詞・対象・担当の切れ目から独立用件を分ける。",
     "例: 『明日ママ迎えお願い牛乳買ってゴミ出しもやる』 -> request『迎え』 + shopping『牛乳』 + task『ゴミ出し』の3候補。",
@@ -687,6 +720,8 @@ async function geminiSemanticProvider(text: string, now: Date): Promise<string |
  * The one semantic interpretation entry point shared by LINE and PWA.
  * Whole-utterance AI decomposition is normal. Deterministic parsing is only
  * an availability/validation fallback and is never used as a gate before AI.
+ * A valid semantic no-action result is authoritative and must not be turned
+ * back into a mutation by deterministic availability fallback.
  */
 export async function decomposeLineConversationCandidates(
   text: string,
@@ -697,6 +732,7 @@ export async function decomposeLineConversationCandidates(
   if (raw) {
     const candidates = normalizeSemanticDecomposition(raw, text);
     if (candidates.length > 0) return candidates;
+    if (isValidSemanticNoActionResult(raw, text)) return [];
   }
   return deterministicLineConversationCandidates(text, now);
 }

@@ -88,12 +88,21 @@ import {
   type LineCreationKind,
   isAssistantAddressCorrection,
   isLineCorrectionCue,
+  lineConversationalReplacementTitle,
   lineCreationStarterKind,
   lineLinkWelcomeText,
+  lineNonMutationDisposition,
+  linePendingFollowUpKind,
   menuQuickReplies,
+  normalizeHiraganaMamaRole,
   pendingConfirmationMessage,
   readOnlyLineIntent,
+  transportAssignmentCorrectionCode,
 } from "./lineConversation.ts";
+import {
+  ambiguousAddresseeReply,
+  buildAssistantConversationReply,
+} from "./lineAssistantConversation.ts";
 import {
   tryHandleLineMustCompletePostback,
   tryHandleLineMustCompleteText,
@@ -489,13 +498,12 @@ function pendingTitle(pending: EditablePendingAction): string {
 }
 
 function isPendingReferentQuestion(text: string): boolean {
-  return /^(?:なにを[？?]?|何を[？?]?|何を受け付けたの[？?]?|さっきの何[？?]?|それ[？?]?)$/
-    .test(text.normalize("NFKC").replace(/\s+/g, "").trim());
+  return linePendingFollowUpKind(text) === "referent_question";
 }
 
 function isPendingCorrection(text: string): boolean {
-  return /(?:だった|じゃなくて|ではなくて|に変更|にして|だけやめて|取り消|キャンセル)/.test(text) ||
-    isAssistantAddressCorrection(text);
+  const kind = linePendingFollowUpKind(text);
+  return kind === "assistant_repair" || kind === "cancel" || kind === "edit";
 }
 
 function pendingStateLabel(status: string): string {
@@ -586,7 +594,7 @@ async function tryHandlePendingReferent(
     const candidates = Array.isArray(pending.normalized_payload.candidates)
       ? pending.normalized_payload.candidates.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft")
       : [];
-    if (/だけやめて|取り消|キャンセル/.test(text)) {
+    if (linePendingFollowUpKind(text) === "cancel") {
       const matched = candidates.filter((candidate) => {
         const title = typeof candidate.title === "string" ? candidate.title : "";
         return title.length > 0 && text.includes(title);
@@ -606,7 +614,7 @@ async function tryHandlePendingReferent(
     return true;
   }
 
-  if (/だけやめて|取り消|キャンセル/.test(text)) {
+  if (linePendingFollowUpKind(text) === "cancel") {
     const { error } = await client.rpc("server_tx_cancel_pending_action", {
       p_actor_id: actor.user_id,
       p_pending_action_id: pending.id,
@@ -620,9 +628,95 @@ async function tryHandlePendingReferent(
 
   const role = correctionRole(text);
   const date = correctionDate(text);
-  if (!role && !date) return false;
+  const time = correctionTime(text);
+  const replacementTitle = lineConversationalReplacementTitle(text);
+  if (!role && !date && time === undefined && !replacementTitle) return false;
+
+  if (pending.action_type === "assignment_change_request") {
+    const payload: Record<string, unknown> = { ...pending.normalized_payload, line_edit_mode: false };
+    if (time !== undefined) {
+      await sendConfirmation(client, item, actor, "担当変更の時刻は元の予定に連動しています。時刻だけは変更せず、元の下書きを残しました。");
+      return true;
+    }
+
+    if (role) {
+      const recipient = role === "self" ? actor.user_id : await householdUserForRole(client, actor.household_id, role);
+      if (!recipient) {
+        await sendConfirmation(client, item, actor, "お願いする家族が見つかりません。元の下書きは変更していません。");
+        return true;
+      }
+      if (recipient === actor.user_id) {
+        const { error } = await client.rpc("server_tx_cancel_pending_action", {
+          p_actor_id: actor.user_id,
+          p_pending_action_id: pending.id,
+        });
+        if (error) return false;
+        await sendConfirmation(client, item, actor, "担当を自分のままにする内容なので、この担当変更のお願いは取り消しました。");
+        return true;
+      }
+      payload.recipient_user_id = recipient;
+      payload.target_label = role === "papa" ? "パパ" : "ママ";
+    }
+
+    if (replacementTitle || date) {
+      const code = replacementTitle ? transportAssignmentCorrectionCode(replacementTitle) : null;
+      if (replacementTitle && !code) {
+        await sendConfirmation(client, item, actor, "担当変更の対象を特定できませんでした。「送り」か「お迎え」のように対象だけ教えてください。元の下書きは変更していません。");
+        return true;
+      }
+      let definitionId: string | null = null;
+      if (code) {
+        const { data } = await client.from("task_definitions").select("id").eq("household_id", actor.household_id).eq("code", code).maybeSingle();
+        definitionId = typeof data?.id === "string" ? data.id : null;
+      } else if (typeof payload.task_id === "string") {
+        const { data } = await client.from("task_instances").select("task_definition_id").eq("household_id", actor.household_id).eq("id", payload.task_id).maybeSingle();
+        definitionId = typeof data?.task_definition_id === "string" ? data.task_definition_id : null;
+      }
+      const targetDate = date ?? (typeof payload.scheduled_date === "string" ? payload.scheduled_date : null);
+      if (!definitionId || !targetDate) {
+        await sendConfirmation(client, item, actor, "変更後の担当予定を特定できませんでした。元の下書きは変更していません。");
+        return true;
+      }
+      const { data: targetTask } = await client.from("task_instances")
+        .select("id,title,due_at,scheduled_date")
+        .eq("household_id", actor.household_id)
+        .eq("task_definition_id", definitionId)
+        .eq("scheduled_date", targetDate)
+        .eq("planned_assignee_id", actor.user_id)
+        .in("status", ["todo", "in_progress"])
+        .maybeSingle();
+      if (!targetTask) {
+        await sendConfirmation(client, item, actor, "その日・内容に一致する変更可能な担当予定が見つかりません。元の下書きは変更していません。");
+        return true;
+      }
+      const oldTitle = typeof payload.title === "string" ? payload.title : "";
+      payload.task_id = targetTask.id;
+      payload.title = targetTask.title;
+      payload.due_at = targetTask.due_at;
+      payload.scheduled_date = targetTask.scheduled_date;
+      if (typeof payload.shared_message === "string" && oldTitle) {
+        payload.shared_message = payload.shared_message.replaceAll(oldTitle, String(targetTask.title));
+      }
+    }
+
+    const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload);
+    if (!updated) return false;
+    await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
+    return true;
+  }
+
   const payload: Record<string, unknown> = { ...pending.normalized_payload, line_edit_mode: false };
   if (date) payload.scheduled_date = date;
+  if (time !== undefined) {
+    payload.due_local_time = time;
+    payload.daypart = time === null ? null : (payload.daypart ?? null);
+  }
+  if (replacementTitle) {
+    payload.title = replacementTitle;
+    if (pending.action_type === "request_create") {
+      payload.shared_message = `${replacementTitle}をお願いできますか？`;
+    }
+  }
   if (role) {
     const assignee = role === "self" ? actor.user_id : await householdUserForRole(client, actor.household_id, role);
     if (!assignee) {
@@ -885,13 +979,17 @@ async function resolveMultiIntentDuplicate(
 }
 
 function correctionRole(text: string): "papa" | "mama" | "self" | null {
-  const contrast = text.match(
-    /(?:パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
+  const value = normalizeHiraganaMamaRole(text);
+  const contrast = value.match(
+    /(?:自分|パパ|ぱぱ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(自分|パパ|ぱぱ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
   );
-  if (contrast) return /^(?:パパ|父|お父さん)$/.test(contrast[1]) ? "papa" : "mama";
-  if (/(?:自分|自分に|自分へ)/.test(text)) return "self";
-  if (/(?:パパ|父|お父さん)/.test(text)) return "papa";
-  if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return "mama";
+  if (contrast) {
+    if (contrast[1] === "自分") return "self";
+    return /^(?:パパ|ぱぱ|父|お父さん)$/.test(contrast[1]) ? "papa" : "mama";
+  }
+  if (/(?:自分|自分に|自分へ)/.test(value)) return "self";
+  if (/(?:パパ|ぱぱ|父|お父さん)/.test(value)) return "papa";
+  if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(value)) return "mama";
   return null;
 }
 
@@ -1735,10 +1833,30 @@ async function handleText(
   if (await tryHandlePendingReferent(client, item, actor, text)) return;
   if (await tryApplyLineTextEdit(client, item, actor, text)) return;
 
+  const nonMutationDisposition = lineNonMutationDisposition(text);
+  if (nonMutationDisposition) {
+    const reply = nonMutationDisposition === "ambiguous"
+      ? ambiguousAddresseeReply()
+      : await buildAssistantConversationReply(text);
+    await sendConfirmation(client, item, actor, reply);
+    return;
+  }
+
   const starterKind = lineCreationStarterKind(text);
   const semanticCandidates = starterKind
     ? []
     : await buildMultiIntentPendingCandidates(client, item, actor, text);
+
+  // A zero-candidate semantic result must not silently become a generic
+  // mutation draft. High-confidence pickup handoff remains an explicit
+  // deterministic action boundary; everything else fails closed to the
+  // assistant conversation path. This also makes provider-unavailable /
+  // unrecognized free text safe instead of inventing a mutation kind.
+  if (!starterKind && semanticCandidates.length === 0 && !isPickupAssignmentChangeText(text)) {
+    await sendConfirmation(client, item, actor, await buildAssistantConversationReply(text));
+    return;
+  }
+
   const semanticCandidate = semanticCandidates.length === 1 ? semanticCandidates[0] : null;
   const needsCandidateReview = semanticCandidates.length > 1 || semanticCandidates.some((candidate) =>
     candidate.missing_fields.length > 0 || Boolean(candidate.duplicate_match)
@@ -1845,7 +1963,7 @@ async function processItem(client: SupabaseClient, item: WebhookInboxItem): Prom
 }
 
 Deno.serve(
-  withServiceHandler(async (req: Request) => {
+  withServiceHandler(async (req) => {
     requireWorkerToken(req);
     const client = createServiceRoleClient();
     const { data: batchData, error: claimError } = await client.rpc("server_tx_claim_webhook_inbox_batch", {
