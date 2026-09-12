@@ -36,6 +36,7 @@ type RequestView = {
   request_kind: string;
   shared_title: string;
   due_at: string | null;
+  assignment_scope: string | null;
   requester_actor_ref_id: string;
   recipient_actor_ref_id: string;
   revision: number;
@@ -431,7 +432,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
   const selfActorRef = await actorRefId(ctx);
   if (!selfActorRef) return [];
   const { data: requestData, error: requestError } = await ctx.client.from("requests")
-    .select("id,request_kind,shared_title,due_at,requester_actor_ref_id,recipient_actor_ref_id,revision,created_at")
+    .select("id,request_kind,shared_title,due_at,assignment_scope,requester_actor_ref_id,recipient_actor_ref_id,revision,created_at")
     .eq("household_id", ctx.householdId)
     .or(`requester_actor_ref_id.eq.${selfActorRef},recipient_actor_ref_id.eq.${selfActorRef}`)
     .order("created_at", { ascending: false })
@@ -480,6 +481,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
         request_kind: str(row.request_kind) ?? "light",
         shared_title: str(row.shared_title) ?? "お願い",
         due_at: str(row.due_at),
+        assignment_scope: str(row.assignment_scope),
         requester_actor_ref_id: requester,
         recipient_actor_ref_id: recipient,
         revision: num(row.revision) ?? 1,
@@ -514,15 +516,59 @@ async function openRequests(ctx: LineMustCompleteContext): Promise<void> {
   if (attempt.state === "expired") {
     if (party === "requester") quick.push(postback("再提案する", encodeFields("mc_request_repropose", { request_id: request.id, request_revision: request.revision })));
   } else if (party === "recipient" && ["pending", "checking"].includes(attempt.state)) {
-    quick.push(postback("やる", requestActionData(view, "accept")));
-    quick.push(postback("難しい", requestActionData(view, "decline")));
-    if (attempt.state === "pending") quick.push(postback("確認中", requestActionData(view, "checking")));
-    quick.push(postback("相談する", requestActionData(view, "consult")));
+    if (request.request_kind === "assignment_change") {
+      quick.push(postback("引き受ける", encodeFields("mc_request_prompt_accept", {
+        request_id: request.id,
+        attempt_id: attempt.id,
+        revision: attempt.revision,
+        terms_revision: attempt.terms_revision,
+      })));
+      quick.push(postback("難しい", requestActionData(view, "decline")));
+      quick.push(postback("相談する", requestActionData(view, "consult")));
+    } else {
+      quick.push(postback("やる", requestActionData(view, "accept")));
+      quick.push(postback("難しい", requestActionData(view, "decline")));
+      if (attempt.state === "pending") quick.push(postback("確認中", requestActionData(view, "checking")));
+      quick.push(postback("相談する", requestActionData(view, "consult")));
+    }
   } else if (["consulting", "awaiting_confirmation"].includes(attempt.state)) {
     quick.push(postback("この条件で確認", requestActionData(view, "confirm_terms")));
     quick.push(message("作業期限を変更", "条件期限 2026-09-11 18:30"));
   }
   await ctx.reply(`${summary}\n\n相談メモだけでは担当・作業期限は変わりません。変更する場合は、保存された具体的な条件を二人が同じ版で確認します。`, quick);
+}
+
+async function promptAssignmentRequestAccept(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
+  const requestId = fields.request_id;
+  const attemptId = fields.attempt_id;
+  const revision = Number(fields.revision);
+  const termsRevision = Number(fields.terms_revision);
+  if (!requestId || !attemptId || !Number.isFinite(revision) || !Number.isFinite(termsRevision)) return;
+  const view = (await activeRequests(ctx, true)).find((candidate) =>
+    candidate.party === "recipient"
+    && candidate.request.id === requestId
+    && candidate.request.request_kind === "assignment_change"
+    && candidate.attempt.id === attemptId
+    && candidate.attempt.revision === revision
+    && candidate.attempt.terms_revision === termsRevision
+    && ["pending", "checking"].includes(candidate.attempt.state)
+  );
+  if (!view) {
+    await ctx.reply("内容が更新されています。お願いの返事から最新の内容を確認してください。", [message("お願いを確認", "お願いの返事")]);
+    return;
+  }
+  const scopeLabel = view.request.assignment_scope === "this_week" ? "今週だけ" : "今回だけ";
+  const summary = [
+    "この担当変更を引き受けますか？",
+    `${formatJst(view.request.due_at)} ${view.request.shared_title}`,
+    scopeLabel,
+    "確定すると、この担当があなたに変わります。",
+    "送り/お迎えに連動する当日の家事がある場合は、同日のルールどおり担当も切り替わります。",
+  ].join("\n");
+  await ctx.reply(summary, [
+    postback("引き受ける", requestActionData(view, "accept")),
+    message("戻る", "お願いの返事"),
+  ]);
 }
 
 async function transitionRequest(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
@@ -1020,6 +1066,10 @@ export async function tryHandleLineMustCompletePostback(
   }
   if (action === "mc_shopping") {
     await mutateShopping(ctx, fields);
+    return true;
+  }
+  if (action === "mc_request_prompt_accept") {
+    await promptAssignmentRequestAccept(ctx, fields);
     return true;
   }
   if (action === "mc_request") {
