@@ -41,3 +41,20 @@ Deno.test("ambiguous addressee asks only the missing boundary and confirms no mu
   assertStringIncludes(reply, "まだ送らず");
   assertStringIncludes(reply, "通知・登録もしていません");
 });
+
+
+Deno.test("independent review: provider cannot falsely claim a mutation happened", async () => {
+  const reply = await buildAssistantConversationReply(
+    "妻にどう言えば角立たない？",
+    () => Promise.resolve(JSON.stringify({ reply: "ママに送信しました。" })),
+  );
+  assertStringIncludes(reply, "相手には送らず");
+});
+
+Deno.test("independent review: non-mutating provider advice remains accepted", async () => {
+  const reply = await buildAssistantConversationReply(
+    "妻にどう言えば角立たない？",
+    () => Promise.resolve(JSON.stringify({ reply: "理由を短く添えてお願いすると伝わりやすいです。" })),
+  );
+  assertEquals(reply, "理由を短く添えてお願いすると伝わりやすいです。");
+});
