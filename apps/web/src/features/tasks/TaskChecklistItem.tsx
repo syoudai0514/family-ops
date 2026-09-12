@@ -376,7 +376,7 @@ export function TaskChecklistItem({
             {completed && (
               <button type="button" onClick={() => setEditingEvidence(true)} disabled={busy}>証跡を追加（任意）</button>
             )}
-            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy || completed || !canExecute}>
+            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy || completed}>
               キャンセル
             </button>
           </div>
