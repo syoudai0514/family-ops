@@ -89,6 +89,20 @@ If a future technical change genuinely requires different product behavior, the 
 
 ### 4.2 2026-09-11 physical F2 approved clarifications
 
+### 4.3 2026-09-12 assignment acceptance UX refinement
+
+Physical two-account F2 exposed a material family-use ambiguity in the assignment-change acceptance flow. The Product Owner approved the following refinement:
+
+- assignment-change recipient first tier is `引き受ける / 難しい / 相談する`;
+- `引き受ける` is not an immediate mutation: one final confirmation shows target/date/time/scope and material same-day role-derived impact before acceptance;
+- `相談する` remains LINE-completable and does not change assignment by itself;
+- recipient acceptance result repeats the concrete request context;
+- requester acceptance notification identifies the concrete request with date/time/scope and recipient so multiple simultaneous requests are distinguishable.
+
+This is integrated into the canonical Baseline §7.2/§28.4, design 04 and design 10. It supersedes the older assignment-change use of generic `やる / 難しい / その他の返答` while preserving that wording for ordinary light requests.
+
+
+
 During physical F2 with an iPhone requester, an Android recipient, separate real LINE accounts, and production PWA/Supabase boundaries, the Product Owner explicitly approved the clarifications now recorded in Baseline §28.
 
 These are canonical product decisions, not local implementation exceptions:
