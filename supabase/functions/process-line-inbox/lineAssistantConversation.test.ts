@@ -8,7 +8,7 @@ import {
 Deno.test("assistant conversation returns provider advice without performing a family action", async () => {
   const reply = await buildAssistantConversationReply(
     "妻にどう言えば角立たない？",
-    async () => JSON.stringify({ reply: "責めずに、状況とお願いを短く伝えるのがよさそうです。" }),
+    () => Promise.resolve(JSON.stringify({ reply: "責めずに、状況とお願いを短く伝えるのがよさそうです。" })),
   );
   assertEquals(reply, "責めずに、状況とお願いを短く伝えるのがよさそうです。");
 });
@@ -16,7 +16,7 @@ Deno.test("assistant conversation returns provider advice without performing a f
 Deno.test("assistant conversation invalid provider output fails safely to a non-mutating fallback", async () => {
   const reply = await buildAssistantConversationReply(
     "これはまだ送らないで",
-    async () => "not-json",
+    () => Promise.resolve("not-json"),
   );
   assertStringIncludes(reply, "送信や登録はしません");
 });
