@@ -126,10 +126,13 @@ the PR branch before release:
    fail-closed.
 
 2. **HIGH — hiragana `まま` could invent Mama as recipient inside ordinary
-   Japanese words.** Role recovery now masks lexical uses such as
-   `わがまま`, `気まま`, `ありのまま`, `思うまま`,
-   `なるがまま`, and `ままなら...` before family-role matching.
-   Genuine speech input such as `ままにむかえおねがい` remains supported.
+   Japanese words.** Role recovery now treats hiragana `まま` as Mama only
+   when it appears in a family-role syntactic position (for example before
+   `に/へ` or an explicit household action, with a valid role boundary).
+   Other lexical occurrences are removed from role analysis rather than
+   maintained through an ever-growing word deny-list. Counterexamples include
+   `わがまま`, `気まま`, `このまま`, and `ままごと`; genuine speech
+   input such as `ままにむかえおねがい` remains supported.
 
 3. **HIGH — assignment-change conversational edits could make the preview
    disagree with the canonical task.** Generic pending-edit logic could change
@@ -161,8 +164,11 @@ its previously fresh result remains 12/12 and the new findings are captured in
 diagnostic/permanent regression tests instead of contaminating held-out
 evidence.
 
-Independent-review implementation convergence head before this documentation
-update: `d93ea6155dbe2058e66af772763daacb74168a35`.
+Independent-review implementation convergence continued after the original
+`d93ea6155dbe2058e66af772763daacb74168a35` checkpoint to replace the
+initial lexical `まま` mask with the contextual role boundary described
+above. The final release decision must use the latest PR exact HEAD and its
+fresh CI, not this historical checkpoint.
 
 Additional live Gemini calls during independent review: **0**. The same
 isolation rationale in §6 still applies; no production Edge Function or paid
