@@ -146,10 +146,9 @@ function hasClearlyScopedNoMutationAndIndependentFamilyAction(text: string): boo
 
 export function lineNonMutationDisposition(text: string): LineNonMutationDisposition | null {
   const wholeValue = semanticNormalized(text);
-  if (
-    hasHardNoMutationCue(wholeValue) &&
-    !hasClearlyScopedNoMutationAndIndependentFamilyAction(text)
-  ) return "assistant_conversation";
+  const scopedMixedFamilyAction = hasClearlyScopedNoMutationAndIndependentFamilyAction(text);
+  if (hasHardNoMutationCue(wholeValue) && !scopedMixedFamilyAction) return "assistant_conversation";
+  if (scopedMixedFamilyAction) return null;
   const dispositions = semanticClauses(text).map(clauseDisposition);
   if (dispositions.includes("explicit_family_action")) return null;
   const whole = clauseDisposition(text);
