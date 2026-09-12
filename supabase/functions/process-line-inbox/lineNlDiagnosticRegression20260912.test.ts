@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   isConversationOnlyCandidateSource,
+  lineConversationalReplacementTitle,
   lineNonMutationDisposition,
   linePendingFollowUpKind,
   normalizeHiraganaMamaRole,
@@ -242,4 +243,12 @@ Deno.test("independent review: scoped no-send survives conjunction before separa
     lineNonMutationDisposition("この文はまだ送らないけれどママにゴミ出しお願い"),
     null,
   );
+});
+
+
+Deno.test("independent review: role corrections are not reinterpreted as title replacements", () => {
+  assertEquals(lineConversationalReplacementTitle("違う、ママ"), null);
+  assertEquals(lineConversationalReplacementTitle("違う、自分じゃなくてママ"), null);
+  assertEquals(lineConversationalReplacementTitle("違う、ママじゃなくて自分"), null);
+  assertEquals(lineConversationalReplacementTitle("違う、送り"), "送り");
 });
