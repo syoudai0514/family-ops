@@ -590,7 +590,7 @@ async function tryHandlePendingReferent(
     const candidates = Array.isArray(pending.normalized_payload.candidates)
       ? pending.normalized_payload.candidates.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft")
       : [];
-    if (/だけやめて|取り消|キャンセル/.test(text)) {
+    if (linePendingFollowUpKind(text) === "cancel") {
       const matched = candidates.filter((candidate) => {
         const title = typeof candidate.title === "string" ? candidate.title : "";
         return title.length > 0 && text.includes(title);
@@ -610,7 +610,7 @@ async function tryHandlePendingReferent(
     return true;
   }
 
-  if (/だけやめて|取り消|キャンセル/.test(text)) {
+  if (linePendingFollowUpKind(text) === "cancel") {
     const { error } = await client.rpc("server_tx_cancel_pending_action", {
       p_actor_id: actor.user_id,
       p_pending_action_id: pending.id,
@@ -624,9 +624,21 @@ async function tryHandlePendingReferent(
 
   const role = correctionRole(text);
   const date = correctionDate(text);
-  if (!role && !date) return false;
+  const time = correctionTime(text);
+  const replacementTitle = conversationalCorrectionTitle(text);
+  if (!role && !date && time === undefined && !replacementTitle) return false;
   const payload: Record<string, unknown> = { ...pending.normalized_payload, line_edit_mode: false };
   if (date) payload.scheduled_date = date;
+  if (time !== undefined) {
+    payload.due_local_time = time;
+    payload.daypart = time === null ? null : (payload.daypart ?? null);
+  }
+  if (replacementTitle) {
+    payload.title = replacementTitle;
+    if (pending.action_type === "request_create") {
+      payload.shared_message = `${replacementTitle}をお願いできますか？`;
+    }
+  }
   if (role) {
     const assignee = role === "self" ? actor.user_id : await householdUserForRole(client, actor.household_id, role);
     if (!assignee) {
@@ -926,6 +938,18 @@ function correctionTitle(text: string): string | null {
   if (!match) return null;
   const title = match[1].replace(/\s+/g, " ").trim();
   return title.length > 0 && title.length <= 80 ? title : null;
+}
+
+function conversationalCorrectionTitle(text: string): string | null {
+  if (isAssistantAddressCorrection(text)) return null;
+  const match = text.trim().match(
+    /^(?:違う違う|ちがうちがう|違うよ|ちがうよ|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて)[、,\s]*(.{1,40}?)[。！!？?]?$/u,
+  );
+  if (!match) return null;
+  const replacement = match[1].replace(/\s+/g, " ").trim();
+  if (!replacement || /^(?:今日|明日|明後日|朝|昼|夕方|夜|\d{1,2}時)/u.test(replacement)) return null;
+  if (/^(?:パパ|ぱぱ|ママ|まま|父|母|お父さん|お母さん|妻)$/u.test(replacement)) return null;
+  return replacement;
 }
 
 async function updateEditablePending(
