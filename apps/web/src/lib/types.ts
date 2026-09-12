@@ -87,6 +87,9 @@ export interface TaskInstance {
   task_kind?: TaskKind;
   planned_assignee_id: string | null;
   assignment_mode?: TaskAssignmentMode | null;
+  active_claimant_actor_ref_id?: string | null;
+  active_claimant_user_id?: string | null;
+  claimed_at?: string | null;
   completion_mode: CompletionMode;
   status: TaskInstanceStatus;
   actual_completed_by_id: string | null;
