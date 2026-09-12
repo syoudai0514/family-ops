@@ -1489,7 +1489,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
 
   if (fields.action === "cancel_accept_assignment_change") {
     await sendConfirmation(client, item, actor, "戻りました。担当は変更していません。", [
-      { type: "message", label: "お願いを確認", text: "お願いの返事", displayText: "お願いの返事" },
+      { type: "message", label: "お願いを確認", text: "お願いの返事" },
     ]);
     return;
   }
@@ -1515,7 +1515,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       data?.state === "consulting"
         ? "相談中にしました。担当はまだ変わっていません。\n条件や懸念は「相談メモ: 18:30なら行けます」のように、このトークへそのまま送れます。"
         : "お願いの状態を更新しました。最新の内容を確認してください。",
-      [{ type: "message", label: "条件を確認", text: "お願いの返事", displayText: "お願いの返事" }],
+      [{ type: "message", label: "条件を確認", text: "お願いの返事" }],
     );
     return;
   }
