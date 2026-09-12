@@ -319,7 +319,10 @@ begin
       p_household_id,v_dep.id,null,v_audit_actor_ref,null,
       'edited',
       jsonb_build_object(
-        'reason','transport_role_weekend_anyone_reconcile',
+        'reason',case when v_desired_mode='anyone'
+          then 'transport_role_weekend_anyone_reconcile'
+          else 'transport_role_fallback_reconcile'
+        end,
         'anchor_task_id',p_anchor_task_id,
         'transport_leg',p_leg,
         'assignee_strategy',v_dep.assignee_strategy,
