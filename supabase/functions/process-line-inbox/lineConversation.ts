@@ -35,12 +35,12 @@ function hasExplicitFamilyRole(value: string): boolean {
 }
 
 function hasConversationAdviceCue(value: string): boolean {
-  return /(?:どう思う|どうおもう|どうするのが(?:いい|良い|よい)(?:と思う|とおもう)?|どう(?:言|い)えば|なんて(?:言|い)えば|どう頼めば|どうたのめば|どう伝える|どうつたえる|どんな言い方|どんないいかた|お願いできる(?:と)?思う|お願いできる(?:と)?おもう|おねがいできる(?:と)?おもう|頼むなら.*(?:言い方|いいかた)|たのむなら.*(?:言い方|いいかた))/u
+  return /(?:どう思う|どうおもう|どうするのが(?:いい|良い|よい)(?:と思う|とおもう)?|どう(?:言|い)えば|なんて(?:言|い)えば|どう頼めば|どうたのめば|どう頼む|どうたのむ|どう伝える|どうつたえる|どんな言い方|どんないいかた|どういう言い方|どういういいかた|お願いできる(?:と)?思う|お願いできる(?:と)?おもう|おねがいできる(?:と)?おもう|お願いできそう(?:かな|か)?|おねがいできそう(?:かな|か)?|お願いできるかな|おねがいできるかな|頼めそう(?:かな|か)?|たのめそう(?:かな|か)?|頼むなら.*(?:言い方|いいかた)|たのむなら.*(?:言い方|いいかた))/u
     .test(value);
 }
 
 function hasHardNoMutationCue(value: string): boolean {
-  return /(?:まだ)?(?:送らないで|おくらないで|送らず|おくらず|送らない|おくらない)|(?:登録せず|登録しない|登録なし|とうろくせず|とうろくしない|とうろくなし)|(?:相談だけ|そうだんだけ)|(?:文章だけ考えて|ぶんしょうだけかんがえて)|(?:送る|おくる)か(?:は)?あとで(?:決める|きめる)|(?:送って|おくって|登録して|とうろくして)(?:じゃなくて|ではなくて)(?:相談|そうだん|質問|しつもん)/u
+  return /(?:まだ)?(?:送らないで|おくらないで|送らず|おくらず|送らない|おくらない)|(?:送る|おくる)(?:の|のは|のも)?まだ|(?:登録せず|登録しない|登録なし|とうろくせず|とうろくしない|とうろくなし)|(?:相談だけ|そうだんだけ)|(?:文章だけ考えて|ぶんしょうだけかんがえて)|(?:送る|おくる)か(?:は)?あとで(?:決める|きめる)|(?:送って|おくって|登録して|とうろくして)(?:じゃなくて|ではなくて)(?:相談|そうだん|質問|しつもん)/u
     .test(value);
 }
 
@@ -48,7 +48,22 @@ function hasAssistantAddressCue(value: string): boolean {
   return /(?:^|[、,])(?:あなた|おうちノート|AI|エーアイ|そっち)(?:に|へ)?(?:相談|そうだん|聞|き|言|い)/u
     .test(value) ||
     /(?:妻|ママ|まま|パパ|ぱぱ)(?:じゃなくて|ではなくて)(?:AI|エーアイ|あなた|おうちノート)(?:に|へ)?(?:聞|き|相談|そうだん)/u
-      .test(roleSafeValue(value));
+      .test(roleSafeValue(value)) ||
+    /(?:お願い|おねがい|依頼|いらい|送る|おくる|登録|とうろく)(?:じゃない|ではない|じゃなくて|ではなくて)[、,]?(?:あなた|AI|エーアイ|おうちノート)(?:に|へ)?(?:相談|そうだん|聞|き)/u
+      .test(value);
+}
+
+function hasDraftReviewCue(value: string): boolean {
+  return /^(?:この|その|あの)?(?:文章|文面|メッセージ)(?:を)?(?:見て|みて|直して|なおして|整えて|ととのえて|チェックして)$/u
+    .test(value) ||
+    /(?:言い方|いいかた)(?:だけ)?(?:整えて|ととのえて|考えて|かんがえて)$/u.test(value);
+}
+
+function stripLeadingCorrectionCue(value: string): string {
+  return value.replace(
+    /^(?:違う違う|ちがうちがう|違うよ|ちがうよ|違う|ちがう|いやいや|いや|そうじゃなくて|そうではなくて|そうじゃない|そうじゃないよ)[、,]?/u,
+    "",
+  );
 }
 
 function hasExplicitFamilyActionCue(value: string): boolean {
@@ -75,7 +90,12 @@ function clauseDisposition(text: string): ClauseDisposition {
   const value = semanticNormalized(text);
   if (!value) return null;
 
-  if (hasHardNoMutationCue(value) || hasConversationAdviceCue(value) || hasAssistantAddressCue(value)) {
+  if (
+    hasHardNoMutationCue(value) ||
+    hasConversationAdviceCue(value) ||
+    hasAssistantAddressCue(value) ||
+    hasDraftReviewCue(value)
+  ) {
     return "assistant_conversation";
   }
 
@@ -119,6 +139,13 @@ export function lineNonMutationDisposition(text: string): LineNonMutationDisposi
   // Mixed input must continue into semantic decomposition so explicit family
   // actions survive; conversation-only source spans are filtered separately.
   if (dispositions.includes("explicit_family_action")) return null;
+
+  // Advice often spans a comma boundary ("頼むなら、どういう言い方がいい？").
+  // Evaluate the whole utterance only after proving no clause is an explicit
+  // family action so a mixed "相談 + 実action" message is not swallowed.
+  const whole = clauseDisposition(text);
+  if (whole === "assistant_conversation") return "assistant_conversation";
+
   if (dispositions.includes("assistant_conversation")) return "assistant_conversation";
   if (dispositions.includes("ambiguous")) return "ambiguous";
   return null;
@@ -172,18 +199,28 @@ export function lineConversationalReplacementTitle(text: string): string | null 
 
 export function isAssistantAddressCorrection(text: string): boolean {
   const value = semanticNormalized(text);
-  if (
-    /^(?:(?:あなた|おうちノート|AI|そっち)(?:に|へ)?)(?:聞いてる|聞いている|聞いてんの|きいてる|言ってる|言っている|言ってんの)(?:んだけど|んだよ|んだけどね|よ)?$/u
-      .test(value)
-  ) return true;
+  const repaired = stripLeadingCorrectionCue(value);
+  const candidates = repaired === value ? [value] : [value, repaired];
 
-  if (
-    /^(?:妻|ママ|まま|パパ|ぱぱ)(?:じゃなくて|ではなくて)(?:AI|あなた|おうちノート)(?:に|へ)?(?:聞いてる|聞いている|きいてる|相談|そうだん)(?:んだけど|んだよ|よ)?$/u
-      .test(roleSafeValue(value))
-  ) return true;
+  return candidates.some((candidate) => {
+    if (
+      /^(?:(?:あなた|おうちノート|AI|そっち)(?:に|へ)?)(?:聞いてる|聞いている|聞いてんの|きいてる|相談|そうだん|言ってる|言っている|言ってんの)(?:んだけど|んだよ|んだけどね|よ)?$/u
+        .test(candidate)
+    ) return true;
 
-  return /^(?:送って|おくって|登録して|とうろくして)(?:じゃなくて|ではなくて)(?:相談|そうだん|質問|しつもん)$/u
-    .test(value);
+    if (
+      /^(?:妻|ママ|まま|パパ|ぱぱ)(?:じゃなくて|ではなくて)(?:AI|あなた|おうちノート)(?:に|へ)?(?:聞いてる|聞いている|きいてる|相談|そうだん)(?:んだけど|んだよ|よ)?$/u
+        .test(roleSafeValue(candidate))
+    ) return true;
+
+    if (
+      /^(?:お願い|おねがい|依頼|いらい|送って|おくって|送る|おくる|登録して|とうろくして|登録|とうろく)(?:じゃない|ではない|じゃなくて|ではなくて)[、,]?(?:あなた|AI|おうちノート)(?:に|へ)?(?:相談|そうだん|質問|しつもん|聞いてる|きいてる)?$/u
+        .test(candidate)
+    ) return true;
+
+    return /^(?:送って|おくって|登録して|とうろくして)(?:じゃなくて|ではなくて)(?:相談|そうだん|質問|しつもん)$/u
+      .test(candidate);
+  });
 }
 
 function normalizedScheduleInquiry(text: string): string {
