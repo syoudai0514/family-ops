@@ -144,6 +144,17 @@ Detailed realization is maintained in:
 - `docs/implementation/AI-NL-GAP-TEST-PLAN-2026-09-12.md`;
 - `docs/implementation/AI-NL-QUALITY-RESULTS-2026-09-12.md`.
 
+## 4.4 2026-09-12 transport-role fallback / Today resolution refinement
+
+Physical Android PWA F2 exposed that a role-derived routine could remain `担当未定` when the corresponding same-day transport leg was absent/cancelled, and Today rendered that state without a usable resolution path. Product Owner approved remediation:
+
+- role-derived recurrence rules may carry an explicit fallback assignee;
+- live transport truth wins when available; explicit fallback is used only when that role cannot resolve;
+- transport cancellation/unassignment re-reconciles open unprotected same-day dependents so stale assigned/unassigned mixtures do not remain;
+- no fallback means fail-closed `担当未定`, but Today/PWA must provide a direct assignment-resolution action.
+
+This is canonicalized in Baseline §§6.6/28.6 and design 04. It does not authorize inferring a fallback person without explicit evidence/configuration.
+
 ## 5. Material UX clause → Q mapping
 
 The pinned final audit proves literal 114/114 mapping of Q1-Q112 plus Q60-1/Q60-2 against the fresh-read Baseline version/blob recorded by that audit. The current Baseline may later add cross-cutting governance/acceptance requirements such as §2.1; those are tracked explicitly rather than retroactively pretending the old rendered artifact audited text that did not yet exist.
@@ -157,7 +168,7 @@ The table below is the **main-governance material-clause index** so an implement
 | Parent task/subtask progress; no generic partial-complete button; bulk scope excludes `余力があれば` | Q54, Q59-Q61, Q60-1/Q60-2; Baseline §§9.3, 10 |
 | Immediate actual + evening reconciliation; `全部/大体/個別`; unknown child semantics; correction/undo; original target date | Q5-Q7, Q29, Q31, Q59-Q66; Baseline §§10-11 |
 | Back/deep-link/return-state semantics and no full reload/scroll-to-top after one item update | Q78-Q79 plus Baseline UX principle 8, §15 and §23 concurrency expectations |
-| Task optional date/time fields, waiting, carryover, reschedule, early work, validity-period rules and protected future occurrences | Q12-Q15, Q21-Q22, Q31, Q50-Q57; Baseline §§6, 9 |
+| Task optional date/time fields, waiting, carryover, reschedule, early work, validity-period rules, role-derived fallback/unresolved assignment resolution and protected future occurrences | Q12-Q15, Q21-Q22, Q31, Q50-Q57, Q69; Baseline §§6, 9 |
 | Request / assignment lifecycle; first response tier; checking vs consulting; expiry/reproposal; request-vs-linked-ToDo truth; external agreement correction; separate reply/work deadlines | Q2, Q9, Q30, Q36, Q41-Q47, Q69, Q83-Q85; Baseline §7 |
 | Share/handover scope, validity, acknowledgement, notification and correction history | Q3, Q16, Q37-Q40, Q48-Q49; Baseline §8 |
 | Shopping action-level actual and formal `誰でもOK` claim/release/takeover | Q33, Q107-Q109; Baseline §§6.5, 12 |
