@@ -90,6 +90,7 @@ import {
   lineCreationStarterKind,
   lineLinkWelcomeText,
   lineNonMutationDisposition,
+  linePendingFollowUpKind,
   menuQuickReplies,
   pendingConfirmationMessage,
   readOnlyLineIntent,
@@ -493,13 +494,12 @@ function pendingTitle(pending: EditablePendingAction): string {
 }
 
 function isPendingReferentQuestion(text: string): boolean {
-  return /^(?:なにを[？?]?|何を[？?]?|何を受け付けたの[？?]?|さっきの何[？?]?|それ[？?]?)$/
-    .test(text.normalize("NFKC").replace(/\s+/g, "").trim());
+  return linePendingFollowUpKind(text) === "referent_question";
 }
 
 function isPendingCorrection(text: string): boolean {
-  return /(?:だった|じゃなくて|ではなくて|に変更|にして|だけやめて|取り消|キャンセル)/.test(text) ||
-    isAssistantAddressCorrection(text);
+  const kind = linePendingFollowUpKind(text);
+  return kind === "assistant_repair" || kind === "cancel" || kind === "edit";
 }
 
 function pendingStateLabel(status: string): string {
