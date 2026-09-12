@@ -2,6 +2,12 @@ import { callGemini } from "../_shared/gemini.ts";
 
 export type AssistantConversationProvider = (text: string) => Promise<string | null>;
 
+function claimsMutationWasPerformed(reply: string): boolean {
+  const value = reply.normalize("NFKC").replace(/\s+/g, "");
+  return /(?:送信|通知|登録|依頼|共有)(?:しました|したよ|済みです|完了しました|しておきました)|(?:送って|送り|お願いして|頼んで)(?:おきました|おいたよ)|(?:家族|相手|パートナー|ママ|パパ)(?:に|へ)?.{0,20}(?:送った|通知した|登録した|依頼した)/u
+    .test(value);
+}
+
 function parseReply(raw: string): string | null {
   try {
     const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? raw;
@@ -10,7 +16,8 @@ function parseReply(raw: string): string | null {
     const reply = (parsed as Record<string, unknown>).reply;
     if (typeof reply !== "string") return null;
     const cleaned = reply.replace(/\s+/g, " ").trim();
-    return cleaned.length > 0 ? cleaned.slice(0, 600) : null;
+    if (!cleaned || claimsMutationWasPerformed(cleaned)) return null;
+    return cleaned.slice(0, 600);
   } catch {
     return null;
   }
