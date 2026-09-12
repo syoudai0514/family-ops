@@ -109,13 +109,17 @@ begin
     raise exception 'FAIL transport fallback: no-fallback task did not fail closed';
   end if;
   if not exists(
-    select 1 from public.task_events
-    where task_instance_id=laundry_task
-      and event_type='edited'
-      and payload->>'reason'='transport_role_fallback_reconcile'
-      and payload->>'fallback_assignee_user_id'=u2::text
+    select 1
+    from public.task_events e
+    join public.domain_actor_refs ar
+      on ar.household_id=e.household_id and ar.id=e.actor_ref_id
+    where e.task_instance_id=laundry_task
+      and e.event_type='edited'
+      and e.payload->>'reason'='transport_role_fallback_reconcile'
+      and e.payload->>'fallback_assignee_user_id'=u2::text
+      and ar.actor_kind='system'
   ) then
-    raise exception 'FAIL transport fallback: audit missing';
+    raise exception 'FAIL transport fallback: system-attributed audit missing';
   end if;
 
   -- Restoring a previously unresolved leg re-resolves both tasks to live truth.
