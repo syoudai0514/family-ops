@@ -105,3 +105,65 @@ Google Gemini project quota rules are project-scoped; the lane preserved the req
 ## 8. Remaining release action
 
 PR #99 is ready for independent review / release decision. Main and production remain untouched by this lane. If a safe isolated Gemini canary is later available, run only the semantic-risk subset (AI consultation vs family action, mixed spans, ambiguity, broken speech) rather than replaying a fixed arbitrary case count.
+
+
+## 9. Independent final review closeout
+
+Independent review started from the previously reviewed PR head
+`fcac0942b5b0b12e462b459d3b756de5ef788e3c` and fresh-read CURRENT
+Requirements/design/source instead of relying on the lane self-review.
+
+The review found four material safety/consistency defects and corrected them on
+the PR branch before release:
+
+1. **HIGH — scoped no-send could swallow an independent family action.**
+   A whole-utterance hard no-mutation short-circuit could turn
+   `この文はまだ送らない、牛乳はパパに買ってもらって` into conversation-only,
+   even though the no-send scope applies to the first clause and the second
+   clause is an explicit family action. The boundary now bypasses the global
+   short-circuit only when no-mutation is clearly referent-scoped or an
+   explicit separate-item boundary exists; unscoped `まだ送らない` remains
+   fail-closed.
+
+2. **HIGH — hiragana `まま` could invent Mama as recipient inside ordinary
+   Japanese words.** Role recovery now masks lexical uses such as
+   `わがまま`, `気まま`, `ありのまま`, `思うまま`,
+   `なるがまま`, and `ままなら...` before family-role matching.
+   Genuine speech input such as `ままにむかえおねがい` remains supported.
+
+3. **HIGH — assignment-change conversational edits could make the preview
+   disagree with the canonical task.** Generic pending-edit logic could change
+   visible title/date while leaving `task_id` on the old pickup occurrence,
+   so confirmation could execute a different assignment change than the user
+   saw. Assignment-change kind/date edits now retarget an actual open canonical
+   pickup/dropoff occurrence for that household/date; recipient corrections
+   update the recipient safely; self-recipient correction cancels the now
+   unnecessary assignment request. Unsupported time-only retargeting leaves
+   the original draft unchanged and tells the user why.
+
+4. **MEDIUM/HIGH — assistant conversation could falsely claim a mutation was
+   performed.** Gemini was prompted not to claim `送信した/登録した`, but the
+   response parser did not enforce it. Provider replies that claim an
+   unperformed send/notification/registration/request are now rejected and the
+   deterministic non-mutating fallback is used.
+
+Permanent independent-review regressions were added for:
+
+- scoped no-send + separate explicit family action;
+- unscoped no-send remaining non-mutating;
+- lexical `まま` false-role prevention and genuine hiragana Mama recovery;
+- false assistant mutation-claim rejection;
+- canonical pickup/dropoff correction-label mapping.
+
+The sealed final held-out file
+`lineNlFinalHeldOut20260912.test.ts` was **not modified** during this review;
+its previously fresh result remains 12/12 and the new findings are captured in
+diagnostic/permanent regression tests instead of contaminating held-out
+evidence.
+
+Independent-review implementation convergence head before this documentation
+update: `d93ea6155dbe2058e66af772763daacb74168a35`.
+
+Additional live Gemini calls during independent review: **0**. The same
+isolation rationale in §6 still applies; no production Edge Function or paid
+Supabase branch was created merely to manufacture new live evidence.
