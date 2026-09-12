@@ -596,15 +596,52 @@ A successful link-token claim replies on LINE immediately with:
 
 Silent success is not acceptable.
 
-### 26.2 Conversational read-only before mutation
+### 26.2 Conversational / addressee safety before mutation
 
-Natural-language routing checks ordinary schedule/state questions and correction cues before mutation classification.
+Natural-language routing resolves the **addressee and mutation authority** before creating a business-action draft. This applies to first-turn conversation as well as correction of an existing draft.
 
-Examples that must remain read-only:
+The routing boundary has three outcomes:
+
+1. **assistant conversation / read-only**
+   - schedule/state questions;
+   - advice or evaluation addressed to おうちノート itself;
+   - wording consultation such as `妻にどう言えば角立たない？`;
+   - explicit meta such as `まだ送らないで`, `登録せず相談だけ`, `文章だけ考えて`.
+   These must not create a Task/Request/Shopping/Share/Actual candidate merely because the utterance contains a family role or an action verb.
+
+2. **explicit family action**
+   - language such as `ママにゴミ出しお願い` or `妻に今日のお迎えお願いしたい` continues to the normal candidate / confirmation path.
+   - protecting assistant conversation must not turn clear family actions into conversation-only messages.
+
+3. **unsafe ambiguity**
+   - contextless inputs such as `これお願いできる？` or `今日どうする？` must not invent a recipient or default the partner into a Request.
+   - ask only the missing boundary, and explicitly keep notification / mutation off until it is resolved.
+
+For a mixed utterance, e.g. `これどう思う？それとは別にパパにゴミ出しお願い`, conversation-only source spans are discarded from business candidates while the explicit family-action span is retained. Conditional language such as `よさそうならママにお願いしたい` remains conversation until the user actually authorizes the action.
+
+The implementation therefore keeps two independent guards:
+
+- a high-confidence deterministic pre-mutation guard for explicit conversation/meta/ambiguity;
+- a source-span semantic validation guard after AI decomposition so a model cannot make conversation-only text authoritative merely by labelling it `request` or `task`.
+
+The AI semantic prompt assists this classification but is **not** the safety authority. Model output remains advisory and must satisfy the deterministic/source-span boundary before a candidate can become pending business action.
+
+Examples that must remain conversation/read-only:
 
 - `今日なんか予定あったっけ？`
 - `ちがうよ、今日の予定教えて`
-- `あなたに言っているよ` when it clearly repairs a prior misinterpretation.
+- `これどう思う？`
+- `妻にどう言えば角立たない？`
+- `迎えお願いできると思う？`
+- `これはまだ送らないで`
+- `相手には送らず文章だけ考えて`
+- `あなたに言っているよ` when it repairs a prior misinterpretation.
+
+Examples that must remain valid family actions:
+
+- `ママにゴミ出しお願い`
+- `妻に今日のお迎えお願いしたい`
+- `いや、あなたじゃなくて妻にお願いしたい` when this is a deliberate reverse correction.
 
 A natural schedule question uses two LINE message objects in one Reply API call when the reply token is available:
 
@@ -613,7 +650,14 @@ A natural schedule question uses two LINE message objects in one Reply API call 
 
 Literal shortcuts such as `今日` stay compact and do not need the conversational lead.
 
-If an explicit correction supersedes an erroneous draft, the stale draft is cancelled through the canonical pending-action path before the read-only answer is returned.
+When a draft is already pending:
+
+- `妻じゃなくてAIに聞いてる` / `送ってじゃなくて相談` safely cancel the superseded draft before returning to assistant conversation;
+- reverse correction may deliberately enter the family-action path;
+- 2–4 turn edits such as kind/title → role → time continue to update the same draft rather than creating duplicate mutations;
+- `やっぱさっきのなし` cancels that current draft, including after prior edits.
+
+No stale/superseded pending action may remain executable after an assistant-directed repair or cancellation.
 
 ### 26.3 Request notification must be actionable
 
