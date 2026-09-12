@@ -436,7 +436,7 @@ export function buildAssignmentRequestFlex(
         },
         {
           type: "text",
-          text: "「やる」を押すまで、予定の担当は変わりません。",
+          text: "「引き受ける」を押すと最終確認が開きます。確定するまで予定の担当は変わりません。",
           size: "xxs",
           wrap: true,
           color: "#777777",
@@ -444,15 +444,100 @@ export function buildAssignmentRequestFlex(
       ]),
       footer: compactActionFooter([
         {
-          label: "やる",
-          data: `action=accept_assignment_change&request_id=${data.requestId}&attempt_id=${data.attemptId ?? ""}&revision=${data.revision ?? ""}&terms_revision=${data.termsRevision ?? ""}`,
+          label: "引き受ける",
+          data: `action=prompt_accept_assignment_change&request_id=${data.requestId}&attempt_id=${data.attemptId ?? ""}&revision=${data.revision ?? ""}&terms_revision=${data.termsRevision ?? ""}`,
           primary: true,
         },
         {
           label: "難しい",
           data: `action=decline_assignment_change&request_id=${data.requestId}&attempt_id=${data.attemptId ?? ""}&revision=${data.revision ?? ""}&terms_revision=${data.termsRevision ?? ""}`,
         },
-        ...(data.otherResponseUrl ? [{ label: "その他の返答", uri: data.otherResponseUrl, type: "uri" as const }] : []),
+        {
+          label: "相談する",
+          data: `action=consult_assignment_change&request_id=${data.requestId}&attempt_id=${data.attemptId ?? ""}&revision=${data.revision ?? ""}&terms_revision=${data.termsRevision ?? ""}`,
+        },
+      ]),
+    },
+  };
+}
+
+export function buildAssignmentAcceptanceConfirmFlex(data: {
+  requestId: string;
+  attemptId: string;
+  revision: number;
+  termsRevision: number;
+  title: string;
+  workDueAt?: string | null;
+  scope: "once" | "this_week";
+  hasDependentChanges?: boolean;
+}): Record<string, unknown> {
+  const scopeLabel = data.scope === "this_week" ? "今週だけ" : "今回だけ";
+  const workScheduleLabel = formatJstMinute(data.workDueAt);
+  return {
+    type: "flex",
+    altText: `担当変更の最終確認: ${data.title}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: compactBody([
+        {
+          type: "text",
+          text: "引き受ける内容の確認",
+          weight: "bold",
+          size: "sm",
+          color: "#166B5D",
+        },
+        {
+          type: "text",
+          text: data.title,
+          weight: "bold",
+          size: "lg",
+          wrap: true,
+        },
+        ...(workScheduleLabel
+          ? [{
+            type: "text",
+            text: `対象日時: ${workScheduleLabel}`,
+            size: "sm",
+            weight: "bold",
+            color: "#202124",
+            wrap: true,
+          }]
+          : []),
+        {
+          type: "text",
+          text: scopeLabel,
+          size: "sm",
+          color: "#555555",
+          wrap: true,
+        },
+        {
+          type: "text",
+          text: "確定すると、この担当があなたに変わります。",
+          size: "xs",
+          color: "#555555",
+          wrap: true,
+        },
+        ...(data.hasDependentChanges
+          ? [{
+            type: "text",
+            text: "この送迎に連動する当日の家事も担当が切り替わります。",
+            size: "xs",
+            color: "#555555",
+            wrap: true,
+          }]
+          : []),
+      ]),
+      footer: compactActionFooter([
+        {
+          label: "引き受ける",
+          data: `action=accept_assignment_change&request_id=${data.requestId}&attempt_id=${data.attemptId}&revision=${data.revision}&terms_revision=${data.termsRevision}`,
+          primary: true,
+        },
+        {
+          label: "戻る",
+          data: `action=cancel_accept_assignment_change&request_id=${data.requestId}`,
+        },
       ]),
     },
   };
