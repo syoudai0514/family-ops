@@ -433,7 +433,7 @@ async function openAnyoneTasks(ctx: LineMustCompleteContext): Promise<void> {
     .from("task_instances")
     .select("id,title,revision,active_claimant_actor_ref_id")
     .eq("household_id", ctx.householdId)
-    .eq("test_context_id", null)
+    .is("test_context_id", null)
     .eq("scheduled_date", today)
     .eq("assignment_mode", "anyone")
     .in("status", ["todo", "in_progress"])
