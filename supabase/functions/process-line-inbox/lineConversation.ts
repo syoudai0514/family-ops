@@ -128,7 +128,20 @@ function hasClearlyScopedNoMutationAndIndependentFamilyAction(text: string): boo
     hasExplicitFamilyActionCue(semanticNormalized(clause))
   );
   const hasExplicitBoundary = /(?:それとは別に|これは別で|別件(?:で|だけど)?|別の(?:件|話)(?:で|だけど)?)/u.test(text);
-  return hasIndependentFamilyAction && (hasScopedNoMutation || hasExplicitBoundary);
+  if (hasIndependentFamilyAction && (hasScopedNoMutation || hasExplicitBoundary)) return true;
+
+  const whole = semanticNormalized(text);
+  const scopedWhole = /^(?:これ|それ|この(?:文|文章|文面|メッセージ)|その(?:文|文章|文面|メッセージ))/u.test(whole) &&
+    hasHardNoMutationCue(whole);
+  if (!scopedWhole) return false;
+
+  for (const separator of ["それとは別に", "別件だけど", "別件で", "けれど", "けど"]) {
+    const index = text.lastIndexOf(separator);
+    if (index < 0) continue;
+    const tail = semanticNormalized(text.slice(index + separator.length));
+    if (tail && hasExplicitFamilyActionCue(tail)) return true;
+  }
+  return false;
 }
 
 export function lineNonMutationDisposition(text: string): LineNonMutationDisposition | null {
