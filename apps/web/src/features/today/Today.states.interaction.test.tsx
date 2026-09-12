@@ -34,6 +34,7 @@ function todayData(overrides: Partial<TodayData> = {}): TodayData {
     error: null,
     lastUpdatedAt: Date.now(),
     urgentActions: [],
+    urgentTasksById: new Map(),
     exceptions: [],
     tasks: [],
     taskGroups: { morning: [], daytime: [], evening: [], optional: [] },
