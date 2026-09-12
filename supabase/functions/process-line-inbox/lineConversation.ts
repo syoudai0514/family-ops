@@ -24,7 +24,13 @@ function semanticNormalized(text: string): string {
 }
 
 function roleSafeValue(value: string): string {
-  return value.replace(/(?:この|その|あの)まま/gu, "");
+  // Hiragana "まま" is accepted as Mama for speech-input recovery, but it
+  // also appears inside ordinary Japanese words. Remove common lexical uses
+  // before role matching so "わがまま" etc. cannot invent a family recipient.
+  return value.replace(
+    /(?:この|その|あの|ありの)まま|わがまま|気まま|思うまま|なるがまま|ままなら/gu,
+    "",
+  );
 }
 
 function hasExplicitFamilyRole(value: string): boolean {
@@ -77,7 +83,7 @@ function clauseDisposition(text: string): ClauseDisposition {
   if (hasHardNoMutationCue(value) || hasConversationAdviceCue(value) || hasAssistantAddressCue(value) || hasDraftReviewCue(value)) return "assistant_conversation";
   if (/(?:もし)?(?:大丈夫|大丈夫そう|問題なさそう|よさそう|良さそう|できそう|可能そう)なら.*(?:お願い|おねがい|頼|たの)/u.test(value)) return "assistant_conversation";
   if (hasExplicitFamilyActionCue(value)) return "explicit_family_action";
-  if (/^(?:これ|それ|そっち|こっち)(?:って)?(?:お願いできる|おねがいできる|頼める|たのめる|いける|任せていい|まかせていい|どう|どうする)$/u.test(value) || /^(?:今日|きょう)どうする$/u.test(value)) return "ambiguous";
+  if (/(?:これ|それ|そっち|こっち)(?:って)?(?:お願いできる|おねがいできる|頼める|たのめる|いける|任せていい|まかせていい|どう|どうする)$/u.test(value) || /^(?:今日|きょう)どうする$/u.test(value)) return "ambiguous";
   if (/^(?:これ|それ|そっち|こっち).*(?:どう思う|どうおもう|どう)$/u.test(value) || /^(?:この|その|あの)?文章(?:どう|どう思う|どうおもう)$/u.test(value)) return "assistant_conversation";
   return null;
 }
@@ -87,9 +93,26 @@ function semanticClauses(text: string): string[] {
   return clauses.length > 0 ? clauses : [text.trim()];
 }
 
+function hasClearlyScopedNoMutationAndIndependentFamilyAction(text: string): boolean {
+  const clauses = semanticClauses(text);
+  const hasScopedNoMutation = clauses.some((clause) => {
+    const value = semanticNormalized(clause);
+    return hasHardNoMutationCue(value) &&
+      /^(?:これ|それ|この(?:文|文章|文面|メッセージ)|その(?:文|文章|文面|メッセージ))/u.test(value);
+  });
+  const hasIndependentFamilyAction = clauses.some((clause) =>
+    hasExplicitFamilyActionCue(semanticNormalized(clause))
+  );
+  const hasExplicitBoundary = /(?:それとは別に|これは別で|別件(?:で|だけど)?|別の(?:件|話)(?:で|だけど)?)/u.test(text);
+  return hasIndependentFamilyAction && (hasScopedNoMutation || hasExplicitBoundary);
+}
+
 export function lineNonMutationDisposition(text: string): LineNonMutationDisposition | null {
   const wholeValue = semanticNormalized(text);
-  if (hasHardNoMutationCue(wholeValue)) return "assistant_conversation";
+  if (
+    hasHardNoMutationCue(wholeValue) &&
+    !hasClearlyScopedNoMutationAndIndependentFamilyAction(text)
+  ) return "assistant_conversation";
   const dispositions = semanticClauses(text).map(clauseDisposition);
   if (dispositions.includes("explicit_family_action")) return null;
   const whole = clauseDisposition(text);
