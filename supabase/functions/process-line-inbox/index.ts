@@ -93,6 +93,7 @@ import {
   lineNonMutationDisposition,
   linePendingFollowUpKind,
   menuQuickReplies,
+  normalizeHiraganaMamaRole,
   pendingConfirmationMessage,
   readOnlyLineIntent,
   transportAssignmentCorrectionCode,
@@ -977,16 +978,17 @@ async function resolveMultiIntentDuplicate(
 }
 
 function correctionRole(text: string): "papa" | "mama" | "self" | null {
-  const contrast = text.match(
-    /(?:自分|パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(自分|パパ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
+  const value = normalizeHiraganaMamaRole(text);
+  const contrast = value.match(
+    /(?:自分|パパ|ぱぱ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)\s*(?:じゃなくて|ではなくて|ではなく|じゃなく|の代わりに)\s*(自分|パパ|ぱぱ|父|お父さん|ママ|母|お母さん|嫁さん|奥さん|妻)/,
   );
   if (contrast) {
     if (contrast[1] === "自分") return "self";
-    return /^(?:パパ|父|お父さん)$/.test(contrast[1]) ? "papa" : "mama";
+    return /^(?:パパ|ぱぱ|父|お父さん)$/.test(contrast[1]) ? "papa" : "mama";
   }
-  if (/(?:自分|自分に|自分へ)/.test(text)) return "self";
-  if (/(?:パパ|父|お父さん)/.test(text)) return "papa";
-  if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(text)) return "mama";
+  if (/(?:自分|自分に|自分へ)/.test(value)) return "self";
+  if (/(?:パパ|ぱぱ|父|お父さん)/.test(value)) return "papa";
+  if (/(?:ママ|母|お母さん|嫁さん|奥さん|妻)/.test(value)) return "mama";
   return null;
 }
 
