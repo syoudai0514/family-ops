@@ -104,3 +104,33 @@ Deno.test("v3 diagnostic review discourse markers: leading filler does not turn 
 Deno.test("v3 diagnostic review discourse counterexample: explicit family action remains action", () => {
   assertEquals(isConversationOnlyCandidateSource("まずママに洗濯お願いして"), false);
 });
+
+Deno.test("fresh diagnostic polite-effect advice: indirect tone/effect questions remain conversation", () => {
+  assertEquals(lineNonMutationDisposition("夫に頼む文章、どんな感じなら角が立たないと思う？"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("妻への文面、角立たない言い方にするならどう思う？"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("ママに今すぐ迎えお願いして"), null);
+});
+
+Deno.test("fresh diagnostic pre-send review: asking the assistant to inspect copy remains conversation", () => {
+  assertEquals(lineNonMutationDisposition("家族に送る前に文面見てもらえる？"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("パートナーに送る前にこの文章見てもらえる？"), "assistant_conversation");
+  assertEquals(lineNonMutationDisposition("家族にこの文章送って"), null);
+});
+
+Deno.test("fresh diagnostic generic recipient with discourse particle remains ambiguous", () => {
+  assertEquals(lineNonMutationDisposition("これって頼める？"), "ambiguous");
+  assertEquals(lineNonMutationDisposition("それってお願いできる？"), "ambiguous");
+  assertEquals(lineNonMutationDisposition("これってママに頼める？"), null);
+});
+
+Deno.test("fresh diagnostic opinion repair: explicit assistant opinion supersedes pending family action", () => {
+  assertEquals(linePendingFollowUpKind("依頼じゃなくて、あなたの意見が聞きたい"), "assistant_repair");
+  assertEquals(linePendingFollowUpKind("お願いじゃなくて、AIの意見が聞きたい"), "assistant_repair");
+  assertEquals(linePendingFollowUpKind("AIじゃなくてママにお願いしたい"), "edit");
+});
+
+Deno.test("fresh diagnostic colloquial cancel: current pending request can be withdrawn naturally", () => {
+  assertEquals(linePendingFollowUpKind("やっぱ今のなしで"), "cancel");
+  assertEquals(linePendingFollowUpKind("やっぱり今のお願いなし"), "cancel");
+  assertEquals(linePendingFollowUpKind("時間だけ8時にして"), "edit");
+});
