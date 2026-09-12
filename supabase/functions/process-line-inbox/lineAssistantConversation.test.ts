@@ -58,3 +58,14 @@ Deno.test("independent review: non-mutating provider advice remains accepted", a
   );
   assertEquals(reply, "理由を短く添えてお願いすると伝わりやすいです。");
 });
+
+
+Deno.test("independent review: broader false send-completion wording is rejected", async () => {
+  for (const providerReply of ["送ったよ。", "パパに送りました。", "お願いしました。"]) {
+    const reply = await buildAssistantConversationReply(
+      "妻にどう言えば角立たない？",
+      () => Promise.resolve(JSON.stringify({ reply: providerReply })),
+    );
+    assertStringIncludes(reply, "相手には送らず");
+  }
+});
