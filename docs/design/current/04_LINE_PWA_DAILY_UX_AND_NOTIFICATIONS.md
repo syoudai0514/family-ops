@@ -392,7 +392,7 @@ When Saturday/Sunday has no live pickup/dropoff assignee, recurring work that no
 This includes routine household work and continuing child-care routines such as Shino medication / medication-bowel records when those rules are role-derived.
 
 - live transport, when present, still wins;
-- unclaimed `誰でもOK` is visible to both adults;
+- `誰でもOK` stays visible to both adults; unclaimed shows `誰でもOK`, claimed shows the current `パパ対応中 / ママ対応中` state;
 - it is excluded from `担当未定 / まず確認`;
 - execution requires `自分がやる` claim first;
 - claimant can release; the other adult can explicitly take over;
