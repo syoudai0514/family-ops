@@ -490,9 +490,10 @@ revoke all on function public.server_tx_task_anyone_claim_v1(uuid,uuid,uuid,text
 grant execute on function public.server_tx_task_anyone_claim_v1(uuid,uuid,uuid,text,bigint,text)
   to service_role;
 
--- Final DailyBrief projection: unclaimed anyone tasks are shared work visible to
--- both adults, not assignment_needed. Claimed anyone work appears only to the
--- claimant through the existing base-reader claimant predicate.
+-- Final DailyBrief projection: anyone tasks remain visible to both adults.
+-- The claimant's own item is already supplied by the base reader; this wrapper
+-- appends unclaimed items and items claimed by the other adult. Anyone is never
+-- assignment_needed.
 create or replace function public.server_read_daily_brief(
   p_actor_id uuid,
   p_local_date date default null
@@ -503,6 +504,7 @@ set search_path=''
 as $weekend_brief$
 declare
   v_household_id uuid;
+  v_actor_ref_id uuid;
   v_date date:=coalesce(p_local_date,(now() at time zone 'Asia/Tokyo')::date);
   v_brief jsonb;
   v_anyone jsonb:='[]'::jsonb;
@@ -514,6 +516,12 @@ begin
   from public.household_members hm
   where hm.user_id=p_actor_id;
   if v_household_id is null then raise exception 'NOT_HOUSEHOLD_MEMBER'; end if;
+  select id into v_actor_ref_id
+  from public.domain_actor_refs
+  where household_id=v_household_id
+    and actor_kind='real_user'
+    and real_user_id=p_actor_id
+    and test_context_id is null;
 
   v_brief:=public.server_read_daily_brief_pre_assignment_action_v1(
     p_actor_id,p_local_date
@@ -531,6 +539,8 @@ begin
     'planned_assignee_id',null,
     'planned_assignee_actor_ref_id',null,
     'assignment_mode','anyone',
+    'active_claimant_actor_ref_id',t.active_claimant_actor_ref_id,
+    'claimed_at',t.claimed_at,
     'completion_mode',t.completion_mode,
     'expectation',coalesce(t.expectation,'normal'),
     'duplicate_sensitivity',coalesce(t.duplicate_sensitivity,'normal'),
@@ -545,7 +555,10 @@ begin
     and t.status in ('todo','in_progress')
     and t.attention_state='active'
     and t.assignment_mode='anyone'
-    and t.active_claimant_actor_ref_id is null;
+    and (
+      t.active_claimant_actor_ref_id is null
+      or t.active_claimant_actor_ref_id is distinct from v_actor_ref_id
+    );
 
   if jsonb_array_length(v_anyone)>0 then
     v_brief:=v_brief||jsonb_build_object(
