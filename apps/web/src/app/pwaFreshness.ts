@@ -38,6 +38,48 @@ function browserEnvironment(): PwaFreshnessEnvironment {
   };
 }
 
+export interface PwaReloadEnvironment {
+  serviceWorker?: ServiceWorkerContainerLike;
+  reload: () => void;
+  setTimer: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer: (timer: ReturnType<typeof setTimeout>) => void;
+}
+
+function browserReloadEnvironment(): PwaReloadEnvironment {
+  return {
+    serviceWorker:
+      typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+        ? navigator.serviceWorker
+        : undefined,
+    reload: () => window.location.reload(),
+    setTimer: (callback, ms) => setTimeout(callback, ms),
+    clearTimer: (timer) => clearTimeout(timer),
+  };
+}
+
+export async function refreshCurrentPwa(
+  environment: PwaReloadEnvironment = browserReloadEnvironment(),
+  updateTimeoutMs = 4_000,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const registration = await environment.serviceWorker?.getRegistration();
+    if (registration) {
+      await Promise.race([
+        Promise.resolve(registration.update()),
+        new Promise<void>((resolve) => {
+          timer = environment.setTimer(resolve, updateTimeoutMs);
+        }),
+      ]);
+    }
+  } catch {
+    // A failed update check must not prevent manual recovery.
+  } finally {
+    if (timer) environment.clearTimer(timer);
+    environment.reload();
+  }
+}
+
 export function installPwaFreshnessCheck(
   environment: PwaFreshnessEnvironment = browserEnvironment(),
 ): () => void {
