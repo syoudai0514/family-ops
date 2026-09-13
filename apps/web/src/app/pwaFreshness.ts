@@ -1,4 +1,5 @@
 const MIN_CHECK_INTERVAL_MS = 5_000;
+const UPDATE_CHECK_TIMEOUT_MS = 4_000;
 
 interface EventTargetLike {
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
@@ -45,6 +46,13 @@ export interface PwaReloadEnvironment {
   clearTimer: (timer: ReturnType<typeof setTimeout>) => void;
 }
 
+async function checkServiceWorkerUpdate(
+  serviceWorker?: ServiceWorkerContainerLike,
+): Promise<void> {
+  const registration = await serviceWorker?.getRegistration();
+  await registration?.update();
+}
+
 function browserReloadEnvironment(): PwaReloadEnvironment {
   return {
     serviceWorker:
@@ -63,15 +71,12 @@ export async function refreshCurrentPwa(
 ): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const registration = await environment.serviceWorker?.getRegistration();
-    if (registration) {
-      await Promise.race([
-        Promise.resolve(registration.update()),
-        new Promise<void>((resolve) => {
-          timer = environment.setTimer(resolve, updateTimeoutMs);
-        }),
-      ]);
-    }
+    await Promise.race([
+      checkServiceWorkerUpdate(environment.serviceWorker),
+      new Promise<void>((resolve) => {
+        timer = environment.setTimer(resolve, updateTimeoutMs);
+      }),
+    ]);
   } catch {
     // A failed update check must not prevent manual recovery.
   } finally {
@@ -97,13 +102,19 @@ export function installPwaFreshnessCheck(
 
     checking = true;
     lastCheckAt = checkedAt;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const registration = await serviceWorker.getRegistration();
-      await registration?.update();
+      await Promise.race([
+        checkServiceWorkerUpdate(serviceWorker),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, UPDATE_CHECK_TIMEOUT_MS);
+        }),
+      ]);
     } catch {
       // Freshness checks must never block Today. The existing worker keeps
       // serving the current shell and the next resume/focus retries safely.
     } finally {
+      if (timer) clearTimeout(timer);
       checking = false;
     }
   };
