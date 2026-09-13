@@ -740,6 +740,10 @@ PWAで保存後はPWA内で成功表示し、自分宛てLINEへ「保存しま�
 
 インストール済みPWAは、起動時だけでなく**バックグラウンドから再表示された時にも新しいapp shell/service workerを確認**する。安全性・担当・操作意味が変わるリリース後に、ユーザーへ強制終了・キャッシュ削除・再インストールを要求して旧JavaScriptのまま運用させない。新shellへの切替時もSupabase session/local stateを消さない。
 
+PWAの読み込みが長時間終わらない状態を「待つしかない」UXにしない。認証・家庭情報・Todayの主要readはクライアント側の有限timeoutを持ち、timeout/error時は**再読み込み可能な回復導線**へ収束する。既に正常表示できているapp shellをバックグラウンドrefreshだけのために全画面loadingへ戻して、下部ナビまで失わせてはならない。
+
+通常利用中も、PWA上部に明示的な**更新**操作を常時提供する。さらに画面最上部から下方向へ十分に引くpull-to-refreshを提供し、release時に現在URLを安全に再読み込みする。短いpull、横方向gesture、フォーム/ボタン/モーダル上のgestureでは誤更新しない。再読み込みはauth/sessionや保存済みserver stateを削除しない。
+
 # 16. AI入力・自然文処理
 
 ## 16.1 複数意図
