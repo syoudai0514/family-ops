@@ -19,7 +19,7 @@ export function AuthGate() {
 }
 
 function AuthGateRoutes() {
-  const { user, loading } = useAuth();
+  const { user, loading, loadError } = useAuth();
 
   if (loading) {
     return (
@@ -27,6 +27,18 @@ function AuthGateRoutes() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="*" element={<LoadingScreen />} />
       </Routes>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="app-shell centered" role="alert">
+        <h1>接続を確認できませんでした</h1>
+        <p>{loadError}</p>
+        <button type="button" onClick={() => window.location.reload()}>
+          再読み込み
+        </button>
+      </main>
     );
   }
 
