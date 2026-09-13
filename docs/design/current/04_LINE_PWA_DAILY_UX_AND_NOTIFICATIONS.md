@@ -266,7 +266,7 @@ Rules:
 - waiting state updates inline without moving scroll unexpectedly
 - URL supports `date`, `group`, `task`, `request`, `event`, `candidate` context
 - `assignment_needed` is an actionable state, not an informational dead end. PWA Today exposes a direct assignment-resolution control for the exact task and preserves CAS/revision semantics.
-- role-derived tasks use the live same-day transport assignee when resolvable; if the transport leg is absent/cancelled/unassigned, an explicitly configured recurrence fallback is used. If neither exists, the task remains unassigned and the actionable control is shown.
+- role-derived tasks use the live same-day transport assignee when resolvable. If the transport leg is absent/cancelled/unassigned: Saturday/Sunday defaults to `誰でもOK` with claim/release/takeover; weekdays use an explicitly configured recurrence fallback; only if neither applies does the task remain unassigned with the actionable resolution control.
 - when transport truth changes, open unprotected same-day role-derived tasks converge to the new resolved/fallback/unassigned state; mixed stale snapshots are not allowed.
 
 ## 11. Deep links
@@ -384,6 +384,21 @@ For critical changes partner receives neutral correction affordance:
 This is not an approval request.
 
 Minor chore assignment changes can be in next morning/evening brief lower section.
+
+## 14.1 Weekend shared role-derived work
+
+When Saturday/Sunday has no live pickup/dropoff assignee, recurring work that normally follows that role is not treated as a broken assignment. It becomes `誰でもOK`.
+
+This includes routine household work and continuing child-care routines such as Shino medication / medication-bowel records when those rules are role-derived.
+
+- live transport, when present, still wins;
+- `誰でもOK` stays visible to both adults; unclaimed shows `誰でもOK`, claimed shows the current `パパ対応中 / ママ対応中` state;
+- it is excluded from `担当未定 / まず確認`;
+- execution requires `自分がやる` claim first;
+- LINE Today exposes a contextual `誰でもOKを確認` entry whenever same-day anyone work exists, so claim/release stays discoverable in the daily channel;
+- claimant can release; the other adult can explicitly take over;
+- takeover does not mutate on the first LINE tap: the current claimant is fresh-read and shown before the explicit confirm tap;
+- a weekend claim never rewrites recurrence ownership for future weekdays.
 
 ## 15. Anyone claim UX
 
@@ -586,7 +601,7 @@ At detailed design review, walkthrough at least:
 8. oral pickup change + `[違う]`
 9. LINE/PWA same task concurrent completion
 10. `今回は不要` vs `できなかった` display/history separation
-11. transport absent/cancelled -> role-derived fallback/unassigned convergence -> PWA direct resolution
+11. transport absent/cancelled -> weekend anyone / weekday fallback / unassigned convergence -> claim or PWA direct resolution
 11. weekend/holiday 09:00
 12. quota fallback while critical state remains visible
 ## 26. Physical F2 approved LINE/PWA clarifications — 2026-09-11

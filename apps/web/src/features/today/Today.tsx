@@ -352,6 +352,7 @@ export function Today() {
             subtasks={data.subtasksByTaskId.get(task.id) ?? []}
             members={members}
             hasPartner={Boolean(partner)}
+            currentUserId={user?.id}
             onEdit={setEditingTask}
             onChanged={data.refresh}
           />

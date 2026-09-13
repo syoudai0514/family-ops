@@ -169,6 +169,10 @@ function isShoppingText(text: string): boolean {
   return /^(買い物担当|買い物の担当|誰でもOK|誰でもOKの買い物)$/u.test(text.normalize("NFKC").trim());
 }
 
+function isAnyoneTaskText(text: string): boolean {
+  return /^(誰でもOKのタスク|誰でもいいタスク|共有タスク)$/u.test(text.normalize("NFKC").trim());
+}
+
 function isRequestText(text: string): boolean {
   return /^(お願いの返事|お願い確認|返事|相談中|相談を確認)$/u.test(text.normalize("NFKC").trim());
 }
@@ -415,6 +419,153 @@ async function mutateShopping(ctx: LineMustCompleteContext, fields: Record<strin
   }
   const label = claimAction === "claim" ? "✓ 担当します、と記録しました。" : claimAction === "release" ? "✓ 担当を手放しました。" : "✓ 担当を引き継ぎました。";
   await ctx.reply(label, [message("買い物担当を確認", "買い物担当")]);
+}
+
+async function openAnyoneTasks(ctx: LineMustCompleteContext): Promise<void> {
+  const selfActorRef = await actorRefId(ctx);
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const { data, error } = await ctx.client
+    .from("task_instances")
+    .select("id,title,revision,active_claimant_actor_ref_id")
+    .eq("household_id", ctx.householdId)
+    .is("test_context_id", null)
+    .eq("scheduled_date", today)
+    .eq("assignment_mode", "anyone")
+    .in("status", ["todo", "in_progress"])
+    .order("due_at", { ascending: true, nullsFirst: false })
+    .limit(8);
+  if (error) {
+    await replyMutationError(ctx, error);
+    return;
+  }
+  const rows = records(data);
+  if (rows.length === 0) {
+    await ctx.reply("今日の「誰でもOK」タスクはありません。");
+    return;
+  }
+  const quick = rows.map((row) => {
+    const id = str(row.id) ?? "";
+    const revision = num(row.revision) ?? 1;
+    const claimant = str(row.active_claimant_actor_ref_id);
+    const action = !claimant ? "claim" : claimant === selfActorRef ? "release" : "takeover";
+    const prefix = action === "claim" ? "自分がやる" : action === "release" ? "手放す" : "引き継ぐ";
+    return postback(`${prefix}・${(str(row.title) ?? "タスク").slice(0, 10)}`, encodeFields("mc_task_anyone", {
+      task_id: id,
+      revision,
+      claim_action: action,
+    }));
+  });
+  await ctx.reply("今日の「誰でもOK」タスクです。やる人だけ「自分がやる」で担当表明します。", quick);
+}
+
+async function anyoneTaskClaimantLabel(
+  ctx: LineMustCompleteContext,
+  claimantActorRefId: string,
+): Promise<string> {
+  const { data: actorRef } = await ctx.client.from("domain_actor_refs")
+    .select("real_user_id")
+    .eq("household_id", ctx.householdId)
+    .eq("id", claimantActorRefId)
+    .eq("actor_kind", "real_user")
+    .is("test_context_id", null)
+    .maybeSingle();
+  const claimantUserId = str(record(actorRef)?.real_user_id);
+  if (!claimantUserId) return "相手";
+
+  const { data: member } = await ctx.client.from("household_members")
+    .select("family_role")
+    .eq("household_id", ctx.householdId)
+    .eq("user_id", claimantUserId)
+    .maybeSingle();
+  const role = str(record(member)?.family_role);
+  if (role === "papa") return "パパ";
+  if (role === "mama") return "ママ";
+  return "相手";
+}
+
+async function promptAnyoneTaskTakeover(
+  ctx: LineMustCompleteContext,
+  fields: Record<string, string>,
+): Promise<void> {
+  const taskId = fields.task_id;
+  const expectedRevision = Number(fields.revision);
+  if (!taskId || !Number.isFinite(expectedRevision)) return;
+
+  const selfActorRef = await actorRefId(ctx);
+  const { data, error } = await ctx.client.from("task_instances")
+    .select("id,title,revision,status,assignment_mode,active_claimant_actor_ref_id")
+    .eq("household_id", ctx.householdId)
+    .eq("id", taskId)
+    .is("test_context_id", null)
+    .maybeSingle();
+  if (error) {
+    await replyMutationError(ctx, error);
+    return;
+  }
+
+  const task = record(data);
+  const revision = num(task?.revision);
+  const claimant = str(task?.active_claimant_actor_ref_id);
+  if (!task || revision !== expectedRevision || task.assignment_mode !== "anyone"
+      || !["todo", "in_progress"].includes(str(task.status) ?? "")
+      || !claimant || claimant === selfActorRef) {
+    await ctx.reply(
+      "対応状況が更新されています。最新の「誰でもOK」一覧を確認してください。",
+      [message("最新を確認", "誰でもOKのタスク")],
+    );
+    return;
+  }
+
+  const claimantLabel = await anyoneTaskClaimantLabel(ctx, claimant);
+  const title = str(task.title) ?? "タスク";
+  await ctx.reply(
+    `現在: ${claimantLabel}が対応中です。\n「${title}」を引き継ぎますか？`,
+    [
+      postback("引き継ぐ", encodeFields("mc_task_anyone", {
+        task_id: taskId,
+        revision,
+        claim_action: "takeover",
+        confirmed: "true",
+      })),
+      message("戻る", "誰でもOKのタスク"),
+    ],
+  );
+}
+
+async function mutateAnyoneTask(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
+  const taskId = fields.task_id;
+  const revision = Number(fields.revision);
+  const claimAction = fields.claim_action;
+  if (!taskId || !Number.isFinite(revision) || !claimAction ||
+      !["claim", "release", "takeover"].includes(claimAction)) return;
+  if (claimAction === "takeover" && fields.confirmed !== "true") {
+    await promptAnyoneTaskTakeover(ctx, fields);
+    return;
+  }
+  const operationId = await deterministicOperationId("line-task-anyone", ctx.eventId, taskId, claimAction);
+  const { error } = await ctx.client.rpc("server_tx_task_anyone_claim_v1", {
+    p_actor_id: ctx.actorId,
+    p_operation_id: operationId,
+    p_task_id: taskId,
+    p_action: claimAction,
+    p_expected_revision: revision,
+    p_source: "line",
+  });
+  if (error) {
+    await replyMutationError(ctx, error);
+    return;
+  }
+  const label = claimAction === "claim"
+    ? "✓ 自分がやる、と記録しました。"
+    : claimAction === "release"
+      ? "✓ 手放しました。誰でもOKに戻っています。"
+      : "✓ 担当を引き継ぎました。";
+  await ctx.reply(label, [message("誰でもOKを確認", "誰でもOKのタスク")]);
 }
 
 async function actorRefId(ctx: LineMustCompleteContext): Promise<string | null> {
@@ -1012,6 +1163,10 @@ export async function tryHandleLineMustCompleteText(ctx: LineMustCompleteContext
     await openShopping(ctx);
     return true;
   }
+  if (isAnyoneTaskText(text)) {
+    await openAnyoneTasks(ctx);
+    return true;
+  }
   if (isRequestText(text)) {
     await openRequests(ctx);
     return true;
@@ -1066,6 +1221,10 @@ export async function tryHandleLineMustCompletePostback(
   }
   if (action === "mc_shopping") {
     await mutateShopping(ctx, fields);
+    return true;
+  }
+  if (action === "mc_task_anyone") {
+    await mutateAnyoneTask(ctx, fields);
     return true;
   }
   if (action === "mc_request_prompt_accept") {

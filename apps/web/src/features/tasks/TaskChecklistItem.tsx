@@ -11,6 +11,7 @@ export interface TaskChecklistItemProps {
   subtasks: TaskSubtaskInstance[];
   members: HouseholdMemberWithProfile[];
   hasPartner: boolean;
+  currentUserId?: string | null;
   onEdit: (task: TaskInstance) => void;
   onChanged: () => void;
   showTime?: boolean;
@@ -22,6 +23,13 @@ const EVIDENCE_MAX_BYTES = 2 * 1024 * 1024;
 const EVIDENCE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 function assigneeLabel(task: TaskInstance, members: HouseholdMemberWithProfile[]): string {
+  if (task.assignment_mode === 'anyone') {
+    if (!task.active_claimant_user_id) return '誰でもOK';
+    const claimant = members.find((m) => m.user_id === task.active_claimant_user_id);
+    if (claimant?.family_role === 'papa') return 'パパ対応中';
+    if (claimant?.family_role === 'mama') return 'ママ対応中';
+    return claimant?.profile?.display_name ? `${claimant.profile.display_name}対応中` : '対応中';
+  }
   if (!task.planned_assignee_id) return '未定';
   const member = members.find((m) => m.user_id === task.planned_assignee_id);
   if (member?.family_role === 'papa') return 'パパ';
@@ -74,6 +82,7 @@ export function TaskChecklistItem({
   subtasks,
   members,
   hasPartner,
+  currentUserId,
   onEdit,
   onChanged,
   showTime = true,
@@ -101,6 +110,11 @@ export function TaskChecklistItem({
   const requiredSubtasks = subtasks.filter((item) => item.required);
   const optionalOnlyChecklist =
     task.completion_mode === 'subtasks' && subtasks.length > 0 && requiredSubtasks.length === 0;
+  const anyoneTask = task.assignment_mode === 'anyone';
+  const anyoneUnclaimed = anyoneTask && !task.active_claimant_actor_ref_id;
+  const anyoneClaimedBySelf = anyoneTask && Boolean(currentUserId) && task.active_claimant_user_id === currentUserId;
+  const anyoneClaimedByOther = anyoneTask && Boolean(task.active_claimant_actor_ref_id) && !anyoneClaimedBySelf;
+  const canExecute = !anyoneTask || anyoneClaimedBySelf;
 
   function toggleExpanded() {
     setExpanded((value) => {
@@ -127,6 +141,17 @@ export function TaskChecklistItem({
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleAnyoneClaim(action: 'claim' | 'release' | 'takeover') {
+    void withOperation((operationId) =>
+      callEdgeFunction(EDGE_FUNCTIONS.changeTaskAssignment, {
+        operation_id: operationId,
+        task_id: task.id,
+        claim_action: action,
+        expected_revision: task.revision ?? 1,
+      }),
+    );
   }
 
   function handleComplete() {
@@ -243,7 +268,7 @@ export function TaskChecklistItem({
             className="task-check-control"
             aria-label={completed ? `${task.title}は完了済み` : `${task.title}を完了にする`}
             onClick={handleComplete}
-            disabled={busy || completed}
+            disabled={busy || completed || !canExecute}
           >
             {completed ? '✓' : ''}
           </button>
@@ -281,16 +306,37 @@ export function TaskChecklistItem({
             type="button"
             className="secondary-button task-inline-finish"
             onClick={handleComplete}
-            disabled={busy}
+            disabled={busy || !canExecute}
           >
             完了
+          </button>
+        )}
+
+        {anyoneUnclaimed && !completed && (
+          <button
+            type="button"
+            className="secondary-button task-inline-finish"
+            onClick={() => handleAnyoneClaim('claim')}
+            disabled={busy}
+          >
+            自分がやる
+          </button>
+        )}
+        {anyoneClaimedBySelf && !completed && (
+          <button
+            type="button"
+            className="text-button task-inline-finish"
+            onClick={() => handleAnyoneClaim('release')}
+            disabled={busy}
+          >
+            手放す
           </button>
         )}
 
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
-            {hasPartner && (
+            {hasPartner && !anyoneTask && (
               <label>
                 実施者
                 <select
@@ -304,8 +350,13 @@ export function TaskChecklistItem({
                 </select>
               </label>
             )}
-            {!completed && members.length > 0 && (
+            {!completed && members.length > 0 && !anyoneTask && (
               <button type="button" onClick={() => setEditingAssignment(true)} disabled={busy}>担当を調整</button>
+            )}
+            {anyoneClaimedByOther && !completed && (
+              <button type="button" onClick={() => handleAnyoneClaim('takeover')} disabled={busy}>
+                引き継ぐ
+              </button>
             )}
             {editable && (
               <button type="button" onClick={() => onEdit(task)} disabled={busy}>編集</button>
@@ -343,7 +394,7 @@ export function TaskChecklistItem({
                   <input
                     type="checkbox"
                     checked={subtask.is_completed}
-                    disabled={busy || completed}
+                    disabled={busy || completed || !canExecute}
                     onChange={() => handleToggleSubtask(subtask)}
                   />
                   <span className={subtask.is_completed ? 'checked' : ''}>

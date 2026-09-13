@@ -49,6 +49,24 @@ Deno.test("LINE Today exposes request, assignment and required-share actions bef
   });
 });
 
+Deno.test("LINE Today exposes 誰でもOK claim/release entry when shared anyone work is present", () => {
+  const actions = todayContextQuickReplies(
+    {
+      tasks: [{
+        task_id: "t-anyone",
+        title: "詩乃（便秘）の薬",
+        assignment_mode: "anyone",
+        active_claimant_actor_ref_id: null,
+      }],
+      urgent_actions: [],
+      active_infos: [],
+    },
+    [{ type: "message", label: "今日", text: "今日" }],
+  );
+  assertEquals(actions.map((action) => action.label), ["誰でもOKを確認", "今日"]);
+  assertEquals(actions[0], { type: "message", label: "誰でもOKを確認", text: "誰でもOKのタスク" });
+});
+
 Deno.test("active assignment request does not also show a new assignment decision action", () => {
   const actions = todayContextQuickReplies(
     {

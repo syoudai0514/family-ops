@@ -51,6 +51,10 @@ export function todayContextQuickReplies(
   if (urgent.some((item) => item.kind === "assignment_needed" && typeof item.task_id === "string")) {
     contextual.push(postback("担当を決める", "action=mc_assign_view"));
   }
+  const tasks = records(brief.tasks);
+  if (tasks.some((item) => item.assignment_mode === "anyone" && typeof item.task_id === "string")) {
+    contextual.push(message("誰でもOKを確認", "誰でもOKのタスク"));
+  }
   if (activeInfos.some((item) => item.ack_policy === "required")) {
     contextual.push(message("共有を確認", "共有確認"));
   }

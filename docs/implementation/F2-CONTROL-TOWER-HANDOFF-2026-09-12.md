@@ -202,6 +202,44 @@ Approved remediation:
 
 Affected PWA/Today evidence is stale after the fix merges and must be recaptured on the new exact HEAD.
 
+## 7.3 2026-09-13 weekend-anyone product refinement
+
+After PR #103 fixed stale/unknown transport-role convergence, Product Owner clarified the actual household rule:
+
+- Saturday/Sunday both adults are normally home;
+- if there is no live transport assignee, recurring role-derived work should be `誰でもOK`, not Papa-fixed and not `担当未定`;
+- this explicitly includes Shino medication and medication/bowel-record routines that continue on weekends.
+
+Implementation acceptance for the replacement exact HEAD:
+- weekend + live transport -> live role assignee still wins;
+- weekend + no live transport -> open unprotected role-derived tasks converge to `assignment_mode=anyone`;
+- Shino AM/PM medication and AM/PM medication/bowel records follow the same weekend behavior;
+- anyone tasks remain visible to both adults before and after claim, with the current claimant visible, and are not `assignment_needed`;
+- PWA and LINE support claim/release/takeover without rewriting recurrence; LINE Today exposes the anyone entry contextually and LINE takeover shows the fresh CURRENT claimant before the confirm tap;
+- claim is required before PWA execution controls become active;
+- weekday fallback behavior remains unchanged.
+
+Affected weekend Today/PWA evidence on PR #103's exact HEAD is stale and must be recaptured after this refinement is merged/deployed.
+
+### 7.3.1 PR #104 convergence notes
+
+Fresh review against the canonical Baseline, CURRENT implementation and regression suite separated fixture drift from genuine product defects.
+
+Fixture-only corrections:
+- `90_transport_role_fallback_resolution.sql` had used the runner's current date while asserting weekday fallback semantics; it is now pinned to Monday and weekend semantics are isolated in test 91.
+- the isolated test household did not bootstrap the production-specific Shino medication definitions; test 91 now seeds the same semantic AM/PM medication and AM/PM medication/bowel-record definitions explicitly.
+- the generic household bootstrap can materialize Saturday transport; test 91 now cancels both Saturday legs before asserting the transport-free weekend rule.
+
+Genuine defects fixed:
+- the legacy task-assignment bridge collapsed an explicitly written `assignment_mode=anyone` with no planned person back to `unassigned`; explicit first-class anyone is now preserved while legacy null behavior remains unchanged.
+- claimed anyone work could disappear from the other adult's DailyBrief; it now remains visible to both adults with the CURRENT claimant state.
+- LINE Today had no contextual entry to the required LINE-completable anyone claim/release flow; `誰でもOKを確認` is now exposed whenever same-day anyone work exists.
+- LINE takeover could mutate without first showing who currently held the claim; the first takeover tap now fresh-reads the task and CURRENT claimant and only a second explicit confirm tap can mutate.
+
+Regression coverage now proves all four Shino weekend routines, weekday fallback preservation, live weekend transport precedence, shared visibility before/after claim, claim/release/takeover CAS/audit behavior, PWA claim gating, LINE Today discoverability, and LINE takeover confirmation.
+
+PR #104 remains a review/merge candidate only. No main merge or production mutation is implied by this section.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.

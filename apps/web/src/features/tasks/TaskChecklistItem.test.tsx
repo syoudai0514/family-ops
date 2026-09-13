@@ -21,6 +21,21 @@ function makeTask(status: 'todo' | 'completed'): TaskInstance {
   } as TaskInstance;
 }
 
+function makeAnyoneTask(claimantUserId: string | null = null): TaskInstance {
+  return {
+    ...makeTask('todo'),
+    id: 'anyone-1',
+    title: '詩乃（便秘）の薬',
+    origin: 'recurring',
+    category: 'health',
+    routine_phase: 'morning',
+    assignment_mode: 'anyone',
+    active_claimant_actor_ref_id: claimantUserId ? 'actor-ref-claimant' : null,
+    active_claimant_user_id: claimantUserId,
+    revision: 4,
+  } as TaskInstance;
+}
+
 function makeSubtaskTask(): TaskInstance {
   return {
     ...makeTask('todo'),
@@ -109,6 +124,59 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
     render(<TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} expandedStorageKey={storageKey} />);
     expect(screen.getByText('回す')).toBeInTheDocument();
+  });
+
+  it('requires an explicit claim before executing a 誰でもOK task', async () => {
+    const members = [
+      { household_id: 'household-1', user_id: 'user-1', member_role: 'adult', family_role: 'papa', profile: null },
+      { household_id: 'household-1', user_id: 'user-2', member_role: 'adult', family_role: 'mama', profile: null },
+    ] as never[];
+
+    render(
+      <TaskChecklistItem
+        {...props}
+        members={members}
+        currentUserId="user-1"
+        task={makeAnyoneTask()}
+      />,
+    );
+
+    expect(screen.getByText('誰でもOK')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '自分がやる' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('change-task-assignment', {
+      operation_id: '69000000-0000-4000-8000-000000000001',
+      task_id: 'anyone-1',
+      claim_action: 'claim',
+      expected_revision: 4,
+    }));
+  });
+
+  it('shows the claimant and allows the claimant to release a 誰でもOK task', async () => {
+    const members = [
+      { household_id: 'household-1', user_id: 'user-1', member_role: 'adult', family_role: 'papa', profile: null },
+    ] as never[];
+
+    render(
+      <TaskChecklistItem
+        {...props}
+        members={members}
+        currentUserId="user-1"
+        task={makeAnyoneTask('user-1')}
+      />,
+    );
+
+    expect(screen.getByText('パパ対応中')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '手放す' }));
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('change-task-assignment', {
+      operation_id: '69000000-0000-4000-8000-000000000001',
+      task_id: 'anyone-1',
+      claim_action: 'release',
+      expected_revision: 4,
+    }));
   });
 
   it('offers evidence only after completion and saves an optional memo separately', async () => {

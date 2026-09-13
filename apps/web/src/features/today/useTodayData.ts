@@ -341,8 +341,29 @@ export function useTodayData(householdId: string | null, userId: string | null):
         if (result.error) throw result.error;
       }
 
-      const taskRows = (taskRes.data ?? []) as TodayTaskInstance[];
-      const taskById = new Map(taskRows.map((task) => [task.id, task]));
+      const rawTaskRows = (taskRes.data ?? []) as TodayTaskInstance[];
+      const claimantActorRefIds = unique(rawTaskRows.map((task) => task.active_claimant_actor_ref_id ?? undefined));
+      const claimantRefRes = claimantActorRefIds.length
+        ? await supabase
+            .from('domain_actor_refs')
+            .select('id,real_user_id')
+            .eq('household_id', householdId)
+            .in('id', claimantActorRefIds)
+        : { data: [] as Array<{ id: string; real_user_id: string | null }>, error: null };
+      if (claimantRefRes.error) throw claimantRefRes.error;
+      const claimantUserByActorRef = new Map<string, string>();
+      for (const row of claimantRefRes.data ?? []) {
+        if (row.real_user_id) claimantUserByActorRef.set(row.id, row.real_user_id);
+      }
+      const taskRows: TodayTaskInstance[] = rawTaskRows.map((task): TodayTaskInstance => ({
+        ...task,
+        active_claimant_user_id: task.active_claimant_actor_ref_id
+          ? claimantUserByActorRef.get(task.active_claimant_actor_ref_id) ?? null
+          : null,
+      }));
+      const taskById = new Map<string, TodayTaskInstance>(
+        taskRows.map((task) => [task.id, task] as const),
+      );
       const visibleTasks = allTaskIds.map((id) => taskById.get(id)).filter((task): task is TodayTaskInstance => Boolean(task));
       const subtaskTaskIds = visibleTasks.filter((task) => task.completion_mode === 'subtasks').map((task) => task.id);
 
