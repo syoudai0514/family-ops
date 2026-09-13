@@ -8,6 +8,58 @@
 --   and medication/bowel-record routines.
 -- * anyone tasks use an explicit claim/release/takeover lifecycle.
 
+-- The legacy assignment bridge predates first-class `anyone`. Preserve an
+-- explicit anyone mode with no planned person instead of collapsing it back to
+-- unassigned. All other legacy-null behavior remains unchanged.
+create or replace function private.fn_bridge_legacy_task_assignment_v1()
+returns trigger
+language plpgsql
+set search_path=''
+as $weekend_anyone_bridge$
+declare
+  v_actor_ref uuid;
+begin
+  if new.test_context_id is not null then return new; end if;
+  if new.assignment_source is not null and new.assignment_source <> 'legacy_snapshot' then
+    return new;
+  end if;
+
+  if new.planned_assignee_id is null then
+    new.planned_assignee_actor_ref_id:=null;
+    if new.assignment_mode='anyone' then
+      new.assignment_mode:='anyone';
+    else
+      new.assignment_mode:='unassigned';
+    end if;
+    new.assignment_source:='legacy_snapshot';
+    return new;
+  end if;
+
+  if not exists(
+    select 1 from public.household_members m
+    where m.household_id=new.household_id
+      and m.user_id=new.planned_assignee_id
+  ) then
+    return new;
+  end if;
+
+  select a.id into v_actor_ref
+  from public.domain_actor_refs a
+  where a.household_id=new.household_id
+    and a.actor_kind='real_user'
+    and a.real_user_id=new.planned_assignee_id;
+
+  if v_actor_ref is null then
+    raise exception 'LEGACY_TASK_ASSIGNEE_ACTOR_REF_NOT_FOUND';
+  end if;
+
+  new.planned_assignee_actor_ref_id:=v_actor_ref;
+  new.assignment_mode:='person';
+  new.assignment_source:='legacy_snapshot';
+  return new;
+end;
+$weekend_anyone_bridge$;
+
 create or replace function private.fn_resolve_transport_role_assignment_v2(
   p_household_id uuid,
   p_date date,
