@@ -13,6 +13,7 @@ type Reply = { text: string; quickReplies: LineQuickReplyAction[] };
 
 function makeContext(
   rpcImpl: (name: string, args: Record<string, unknown>) => RpcResult | Promise<RpcResult>,
+  fromImpl?: (table: string) => unknown,
 ) {
   const calls: RpcCall[] = [];
   const replies: Reply[] = [];
@@ -20,6 +21,10 @@ function makeContext(
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       calls.push({ name, args });
       return await rpcImpl(name, args);
+    },
+    from: (table: string) => {
+      if (!fromImpl) throw new Error(`Unexpected table read: ${table}`);
+      return fromImpl(table);
     },
   } as unknown as LineMustCompleteContext["client"];
   const ctx: LineMustCompleteContext = {
@@ -178,6 +183,90 @@ Deno.test("LINE anyone task postback uses canonical task claim writer", async ()
 
   assertEquals(calls.map((call) => call.name), ["server_tx_task_anyone_claim_v1"]);
   assertStringIncludes(replies[0].text, "自分がやる");
+});
+
+Deno.test("LINE anyone task takeover shows current claimant before mutation", async () => {
+  type Builder = {
+    select: (columns: string) => Builder;
+    eq: (column: string, value: unknown) => Builder;
+    is: (column: string, value: unknown) => Builder;
+    maybeSingle: () => Promise<{ data: unknown; error: null }>;
+  };
+  const actorId = "00000000-0000-4000-8000-000000000001";
+  const fromImpl = (table: string): Builder => {
+    const filters: Record<string, unknown> = {};
+    const builder: Builder = {
+      select: () => builder,
+      eq: (column, value) => {
+        filters[column] = value;
+        return builder;
+      },
+      is: (column, value) => {
+        filters[column] = value;
+        return builder;
+      },
+      maybeSingle: async () => {
+        if (table === "task_instances") {
+          return {
+            data: {
+              id: "task-anyone-1",
+              title: "詩乃（便秘）の薬",
+              revision: 6,
+              status: "todo",
+              assignment_mode: "anyone",
+              active_claimant_actor_ref_id: "actor-ref-partner",
+            },
+            error: null,
+          };
+        }
+        if (table === "domain_actor_refs" && filters.real_user_id === actorId) {
+          return { data: { id: "actor-ref-self" }, error: null };
+        }
+        if (table === "domain_actor_refs" && filters.id === "actor-ref-partner") {
+          return { data: { real_user_id: "partner-user" }, error: null };
+        }
+        if (table === "household_members" && filters.user_id === "partner-user") {
+          return { data: { family_role: "mama" }, error: null };
+        }
+        return { data: null, error: null };
+      },
+    };
+    return builder;
+  };
+
+  const { ctx, calls, replies } = makeContext((name, args) => {
+    assertEquals(name, "server_tx_task_anyone_claim_v1");
+    assertEquals(args.p_task_id, "task-anyone-1");
+    assertEquals(args.p_action, "takeover");
+    assertEquals(args.p_expected_revision, 6);
+    return { data: { revision: 7 }, error: null };
+  }, fromImpl);
+
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_task_anyone",
+    task_id: "task-anyone-1",
+    revision: "6",
+    claim_action: "takeover",
+  }), true);
+
+  assertEquals(calls.length, 0);
+  assertStringIncludes(replies[0].text, "現在: ママが対応中");
+  const confirm = replies[0].quickReplies.find((action) =>
+    action.type === "postback" && action.label === "引き継ぐ"
+  );
+  assert(confirm?.type === "postback");
+  assertStringIncludes(confirm.data, "confirmed=true");
+
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_task_anyone",
+    task_id: "task-anyone-1",
+    revision: "6",
+    claim_action: "takeover",
+    confirmed: "true",
+  }), true);
+
+  assertEquals(calls.map((call) => call.name), ["server_tx_task_anyone_claim_v1"]);
+  assertStringIncludes(replies[1].text, "引き継ぎました");
 });
 
 Deno.test("LINE one-user simulation entry stays explicitly sandboxed", async () => {
