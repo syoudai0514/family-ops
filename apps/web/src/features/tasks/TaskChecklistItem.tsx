@@ -336,7 +336,7 @@ export function TaskChecklistItem({
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
-            {hasPartner && (
+            {hasPartner && !anyoneTask && (
               <label>
                 実施者
                 <select
