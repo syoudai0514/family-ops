@@ -62,17 +62,26 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [members, setMembers] = useState<HouseholdMemberWithProfile[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const hasSuccessfulLoad = useRef(false);
+  const loadedUserId = useRef<string | null>(null);
   const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
     if (!user) {
       hasSuccessfulLoad.current = false;
+      loadedUserId.current = null;
       setLoadError(null);
       setPhase('no-household');
       setHousehold(null);
       setMembers([]);
       return;
+    }
+
+    if (loadedUserId.current !== null && loadedUserId.current !== user.id) {
+      hasSuccessfulLoad.current = false;
+      loadedUserId.current = null;
+      setHousehold(null);
+      setMembers([]);
     }
 
     if (!hasSuccessfulLoad.current) setPhase('loading');
@@ -91,8 +100,11 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
 
       if (myMembershipError) throw myMembershipError;
       if (!myMembership) {
+        if (sequence !== loadSequence.current) return;
         setHousehold(null);
         setMembers([]);
+        loadedUserId.current = user.id;
+        hasSuccessfulLoad.current = true;
         setPhase('no-household');
         return;
       }
@@ -139,6 +151,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       if (sequence !== loadSequence.current) return;
       setHousehold(householdResult.data);
       setMembers(membersWithProfiles);
+      loadedUserId.current = user.id;
       hasSuccessfulLoad.current = true;
       setPhase(phaseForHousehold(householdResult.data, membersWithProfiles.length));
     } catch (err) {
