@@ -14,15 +14,21 @@ declare
   ar2 uuid;
   med_am uuid;
   med_pm uuid;
+  record_am uuid;
+  record_pm uuid;
   sat date;
   mon date;
   sat_dow int:=6;
   mon_dow int:=1;
   sat_am_rule uuid;
   sat_pm_rule uuid;
+  record_am_rule uuid;
+  record_pm_rule uuid;
   mon_am_rule uuid;
   sat_am_task uuid;
   sat_pm_task uuid;
+  record_am_task uuid;
+  record_pm_task uuid;
   mon_am_task uuid;
   pickup_def uuid;
   pickup_task uuid;
@@ -50,16 +56,22 @@ begin
     include_in_routine_line,created_by
   ) values
     (hh,'med_shino_constipation_am','詩乃（便秘）の薬','health','morning','whole','morning_chore',true,u1),
-    (hh,'med_shino_constipation_pm','詩乃（便秘）の薬','health','evening','whole','evening_chore',true,u1)
+    (hh,'med_shino_constipation_pm','詩乃（便秘）の薬','health','evening','whole','evening_chore',true,u1),
+    (hh,'health_shino_med_bowel_record_am','詩乃の薬・便の記録','health','morning','subtasks','morning_chore',true,u1),
+    (hh,'health_shino_med_bowel_record_pm','詩乃の薬・便の記録','health','evening','subtasks','evening_chore',true,u1)
   on conflict do nothing;
 
   select id into med_am from public.task_definitions
   where household_id=hh and code='med_shino_constipation_am';
   select id into med_pm from public.task_definitions
   where household_id=hh and code='med_shino_constipation_pm';
+  select id into record_am from public.task_definitions
+  where household_id=hh and code='health_shino_med_bowel_record_am';
+  select id into record_pm from public.task_definitions
+  where household_id=hh and code='health_shino_med_bowel_record_pm';
   select id into pickup_def from public.task_definitions
   where household_id=hh and code='pickup';
-  if med_am is null or med_pm is null or pickup_def is null then
+  if med_am is null or med_pm is null or record_am is null or record_pm is null or pickup_def is null then
     raise exception 'FAIL weekend anyone: required task definitions missing';
   end if;
 
@@ -93,6 +105,14 @@ begin
     u1,gen_random_uuid(),med_pm,sat_dow,'weekend-pm','pickup_assignee',
     u1,'20:00',60,sat
   )->>'rule_id')::uuid;
+  record_am_rule:=(public.server_tx_change_recurrence(
+    u1,gen_random_uuid(),record_am,sat_dow,'weekend-record-am','dropoff_assignee',
+    u1,'08:05',60,sat
+  )->>'rule_id')::uuid;
+  record_pm_rule:=(public.server_tx_change_recurrence(
+    u1,gen_random_uuid(),record_pm,sat_dow,'weekend-record-pm','pickup_assignee',
+    u1,'20:05',60,sat
+  )->>'rule_id')::uuid;
   mon_am_rule:=(public.server_tx_change_recurrence(
     u1,gen_random_uuid(),med_am,mon_dow,'weekday-am','dropoff_assignee',
     u1,'08:00',60,mon
@@ -102,14 +122,22 @@ begin
   where household_id=hh and recurrence_rule_id=sat_am_rule and scheduled_date=sat;
   select id into sat_pm_task from public.task_instances
   where household_id=hh and recurrence_rule_id=sat_pm_rule and scheduled_date=sat;
+  select id into record_am_task from public.task_instances
+  where household_id=hh and recurrence_rule_id=record_am_rule and scheduled_date=sat;
+  select id into record_pm_task from public.task_instances
+  where household_id=hh and recurrence_rule_id=record_pm_rule and scheduled_date=sat;
   select id into mon_am_task from public.task_instances
   where household_id=hh and recurrence_rule_id=mon_am_rule and scheduled_date=mon;
 
   if (select assignment_mode from public.task_instances where id=sat_am_task)<>'anyone'
      or (select assignment_mode from public.task_instances where id=sat_pm_task)<>'anyone'
+     or (select assignment_mode from public.task_instances where id=record_am_task)<>'anyone'
+     or (select assignment_mode from public.task_instances where id=record_pm_task)<>'anyone'
      or (select planned_assignee_id from public.task_instances where id=sat_am_task) is not null
-     or (select planned_assignee_id from public.task_instances where id=sat_pm_task) is not null then
-    raise exception 'FAIL weekend anyone: Shino weekend medication was not anyone';
+     or (select planned_assignee_id from public.task_instances where id=sat_pm_task) is not null
+     or (select planned_assignee_id from public.task_instances where id=record_am_task) is not null
+     or (select planned_assignee_id from public.task_instances where id=record_pm_task) is not null then
+    raise exception 'FAIL weekend anyone: Shino medication/record weekend routines were not anyone';
   end if;
 
   if (select assignment_mode from public.task_instances where id=mon_am_task)<>'person'
