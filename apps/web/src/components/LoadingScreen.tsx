@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
+import { refreshCurrentPwa } from '../app/pwaFreshness';
 
 export function LoadingScreen({
   label = '読み込み中…',
   recoveryAfterMs = 8_000,
-  onReload = () => window.location.reload(),
+  onReload = () => { void refreshCurrentPwa(); },
 }: {
   label?: string;
   recoveryAfterMs?: number;
