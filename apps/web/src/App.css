@@ -1214,14 +1214,13 @@ fieldset {
   .app-nav-brand {
     font-size: 1rem;
   }
-  .header-refresh span {
-    display: none;
-  }
   .header-refresh {
-    width: 2.3rem;
     justify-content: center;
-    padding-inline: 0;
-    font-size: 1.2rem;
+    padding-inline: 0.5rem;
+    font-size: 0.82rem;
+  }
+  .header-refresh::first-letter {
+    font-size: 1rem;
   }
   .bottom-nav {
     background: rgba(255, 255, 255, 0.94);
