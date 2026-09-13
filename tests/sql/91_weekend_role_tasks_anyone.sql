@@ -139,6 +139,15 @@ begin
     raise exception 'FAIL weekend anyone: claim did not set current actor';
   end if;
 
+  brief2:=public.server_read_daily_brief(u2,sat);
+  if not exists(
+    select 1 from jsonb_array_elements(brief2->'tasks') x
+    where x->>'task_id'=sat_am_task::text
+      and x->>'active_claimant_actor_ref_id'=ar1::text
+  ) then
+    raise exception 'FAIL weekend anyone: partner lost visibility of claimed task';
+  end if;
+
   select revision into rev from public.task_instances where id=sat_am_task;
   perform public.server_tx_task_anyone_claim_v1(
     u2,gen_random_uuid(),sat_am_task,'takeover',rev,'line'
