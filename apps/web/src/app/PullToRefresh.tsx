@@ -18,6 +18,7 @@ export function PullToRefresh({
   const startY = useRef<number | null>(null);
   const startX = useRef<number | null>(null);
   const eligible = useRef(false);
+  const distanceRef = useRef(0);
   const [distance, setDistance] = useState(0);
 
   useEffect(() => {
@@ -25,6 +26,7 @@ export function PullToRefresh({
       startY.current = null;
       startX.current = null;
       eligible.current = false;
+      distanceRef.current = 0;
       setDistance(0);
     };
 
@@ -49,12 +51,13 @@ export function PullToRefresh({
       }
 
       const pulled = Math.min(MAX_PULL, Math.round(dy * 0.62));
+      distanceRef.current = pulled;
       setDistance(pulled);
       if (pulled > 8) event.preventDefault();
     };
 
     const onTouchEnd = () => {
-      const shouldRefresh = eligible.current && distance >= threshold;
+      const shouldRefresh = eligible.current && distanceRef.current >= threshold;
       reset();
       if (shouldRefresh) onRefresh();
     };
@@ -70,7 +73,7 @@ export function PullToRefresh({
       document.removeEventListener('touchend', onTouchEnd);
       document.removeEventListener('touchcancel', reset);
     };
-  }, [distance, onRefresh, threshold]);
+  }, [onRefresh, threshold]);
 
   if (distance <= 0) return null;
 
