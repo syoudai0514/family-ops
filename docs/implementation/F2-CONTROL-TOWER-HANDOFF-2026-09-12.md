@@ -240,6 +240,26 @@ Regression coverage now proves all four Shino weekend routines, weekday fallback
 
 PR #104 remains a review/merge candidate only. No main merge or production mutation is implied by this section.
 
+## 7.4 2026-09-13 Android PWA stale-shell finding
+
+After PR #104 was merged and the exact production backend was aligned to `52cdf25178f3b018d8a217f24c9688acb34a0f97`, authoritative production state showed 9/13 role-derived work as `assignment_mode=anyone` for both adults with `assignment_needed=0`.
+
+Physical Android PWA screenshots at 20:56 nevertheless rendered those same tasks as `未定` and did not expose `自分がやる`. This is not a DB/fixture defect: the screen shape matches the pre-PR-104 JavaScript bundle while reading the new DailyBrief. The affected physical evidence is therefore **FAIL / STALE-SHELL DEFECT DISCOVERY**, not acceptance evidence.
+
+Root cause in CURRENT web lifecycle:
+- Workbox is configured for `autoUpdate`, `skipWaiting`, and `clientsClaim`;
+- a newly activated worker already navigates open windows;
+- however an Android standalone PWA resumed from a long-lived background process can keep running the old client without causing a service-worker update check, so the new worker is never discovered.
+
+Required remediation:
+- check the existing service-worker registration on visible app start and on foreground/focus/pageshow/online;
+- debounce duplicate resume events;
+- preserve the existing session/local state and never cache mutation requests;
+- serve `/sw.js` and `/sw-update.js` as no-cache/no-store;
+- update-check failure remains non-blocking and retries on the next lifecycle event.
+
+After merge/deploy, freeze a new exact HEAD and rerun Android Today before any claim mutation. Expected: weekend role-derived items display `誰でもOK` and expose `自分がやる`; they must not display `未定`.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.
