@@ -68,6 +68,23 @@ begin
   if sat<(now() at time zone 'Asia/Tokyo')::date then sat:=sat+7; end if;
   mon:=sat+2;
 
+  -- The generic household bootstrap may materialize transport rows for every
+  -- weekday. This scenario specifically proves a transport-free weekend, so
+  -- make both Saturday legs absent before materializing role-derived work.
+  update public.task_instances ti
+  set status='cancelled',
+      planned_assignee_id=null,
+      planned_assignee_actor_ref_id=null,
+      assignment_mode='unassigned',
+      revision=revision+1
+  from public.task_definitions td
+  where ti.household_id=hh
+    and ti.task_definition_id=td.id
+    and td.household_id=hh
+    and td.code in ('pickup','dropoff')
+    and ti.scheduled_date=sat
+    and ti.status in ('todo','in_progress');
+
   sat_am_rule:=(public.server_tx_change_recurrence(
     u1,gen_random_uuid(),med_am,sat_dow,'weekend-am','dropoff_assignee',
     u1,'08:00',60,sat
