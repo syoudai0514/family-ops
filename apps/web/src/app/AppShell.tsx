@@ -26,6 +26,7 @@ import { ConciergeResultsPage } from '../features/concierge/ConciergeResultsPage
 import { ConciergeConfirmPage } from '../features/concierge/ConciergeConfirmPage';
 import { NavigationStateManager } from './NavigationStateManager';
 import { PullToRefresh } from './PullToRefresh';
+import { refreshCurrentPwa } from './pwaFreshness';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -73,7 +74,7 @@ export function AppShell() {
             className="header-refresh"
             aria-label="画面を更新"
             title="画面を更新"
-            onClick={() => window.location.reload()}
+            onClick={() => void refreshCurrentPwa()}
           >
             ↻ <span>更新</span>
           </button>
