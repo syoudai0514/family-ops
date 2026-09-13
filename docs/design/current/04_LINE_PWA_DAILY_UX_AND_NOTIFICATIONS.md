@@ -271,6 +271,9 @@ Rules:
 - installed PWA shell freshness is part of Today correctness: on initial load and when a suspended PWA returns to the foreground/focus/pageshow/online, the current service-worker registration checks for an update; duplicate resume events are debounced.
 - a newly activated worker may reload/navigate the current PWA window to the same URL, preserving Supabase auth/local state. Service-worker scripts are served with no-cache/no-store headers so an update check cannot be satisfied by a stale worker script.
 - failure to check for an update must not block Today; the current shell remains usable and the next resume/focus retries.
+- PWA recovery is always reachable: the app header exposes a reload control, and top-of-page downward pull supports pull-to-refresh. The gesture activates only from scroll-top, requires a deliberate vertical threshold, ignores interactive/modal targets, and debounces accidental horizontal/short pulls.
+- auth/household/Today reads have finite client-side timeouts. A timeout never leaves a permanent spinner: initial-gate failures become a retry/reload state, while a household refresh after a successful load keeps the existing app shell/nav mounted instead of replacing it with a blocking loader.
+- generic full-screen loading surfaces reveal a manual reload action if loading exceeds the recovery threshold. Reloading preserves Supabase auth/session/local state.
 
 ## 11. Deep links
 
