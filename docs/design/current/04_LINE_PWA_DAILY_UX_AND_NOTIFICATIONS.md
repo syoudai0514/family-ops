@@ -395,7 +395,9 @@ This includes routine household work and continuing child-care routines such as 
 - `誰でもOK` stays visible to both adults; unclaimed shows `誰でもOK`, claimed shows the current `パパ対応中 / ママ対応中` state;
 - it is excluded from `担当未定 / まず確認`;
 - execution requires `自分がやる` claim first;
+- LINE Today exposes a contextual `誰でもOKを確認` entry whenever same-day anyone work exists, so claim/release stays discoverable in the daily channel;
 - claimant can release; the other adult can explicitly take over;
+- takeover does not mutate on the first LINE tap: the current claimant is fresh-read and shown before the explicit confirm tap;
 - a weekend claim never rewrites recurrence ownership for future weekdays.
 
 ## 15. Anyone claim UX
