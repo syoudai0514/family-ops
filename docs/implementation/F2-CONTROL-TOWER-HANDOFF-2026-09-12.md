@@ -214,8 +214,8 @@ Implementation acceptance for the replacement exact HEAD:
 - weekend + live transport -> live role assignee still wins;
 - weekend + no live transport -> open unprotected role-derived tasks converge to `assignment_mode=anyone`;
 - Shino AM/PM medication and AM/PM medication/bowel records follow the same weekend behavior;
-- unclaimed anyone tasks are visible to both adults but are not `assignment_needed`;
-- PWA and LINE support claim/release/takeover without rewriting recurrence;
+- anyone tasks remain visible to both adults before and after claim, with the current claimant visible, and are not `assignment_needed`;
+- PWA and LINE support claim/release/takeover without rewriting recurrence; LINE Today exposes the anyone entry contextually and LINE takeover shows the fresh CURRENT claimant before the confirm tap;
 - claim is required before PWA execution controls become active;
 - weekday fallback behavior remains unchanged.
 
