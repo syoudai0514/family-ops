@@ -205,7 +205,7 @@ Deno.test("LINE anyone task takeover shows current claimant before mutation", as
         filters[column] = value;
         return builder;
       },
-      maybeSingle: async () => {
+      maybeSingle: () => Promise.resolve((() => {
         if (table === "task_instances") {
           return {
             data: {
@@ -229,7 +229,7 @@ Deno.test("LINE anyone task takeover shows current claimant before mutation", as
           return { data: { family_role: "mama" }, error: null };
         }
         return { data: null, error: null };
-      },
+      })()),
     };
     return builder;
   };
