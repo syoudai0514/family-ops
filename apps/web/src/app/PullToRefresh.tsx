@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { refreshCurrentPwa } from './pwaFreshness';
 
 const DEFAULT_THRESHOLD = 72;
 const MAX_PULL = 112;
 
 function reloadPage() {
-  window.location.reload();
+  void refreshCurrentPwa();
 }
 
 function interactiveTarget(target: EventTarget | null) {
