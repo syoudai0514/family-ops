@@ -3,13 +3,17 @@ import { useEffect, useRef, useState } from 'react';
 const DEFAULT_THRESHOLD = 72;
 const MAX_PULL = 112;
 
+function reloadPage() {
+  window.location.reload();
+}
+
 function interactiveTarget(target: EventTarget | null) {
   return target instanceof Element
     && Boolean(target.closest('button, a, input, textarea, select, [role="dialog"], .modal-backdrop'));
 }
 
 export function PullToRefresh({
-  onRefresh = () => window.location.reload(),
+  onRefresh = reloadPage,
   threshold = DEFAULT_THRESHOLD,
 }: {
   onRefresh?: () => void;
