@@ -221,6 +221,25 @@ Implementation acceptance for the replacement exact HEAD:
 
 Affected weekend Today/PWA evidence on PR #103's exact HEAD is stale and must be recaptured after this refinement is merged/deployed.
 
+### 7.3.1 PR #104 convergence notes
+
+Fresh review against the canonical Baseline, CURRENT implementation and regression suite separated fixture drift from genuine product defects.
+
+Fixture-only corrections:
+- `90_transport_role_fallback_resolution.sql` had used the runner's current date while asserting weekday fallback semantics; it is now pinned to Monday and weekend semantics are isolated in test 91.
+- the isolated test household did not bootstrap the production-specific Shino medication definitions; test 91 now seeds the same semantic AM/PM medication and AM/PM medication/bowel-record definitions explicitly.
+- the generic household bootstrap can materialize Saturday transport; test 91 now cancels both Saturday legs before asserting the transport-free weekend rule.
+
+Genuine defects fixed:
+- the legacy task-assignment bridge collapsed an explicitly written `assignment_mode=anyone` with no planned person back to `unassigned`; explicit first-class anyone is now preserved while legacy null behavior remains unchanged.
+- claimed anyone work could disappear from the other adult's DailyBrief; it now remains visible to both adults with the CURRENT claimant state.
+- LINE Today had no contextual entry to the required LINE-completable anyone claim/release flow; `誰でもOKを確認` is now exposed whenever same-day anyone work exists.
+- LINE takeover could mutate without first showing who currently held the claim; the first takeover tap now fresh-reads the task and CURRENT claimant and only a second explicit confirm tap can mutate.
+
+Regression coverage now proves all four Shino weekend routines, weekday fallback preservation, live weekend transport precedence, shared visibility before/after claim, claim/release/takeover CAS/audit behavior, PWA claim gating, LINE Today discoverability, and LINE takeover confirmation.
+
+PR #104 remains a review/merge candidate only. No main merge or production mutation is implied by this section.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.
