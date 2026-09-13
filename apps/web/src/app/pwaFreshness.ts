@@ -12,7 +12,7 @@ interface DocumentLike extends EventTargetLike {
 interface WindowLike extends EventTargetLike {}
 
 interface ServiceWorkerRegistrationLike {
-  update(): Promise<void>;
+  update(): Promise<unknown> | unknown;
 }
 
 interface ServiceWorkerContainerLike {
