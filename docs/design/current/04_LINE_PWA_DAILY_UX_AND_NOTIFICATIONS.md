@@ -268,6 +268,9 @@ Rules:
 - `assignment_needed` is an actionable state, not an informational dead end. PWA Today exposes a direct assignment-resolution control for the exact task and preserves CAS/revision semantics.
 - role-derived tasks use the live same-day transport assignee when resolvable. If the transport leg is absent/cancelled/unassigned: Saturday/Sunday defaults to `誰でもOK` with claim/release/takeover; weekdays use an explicitly configured recurrence fallback; only if neither applies does the task remain unassigned with the actionable resolution control.
 - when transport truth changes, open unprotected same-day role-derived tasks converge to the new resolved/fallback/unassigned state; mixed stale snapshots are not allowed.
+- installed PWA shell freshness is part of Today correctness: on initial load and when a suspended PWA returns to the foreground/focus/pageshow/online, the current service-worker registration checks for an update; duplicate resume events are debounced.
+- a newly activated worker may reload/navigate the current PWA window to the same URL, preserving Supabase auth/local state. Service-worker scripts are served with no-cache/no-store headers so an update check cannot be satisfied by a stale worker script.
+- failure to check for an update must not block Today; the current shell remains usable and the next resume/focus retries.
 
 ## 11. Deep links
 
