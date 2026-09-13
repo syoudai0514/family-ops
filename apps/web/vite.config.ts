@@ -40,9 +40,10 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Safari may keep an installed app shell alive across deployments.
+        // Installed iOS/Android PWAs may keep an app shell alive across deployments.
         // Activate each new worker immediately so onboarding fixes cannot be
-        // masked by the previous JavaScript bundle.
+        // masked by the previous JavaScript bundle. The client also asks the
+        // registration to check for updates whenever a suspended PWA resumes.
         skipWaiting: true,
         clientsClaim: true,
         // A newly activated worker reloads existing PWA windows (see this

@@ -1,5 +1,5 @@
 // This file is imported by each newly installed service worker. It is
-// intentionally limited to app-shell recovery: no storage, IndexedDB, or
+// intentionally limited to app-shell recovery across iOS/Android: no storage, IndexedDB, or
 // Supabase session data is read or deleted.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
