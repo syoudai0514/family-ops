@@ -463,12 +463,90 @@ async function openAnyoneTasks(ctx: LineMustCompleteContext): Promise<void> {
   await ctx.reply("今日の「誰でもOK」タスクです。やる人だけ「自分がやる」で担当表明します。", quick);
 }
 
+async function anyoneTaskClaimantLabel(
+  ctx: LineMustCompleteContext,
+  claimantActorRefId: string,
+): Promise<string> {
+  const { data: actorRef } = await ctx.client.from("domain_actor_refs")
+    .select("real_user_id")
+    .eq("household_id", ctx.householdId)
+    .eq("id", claimantActorRefId)
+    .eq("actor_kind", "real_user")
+    .is("test_context_id", null)
+    .maybeSingle();
+  const claimantUserId = str(record(actorRef)?.real_user_id);
+  if (!claimantUserId) return "相手";
+
+  const { data: member } = await ctx.client.from("household_members")
+    .select("family_role")
+    .eq("household_id", ctx.householdId)
+    .eq("user_id", claimantUserId)
+    .maybeSingle();
+  const role = str(record(member)?.family_role);
+  if (role === "papa") return "パパ";
+  if (role === "mama") return "ママ";
+  return "相手";
+}
+
+async function promptAnyoneTaskTakeover(
+  ctx: LineMustCompleteContext,
+  fields: Record<string, string>,
+): Promise<void> {
+  const taskId = fields.task_id;
+  const expectedRevision = Number(fields.revision);
+  if (!taskId || !Number.isFinite(expectedRevision)) return;
+
+  const selfActorRef = await actorRefId(ctx);
+  const { data, error } = await ctx.client.from("task_instances")
+    .select("id,title,revision,status,assignment_mode,active_claimant_actor_ref_id")
+    .eq("household_id", ctx.householdId)
+    .eq("id", taskId)
+    .is("test_context_id", null)
+    .maybeSingle();
+  if (error) {
+    await replyMutationError(ctx, error);
+    return;
+  }
+
+  const task = record(data);
+  const revision = num(task?.revision);
+  const claimant = str(task?.active_claimant_actor_ref_id);
+  if (!task || revision !== expectedRevision || task.assignment_mode !== "anyone"
+      || !["todo", "in_progress"].includes(str(task.status) ?? "")
+      || !claimant || claimant === selfActorRef) {
+    await ctx.reply(
+      "対応状況が更新されています。最新の「誰でもOK」一覧を確認してください。",
+      [message("最新を確認", "誰でもOKのタスク")],
+    );
+    return;
+  }
+
+  const claimantLabel = await anyoneTaskClaimantLabel(ctx, claimant);
+  const title = str(task.title) ?? "タスク";
+  await ctx.reply(
+    `現在: ${claimantLabel}が対応中です。\n「${title}」を引き継ぎますか？`,
+    [
+      postback("引き継ぐ", encodeFields("mc_task_anyone", {
+        task_id: taskId,
+        revision,
+        claim_action: "takeover",
+        confirmed: "true",
+      })),
+      message("戻る", "誰でもOKのタスク"),
+    ],
+  );
+}
+
 async function mutateAnyoneTask(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
   const taskId = fields.task_id;
   const revision = Number(fields.revision);
   const claimAction = fields.claim_action;
   if (!taskId || !Number.isFinite(revision) || !claimAction ||
       !["claim", "release", "takeover"].includes(claimAction)) return;
+  if (claimAction === "takeover" && fields.confirmed !== "true") {
+    await promptAnyoneTaskTakeover(ctx, fields);
+    return;
+  }
   const operationId = await deterministicOperationId("line-task-anyone", ctx.eventId, taskId, claimAction);
   const { error } = await ctx.client.rpc("server_tx_task_anyone_claim_v1", {
     p_actor_id: ctx.actorId,
