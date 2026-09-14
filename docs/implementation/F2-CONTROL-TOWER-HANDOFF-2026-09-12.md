@@ -282,6 +282,56 @@ Remediation candidate:
 
 This is a separate genuine PWA resilience defect from the PR #105 stale-shell issue. Affected loading-hang behavior is not accepted until targeted tests + full CI + physical Android rerun pass.
 
+## 7.6 2026-09-14 emergency durable-state recovery after interrupted F2 chat
+
+The previous Physical F2 chat was interrupted. Any local or uncommitted work from that chat is deliberately treated as lost unless it exists in durable GitHub state. No local working tree, prior-chat memory, or imagined patch was used as CURRENT truth.
+
+Fresh recovery readback on 2026-09-14 established:
+
+- durable PR #106 head: `588d939168dd56246945f7b09c159766e2e332b5`;
+- PR #106 was already merged before this recovery resumed;
+- PR #106 merge commit: `2efc6f22b8a733d529d089562d94d3f1f517816f`;
+- PR #107 then corrected a holiday-sensitive **test fixture only**; production behavior was unchanged;
+- recovery-anchor CURRENT main after PR #107: `498a1aab7ca82a2999d79a1500858bbcb30e70a0`;
+- exact-main CI #1227: SUCCESS across DB, Edge Functions, web lint/typecheck/test/build + browser authoring E2E, and real Supabase CLI integration;
+- Operational Safety #322: SUCCESS;
+- Vercel production: READY on exact SHA `498a1aab7ca82a2999d79a1500858bbcb30e70a0`.
+
+PR #106 merge-main CI #1224 failed only because `tests/sql/22_routine_line_automation.sql` treated Monday-Friday as sufficient for a Japanese workday and landed its +7-day fixture on 2026-09-21 (敬老の日). Production correctly suppressed the workday-only dispatch. PR #107 made the fixture consult `private.jp_holidays`; current-main CI #1227 is green.
+
+Independent recovery review on CURRENT main rechecked the canonical Requirements/design against implementation and tests. The PR #106 recovery behavior is present on main and no duplicate reimplementation was performed:
+
+- auth, household, and Today reads have finite client-side timeout recovery;
+- an already-loaded household shell/navigation remains mounted during refresh;
+- stale overlapping household/Today loads are sequence-guarded;
+- long generic loading exposes a delayed `再読み込み` action;
+- the app header exposes explicit `更新`;
+- top-of-page pull-to-refresh is guarded against short/horizontal/scrolled/interactive-target gestures;
+- service-worker update checks have a finite timeout and manual recovery reloads even when the update check hangs/fails;
+- top-level render errors expose recovery instead of a blank app;
+- Today preserves the last good snapshot as stale when a later refresh fails.
+
+The recovery-anchor SHA above is **not** the final Physical F2 frozen SHA because this documentation update itself must merge first. After this documentation PR merges:
+
+1. fresh-read the new CURRENT `main` exact SHA;
+2. verify required CI / Operational Safety;
+3. verify Vercel production is READY on that exact SHA;
+4. freeze that post-merge SHA as the new F2 exact HEAD;
+5. then rerun Android PWA evidence. Do not reuse pre-merge screenshots as final PASS evidence.
+
+Required Android rerun, on the same frozen production SHA:
+
+1. resume an installed PWA that previously held an older shell and verify it converges to CURRENT without cache deletion/reinstall;
+2. verify loading never remains a permanent spinner;
+3. if loading is prolonged, verify the delayed `再読み込み` recovery action appears and works;
+4. verify the header `更新` action works;
+5. verify top-of-page pull-to-refresh works while short/horizontal/scrolled/interactive gestures do not accidentally refresh;
+6. verify auth/session remains signed in after recovery reload;
+7. verify bottom navigation remains operable through normal refresh/recovery;
+8. verify a partial/stale/failing UI can recover without force-close when the browser event loop remains responsive.
+
+Physical status at this recovery point: **PENDING USER DEVICE EVIDENCE**. Do not mark §7.4/§7.5 PASS until the above is captured on the final post-documentation exact production SHA.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.
