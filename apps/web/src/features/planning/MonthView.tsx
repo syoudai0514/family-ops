@@ -12,6 +12,7 @@ import { localIsoDate } from './dateHelpers';
 import { DayAgendaSheet } from './DayAgendaSheet';
 import { TransportOccurrenceOverrideModal } from './TransportOccurrenceOverrideModal';
 import { usePlanningData } from './usePlanningData';
+import { useCalendarFreshness } from './useCalendarFreshness';
 import './MonthView.css';
 
 function monthRange(anchor: Date) {
@@ -56,6 +57,10 @@ export function MonthView() {
     localIsoDate(start),
     localIsoDate(end),
   );
+  // Opening the month view is a calendar-view open: same missing call site as
+  // the week view. Without it the month grid silently renders "予定はありません"
+  // on every day while the cache stays stale.
+  useCalendarFreshness({ enabled: Boolean(household) });
   const [selected, setSelected] = useState(localIsoDate(new Date()));
   const [sheetDate, setSheetDate] = useState<string | null>(null);
   const [taskFormDate, setTaskFormDate] = useState<string | null>(null);

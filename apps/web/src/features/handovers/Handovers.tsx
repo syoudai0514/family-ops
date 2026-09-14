@@ -11,7 +11,10 @@ import type { Handover, HandoverPeriod } from '../../lib/types';
 
 const HANDOVER_REALTIME_TABLES = ['handovers', 'handover_reads'];
 
-const PERIOD_LABELS: Record<HandoverPeriod, string> = {
+// Exported so Today renders the same Japanese labels. Today used to print
+// `handover.period` directly, which put the raw enum ("day") on the most
+// prominent card of the home screen of a Japanese-language app.
+export const PERIOD_LABELS: Record<HandoverPeriod, string> = {
   morning: '朝',
   day: '日中',
   evening: '夜',

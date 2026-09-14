@@ -118,7 +118,7 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
         {!actualOnly && <button type="button" className="secondary-button" disabled={!speechAvailable || busy} onClick={startVoice}>🎙 話す</button>}
         <button type="button" disabled={busy} onClick={() => void organize()}>{busy ? '整理中…' : actualOnly ? '実績候補を確認' : 'AIで整理'}</button>
       </div>
-      <p className="meta">確認するまではToDo・お願い・買い物・共有・実績を作りません。実績日は作業した日のtruthで、登録時刻は監査情報として別に残ります。</p>
+      <p className="meta">確認するまでは、登録も家族への送信もしません。</p>
     </div>
   );
 }

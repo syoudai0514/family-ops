@@ -374,8 +374,31 @@ body {
 .category-settings-row { display: grid; grid-template-columns: minmax(0, 1fr) 5rem auto; gap: 0.5rem; align-items: center; }
 @media (max-width: 420px) { .category-settings-row { grid-template-columns: 1fr 5rem; } .category-settings-row label { grid-column: 1 / -1; } }
 .filter-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.65rem 0; }
-.filter-chips button { min-height: 36px; border-radius: 999px; }
-.filter-chips button.active { background: var(--color-accent); color: var(--color-accent-text); }
+/* The global `button` rule already paints every button with the accent fill, so
+   the unselected chip looked identical to `.active` -- all four filters read as
+   selected at once and the control could not communicate its own state. The
+   unselected chip is therefore explicitly returned to a neutral outline; only
+   `.active` keeps the fill. */
+.filter-chips button {
+  min-height: 36px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+.filter-chips button.active {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  border-color: var(--color-accent);
+  font-weight: 600;
+}
+.filter-chips button[disabled] { opacity: 0.45; }
+
+/* Google Calendar staleness: a warning the user can act on, not a dead end. */
+.calendar-stale-banner { display: grid; gap: 0.5rem; }
+.calendar-stale-banner p { margin: 0.15rem 0 0; }
+.calendar-stale-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.calendar-sync-row { display: grid; gap: 0.35rem; margin: 0.6rem 0; }
 .day-detail {
   margin-top: 1rem;
 }

@@ -12,6 +12,7 @@ import { TodayTaskItem } from './TodayTaskItem';
 import { TomorrowPreparationCard } from './TomorrowPreparationCard';
 import { PendingActionCard } from './PendingActionCard';
 import { PendingActionEditModal } from './PendingActionEditModal';
+import { PERIOD_LABELS } from '../handovers/Handovers';
 import { TaskFormModal } from '../tasks/TaskFormModal';
 import { QuickAdd } from '../tasks/QuickAdd';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
@@ -503,7 +504,7 @@ export function Today() {
         <div className="section-heading"><div><p className="eyebrow">引き継ぎ・共有</p><h2>未読の引き継ぎ</h2></div></div>
         <ul className="handover-list">
           {data.unreadHandovers.map((handover) => (
-            <li key={handover.id} className="handover-item unread"><strong>{handover.period}</strong> — {handover.shared_text}</li>
+            <li key={handover.id} className="handover-item unread"><strong>{PERIOD_LABELS[handover.period] ?? 'その他'}</strong> — {handover.shared_text}</li>
           ))}
         </ul>
       </section>

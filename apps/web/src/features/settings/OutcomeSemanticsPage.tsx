@@ -49,7 +49,7 @@ export function OutcomeSemanticsPage() {
       </section>
       <section className="card">
         <h2>履歴は消さない</h2>
-        <p>キャンセル・できなかった・今回は不要・再予定は別の結果です。訂正も上書きで痕跡を消さず、監査情報から追える状態を保ちます。</p>
+        <p>キャンセル・できなかった・今回は不要・再予定は別の結果として残ります。訂正しても、前の記録は消えません。</p>
       </section>
     </main>
   );
