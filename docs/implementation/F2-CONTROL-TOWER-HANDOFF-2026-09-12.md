@@ -260,6 +260,28 @@ Required remediation:
 
 After merge/deploy, freeze a new exact HEAD and rerun Android Today before any claim mutation. Expected: weekend role-derived items display `誰でもOK` and expose `自分がやる`; they must not display `未定`.
 
+## 7.5 2026-09-13 Android PWA loading/recovery finding
+
+Product Owner reported a second real-use Android PWA problem while rerunning the stale-shell scenario: the PWA can sometimes stop part-way through loading, leave a partially rendered/unresponsive screen, and make bottom-tab navigation unusable until the process is force-closed. Product Owner also requested both pull-to-refresh and an explicit update button.
+
+Fresh CURRENT review found genuine recovery gaps:
+- `AuthContext` waited on `getSession()` without a rejection/timeout recovery state;
+- initial `HouseholdContext` reads and Today reads had no finite client timeout;
+- `HouseholdContext.refresh()` always returned the whole household gate to `loading`, which can unmount the app shell/navigation during a slow refresh even when a valid household snapshot already exists;
+- generic `LoadingScreen` had no delayed recovery control;
+- AppShell had no explicit reload action and no in-app pull-to-refresh gesture.
+
+Remediation candidate:
+- 12s timeout guards for auth, household, and Today read groups;
+- auth/initial household failures converge to explicit recovery instead of an infinite spinner;
+- once household data has loaded successfully, subsequent household refresh keeps the existing shell/nav mounted and ignores stale earlier responses by sequence;
+- all long-running loading screens expose `再読み込み` after 8s;
+- header exposes explicit `更新`;
+- mobile top-of-page deliberate downward pull triggers reload while short/horizontal/interactive-target gestures do not;
+- current URL/session/server state are preserved by normal page reload semantics.
+
+This is a separate genuine PWA resilience defect from the PR #105 stale-shell issue. Affected loading-hang behavior is not accepted until targeted tests + full CI + physical Android rerun pass.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.

@@ -1,4 +1,5 @@
 const MIN_CHECK_INTERVAL_MS = 5_000;
+const UPDATE_CHECK_TIMEOUT_MS = 4_000;
 
 interface EventTargetLike {
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
@@ -38,6 +39,52 @@ function browserEnvironment(): PwaFreshnessEnvironment {
   };
 }
 
+export interface PwaReloadEnvironment {
+  serviceWorker?: ServiceWorkerContainerLike;
+  reload: () => void;
+  setTimer: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer: (timer: ReturnType<typeof setTimeout>) => void;
+}
+
+async function checkServiceWorkerUpdate(
+  serviceWorker?: ServiceWorkerContainerLike,
+): Promise<void> {
+  const registration = await serviceWorker?.getRegistration();
+  await registration?.update();
+}
+
+function browserReloadEnvironment(): PwaReloadEnvironment {
+  return {
+    serviceWorker:
+      typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+        ? navigator.serviceWorker
+        : undefined,
+    reload: () => window.location.reload(),
+    setTimer: (callback, ms) => setTimeout(callback, ms),
+    clearTimer: (timer) => clearTimeout(timer),
+  };
+}
+
+export async function refreshCurrentPwa(
+  environment: PwaReloadEnvironment = browserReloadEnvironment(),
+  updateTimeoutMs = 4_000,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      checkServiceWorkerUpdate(environment.serviceWorker),
+      new Promise<void>((resolve) => {
+        timer = environment.setTimer(resolve, updateTimeoutMs);
+      }),
+    ]);
+  } catch {
+    // A failed update check must not prevent manual recovery.
+  } finally {
+    if (timer) environment.clearTimer(timer);
+    environment.reload();
+  }
+}
+
 export function installPwaFreshnessCheck(
   environment: PwaFreshnessEnvironment = browserEnvironment(),
 ): () => void {
@@ -55,13 +102,19 @@ export function installPwaFreshnessCheck(
 
     checking = true;
     lastCheckAt = checkedAt;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const registration = await serviceWorker.getRegistration();
-      await registration?.update();
+      await Promise.race([
+        checkServiceWorkerUpdate(serviceWorker),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, UPDATE_CHECK_TIMEOUT_MS);
+        }),
+      ]);
     } catch {
       // Freshness checks must never block Today. The existing worker keeps
       // serving the current shell and the next resume/focus retries safely.
     } finally {
+      if (timer) clearTimeout(timer);
       checking = false;
     }
   };

@@ -9,6 +9,7 @@ import type {
   TaskSubtaskInstance,
 } from '../../lib/types';
 import { tokyoLocalDate } from './todayClock';
+import { withTimeout } from '../../lib/withTimeout';
 
 export interface TaskExecutionTarget {
   id: string;
@@ -293,9 +294,13 @@ export function useTodayData(householdId: string | null, userId: string | null):
     setError(null);
 
     try {
-      const { data: briefData, error: briefError } = await supabase.rpc('get_my_daily_brief', {
-        p_local_date: tokyoLocalDate(new Date()),
-      });
+      const { data: briefData, error: briefError } = await withTimeout(
+        supabase.rpc('get_my_daily_brief', {
+          p_local_date: tokyoLocalDate(new Date()),
+        }),
+        12_000,
+        '今日の情報の読み込みに時間がかかっています。',
+      );
       if (briefError) throw briefError;
       const brief = (briefData ?? {}) as DailyBriefPayload;
 
@@ -322,7 +327,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const handoverIds = unique(handoverRefs.map((item) => item.handover_id));
       const shoppingIds = unique((brief.shopping ?? []).map((item) => item.shopping_item_id));
 
-      const [taskRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
+      const [taskRes, requestRes, handoverRes, shoppingRes] = await withTimeout(Promise.all([
         allTaskIds.length
           ? supabase.from('task_instances').select('*').in('id', allTaskIds)
           : Promise.resolve({ data: [] as TodayTaskInstance[], error: null }),
@@ -335,7 +340,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
         shoppingIds.length
           ? supabase.from('shopping_items').select('*').in('id', shoppingIds)
           : Promise.resolve({ data: [] as ShoppingItem[], error: null }),
-      ]);
+      ]), 12_000, '今日の詳細情報の読み込みに時間がかかっています。');
 
       for (const result of [taskRes, requestRes, handoverRes, shoppingRes]) {
         if (result.error) throw result.error;
@@ -344,11 +349,15 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const rawTaskRows = (taskRes.data ?? []) as TodayTaskInstance[];
       const claimantActorRefIds = unique(rawTaskRows.map((task) => task.active_claimant_actor_ref_id ?? undefined));
       const claimantRefRes = claimantActorRefIds.length
-        ? await supabase
-            .from('domain_actor_refs')
-            .select('id,real_user_id')
-            .eq('household_id', householdId)
-            .in('id', claimantActorRefIds)
+        ? await withTimeout(
+            supabase
+              .from('domain_actor_refs')
+              .select('id,real_user_id')
+              .eq('household_id', householdId)
+              .in('id', claimantActorRefIds),
+            12_000,
+            '担当状況の読み込みに時間がかかっています。',
+          )
         : { data: [] as Array<{ id: string; real_user_id: string | null }>, error: null };
       if (claimantRefRes.error) throw claimantRefRes.error;
       const claimantUserByActorRef = new Map<string, string>();
@@ -367,14 +376,14 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const visibleTasks = allTaskIds.map((id) => taskById.get(id)).filter((task): task is TodayTaskInstance => Boolean(task));
       const subtaskTaskIds = visibleTasks.filter((task) => task.completion_mode === 'subtasks').map((task) => task.id);
 
-      const [subtaskRes, targetRes] = await Promise.all([
+      const [subtaskRes, targetRes] = await withTimeout(Promise.all([
         subtaskTaskIds.length
           ? supabase.from('task_subtask_instances').select('*').in('task_instance_id', subtaskTaskIds).order('sort_order', { ascending: true })
           : Promise.resolve({ data: [] as TaskSubtaskInstance[], error: null }),
         visibleTasks.length
           ? supabase.from('task_execution_targets').select('*').eq('household_id', householdId).in('task_instance_id', visibleTasks.map((task) => task.id))
           : Promise.resolve({ data: [] as TaskExecutionTarget[], error: null }),
-      ]);
+      ]), 12_000, 'チェック項目の読み込みに時間がかかっています。');
       if (subtaskRes.error) throw subtaskRes.error;
       if (targetRes.error) throw targetRes.error;
 

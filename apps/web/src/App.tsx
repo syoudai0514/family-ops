@@ -3,6 +3,7 @@ import './App.css';
 import './mobileHotfix.css';
 import { SignIn } from './features/auth/SignIn';
 import { LoadingScreen } from './components/LoadingScreen';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 
 // A first visit only needs this sign-in screen. Keep React Router, Supabase,
 // realtime, and every household feature in a separate chunk until a session
@@ -24,9 +25,11 @@ function App() {
   if (!needsAuthenticatedRouter) return <SignIn />;
 
   return (
-    <Suspense fallback={<LoadingScreen label="サインイン処理中…" />}>
-      <AuthenticatedRouter />
-    </Suspense>
+    <AppErrorBoundary>
+      <Suspense fallback={<LoadingScreen label="サインイン処理中…" />}>
+        <AuthenticatedRouter />
+      </Suspense>
+    </AppErrorBoundary>
   );
 }
 
