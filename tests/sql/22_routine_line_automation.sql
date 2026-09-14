@@ -319,7 +319,7 @@ declare
 begin
   -- Pickup automation is intentionally disabled on Japanese non-workdays.
   -- This scenario exercises a same-day reassignment and therefore cannot use
-  -- a simulated weekday; skip deterministically when CI runs on a weekend.
+  -- a simulated weekday; skip deterministically on a weekend or seeded Japanese holiday.
   if extract(isodow from v_today) > 5
      or exists (select 1 from private.jp_holidays h where h.local_date = v_today) then
     raise notice 'Skipping workday-only reassignment scenario on non-workday %', v_today;
