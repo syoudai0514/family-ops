@@ -394,6 +394,11 @@ body {
 }
 .filter-chips button[disabled] { opacity: 0.45; }
 
+/* `label` is inline, so each name/select pair wrapped mid-pair: the second
+   member's name sat at the end of one line with its select alone on the next. */
+.family-role-rows { display: grid; gap: 0.5rem; margin: 0.5rem 0; }
+.family-role-rows label { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; }
+
 /* Google Calendar staleness: a warning the user can act on, not a dead end. */
 .calendar-stale-banner { display: grid; gap: 0.5rem; }
 .calendar-stale-banner p { margin: 0.15rem 0 0; }

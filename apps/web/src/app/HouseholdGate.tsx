@@ -40,7 +40,7 @@ export function HouseholdGate() {
           <p className="eyebrow">初期設定 2 / 8</p>
           <h1>パートナーを招待</h1>
           <p>担当を決める前に、パートナーに参加してもらいます。</p>
-          <InviteSection />
+          <InviteSection confirmWhenJoined />
           <button type="button" className="secondary-button" onClick={() => void refresh()}>
             参加状況を確認
           </button>
