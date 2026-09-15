@@ -334,14 +334,6 @@ export function Today() {
     .map((task) => task.title)
     .filter((title): title is string => Boolean(title));
 
-  function jumpToSection(targetId: string, fallbackPath: string) {
-    const target = document.getElementById(targetId);
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-    navigate(fallbackPath);
-  }
 
   function renderTaskList(tasks: TaskInstance[]) {
     return (
@@ -511,23 +503,34 @@ export function Today() {
     );
   }
 
+  // This card used to headline `残り {open}件・完了 {completed}件` at <h2> size --
+  // the largest text on the screen. On a real household morning it read
+  // "残り 11件・完了 0件": a scoreboard of how little the other parent had done
+  // yet, at 10am. Requirements §3 forbids 勝率/ポイント/ランキング and design 04
+  // §5 and §16.2 say a partner's ordinary completions belong in detail/history
+  // and must not be pushed as scorekeeping, so `完了` is dropped here entirely:
+  // it changes nothing the reader does, and the one case where a partner's
+  // completion genuinely reduces the reader's own work is already carried by
+  // the separate `もう済んでいること` section.
+  //
+  // The "summary counts" 04 §5 asks for are kept, demoted to a quiet meta line.
+  // What leads instead is `critical_items` -- お迎え / 夕食対応 / お風呂 -- which is
+  // the part §5 describes as "tasks that alter user's behavior".
   function renderPartnerState() {
     const items = data.partnerSummary.critical_items ?? [];
     const open = data.partnerSummary.open_assigned ?? 0;
-    const completed = data.partnerSummary.completed_today ?? 0;
-    if (items.length === 0 && open === 0 && completed === 0) return null;
+    if (items.length === 0 && open === 0) return null;
     return (
       <section className="card compact-section partner-summary" aria-label="相手の今日">
         <p className="eyebrow">相手の今日</p>
-        <h2>残り {open}件・完了 {completed}件</h2>
-        {items.length > 0 && (
-          <>
-            <p className="task-item-meta">重要な項目</p>
-            <ul className="today-schedule-list">
-              {items.slice(0, 3).map((item) => <li key={item.task_id}>{item.title}</li>)}
-            </ul>
-          </>
+        {items.length > 0 ? (
+          <ul className="today-schedule-list">
+            {items.slice(0, 3).map((item) => <li key={item.task_id}>{item.title}</li>)}
+          </ul>
+        ) : (
+          <p className="task-item-meta">こちらに関係する予定はありません。</p>
         )}
+        {open > 0 && <p className="task-item-meta">担当している残り {open}件</p>}
       </section>
     );
   }
@@ -586,10 +589,6 @@ export function Today() {
   const eveningTasks = data.taskGroups.evening;
   const optionalTasks = data.taskGroups.optional;
   const unfinishedBeforeEvening = [...morningResidual, ...daytimeResidual];
-  const remainingCount = new Set(
-    [...data.carryoverTasks, ...morningResidual, ...daytimeResidual, ...eveningTasks].map((task) => task.id),
-  ).size;
-  const attentionCount = data.urgentActions.length + pending.pendingActions.length;
 
   return (
     <div className="app-shell">
@@ -617,63 +616,20 @@ export function Today() {
         <button type="button" onClick={() => navigate('/handovers')}><span aria-hidden="true">💬</span> 共有</button>
       </section>
 
-      <section
-        className="today-contract-shortcuts"
-        aria-label="今日の重要サマリー"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}
-      >
-        <button
-          type="button"
-          className="secondary-button"
-          aria-label={`要対応 ${attentionCount}件を確認`}
-          style={{ display: 'grid', gap: '0.15rem', textAlign: 'left', padding: '0.7rem' }}
-          onClick={() => jumpToSection('today-attention', '/requests')}
-        >
-          <small>返事・担当・確認</small><strong>要対応 {attentionCount}</strong>
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          aria-label={`残り ${remainingCount}件を確認`}
-          style={{ display: 'grid', gap: '0.15rem', textAlign: 'left', padding: '0.7rem' }}
-          onClick={() => jumpToSection('today-remaining', '/week')}
-        >
-          <small>今日の自分の残件</small><strong>残り {remainingCount}</strong>
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          aria-label={`待ち ${data.waitingTasks.length}件を確認`}
-          style={{ display: 'grid', gap: '0.15rem', textAlign: 'left', padding: '0.7rem' }}
-          onClick={() => jumpToSection('today-waiting', '/week')}
-        >
-          <small>確認日・期限リスク</small><strong>待ち {data.waitingTasks.length}</strong>
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          aria-label={`明日影響 ${data.tomorrowImpact.impact_count}件を確認`}
-          style={{ display: 'grid', gap: '0.15rem', textAlign: 'left', padding: '0.7rem' }}
-          onClick={() => jumpToSection('today-tomorrow', '/week')}
-        >
-          <small>明日の予定・準備</small><strong>明日影響 {data.tomorrowImpact.impact_count}</strong>
-        </button>
-      </section>
 
       {clock.daypart === 'morning' && (
         <>
           {renderDecisions()}
           {renderExceptions()}
           {renderTaskSection('昨夜からの持ち越し', data.carryoverTasks, 'いつもと違うこと')}
-          {renderHandovers()}
-          {data.alreadyHandledTasks.length > 0 && renderTaskSection('対応済み', data.alreadyHandledTasks, '二重対応を防ぐ')}
-          {renderWaiting()}
-          <div id="today-remaining" aria-hidden="true" />
           {renderInput()}
           {renderTaskSection('朝やること', morningResidual, '今日やること')}
+          {renderHandovers()}
+          {renderWaiting()}
           {renderTaskSection('このあと', [...daytimeResidual, ...eveningTasks], '先の見通し')}
-          {renderPartnerState()}
+          {data.alreadyHandledTasks.length > 0 && renderTaskSection('対応済み', data.alreadyHandledTasks, '二重対応を防ぐ')}
           {renderSchedule()}
+          {renderPartnerState()}
         </>
       )}
 
@@ -682,11 +638,6 @@ export function Today() {
           {renderDecisions()}
           {renderExceptions()}
           {renderTaskSection('持ち越し', data.carryoverTasks, 'いつもと違うこと')}
-          {renderHandovers()}
-          {data.alreadyHandledTasks.length > 0 && renderTaskSection('対応済み', data.alreadyHandledTasks, '二重対応を防ぐ')}
-          {renderWaiting()}
-          {renderSchedule()}
-          <div id="today-remaining" aria-hidden="true" />
           {nextTask && (
             <section className="next-action-hero" aria-labelledby="next-action-title">
               <span className="next-action-pill">次にやること</span>
@@ -706,7 +657,11 @@ export function Today() {
           {renderInput()}
           {renderTaskSection('朝の残り', morningResidual, 'まだ終わっていないこと')}
           {renderTaskSection('今やること', daytimeResidual, '今日やること')}
+          {renderHandovers()}
+          {renderWaiting()}
           {renderTaskSection('このあと', eveningTasks, '先の見通し')}
+          {data.alreadyHandledTasks.length > 0 && renderTaskSection('対応済み', data.alreadyHandledTasks, '二重対応を防ぐ')}
+          {renderSchedule()}
           {renderPartnerState()}
         </>
       )}
@@ -724,7 +679,6 @@ export function Today() {
           )}
           {renderWaiting()}
           {renderSchedule()}
-          <div id="today-remaining" aria-hidden="true" />
           {renderTaskSection('まだ残っていること', [...data.carryoverTasks, ...unfinishedBeforeEvening], '今日をしめくくる')}
           {renderTaskSection('夜にやること', eveningTasks, '今日やること')}
           {renderTomorrowImpact()}

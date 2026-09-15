@@ -84,28 +84,18 @@ describe('Today first-flow priority contract', () => {
     mockClock.mockReturnValue({ now: new Date('2026-09-09T11:00:00Z'), localDate: '2026-09-09', daypart: 'evening' });
   });
 
-  it('keeps 要対応 / 残り / 待ち / 明日影響 linked and material DailyBrief semantics in approved priority order', () => {
-    const scrolledIds: string[] = [];
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      configurable: true,
-      value: function scrollIntoView(this: HTMLElement) {
-        scrolledIds.push(this.id);
-      },
-    });
-
+  it('keeps material DailyBrief semantics in priority order without a KPI summary row', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
 
-    const summary = screen.getByRole('region', { name: '今日の重要サマリー' });
-    expect(summary).toHaveTextContent('要対応 2');
-    expect(summary).toHaveTextContent('残り 2');
-    expect(summary).toHaveTextContent('待ち 1');
-    expect(summary).toHaveTextContent('明日影響 2');
-
-    fireEvent.click(screen.getByRole('button', { name: '要対応 2件を確認' }));
-    fireEvent.click(screen.getByRole('button', { name: '残り 2件を確認' }));
-    fireEvent.click(screen.getByRole('button', { name: '待ち 1件を確認' }));
-    fireEvent.click(screen.getByRole('button', { name: '明日影響 2件を確認' }));
-    expect(scrolledIds).toEqual(['today-attention', 'today-remaining', 'today-waiting', 'today-tomorrow']);
+    // The four counter tiles (要対応 / 残り / 待ち / 明日影響) are gone on purpose.
+    // In real household use three of the four read 0, so the first screenful of
+    // the home screen was spent reporting that nothing was happening while the
+    // one real task sat below the fold -- and a row of household KPIs is the
+    // "家庭を仕事のプロジェクト管理のようにしない" line the product sets for itself.
+    // The same information stays reachable as the sections asserted below.
+    expect(screen.queryByRole('region', { name: '今日の重要サマリー' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /要対応 \d+件を確認/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /明日影響 \d+件を確認/ })).not.toBeInTheDocument();
 
     const decisionSection = screen.getByRole('region', { name: 'まず確認' });
     const exceptionSection = screen.getByRole('region', { name: 'いつもと違う' });
@@ -118,13 +108,44 @@ describe('Today first-flow priority contract', () => {
     expect(exceptionSection).toHaveTextContent('保育園が短縮');
     expect(handoverSection).toHaveTextContent('水筒を玄関へ');
     expect(morningSummary).toHaveTextContent('朝 1/2 完了');
-    expect(screen.getByRole('region', { name: '相手の今日' })).toHaveTextContent('残り 2件・完了 1件');
     expect(decisionSection.compareDocumentPosition(exceptionSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(exceptionSection.compareDocumentPosition(handoverSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(handoverSection.compareDocumentPosition(morningSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(morningSummary.compareDocumentPosition(waitingSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(waitingSection.compareDocumentPosition(remainingHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(remainingHeading.compareDocumentPosition(tomorrowSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  // Requirements §3 forbids 勝率/ポイント/ランキング, and design 04 §5 / §16.2 keep a
+  // partner's ordinary completions in detail/history rather than pushing them as
+  // scorekeeping. The card used to headline `残り N件・完了 N件` at <h2> size, which
+  // on a live household morning read "残り 11件・完了 0件".
+  it('shows the partner state without scoring their day', () => {
+    render(<MemoryRouter><Today /></MemoryRouter>);
+
+    const partner = screen.getByRole('region', { name: '相手の今日' });
+    expect(partner).not.toHaveTextContent('完了');
+    expect(partner).toHaveTextContent('担当している残り 2件');
+    expect(partner.querySelector('h2')).toBeNull();
+  });
+
+  it('leads the partner card with the items that change the reader\'s own behaviour', () => {
+    mockToday.mockReturnValue(data({
+      partnerSummary: {
+        open_assigned: 11,
+        completed_today: 0,
+        critical_items: [
+          { task_id: 'p1', title: 'お迎え' },
+          { task_id: 'p2', title: '夕食対応' },
+        ],
+      },
+    }));
+    render(<MemoryRouter><Today /></MemoryRouter>);
+
+    const partner = screen.getByRole('region', { name: '相手の今日' });
+    expect(partner).toHaveTextContent('お迎え');
+    expect(partner).toHaveTextContent('夕食対応');
+    expect(partner).not.toHaveTextContent('完了 0');
   });
 
   it('lets an unassigned Today item open a real assignment action instead of a dead end', async () => {
