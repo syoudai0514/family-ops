@@ -369,12 +369,17 @@ async function main() {
     });
 
     await waitForText(client, task.title, 12_000);
-    await waitForText(client, '要対応 0', 12_000);
-    await waitForText(client, '残り 1', 12_000);
+    for (const removedKpi of ['要対応 0', '残り 1', '待ち 0', '明日影響 0']) {
+      assert.equal(
+        await evaluate(client, `document.body.innerText.includes(${JSON.stringify(removedKpi)})`),
+        false,
+        `removed Today dashboard text must stay absent: ${removedKpi}`,
+      );
+    }
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-READY',
       entryBoundary: 'real Chrome rendered Today route after HTTP reads',
-      visibleAssertion: `${task.title}, 要対応 0, and 残り 1 are rendered from the canonical Today contract`,
+      visibleAssertion: `${task.title} is rendered from the canonical Today contract without the removed KPI dashboard row`,
       screenshot: await screenshot(client, 'today-ready.png'),
     });
 

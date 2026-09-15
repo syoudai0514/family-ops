@@ -141,7 +141,7 @@ function dailyBrief() {
       is_all_day: false, starts_at: `${TODAY}T06:00:00Z`, ends_at: `${TODAY}T06:30:00Z`,
       all_day_start: null, all_day_end_exclusive: null,
     }],
-    partner_summary: { open_assigned: 0, waiting: 0, completed_today: 0, critical_items: [] },
+    partner_summary: { open_assigned: 2, waiting: 0, completed_today: 4, critical_items: [{ task_id: 'partner-critical', title: 'お迎え' }] },
     reconciliation: { sessions: [], remaining_count: 0, actionable: false },
     tomorrow_impact: {
       local_date: TOMORROW, task_count: 1, schedule_count: 0, carryover_count: 0, impact_count: 1,
@@ -319,11 +319,18 @@ async function main() {
     scenarios.push({ id: 'CF03-loading', assertion: 'Loading is visible and Empty is not rendered during the unresolved canonical read' });
 
     await waitForText(client, task.title, 12_000);
-    for (const text of ['要対応 0', '残り 1', '待ち 0', '明日影響 1', '明日の着替え準備']) await waitForText(client, text);
+    for (const text of ['明日の着替え準備', 'お迎え', '担当している残り 2件']) await waitForText(client, text);
+    for (const removedKpi of ['要対応 0', '残り 1', '待ち 0', '明日影響 1', '完了 4']) {
+      assert.equal(
+        await evaluate(client, `document.body.innerText.includes(${JSON.stringify(removedKpi)})`),
+        false,
+        `removed dashboard/scorekeeping text must stay absent: ${removedKpi}`,
+      );
+    }
     assert.equal(await evaluate(client, 'document.title'), 'おうちノート');
     scenarios.push({
       id: 'CF02-CF04-CF16-ready',
-      assertion: 'Real mobile Chrome renders one DailyBrief-backed Today flow, four first-flow keys, tomorrow impact, and おうちノート identity',
+      assertion: 'Real mobile Chrome renders actionable Today content without the removed KPI dashboard or partner completion scoreboard, while preserving tomorrow impact and おうちノート identity',
       screenshot: await screenshot(client, 'today-ready.png'),
     });
 

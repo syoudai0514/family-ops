@@ -9,6 +9,8 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import type { TaskInstance } from '../../lib/types';
 import { useWeekSchedule } from './useWeekSchedule';
+import { useCalendarFreshness } from './useCalendarFreshness';
+import { CalendarStaleBanner } from './CalendarStaleBanner';
 import { assigneeToken, buildCalendarProjection, transportTokens, type CalendarProjectionItem } from './calendarProjection';
 import { mamaUserId, papaUserId } from '../../lib/familyRoles';
 
@@ -29,6 +31,7 @@ export function WeekView() {
     localIsoDate(days[0]),
     localIsoDate(days[6]),
   );
+  const calendarFreshness = useCalendarFreshness({ enabled: Boolean(household) });
   const [changingTask, setChangingTask] = useState<TaskInstance | null>(null);
   const [detail, setDetail] = useState<CalendarProjectionItem | null>(null);
   const primaryUserId = papaUserId(members);
@@ -66,7 +69,13 @@ export function WeekView() {
         </p>
       )}
       {canonical.schedule?.calendar_stale && (
-        <p className="warning-banner">Googleカレンダーの同期が古いか、再接続が必要です。</p>
+        <CalendarStaleBanner
+          freshness={calendarFreshness}
+          onSynced={() => {
+            void canonical.refresh();
+            void refresh();
+          }}
+        />
       )}
       {loading ? (
         <p role="status">読み込み中…</p>
@@ -147,7 +156,7 @@ export function WeekView() {
 }
 
 function CalendarItemDetail({ detail, onClose }: { detail: CalendarProjectionItem; onClose: () => void }) {
-  const source = detail.source === 'google' ? 'Google Calendar' : 'Family Ops';
+  const source = detail.source === 'google' ? 'Google Calendar' : 'おうちノート';
   return (
     <section className="card calendar-detail" aria-label="予定の詳細">
       <div className="section-heading"><h2>予定の詳細</h2><button type="button" className="text-button" onClick={onClose}>閉じる</button></div>

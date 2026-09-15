@@ -64,23 +64,26 @@ Every item includes stable `action_target` for LINE postback/PWA deep link.
 
 ### Morning
 
+PWA Todayはdashboardではなく、今この人が何をすればよいかを最短で示す。受動的な情報を自分の実作業より上へ固定しない。
+
 1. 🔴 まず確認
-2. ⏳ 待ちの確認日（該当時のみ）
-3. ⚠️ いつもと違うこと
-4. ℹ️ 引き継ぎ・共有
-5. ✅ もう済んでいること（burden reducing only）
-6. 🌅 朝にやること
-7. 🌙 夜にやること
-8. 💡 余力があれば
-9. partner summary
+2. ⚠️ いつもと違うこと
+3. carried / reconciliation input（該当時のみ）
+4. 🌅 今朝の自分の作業
+5. ℹ️ 引き継ぎ・共有
+6. ⏳ 待ちの確認日（該当時のみ）
+7. 🌙 このあと今日やること
+8. ✅ もう済んでいること（burden reducing only）
+9. schedule
+10. partner summary
 
 ### Daytime `今日`
 
-- urgent/current schedule first
-- due waiting check when applicable
-- current-time tasks
+- urgent/current exception first
+- current-time own tasks / reconciliation
+- active info and due waiting checks
 - upcoming today tasks
-- active info
+- already-handled burden reduction and schedule
 - partner critical state
 
 ### Evening
@@ -112,7 +115,7 @@ Do not solve noise by hiding all own tasks behind PWA.
 
 Default partner display:
 
-- summary counts
+- open-assigned count only as quiet supporting metadata when useful
 - transport
 - medical/critical household responsibilities
 - today-only changed assignment
@@ -120,7 +123,7 @@ Default partner display:
 
 `[相手の分も見る]` expands.
 
-The fact that partner completed normal own work is accessible in detail/history but not pushed as scorekeeping.
+Do not headline `completed_today` or otherwise turn the default partner card into a scoreboard. The fact that partner completed normal own work is accessible in detail/history but not pushed as scorekeeping. If partner work materially reduces the current user's expected work, surface that effect through `already_handled` instead.
 
 ## 6. Morning schedule
 
@@ -274,6 +277,10 @@ Rules:
 - PWA recovery is always reachable: the app header exposes a reload control, and top-of-page downward pull supports pull-to-refresh. The gesture activates only from scroll-top, requires a deliberate vertical threshold, ignores interactive/modal targets, and debounces accidental horizontal/short pulls.
 - auth/household/Today reads have finite client-side timeouts. A timeout never leaves a permanent spinner: initial-gate failures become a retry/reload state, while a household refresh after a successful load keeps the existing app shell/nav mounted instead of replacing it with a blocking loader.
 - generic full-screen loading surfaces reveal a manual reload action if loading exceeds the recovery threshold. Reloading preserves Supabase auth/session/local state.
+- PWA Today does not add a separate KPI/dashboard row for `要対応 / 残り / 待ち / 明日影響`; the actionable sections themselves carry those states and counts.
+- morning/daytime rendering may place current own work above passive handover/info while preserving urgent actions and exceptions first.
+- the default partner card must not headline ordinary completion counts; show household-critical items first and any open count only as quiet metadata.
+- Shopping leads with open states (`wanted / assigned / ordered`). Terminal history (`purchased / arrived / cancelled`) is collapsed behind an explicit “終わったもの” disclosure so an empty open list is immediately understandable.
 
 ## 11. Deep links
 

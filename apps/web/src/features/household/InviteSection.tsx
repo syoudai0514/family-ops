@@ -9,7 +9,7 @@ interface InviteResult {
   expires_at: string;
 }
 
-export function InviteSection() {
+export function InviteSection({ confirmWhenJoined = false }: { confirmWhenJoined?: boolean } = {}) {
   const { partner } = useHousehold();
   const [invite, setInvite] = useState<InviteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +50,11 @@ export function InviteSection() {
   }
 
   if (partner) {
+    // Onboarding still wants the confirmation -- the user presses 参加状況を確認
+    // and needs to see it flip. Settings does not: the 家族 card lists both
+    // members directly above, so a card headed 招待 whose only content is
+    // "already joined" is a dead card on the screen.
+    if (!confirmWhenJoined) return null;
     return (
       <section className="card">
         <h2>招待</h2>

@@ -86,8 +86,8 @@ export function SignIn() {
 
   return (
     <main className="app-shell centered">
-      <h1>Family Ops</h1>
-      <p>家族の予定・家事・お願い・買い物・引き継ぎを共有する家庭運営OS。</p>
+      <h1>おうちノート</h1>
+      <p>家族の予定・家事・お願い・買い物・引き継ぎを、ひとつにまとめる共有ノート。</p>
 
       <form onSubmit={handlePasswordSignIn}>
         <label>

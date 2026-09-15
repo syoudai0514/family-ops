@@ -128,8 +128,8 @@ function HistoryRow({
       </fieldset>}
       {error && <p role="alert" className="error-text">{error}</p>}
     </div>}
-    <details className="history-audit"><summary>監査情報</summary>
-      {task.completed_at && <p className="task-item-meta">登録時刻: {formatDateTimeJa(task.completed_at)}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 対象日の翌日以降に記録' : ''}</p>}
+    <details className="history-audit"><summary>記録の詳細</summary>
+      {task.completed_at && <p className="task-item-meta">記録した時刻: {formatDateTimeJa(task.completed_at)}{completedNextTokyoMorning(task.scheduled_date, task.completed_at) ? ' · 対象日の翌日以降に記録' : ''}</p>}
       <EventTrail events={events} members={members} />
     </details>
   </li>;
@@ -183,7 +183,7 @@ export function HistoryPage() {
 
   return <div className="app-shell">
     <div className="today-header"><h1>履歴</h1><button type="button" className="text-button" onClick={() => navigate(-1)}>戻る</button></div>
-    <p className="task-item-meta">直近2週間の予定と実際の結果です。実績日は元の対象日で表示し、登録時刻は監査情報に分けています。</p>
+    <p className="task-item-meta">直近2週間の記録です。日付は実際にやった日で表示しています。</p>
     {correctionDate && <section className="card compact-section" aria-label="修正対象日"><strong>{correctionDate} の記録を訂正</strong><p className="task-item-meta">チェックインから指定された対象日だけを表示しています。</p><button type="button" className="text-button" onClick={() => setCorrectionDate(null)}>すべての日を表示</button></section>}
     <div className="filter-chips" aria-label="履歴の絞り込み">
       {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => chooseFilter(key)}>{label}</button>)}

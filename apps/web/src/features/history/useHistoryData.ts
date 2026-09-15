@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
+import { todayIsoDate } from '../../lib/date';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type { TaskEvent, TaskInstance } from '../../lib/types';
 
@@ -33,10 +34,16 @@ export interface HistoryData {
   refresh: () => Promise<void>;
 }
 
-function windowStartDate(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - HISTORY_WINDOW_DAYS);
-  return d.toISOString().slice(0, 10);
+// History is a PAST-facing screen. `scheduled_date` needs BOTH bounds: recurring
+// task instances are materialized months ahead, so a lower bound alone pulls the
+// whole future in, and the descending sort then puts the furthest-future row
+// first -- the screen opens on next December instead of yesterday.
+// Both ends are derived from the household's Asia/Tokyo date (lib/date.ts), not
+// from the device's UTC date, so the window does not shift for a travelling user.
+export function windowStartDate(today = todayIsoDate()): string {
+  const date = new Date(`${today}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - HISTORY_WINDOW_DAYS);
+  return date.toISOString().slice(0, 10);
 }
 
 export function classifyOutcome(task: TaskInstance, nowIso: string): PlannedVsActualOutcome {
@@ -70,13 +77,15 @@ export function useHistoryData(householdId: string | null, userId: string | null
     setLoading(true);
     setError(null);
     try {
-      const startDate = windowStartDate();
+      const endDate = todayIsoDate();
+      const startDate = windowStartDate(endDate);
       const nowIso = new Date().toISOString();
       const { data: taskRows, error: taskError } = await supabase
         .from('task_instances')
         .select('*')
         .eq('household_id', householdId)
         .gte('scheduled_date', startDate)
+        .lte('scheduled_date', endDate)
         .order('scheduled_date', { ascending: false })
         .order('due_at', { ascending: false, nullsFirst: false });
       if (taskError) throw taskError;
