@@ -38,7 +38,7 @@ export function SettingsHome() {
         <Link to="/settings/test-simulation" className="settings-link"><strong>🧪 1人テストモード</strong><span>1アカウントでお願い→返事→完了まで安全に試す</span></Link>
       </section>
       <CalendarIntegrationSettings />
-      <section className="card settings-invite"><h2>家族</h2><p className="empty-hint">P/M表示と担当色は家庭で固定します。</p>{members.map(member=><label key={member.user_id}>{member.profile?.display_name??member.user_id}<select value={member.family_role??''} onChange={async e=>{if(e.target.value) {await callEdgeFunction(EDGE_FUNCTIONS.setFamilyRole,{operation_id:newOperationId(),user_id:member.user_id,family_role:e.target.value});await refresh();}}}><option value="">未設定</option><option value="papa">パパ（P・緑）</option><option value="mama">ママ（M・橙）</option></select></label>)}<InviteSection /></section>
+      <section className="card settings-invite"><h2>家族</h2><p className="empty-hint">P/M表示と担当色は家庭で固定します。</p><div className="family-role-rows">{members.map(member=><label key={member.user_id}>{member.profile?.display_name??member.user_id}<select value={member.family_role??''} onChange={async e=>{if(e.target.value) {await callEdgeFunction(EDGE_FUNCTIONS.setFamilyRole,{operation_id:newOperationId(),user_id:member.user_id,family_role:e.target.value});await refresh();}}}><option value="">未設定</option><option value="papa">パパ（P・緑）</option><option value="mama">ママ（M・橙）</option></select></label>)}</div><InviteSection /></section>
       <section className="card settings-account">
         <h2>アカウント</h2>
         <p className="empty-hint">この端末でのログインを終了します。</p>

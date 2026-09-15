@@ -23,7 +23,7 @@ describe('App', () => {
   it('renders the Google sign-in screen when no session is present', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Family Ops' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'おうちノート' })).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: 'Google でサインイン' })).toBeInTheDocument();
   });

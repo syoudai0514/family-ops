@@ -65,6 +65,7 @@ export const EDGE_FUNCTIONS = {
   getTodaySchedule: 'get-today-schedule',
   getWeekSchedule: 'get-week-schedule',
   googleCalendarOauthStart: 'google-calendar-oauth-start',
+  ensureCalendarFresh: 'ensure-calendar-fresh',
   completeOnboardingStep: 'complete-onboarding-step',
   replaceRecurrenceSchedule: 'replace-recurrence-schedule',
   setRoutineDefinitionOptions: 'set-routine-definition-options',

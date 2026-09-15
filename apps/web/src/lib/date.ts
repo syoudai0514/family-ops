@@ -14,9 +14,16 @@ export function previousTokyoIsoDate(today = todayIsoDate()): string {
   return date.toISOString().slice(0, 10);
 }
 
+// `toLocaleString` with no options emits seconds ("2026/12/10 18:20:00").
+// Nothing in a household runs to the second, and every deadline//history row in
+// the app went through here, so the whole product read like a machine log.
 export function formatDateTimeJa(iso: string | null): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+  return new Date(iso).toLocaleString('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 }
 
 // HH:MM only, matching docs/design/v6/02_UX_AND_SCREENS.md #3's own

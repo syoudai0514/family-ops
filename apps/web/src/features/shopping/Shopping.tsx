@@ -7,7 +7,13 @@ import { newOperationId } from '../../lib/id';
 import { getShoppingItemActions } from './shoppingActions';
 import type { PurchaseMethod, ShoppingItem, ShoppingItemStatus } from '../../lib/types';
 
-const STATUS_ORDER: ShoppingItemStatus[] = ['wanted', 'assigned', 'ordered', 'purchased', 'arrived', 'cancelled'];
+// A shopping list is a "what do we still need" screen. Grouping strictly by
+// lifecycle status meant that on a household where everything had been bought,
+// the entire screen was 購入済み (4) and キャンセル (1) -- five finished rows and
+// no statement that there was nothing left to buy. Open work now leads and is
+// always present (with its own empty state); finished work collapses.
+const OPEN_STATUSES: ShoppingItemStatus[] = ['wanted', 'assigned', 'ordered'];
+const DONE_STATUSES: ShoppingItemStatus[] = ['purchased', 'arrived', 'cancelled'];
 const STATUS_LABELS: Record<ShoppingItemStatus, string> = {
   wanted: '欲しい',
   assigned: '担当決定',
@@ -60,13 +66,16 @@ export function Shopping() {
   const { household, members } = useHousehold();
   const { items, actorRefId, loading, error, refresh } = useShoppingItems(household?.id ?? null);
   const [showForm, setShowForm] = useState(false);
+  const [showDone, setShowDone] = useState(false);
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
 
-  const grouped = STATUS_ORDER.map((status) => ({
-    status,
-    items: items.filter((item) => item.status === status),
-  })).filter((group) => group.items.length > 0);
+  const group = (statuses: ShoppingItemStatus[]) => statuses
+    .map((status) => ({ status, items: items.filter((item) => item.status === status) }))
+    .filter((entry) => entry.items.length > 0);
+  const openGroups = group(OPEN_STATUSES);
+  const doneGroups = group(DONE_STATUSES);
+  const doneCount = doneGroups.reduce((total, entry) => total + entry.items.length, 0);
 
   return (
     <div className="app-shell">
@@ -90,19 +99,45 @@ export function Shopping() {
         />
       )}
 
-      {grouped.length === 0 && <p className="empty-hint">買い物リストは空です。</p>}
-      {grouped.map(({ status, items: statusItems }) => (
-        <section className="card" key={status}>
-          <h2>
-            {STATUS_LABELS[status]} ({statusItems.length})
-          </h2>
-          <ul className="shopping-list">
-            {statusItems.map((item) => (
-              <ShoppingItemRow key={item.id} item={item} members={members} currentActorRefId={actorRefId} onChanged={refresh} />
-            ))}
-          </ul>
+      {openGroups.length === 0 ? (
+        <section className="card">
+          <h2>これから買うもの</h2>
+          <p className="empty-hint">いま買うものはありません。</p>
         </section>
-      ))}
+      ) : (
+        openGroups.map(({ status, items: statusItems }) => (
+          <section className="card" key={status}>
+            <h2>
+              {STATUS_LABELS[status]} ({statusItems.length})
+            </h2>
+            <ul className="shopping-list">
+              {statusItems.map((item) => (
+                <ShoppingItemRow key={item.id} item={item} members={members} currentActorRefId={actorRefId} onChanged={refresh} />
+              ))}
+            </ul>
+          </section>
+        ))
+      )}
+
+      {doneCount > 0 && (
+        <section className="card collapsible compact-section">
+          <button type="button" className="collapsible-toggle" onClick={() => setShowDone((value) => !value)}>
+            終わったもの（{doneCount}件）{showDone ? '▲' : '▼'}
+          </button>
+          {showDone && doneGroups.map(({ status, items: statusItems }) => (
+            <div key={status}>
+              <h3>
+                {STATUS_LABELS[status]} ({statusItems.length})
+              </h3>
+              <ul className="shopping-list">
+                {statusItems.map((item) => (
+                  <ShoppingItemRow key={item.id} item={item} members={members} currentActorRefId={actorRefId} onChanged={refresh} />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      )}
     </div>
   );
 }
@@ -158,7 +193,7 @@ function ShoppingItemRow({
         <strong>{item.title}</strong>
         <span className="task-item-meta">
           {' '}
-          — {PURCHASE_METHOD_LABELS[item.purchase_method]}
+          {item.purchase_method === 'undecided' ? '' : ` — ${PURCHASE_METHOD_LABELS[item.purchase_method]}`}
           {assignee ? ` · 担当: ${assignee.profile?.display_name ?? assignee.user_id}` : ''}
           {assignmentMode === 'anyone' ? (item.active_claimant_actor_ref_id ? ' · 誰かが対応中' : ' · 誰でもOK') : ''}
         </span>
@@ -177,7 +212,9 @@ function ShoppingItemRow({
           </button>
         )}
         <details className="task-overflow shopping-overflow">
-          <summary aria-label={`${item.title}のその他の操作`}>その他</summary>
+          <summary aria-label={primaryAction ? `${item.title}のその他の操作` : `${item.title}の操作`}>
+            {primaryAction ? 'その他' : '変更'}
+          </summary>
           <div className="task-item-actions">
         {actions.canAssign && (
           <select
