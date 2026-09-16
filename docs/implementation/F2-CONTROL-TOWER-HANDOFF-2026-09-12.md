@@ -332,6 +332,29 @@ Required Android rerun, on the same frozen production SHA:
 
 Physical status at this recovery point: **PENDING USER DEVICE EVIDENCE**. Do not mark §7.4/§7.5 PASS until the above is captured on the final post-documentation exact production SHA.
 
+## 7.7 2026-09-16 newly discovered Codmon daily-submission requirement
+
+Physical real-use review exposed a material nursery-operation gap that was not covered by Q89-Q106 image/notice intake: the household must complete and submit the Codmon daily contact book by **09:15 JST**, and this is easy to forget.
+
+Product Owner supplied real Codmon screenshots and the household responsibility rules. This is now canonicalized as Requirements §19.18 / Q113 and `docs/design/current/12_CODMON_DAILY_SUBMISSION.md`.
+
+Required daily semantics:
+- Masaki pickup person/time (+ pool availability when the Codmon form presents that field) -> today's pickup owner;
+- Shino yesterday dinner/condition -> yesterday's responsible evening owner;
+- Shino breakfast -> today's morning/dropoff owner;
+- Shino pickup -> today's pickup owner;
+- final Codmon send -> today's morning/dropoff owner, only after all four input acknowledgements are complete;
+- 09:15 hard deadline, with one targeted 09:00 remaining-work reminder;
+- Saturdays/Sundays/Japanese holidays suppressed;
+- unresolved previous-day ownership fails closed to unassigned rather than guessing;
+- Family Ops does not duplicate the Codmon form values or claim provider submission automatically. The final task is the human acknowledgement that Codmon was actually sent.
+
+Implementation candidate PR #111 adds a dedicated `previous_evening_assignee` strategy, workday-only Codmon materialization, DB-level final-send readiness guard, quota-aware reminder dispatch, household-specific seed, and regression `92_codmon_daily_submission.sql`.
+
+Because this requirement changes the production DB/runtime and creates new daily tasks, all prior F2 exact-HEAD evidence becomes pre-Q113 evidence. After PR #111 is approved/merged and the migration is applied, freeze a new exact production HEAD and physically verify the five Codmon tasks, assignments, 09:15 visibility, early-send rejection, final-send success, and 09:00 reminder behavior.
+
+Physical status: **PENDING POST-MERGE / POST-MIGRATION EVIDENCE**.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.
@@ -346,6 +369,7 @@ High-value remaining classes include:
 - Android PWA where required;
 - shopping Q107-Q109;
 - Nursery Q89-Q106 actual image path;
+- Codmon Q113 daily input / 09:15 final submission / 09:00 reminder;
 - Google Q110-Q112 actual controlled provider;
 - LINE/PWA concurrency;
 - scheduler -> actual LINE delivery;
