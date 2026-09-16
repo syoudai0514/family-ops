@@ -652,7 +652,7 @@ begin
 
       v_body:=null;
       if v_owned_titles is not null or v_unassigned_titles is not null then
-        v_body:='9:15までにコドモンを送信します。'
+        v_body:='9:15までにコドモン送信が必要です。'
           ||case when v_owned_titles is not null
                  then E'\n\nあなたの入力:\n'||v_owned_titles else '' end
           ||case when v_unassigned_titles is not null
