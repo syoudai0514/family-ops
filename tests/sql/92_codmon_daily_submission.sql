@@ -217,7 +217,7 @@ begin
     household_id,code,title,category,routine_phase,completion_mode,
     created_by,task_kind
   ) values(
-    hh,'codmon_test_evening_a','夜テストA','test','evening','whole',
+    hh,'evening_test_a','夜テストA','test','evening','whole',
     u1,'evening_chore'
   ) returning id into evening_def;
 
@@ -245,7 +245,7 @@ begin
     household_id,code,title,category,routine_phase,completion_mode,
     created_by,task_kind
   ) values(
-    hh,'codmon_test_evening_b','夜テストB','test','evening','whole',
+    hh,'evening_test_b','夜テストB','test','evening','whole',
     u1,'evening_chore'
   ) returning id into evening_def;
 
