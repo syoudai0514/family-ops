@@ -93,7 +93,7 @@ PF-06の現行bulkを「明白なバグ」と断定しない。現行は列挙�
 | PF-05 | 言いづらさを減らす / PO-01 | 承認後のみPWA相談応答 | 相談/禁止/混在/明示action、通知0 |
 | PF-06 | 最終提出を忘れない / PO-02 | 承認後のみ送信taskのbulk除外 | LINE/PWA bulkとも除外、単独完了可、実機 |
 
-合計: material findings **6**。Conforming work **4**（implementation defect 2、conforming UX refinement 2）。Requirement change proposal **2**、PO判断 **2**。統計上の実現率・UX合格率は算出しない。
+合計: material findings **7**。Conforming work **5**（implementation defect 3、conforming UX refinement 2）。Requirement change proposal **2**、PO判断 **2**。統計上の実現率・UX合格率は算出しない。
 
 ## 通知・周辺機能の評価
 Shoppingはopenを前面、historyを折り畳み、claim/action-level actualを持つ。Nursery画像は出典、曖昧な子/園、候補選択、画像のみ削除を持つ。今回はこれらを新しく作り直す理由はない。PF-04の共通通信回復とPF-02の確認整合は周辺にも非劣化確認を適用する。
@@ -109,3 +109,20 @@ LINEの相談安全性・混在入力corpusはPWAにも再利用できるが、�
 
 ## Review conclusion
 現状は「安全な部品は揃っているが、家族の入力から安心して閉じるまでの体験に切れ目がある」。機能を増やす前にPF-02/04/01/03を収束させる。PF-05/06は価値がある提案だが、POが選ぶまで現行要件を保持する。Product PASS / production readinessは未判定。ここまでのレビューを保存してからPROPOSED詳細設計へ進む。
+
+## PF-07 — 万能入力から実際の行動へ渡す際に意味が欠落する（P1、implementation defect、checkpoint 3b）
+
+方向性checkpoint後、詳細API接続前の追加確認で確定。PF-02は「確認した正文と送る正文」、本件は「実行するcommandの種類・項目」の問題として分ける。
+**Requirements:** Q2/Q36/Q52/Q54/Q70、§28.6、M02/M04/M13、cross-channel invariant。
+**CURRENT evidence:**
+- `lineIntent.ts` のLineIntentはsubtasks/context/calendarVisibilityを持ち、`lineMultiIntent.ts` のpromptには「病院11時、10時出発、保険証・診察券」を準備1候補＋subtasksにする規則がある。
+- PWA `conciergeFlow.normalizeConciergeProposal` はこの3項目を型/変換で保持しない。`conciergeCommit` はtaskを常にwhole / hiddenで作る。実際のcreate-task Edgeはsubtasksとcalendar_visibilityを既に受理できる。
+- LINE `process-line-inbox/index.ts` は単一の明確なpickup変更で既存pickup occurrenceを検索し、`assignment_change_request` にする。
+- PWA `propose-concierge-candidates` はこの既存occurrence解決を呼ばず、`conciergeCommit` はrequestを常にsendRequestへ送る。PWAの候補型にtask_id / scope / assignment discriminatorがない。お迎え変更を了承しても既存pickup担当に作用するcommandを選べない。
+- LINEでも複数候補はassignment解決より前にmulti-intent reviewへ入る。複数入力中のpickup変更も同一resolverで確認する必要がある（単一LINE経路が正常だから全経路PASSとはしない）。
+
+**家族への影響:** 「お迎えを頼んだ」「準備物も言った」のに、既存担当やチェック項目へ伝わらない。入力を短くする工夫が信頼を下げ、結局口頭で再確認することになる。
+**Desired:** 同じsource spanから同じcanonical actionを解決する。既存担当変更は既存assignment-change command、準備物は既存subtasksを使う。軽いお願いを全て担当変更にするのは禁止。
+**Acceptance:** 単一/複数・LINE/PWAでpickup対象date/task/scopeが一致。受理前担当維持、受理後dependent roleが追随。準備候補はcontext/項目/明示visibilityを確認時まで保持し、対応するcommandへ渡す。解決不明はその候補だけ確認し、軽いお願いへsilent downgradeしない。
+**実証範囲:** 型・adapter・dispatcherのソース経路を確認。providerや実DBでの再現ではない。次工程でraw input→parser→candidate→confirmed command→DB readbackの回帰を必須にする。
+**Update to work ordering:** PF-07のcandidate semantic contractをPF-02のpreview/payload契約と同時にS1へ含める。新ドメインを作らず、既存assignment resolverの小範囲共通化。reviewの改善優先はPF-02/07/04/01/03、PF-05/06は承認待ち。
