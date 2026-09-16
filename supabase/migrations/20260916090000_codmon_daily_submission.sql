@@ -464,7 +464,7 @@ begin
   from public.task_definitions
   where household_id=new.household_id and id=new.task_definition_id;
 
-  if v_code<>'codmon_submit' then
+  if v_code is distinct from 'codmon_submit' then
     return new;
   end if;
 
