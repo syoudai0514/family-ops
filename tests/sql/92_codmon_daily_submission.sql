@@ -22,6 +22,7 @@ declare
   pickup_task uuid;
   workday date;
   reminder_day date;
+  resolver_day date;
   holiday_day date;
   prior_day date;
   previous_rule uuid;
@@ -71,7 +72,12 @@ begin
   where extract(isodow from d)::int between 1 and 5
     and not private.fn_is_nonworkday(d::date);
 
-  if workday is null or reminder_day is null then
+  select min(d::date) into resolver_day
+  from generate_series(reminder_day+2,reminder_day+28,interval '1 day') d
+  where extract(isodow from d)::int between 1 and 5
+    and not private.fn_is_nonworkday(d::date);
+
+  if workday is null or reminder_day is null or resolver_day is null then
     raise exception 'FAIL codmon: could not choose workdays';
   end if;
 
@@ -225,18 +231,18 @@ begin
   using public.task_definitions td
   where ti.household_id=hh and ti.task_definition_id=td.id
     and td.household_id=hh and td.code='pickup'
-    and ti.scheduled_date=reminder_day-1;
+    and ti.scheduled_date=resolver_day-1;
 
   insert into public.task_instances(
     household_id,task_definition_id,origin,title,category,routine_phase,
     scheduled_date,planned_assignee_id,planned_assignee_actor_ref_id,
     assignment_mode,assignment_source,completion_mode,status,source,created_by
   ) values(
-    hh,evening_def,'manual','夜テストA','test','evening',reminder_day-1,
+    hh,evening_def,'manual','夜テストA','test','evening',resolver_day-1,
     u1,ar1,'person','legacy_snapshot','whole','todo','test',u1
   );
 
-  resolved:=private.fn_resolve_previous_evening_assignee_v1(hh,reminder_day);
+  resolved:=private.fn_resolve_previous_evening_assignee_v1(hh,resolver_day);
   if resolved->>'mode'<>'person' or (resolved->>'user_id')::uuid is distinct from u1 then
     raise exception 'FAIL codmon: unique previous evening owner did not resolve';
   end if;
@@ -254,11 +260,11 @@ begin
     scheduled_date,planned_assignee_id,planned_assignee_actor_ref_id,
     assignment_mode,assignment_source,completion_mode,status,source,created_by
   ) values(
-    hh,evening_def,'manual','夜テストB','test','evening',reminder_day-1,
+    hh,evening_def,'manual','夜テストB','test','evening',resolver_day-1,
     u2,ar2,'person','legacy_snapshot','whole','todo','test',u1
   );
 
-  resolved:=private.fn_resolve_previous_evening_assignee_v1(hh,reminder_day);
+  resolved:=private.fn_resolve_previous_evening_assignee_v1(hh,resolver_day);
   if resolved->>'mode'<>'unassigned' then
     raise exception 'FAIL codmon: ambiguous previous evening owner was guessed';
   end if;
