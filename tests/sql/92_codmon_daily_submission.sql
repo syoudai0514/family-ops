@@ -119,6 +119,37 @@ begin
 
   perform private.fn_seed_codmon_daily_for_household_v1(hh,workday);
 
+  -- The seed runs before this future workday. It must create recurrence rules
+  -- only; it must NOT freeze tomorrow's "yesterday owner" before tomorrow.
+  if exists(
+    select 1
+    from public.task_instances ti
+    join public.task_definitions td
+      on td.household_id=ti.household_id and td.id=ti.task_definition_id
+    where ti.household_id=hh
+      and ti.scheduled_date=workday
+      and td.code like 'codmon_%'
+  ) then
+    raise exception 'FAIL codmon: future seed pre-materialized Codmon ownership';
+  end if;
+
+  -- Simulate the 00:10 JST materializer reaching that local workday.
+  for previous_rule in
+    select rr.id
+    from public.recurrence_rules rr
+    join public.task_definitions td
+      on td.household_id=rr.household_id and td.id=rr.task_definition_id
+    where rr.household_id=hh
+      and td.code like 'codmon_%'
+      and td.code not like 'codmon_test_%'
+      and rr.weekday=extract(isodow from workday)::int
+      and rr.active
+  loop
+    perform private.materialize_recurrence_rule(
+      hh,previous_rule,workday,workday
+    );
+  end loop;
+
   if (
     select planned_assignee_id
     from public.task_instances ti
