@@ -386,11 +386,15 @@ begin
         v_seeded_rules:=v_seeded_rules+1;
       end if;
 
-      -- If the requested start is today (or a test-selected day), make the
-      -- first occurrence immediately available. Future daily runs own +14d.
-      perform private.materialize_recurrence_rule(
-        p_household_id,v_rule_id,p_effective_from,p_effective_from
-      );
+      -- Never pre-materialize a future start here. In particular,
+      -- previous_evening_assignee must wait until that local day arrives so
+      -- yesterday's real evening responsibility is known. The 00:10 JST daily
+      -- materializer will create the occurrence on its actual day.
+      if p_effective_from <= (now() at time zone 'Asia/Tokyo')::date then
+        perform private.materialize_recurrence_rule(
+          p_household_id,v_rule_id,p_effective_from,p_effective_from
+        );
+      end if;
       v_rule_id:=null;
     end loop;
   end loop;
@@ -648,7 +652,7 @@ begin
 
       v_body:=null;
       if v_owned_titles is not null or v_unassigned_titles is not null then
-        v_body:='9:15までにコドモンを送信します。'
+        v_body:='9:15までにコドモン送信が必要です。'
           ||case when v_owned_titles is not null
                  then E'\n\nあなたの入力:\n'||v_owned_titles else '' end
           ||case when v_unassigned_titles is not null
