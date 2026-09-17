@@ -186,3 +186,147 @@ readinessがtrueでも他端末訂正で完了を拒否されたら409を受け�
 SQL: `tests/sql/92_codmon_daily_submission.sql` にreadinessの0–4完了/欠落/別household/別日/test-context/休日/未設定/submit後訂正を追加。新SQLではduplicated fixtureも分離する。
 PWA: `useTodayData.test.tsx`, `TaskChecklistItem.test.tsx`, `Today.states.interaction.test.tsx`。LINE: `lineTodayUx.test.ts` とSQL renderer test。DB guardをUIで代替しない。
 backward compatibility: old clientはextra JSON keyを無視、新clientがkey欠落なら既存task表示＋「入力状況は完了時に確認」とし新しいready主張をしない。DB projection/guardを先にstaging、次にrenderer/frontend。同じreleaseでcanonical design12/04とtest evidenceを更新。Requirements Q113の意味は変更なし。F2は平日5task/担当/残項目/4入力gate/09:00/09:15/2端末反映を新HEADで再取得。
+
+## 9. S2 / PF-04: bounded waitと結果不明の回復
+
+### 9.1 共通clientの期限
+既存 `apps/web/src/lib/apiClient.ts` にoptionsを追加する。既存2引数callerは互換。新規 `requestPolicy.ts` でendpointを `read` / `proposal` / `mutation` に静的分類し、命名prefixだけでmutation可否を推定しない。
+- auth getSession: 12秒。
+- read request: auth完了後12秒。
+- ordinary mutation: auth完了後30秒。
+- AI proposal: auth完了後45秒。
+この値は実装上限であり、新しい家庭業務期限ではない。unit testではclock injection/偽timerを使う。
+fetchにAbortController.signalを渡し、**response body readまで**同一deadlineでPromise.race。cleanupでtimer解除、late responseはUI stateを上書きしない。auth deadline後に遅れてgetSessionが返ってもfetchを開始しないチェックが必要。
+AbortはDB transactionやLINE送信の取り消しを保証しない。dispatch開始後のnetwork/timeout/5xxは保守的に `outcome='unknown'`。fetch前の認証・明示offline・payload validation失敗は `not_sent`。確定的な4xx業務エラーは `rejected`、409 revision conflictは再確認へ。2xx malformed JSONもmutationでは成功表示せずunknown。
+FamilyOpsApiErrorを拡張するかsubclassで `outcome` を持たせる。UNKNOWN/NETWORK_ERRORだけで呼び出し元が未送信と推測しない。
+callEdgeFunctionに無条件自動retryは実装しない。service-role credentialや生JWTはjournal/consoleへ一切保存しない。
+
+### 9.2 CommandAttempt（small frontend helper）
+新規 `apps/web/src/lib/commandAttempt.ts` と `useCommandAttempt.ts` を置く。これはoffline queueではなく、利用者が既に明示確定した**一つの操作**の結果を確かめる仕組み。
+```ts
+type Attempt = {
+ version:1; userId:string; householdId:string;
+ operationId:string; endpoint:EdgeFunctionName;
+ payload:Readonly<Record<string,unknown>>;
+ state:'prepared'|'sending'|'unknown'|'succeeded'|'rejected';
+ createdAt:string; // UI上の実績日には使わない
+ result?:unknown;
+};
+```
+- final confirmationでpreparedを作る。送信開始前にpersistし、同じ対象buttonのdouble clickをref guardで止める。
+- retryは保存したendpoint/payload/operation_idをそのまま使用。再解析・今日の日付の再計算・新UUID発行は禁止。
+- successを受けてdomain readbackをrefresh。receiptで成功と分かっているのに後続pending-action cleanupが失敗した場合、「送信済み、画面の整理を再試行」と分離し、新規send-requestを再発行しない。
+- unknownは「送信結果を確認できません。もう一度確認しても二重には送られません」＋「結果を確認」。この文言はreceiptが保証されたendpointにだけ使う。
+- unknown中はそのcommandの宛先/本文編集を止める。navは使える。相手に「送信失敗」と通知しない。
+- retryで同じ操作の保存結果が返ればsucceeded。同じoperation IDで異なるpayloadを許容しない（backend receipt hashも検証）。
+- 409競合は古い操作を再解釈して実行しない。最新状態を表示し、利用者が明示的に確定し直して初めて新しいoperation IDを発行。
+- retry保証がない既存endpointは明示的なreadback経路のみ。「同じIDで二重にならない」というUIを出さない。強引にbodyへoperation_idを付けてもserver側receiptは増えない。
+
+### 9.3 最初に必ず適用するconsumer
+| Consumer | 保持する操作単位 | outcome unknown時 |
+|---|---|---|
+| conciergeCommit / review workspace | candidate別confirmed envelope | 成功candidate固定、unknownだけ同じIDで確認 |
+| Requests.SendRequestForm | sendRequestまたはconfirmRequestDraftの確定payload | 同じID。pendingAction cleanupは別段階 |
+| TaskChecklistItem / Todayのaccept・assignment actions | 対象task/attempt/revision/actionごとのpayload | canonical readback＋receipt replay。再renderでnewOperationIdを作り直さない |
+| CheckinPage | group/session/eligible IDs/response/target date | 同じgroup操作をreplay。現在の残件へ対象を変えない |
+| Shopping / AnyoneOwnerPage | item/revision/action | claimの競合は表示。購入済みを新しい買い物実績にしない |
+| Handovers | confirmed shared_text/validity/action | 二重共有を作らない |
+| NurseryReviewPage | intake/revision/選択item/value | current intake状態を再読込。confirmedなら成功、revision conflictなら再確認 |
+| TaskFormModal | 確定済みcreate/edit payload | 作成済みを新規として作り直さない |
+
+shared clientのbounded waitは全callerに効く。**上表のconsumerを未対応のままtimeoutだけ導入してmerge-readyにしない。** 既存endpointでrevision-based idempotencyのみの場合はauthoritative readbackに従う。
+`get-routine-session` 等のreadは12秒timeoutで再読込可。取得中に古い成功dataがある場合はstaleとして保持、最初の失敗を空状態にしない。Todayの既存requestSequenceを他のread helperにも必要な範囲で再利用し、古い応答で画面を戻さない。
+
+### 9.4 保存とprivacy / refresh
+prepared/unknown envelopeはsessionStorageでuserId/householdId/versionを含むkeyに保存。既存のglobal concierge-draft keyもscope移行し、旧unscoped本文を別userへ自動移行しない。既存session内で所有者を証明できない旧値は破棄するか明示確認（表示自体が漏洩になるuser切替後は破棄）。
+保存内容は送信承認済みpayloadとoperation IDだけ。API keys、JWT、生のprivate raw_input、画像binary/provider sourceは保存しない。raw_input_idは参照だけ。
+success/rejectedで不要payloadを削除。logout/user/household切替はアクセス遮断して他者に表示せず、journalを消去する。24時間をUI再開期限とし、期限後は「履歴で結果を確認」にし自動replay/新規再送をしない。server receipt retentionをfresh-readして、replay上限をそれ以下にする（短い場合は短い方を採用）。
+storage unavailable: 現在tabのmemoryで同じattemptを維持し、結果不明中のmanual reloadには「入力/結果確認をこの画面で続ける」案内。秘密をURLへ退避しない。
+`refreshCurrentPwa` / PullToRefresh / SW activationで画面を再作成する前に、prepared/unknownと編集draftの保存を同期的に済ませる。既存workerの更新契約は維持。新しい強制reloadループやnavigation全体のロックは禁止。
+offlineでの新規確定はdispatchせず入力保持。オンライン復帰で自動送信しない。ユーザーが確定/結果確認を押す。
+
+### 9.5 Data / Edge / tests / rollback
+原則DB table/schema追加なし。CURRENTのmutation_receipts/canonical operation receipt、idempotency/hash/CASを再利用。各上表endpointのCURRENT writerを確認してreceipt/readback保証を表に残す。保証欠落を実証したものだけ小さなDB function migrationを追加し、全domainの書き換えはしない。server outcomeを照会するためのpublic raw receipt table公開は不要。
+unit: `apiClient.test.ts` にauth/fetch/body永久pending・deadline後late resolve・abort・認証切替・malformed 2xx・typed 4xx。
+interaction: 「server commit成功→responseのみ消失→結果確認→1 Request/1 notification」、部分成功、checkin対象変化、receipt期限、別userが同じtab、storage例外、refresh、back。
+SQL/Edge: operation ID＋hash同一のreplay、ID同一でpayload違い拒否、actor/household越境、accepted request重複task生成0。最新sourceの既存testsへ追加する。
+Physical F2: Android/iPhoneのbackground→復帰、低速/通信切替、更新button/pull refresh、navigation、フォーム途中と送信中に分けて確認。fake timer unitのみで実機PASSにしない。
+rollbackは旧clientへ戻してもcanonical receiptを消さない。client不具合はforward fixを優先し、unknown stateから新しいUUID送信を復活させるrollbackは禁止。
+
+## 10. S4 / PF-05: PROPOSED PWA相談（PO-01なしで実装しない）
+**承認する具体的変更:** Q74/§16に「PWA万能入力でも家族への伝え方・限定的な家庭相談に短い回答を返す」を追加。LINEの§28.3安全境界を両channelへ明示拡張。汎用assistant、長期memory、無料枠変更は含まない。
+desired flow: 入力→same safety classifier→相談返答。返答を見ただけでRequestは作られない。「この文案をお願いとして確認」を押すとS1のcandidate reviewへ進み、相手/日付/bodyを確認して初めて送る。
+API: `propose-concierge-candidates` のJSONにoptional `assistant_reply:string|null` / `disposition:'read_only'|'assistant'|'clarification'|'candidates'` を追加。既存keysは残す。会話分類は `lineNonMutationDisposition` / source-span guards、文案は `buildAssistantConversationReply` を共用。モデルプロンプトをPWA用に複製しない。
+質問のtoday/tomorrow/weekはcanonical reader結果か対象date付き既存画面に接続し、「業務オブジェクトは作りません」だけで終えない。日時をLLMの記憶から回答しない。
+mixed inputはassistant_reply＋明示action candidatesを同じ結果workspaceへ表示。相談中の家族名・「よさそうなら」・no-sendを送信承認に変換しない。短い2–4turn correctionは現在tabのexplicit stateを使い、旧draftをsupersededにする。永続的chat historyの追加は別PO判断とする。
+AI timeout/unavailableは既存安全fallback。返答なしを創作して埋めない。0candidate相談を「入力失敗」と表示しない。AIは既存環境model設定/無料枠を使用し新課金なし。通知0、business mutation0、conversation textをfamily-visible recordへ保存しない。
+files: proposal Edge、lineAssistantConversation/shared classifier、conciergeFlow/ResultsPage。migrationなし。
+tests: existing `lineAssistantConversation.test.ts`, `lineAddresseeQualityCorpus.test.ts`, `lineConversationContextQuality.test.ts` をchannel adapter両方へ適用。相談/禁止/明示依頼/混在/訂正/逆訂正/捏造送信claims。F2はPWA相談→未送信の確認→明示送信の2者確認。PO未承認ならこの節だけDEFERRED。
+
+## 11. S5 / PF-06: PROPOSED Codmon送信の独立申告（PO-02なしで実装しない）
+**承認する具体的変更:** Q59/Q64のeligible-setに「Codmon最終送信を除外」の例外、Q113に「4入力後、外部で実際に送信してから専用1tap申告」を追記。§19.18 / design03/04/12も同時更新。4入力は現行groupに残る。
+state: 4 input todo/completed → readiness ready → 人がCodmonで送信 → 人が専用buttonを押す → submit completed。ready/open/link clickではsubmit completedにしない。
+新table、新generic dependency model、new consent modal不要。特定code `codmon_submit` のみ、private shared eligibility predicateでbulkから除外。正本taskをtask_subtaskへ変換しない。
+変更対象:
+- `private.fn_command_reconcile_task_group_v1` とCURRENTのroutine bulk adapter（`server_tx_complete_routine_session` 等、最終定義を検索）。
+- `server_tx_get_routine_session` のeligible IDs/labels/count、LINE `lineMustComplete.ts` / `routineItemFlow.ts` のbulk対象表示、PWA CheckinPage。
+- 個別 `complete-task` / LINE single-item完了は既存triggerを通して許可。
+- `include_in_routine_line` をfalseにして送信taskを見えなくする修正は不可。表示対象とbulk対象は分離。
+- old clientがsubmit IDをbulkに含めてもserverはscope全件検証後にsubmitだけ除外し、resultに `excluded_task_ids` と `exclusion_reason='explicit_external_submission_ack'` を返す。一般のforeign IDsや他人のtaskを無視して成功扱いする仕様は入れない。
+- 手動でsubmitを完了済みの履歴は変更しない。過去bulkによる完了も自動取消しない。
+- bulk結果は「朝の入力を記録しました。コドモンの送信確認が残っています」。既存summary/LINE rendererも残りsubmitを表示。exclude-onlyのbulkはbusiness no-opとして理由を返し、全部完了と表示しない。
+- mostly_doneは従来どおりgroup evidenceのみ。undoは今回実際に変更したinput IDsだけで、独立した送信完了を巻戻さない。
+migration: additive helper/command/readers/renderer replacement。新migrationをCLIで作り、既存Q113 migrationを編集しない。既存table dataのbackfill不要。
+concurrency: group eligible IDsをserverで解決・lockする既存順序を保ち、submit/input同時操作は既存guardで再検証。submit ready readは助言、書込の真実はDB。409後の自動retryで人の送信申告を作らない。
+tests: 4入力うち自分分bulk成功、submit未完了のまま、残り相手のinputでDB guard、4完了後1tap submit、LINE/PWA一致、old client bulk含有、mostly_done/undo、別日/context、同時個別入力。
+rollout: reader/commandを同時DB migration→Edge/renderer→PWA。旧clientでも誤完了しないserver guardが先。PO未承認ならこの変更は未実装のまま現行bulkを維持する。
+
+## 12. File / migration / test mapping
+| Finding | 主な修正先（apps/web/src省略） | backend | 検証追加 |
+|---|---|---|---|
+| PF-01 | features/tasks/QuickAdd、features/concierge/Page/Results、app/AppShell互換 | 既存proposal | QuickAdd interaction、BackState、mobile browser |
+| PF-02 | conciergeFlow/Commit/Results/Confirm、新confirmedCommand | 既存request/share commands | DOM→payload一致、原文非漏洩、部分成功 |
+| PF-03 | today/useTodayData、TodayTaskItem、TaskChecklistItem | readiness helper / DailyBrief / Codmon guard/reminder / LINE renderer | SQL92拡張、read-model parity、9:00/9:15 |
+| PF-04 | lib/apiClient、commandAttempt、上表consumers、pwaFreshness/PullToRefresh連携 | 既存receipt、欠落実証時のみ修正 | client偽timer＋失われた応答＋SQL replay＋実機 |
+| PF-05 | conciergeFlow/Results | proposal + shared conversation | LINE corpusのPWA parity、通知0 |
+| PF-06 | checkin、TodayTaskItem | bulk eligibility/read/LINE adapter | bulk/single/undo/old client parity |
+| PF-07 | conciergeFlow/Commit、confirmedCommand | shared resolver、assignment Edge/RPC v2、LINE multi-intent | raw input→DB、subtasks、protected dependent |
+
+既存testsの文字列存在チェックだけを増やさない。domain truth、actual transported payload、ユーザーの入口から結果までをassertする。
+詳細実装はCURRENT最終関数定義を使う。歴史migrationの同名関数をcopyして後続修正を消すことは禁止。
+
+## 13. 必須実利用シナリオ（検証ID）
+| ID | 入力/前提 | 期待する結果 |
+|---|---|---|
+| A01 | PWA+で「牛乳がない」 | 分類選択なし、1review、買い物追加、予定/Requestなし |
+| A02 | 「火曜お迎えお願い」→水曜へ編集 | preview/確定本文/対象occurrence/dateが水曜、旧火曜文面で送れない |
+| A03 | 「牛乳がない。金曜のお迎え代わって」 | shopping＋existing pickup変更、受理前は担当維持 |
+| A04 | 「明日11時病院。10時出る。保険証と診察券準備」 | 必要なcontext/準備2項目が確認・登録後も残る。誤った予定を増殖しない |
+| A05 | 送信DB成功、HTTP応答消失 | unknown、同じIDで照会兼retry、Request/通知とも1回 |
+| A06 | タスク/買い物/園review中にauth/fetch/bodyが止まる | bounded error、入力とnav維持、誤成功/false emptyなし |
+| A07 | 平日8:50、Codmon2/4、相手入力残り | 送信taskに残入力/担当、通常完了を先に押させない |
+| A08 | 4/4→別端末訂正→送信完了を押す | DB guard再検証、拒否＋最新状態、provider成功の誤表示なし |
+| A09 | 9:00再試行/1row欠落/休日 | dedup、欠落をreadyにしない、休日は通常通知なし |
+| A10 | Request acceptとToday refreshが競合 | canonical担当/依存/attemptへ収束、旧snapshotで承認しない |
+| A11 | 相手が先に買い物claim、完了後undo | 既存claim/actual unit維持、商品数を家事件数にしない |
+| A12 | 園画像→子/園の曖昧さ→確認→元画像削除 | 既存人確認/出典/確定データ保持、入力時timeout回復 |
+| A13 | PO-01承認時「送らず文案だけ」 | PWA返答、候補/通知なし、明示操作後だけreview |
+| A14 | PO-02承認時「朝全部やった」 | inputのみ完了、submit残る、外部送信後1tap申告 |
+| A15 | iPhone/Android sleep/resume、更新/pull、Back | 最新shell、nav・draft/attempt・scroll保持、別userに内容なし |
+
+A01–A12/A15はconforming lane。A13/A14は承認時だけ実施。承認なしに「test skip＝製品欠陥」としない。
+browserは少なくともmobile 393×852と小さい幅、keyboard/long text/多タスクで確認。これは実端末F2を代替しない。
+
+## 14. Rollout / gates /資料更新
+1. CURRENT fresh-read: main、branch/HEAD、PR、changed files、CI、canonical、runtime migration version（read-only可能時）。古いPRの記載だけでQ113適用済みと扱わない。
+2. S0/S1/S2/S3は非本番branchで実装。fixture-onlyの許可環境でtest。real妻への通知やprovider mutationなし。
+3. targeted tests→full CIのweb/db/Edge/Supabase/evidence jobs→失敗原因修正→再CI。文言変更でbroken snapshotだけ更新してrequirements違反を隠さない。
+4. self-reviewで要求→設計→実装→tests→A01–A15を照合、gaps明記。全routine scopeを変える追加案はここで勝手に採用しない。
+5. canonical docs: design04 input/recovery、design03 command/state、design12 Codmon、design06 retry/privacy/evidence、必要なdesign02 function contract、design10 LINE/PWA責務の意味を維持した注記。BaselineはPF-05/06承認時のみ新behavior追加。それ以外は古いstatus metadata訂正と既存意味のclarification。
+6. implementation reportにfinding ID、files、migrations、tests、not tested、F2 required、rollout/rollbackを記載。proposalを実装後の別CURRENT正本にしない。実装内容は正本へ、proposalはdecision historyとして維持。
+7. commit/push→PR→merge-readyで止める。今回Solへの指示もproduction/main merge/F2は別承認。承認後はDB/Edge/PWAのexact deployed versionsを合わせ、必要F2を新HEADで実施してからproduct GO。
+8. additive migration rollbackはdata/receipts/agreementsを消さず、forward fix。新旧reader互換を保つ。feature-offでlegacy truthへ戻さない。
+
+## 15. 完成度・残る判断
+実装方式・UX・state・再利用・対象file・RPC/DB・通知・test・F2・rolloutは本書で指定。SolはCURRENT差分と実在する最新symbolを照合するが、目的/UXを再設計してはならない。
+残る**製品判断はPO-01/PO-02だけ**。本番migration適用、実機/通知品質、成功したUIの実測は未確認であり、設計完成と製品PASSを混同しない。
