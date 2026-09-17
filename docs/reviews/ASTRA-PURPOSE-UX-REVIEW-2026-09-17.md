@@ -30,6 +30,7 @@ See [inventory](ASTRA-PURPOSE-UX-INVENTORY-2026-09-17.md) for authority and CI e
 | PF-03 | P1 / 毎朝09:15 | CONFORMING FIX | Codmon送信前に「誰のどの入力が残るか」を同一作業の文脈で読めず、押してエラーで知る構造。通常taskに紛れる | design12 readiness / useTodayData / TaskChecklistItem / migration Q113 |
 | PF-04 | P1 / 信頼・継続利用 | IMPLEMENTATION DEFECT | 登録/送信のAPI helperはgetSession/fetch/body readに上限なし。待ちっぱなしのbusy UIから更新すると、成功したか分からないまま再入力し得る | apiClient.callEdgeFunction / Requests.SendRequestForm / conciergeCommit |
 | PF-05 | P2 / 言いづらい相談 | PRODUCT PROPOSAL | PWA自由入力は相談を安全に候補から除外できても、有用な相談回答を返さず「具体的に追加」と戻す。LINEにある会話援助をPWAにも出すか | propose-concierge-candidates / lineAssistantConversation / ConciergeResultsPage |
+| PF-07 | P1 / 行動の意味 | IMPLEMENTATION DEFECT | PWA/複数入力経路でpickup変更がlight requestへ落ち、準備subtasksも欠落 | conciergeFlow/Commit、LINE単一・multi-intent分岐 |
 | PF-06 | P1 / critical acknowledgement | PRODUCT PROPOSAL | Codmon最終送信が通常朝group対象。「全部やった」の中の一件として扱う方針と、外部送信忘れを防ぐ方針のどちらを優先するか | Q59/Q64/Q113 / seed include_in_routine_line=true / submit trigger |
 
 P0は本番事故確認済みという意味ではない。PF-02は人が承認した本文と実際の副作用の一致を先に直す優先順位。
@@ -90,6 +91,7 @@ PF-06の現行bulkを「明白なバグ」と断定しない。現行は列挙�
 | PF-04 | 途中で諦めず使える / §28.1 | bounded wait + retry identity | never-resolving auth/fetch/body、response loss、再送1件、実機復帰 |
 | PF-01 | 思いつきを外に出す / Q74 | input-first、確認統合 | +→入力→一括確認→結果、戻る/手動fallback |
 | PF-03 | 朝の忘れ防止 / Q113 | read-only readiness、既存task inline説明 | SQL同一code定義、PWA/LINE表示、平日9:00/9:15 |
+| PF-07 | 同じ話が同じ行動になる / Q2,Q36,Q54,Q70 | shared resolverと項目保持 | 単一/複数LINE/PWA→canonical readback |
 | PF-05 | 言いづらさを減らす / PO-01 | 承認後のみPWA相談応答 | 相談/禁止/混在/明示action、通知0 |
 | PF-06 | 最終提出を忘れない / PO-02 | 承認後のみ送信taskのbulk除外 | LINE/PWA bulkとも除外、単独完了可、実機 |
 
@@ -108,7 +110,7 @@ LINEの相談安全性・混在入力corpusはPWAにも再利用できるが、�
 5. open検索には過去stacked PR #72/#46が残る。本文の旧PASS・旧candidateをCURRENTに採用しない。今回の変更対象はreview/proposal/implementation docsだけ。
 
 ## Review conclusion
-現状は「安全な部品は揃っているが、家族の入力から安心して閉じるまでの体験に切れ目がある」。機能を増やす前にPF-02/04/01/03を収束させる。PF-05/06は価値がある提案だが、POが選ぶまで現行要件を保持する。Product PASS / production readinessは未判定。ここまでのレビューを保存してからPROPOSED詳細設計へ進む。
+現状は「安全な部品は揃っているが、家族の入力から安心して閉じるまでの体験に切れ目がある」。機能を増やす前にPF-02/07/04/01/03を収束させる。PF-05/06は価値がある提案だが、POが選ぶまで現行要件を保持する。Product PASS / production readinessは未判定。ここまでのレビューを保存してからPROPOSED詳細設計へ進む。
 
 ## PF-07 — 万能入力から実際の行動へ渡す際に意味が欠落する（P1、implementation defect、checkpoint 3b）
 

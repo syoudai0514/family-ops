@@ -125,7 +125,7 @@ due時刻未指定の23:59正規化は「対象日中」と表示してpayload�
 - AI書き換えは候補のみ。理由、頼みたい行動、期限を消さず、責めや嫌味を減らす。AI結果が遅れて返っても、その後の手編集revisionが違えば上書きしない。
 - normalize/preview以降に未確認のAI処理を挟まない。宛先はmembersの現在状態で確認し、missing recipientをpartner fallbackで解決しない（resolverで確定済みなら可）。
 - submit前の編集は未実行operation IDを保持可。submit開始後はenvelope immutable。unknown後の変更はS2の確認が済むまで別operationにしない。
-- duplicate existing=no write、update=CAS、separate=明示createを維持。request等update未対応の選択肢はdisabled＋理由を示す。部分成功は成功candidate固定、失敗/unknownだけ同じenvelopeを再試行。
+- duplicate existing=no write、update=CAS、separate=明示createを維持。existing選択時は新しい候補本文/準備物が既存に反映されないと明示する。update endpointがsubtasks/context/visibility等の差分を扱えない場合は、その差分を落として成功にせず既存詳細編集へdraftを保って誘導する。request等update未対応の選択肢はdisabled＋理由を示す。部分成功は成功candidate固定、失敗/unknownだけ同じenvelopeを再試行。
 
 ### 6.4 Tests / scope
 `ConciergeConfirmPage.test.ts` のhelper-only testは残すが、それだけでPASSにしない。Reactでtitle/date/body編集→確認→mock network request bodyを比べるinteraction testを追加。`conciergeFlow.test.ts`、新規 `confirmedCommand.test.ts`、`conciergeCommit` testsを補強。
@@ -210,7 +210,7 @@ type Attempt = {
  payload:Readonly<Record<string,unknown>>;
  state:'prepared'|'sending'|'unknown'|'succeeded'|'rejected';
  createdAt:string; // UI上の実績日には使わない
- result?:unknown;
+ result?:{entityId?:string; status?:string};
 };
 ```
 - final confirmationでpreparedを作る。送信開始前にpersistし、同じ対象buttonのdouble clickをref guardで止める。
@@ -239,7 +239,7 @@ shared clientのbounded waitは全callerに効く。**上表のconsumerを未対
 
 ### 9.4 保存とprivacy / refresh
 prepared/unknown envelopeはsessionStorageでuserId/householdId/versionを含むkeyに保存。既存のglobal concierge-draft keyもscope移行し、旧unscoped本文を別userへ自動移行しない。既存session内で所有者を証明できない旧値は破棄するか明示確認（表示自体が漏洩になるuser切替後は破棄）。
-保存内容は送信承認済みpayloadとoperation IDだけ。API keys、JWT、生のprivate raw_input、画像binary/provider sourceは保存しない。raw_input_idは参照だけ。
+保存内容は送信承認済みpayloadとoperation ID、最小のresult ID/statusだけ。API keys、JWT、生のprivate raw_input、画像binary/provider sourceは保存しない。raw_input_idは参照だけ。
 success/rejectedで不要payloadを削除。logout/user/household切替はアクセス遮断して他者に表示せず、journalを消去する。24時間をUI再開期限とし、期限後は「履歴で結果を確認」にし自動replay/新規再送をしない。server receipt retentionをfresh-readして、replay上限をそれ以下にする（短い場合は短い方を採用）。
 storage unavailable: 現在tabのmemoryで同じattemptを維持し、結果不明中のmanual reloadには「入力/結果確認をこの画面で続ける」案内。秘密をURLへ退避しない。
 `refreshCurrentPwa` / PullToRefresh / SW activationで画面を再作成する前に、prepared/unknownと編集draftの保存を同期的に済ませる。既存workerの更新契約は維持。新しい強制reloadループやnavigation全体のロックは禁止。
