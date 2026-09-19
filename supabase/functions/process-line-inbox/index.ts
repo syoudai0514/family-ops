@@ -842,11 +842,16 @@ async function buildMultiIntentPendingCandidates(
         },
       };
     }
+    const taskTitle = intent?.context && !candidate.title.includes(intent.context)
+      ? `${candidate.title}（${intent.context}）`
+      : candidate.title;
+    const titleTooLong = taskTitle.length > 80;
     return {
       ...base,
       action_type: "task_create_once" as const,
+      missing_fields: titleTooLong ? [...new Set([...base.missing_fields, "タイトルを短くしてください"])] : base.missing_fields,
       payload: {
-        title: intent?.context && !candidate.title.includes(intent.context) ? `${candidate.title}（${intent.context}）`.slice(0, 80) : candidate.title,
+        title: titleTooLong ? candidate.title : taskTitle,
         category: "todo",
         scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
         due_local_time: intent?.dueLocalTime ?? null,

@@ -121,6 +121,23 @@ begin
 
   -- The seed runs before this future workday. It must create recurrence rules
   -- only; it must NOT freeze tomorrow's "yesterday owner" before tomorrow.
+  resolved:=private.fn_codmon_readiness_v1(hh,workday,null);
+  if resolved->>'state'<>'waiting_inputs'
+     or coalesce((resolved->>'input_completed_count')::int,-1)<>0
+     or jsonb_array_length(resolved->'inputs')<>4
+     or resolved->>'submit_task_id'<>submit_task::text then
+    raise exception 'FAIL codmon readiness: initial waiting projection %',resolved;
+  end if;
+  if (public.server_read_daily_brief(u1,workday)->'codmon'->>'state')<>'waiting_inputs' then
+    raise exception 'FAIL codmon readiness: DailyBrief did not expose waiting state';
+  end if;
+  if public.server_render_daily_brief_text(u1,workday) not like '%コドモン 9:15まで%' then
+    raise exception 'FAIL codmon readiness: LINE renderer omitted readiness';
+  end if;
+  if (private.fn_codmon_readiness_v1(hh,workday,gen_random_uuid())->>'state')<>'data_incomplete' then
+    raise exception 'FAIL codmon readiness: test context leaked production inputs';
+  end if;
+
   if exists(
     select 1
     from public.task_instances ti
@@ -335,6 +352,9 @@ begin
   ) then
     raise exception 'FAIL codmon: holiday occurrence was materialized';
   end if;
+  if (private.fn_codmon_readiness_v1(hh,holiday_day,null)->>'state')<>'not_applicable' then
+    raise exception 'FAIL codmon readiness: holiday without Codmon tasks was not not_applicable';
+  end if;
 
   -- Final send is blocked until all four input acknowledgements are complete.
   begin
@@ -367,11 +387,38 @@ begin
     );
   end loop;
 
+  resolved:=private.fn_codmon_readiness_v1(hh,workday,null);
+  if resolved->>'state'<>'ready_to_submit'
+     or coalesce((resolved->>'input_completed_count')::int,-1)<>4 then
+    raise exception 'FAIL codmon readiness: four inputs did not become ready %',resolved;
+  end if;
+
   perform public.server_tx_complete_task(
     u1,gen_random_uuid(),submit_task,'self',false
   );
   if (select status from public.task_instances where id=submit_task)<>'completed' then
     raise exception 'FAIL codmon: final submit did not complete after all inputs';
+  end if;
+  resolved:=private.fn_codmon_readiness_v1(hh,workday,null);
+  if resolved->>'state'<>'acknowledged' then
+    raise exception 'FAIL codmon readiness: completed submit was not acknowledged %',resolved;
+  end if;
+
+  -- A later input correction must not falsely rewrite the human submission
+  -- acknowledgement into "provider not sent".
+  update public.task_instances
+  set status='todo', completed_at=null, actual_completed_by_id=null
+  where id=(
+    select ti.id
+    from public.task_instances ti
+    join public.task_definitions td
+      on td.household_id=ti.household_id and td.id=ti.task_definition_id
+    where ti.household_id=hh and ti.scheduled_date=workday
+      and td.code='codmon_shino_breakfast_input'
+    limit 1
+  );
+  if (private.fn_codmon_readiness_v1(hh,workday,null)->>'state')<>'acknowledged' then
+    raise exception 'FAIL codmon readiness: post-submit correction rewound acknowledgement';
   end if;
 
   -- Completed submission never emits the 09:00 reminder.
