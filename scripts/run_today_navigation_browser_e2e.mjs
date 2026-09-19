@@ -340,13 +340,8 @@ async function main() {
       const button = [...document.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === '追加する');
       if (!button) return false; button.click(); return true;
     })()`), true);
-    await waitForText(client, '追加するもの');
-    assert.equal(await evaluate(client, `(() => {
-      const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.includes('おうちコンシェルジュ'));
-      if (!button) return false; button.click(); return true;
-    })()`), true);
     await waitForPath(client, '/concierge');
-    await waitForText(client, 'おうちコンシェルジュ');
+    await waitForText(client, '思いついたことを、そのまま書いてください');
 
     assert.equal(await evaluate(client, `(() => {
       const textarea = document.querySelector('textarea'); if (!textarea) return false;
@@ -367,9 +362,8 @@ async function main() {
       const button = [...document.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === '追加する');
       button?.click();
     })()`);
-    await waitForText(client, '追加するもの');
-    await evaluate(client, `([...document.querySelectorAll('button')].find((item) => item.textContent?.includes('おうちコンシェルジュ')))?.click()`);
     await waitForPath(client, '/concierge');
+    await waitForText(client, '思いついたことを、そのまま書いてください');
     await waitFor(() => evaluate(client, `document.querySelector('textarea')?.value === '金曜のお迎えをお願いしたい'`), { label: 'draft reopened' });
     await evaluate(client, 'history.back()');
     await waitForPath(client, '/today');

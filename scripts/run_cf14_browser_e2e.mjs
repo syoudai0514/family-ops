@@ -254,13 +254,8 @@ async function openConciergeFromQuickAdd(client) {
     if (!button) return false; button.click(); return true;
   })()`);
   assert.equal(openedAdd, true, 'Today must expose the canonical Quick Add action');
-  await waitForText(client, '追加するもの');
-  const openedConcierge = await evaluate(client, `(() => {
-    const button = [...document.querySelectorAll('button')].find((candidate) => candidate.textContent?.includes('おうちコンシェルジュ'));
-    if (!button) return false; button.click(); return true;
-  })()`);
-  assert.equal(openedConcierge, true, 'Quick Add must expose the Concierge journey');
   await waitForPath(client, '/concierge');
+  await waitForText(client, '思いついたことを、そのまま書いてください');
 }
 
 async function startVite() {
@@ -384,7 +379,7 @@ async function main() {
     });
 
     await openConciergeFromQuickAdd(client);
-    await waitForText(client, 'おうちコンシェルジュ');
+    await waitForText(client, '思いついたことを、そのまま書いてください');
     assert.equal(await evaluate(client, `(() => {
       const textarea = document.querySelector('textarea'); if (!textarea) return false;
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(textarea, '戻り状態の下書き');
