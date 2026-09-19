@@ -554,6 +554,79 @@ async function main() {
         return { error: error?.name + ': ' + error?.message };
       }
     })()`);
+    const exactManualFunctionProbe = await evaluate(client, `(async () => {
+      try {
+        const envModule = await import('/src/lib/env.ts');
+        const supabaseModule = await import('/src/lib/supabaseClient.ts');
+        const env = envModule.getAppEnv();
+        const session = await supabaseModule.supabase.auth.getSession();
+        const accessToken = session.data.session?.access_token;
+        const controller = new AbortController();
+        const response = await fetch(env.supabaseUrl + '/functions/v1/list-pending-actions', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + accessToken,
+            apikey: env.supabasePublishableKey,
+          },
+          body: JSON.stringify({}),
+          signal: controller.signal,
+        });
+        return { ok: response.ok, status: response.status, text: await response.text(), url: env.supabaseUrl };
+      } catch (error) {
+        return { error: error?.name + ': ' + error?.message };
+      }
+    })()`);
+    const withinFunctionProbe = await evaluate(client, `(async () => {
+      function withinProbe(promise, ms, onTimeout) {
+        let timer;
+        return new Promise((resolve, reject) => {
+          let settled = false;
+          timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            onTimeout?.();
+            reject(new Error('probe timeout'));
+          }, ms);
+          Promise.resolve(promise).then(
+            (value) => {
+              if (settled) return;
+              settled = true;
+              if (timer) clearTimeout(timer);
+              resolve(value);
+            },
+            (error) => {
+              if (settled) return;
+              settled = true;
+              if (timer) clearTimeout(timer);
+              reject(error);
+            },
+          );
+        });
+      }
+      try {
+        const envModule = await import('/src/lib/env.ts');
+        const supabaseModule = await import('/src/lib/supabaseClient.ts');
+        const env = envModule.getAppEnv();
+        const session = await withinProbe(supabaseModule.supabase.auth.getSession(), 12000);
+        const accessToken = session.data.session?.access_token;
+        const controller = new AbortController();
+        const response = await withinProbe(fetch(env.supabaseUrl + '/functions/v1/list-pending-actions', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + accessToken,
+            apikey: env.supabasePublishableKey,
+          },
+          body: JSON.stringify({}),
+          signal: controller.signal,
+        }), 12000, () => controller.abort());
+        const text = await withinProbe(response.text(), 12000, () => controller.abort());
+        return { ok: response.ok, status: response.status, text };
+      } catch (error) {
+        return { error: error?.name + ': ' + error?.message };
+      }
+    })()`);
     const apiClientFunctionProbe = await evaluate(client, `(async () => {
       try {
         const module = await import('/src/lib/apiClient.ts');
@@ -572,6 +645,8 @@ async function main() {
     state.browserEvents.push({
       kind: 'function-fetch-probe',
       raw: rawFunctionFetchProbe,
+      exactManual: exactManualFunctionProbe,
+      within: withinFunctionProbe,
       apiClient: apiClientFunctionProbe,
     });
 
