@@ -22,6 +22,7 @@ import { formatDateTimeJa } from '../../lib/date';
 import { formatTokyoHeading } from './todayClock';
 import { useTodayClock } from './useTodayClock';
 import type { PendingAction, RequestRow, TaskInstance } from '../../lib/types';
+import { buildCodmonCompletionPrerequisite } from './codmonReadiness';
 
 const INPUT_LABELS: Record<string, string> = {
   dropoff: '朝の入力',
@@ -348,6 +349,11 @@ export function Today() {
             currentUserId={user?.id}
             onEdit={setEditingTask}
             onChanged={data.refresh}
+            completionPrerequisite={
+              data.codmon?.submit_task_id === task.id
+                ? buildCodmonCompletionPrerequisite(data.codmon, members)
+                : null
+            }
           />
         ))}
       </ul>

@@ -6,6 +6,7 @@ import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { assignmentDecisionCommand, type AssignmentDecision } from './assignmentDecision';
+import type { TaskCompletionPrerequisite } from '../today/codmonReadiness';
 
 export interface TaskChecklistItemProps {
   task: TaskInstance;
@@ -18,6 +19,8 @@ export interface TaskChecklistItemProps {
   showTime?: boolean;
   /** Optional per-surface key. Today uses this to restore detail state after Back. */
   expandedStorageKey?: string;
+  /** Canonical read-model gate for a task whose completion depends on other household input. */
+  completionPrerequisite?: TaskCompletionPrerequisite | null;
 }
 
 const EVIDENCE_MAX_BYTES = 2 * 1024 * 1024;
@@ -88,6 +91,7 @@ export function TaskChecklistItem({
   onChanged,
   showTime = true,
   expandedStorageKey,
+  completionPrerequisite,
 }: TaskChecklistItemProps) {
   const completed = task.status === 'completed';
   const editable = task.origin === 'manual' && !completed;
@@ -296,7 +300,7 @@ export function TaskChecklistItem({
             className="task-check-control"
             aria-label={completed ? `${task.title}は完了済み` : `${task.title}を完了にする`}
             onClick={handleComplete}
-            disabled={busy || completed || !canExecute}
+            disabled={busy || completed || !canExecute || Boolean(completionPrerequisite?.blocking) || Boolean(completionPrerequisite?.actionLabel)}
           >
             {completed ? '✓' : ''}
           </button>
@@ -328,6 +332,17 @@ export function TaskChecklistItem({
             {task.attention_state === 'waiting' ? ` · 待ち${task.next_check_at ? `（確認 ${localClock(task.next_check_at)}）` : ''}` : ''}
           </span>
         </button>
+
+        {completionPrerequisite?.actionLabel && !completed && (
+          <button
+            type="button"
+            className="secondary-button task-inline-finish"
+            onClick={handleComplete}
+            disabled={busy || !canExecute || completionPrerequisite.blocking}
+          >
+            {completionPrerequisite.actionLabel}
+          </button>
+        )}
 
         {optionalOnlyChecklist && !completed && (
           <button
@@ -410,6 +425,17 @@ export function TaskChecklistItem({
           </div>
         </details>
       </div>
+
+      {completionPrerequisite && (
+        <div className="task-prerequisite" role={completionPrerequisite.blocking ? 'status' : undefined}>
+          <p className="task-item-meta">{completionPrerequisite.message}</p>
+          {completionPrerequisite.detailLabels.length > 0 && (
+            <ul className="subtask-list">
+              {completionPrerequisite.detailLabels.map((label) => <li key={label}>{label}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
 
       {expanded && task.completion_mode === 'subtasks' && (
         <ul className="subtask-list subtask-checklist">

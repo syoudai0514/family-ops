@@ -10,6 +10,7 @@ import type {
 } from '../../lib/types';
 import { tokyoLocalDate } from './todayClock';
 import { withTimeout } from '../../lib/withTimeout';
+import type { CodmonReadiness } from './codmonReadiness';
 
 export interface TaskExecutionTarget {
   id: string;
@@ -160,6 +161,7 @@ interface DailyBriefPayload {
   reconciliation?: DailyBriefReconciliation;
   tomorrow_impact?: DailyBriefTomorrowImpact;
   morning_summary?: DailyBriefMorningSummaryPayload;
+  codmon?: CodmonReadiness;
 }
 
 export interface TodayTaskGroups {
@@ -190,6 +192,7 @@ interface TodaySnapshot {
   reconciliation: DailyBriefReconciliation;
   tomorrowImpact: DailyBriefTomorrowImpact;
   morningSummary: DailyBriefMorningSummary;
+  codmon: CodmonReadiness | null;
 }
 
 export interface TodayData extends TodaySnapshot {
@@ -236,6 +239,7 @@ function emptySnapshot(): TodaySnapshot {
     reconciliation: EMPTY_RECONCILIATION,
     tomorrowImpact: EMPTY_TOMORROW,
     morningSummary: EMPTY_MORNING_SUMMARY,
+    codmon: null,
   };
 }
 
@@ -444,6 +448,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
           completedCount: brief.morning_summary?.completed_count ?? 0,
           totalCount: brief.morning_summary?.total_count ?? 0,
         },
+        codmon: brief.codmon ?? null,
       };
 
       if (sequence !== requestSequence.current) return;
