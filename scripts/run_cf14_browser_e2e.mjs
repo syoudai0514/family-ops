@@ -355,11 +355,24 @@ async function main() {
       try {
         await fulfillSupabaseRequest(client, params);
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('Invalid InterceptionId')) {
+          // Chrome can cancel a paused request when React navigation/refresh
+          // supersedes it. The interception is already gone, so there is
+          // nothing left to fulfill; this is not a mock transport failure.
+          state.browserEvents.push({
+            kind: 'fetch-interception-discarded',
+            requestId: params.requestId,
+            url: params.request?.url ?? null,
+            error: message,
+          });
+          return;
+        }
         state.browserEvents.push({
           kind: 'fetch-interception-error',
           requestId: params.requestId,
           url: params.request?.url ?? null,
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
         });
         throw error;
       }
