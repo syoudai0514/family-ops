@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
@@ -180,8 +179,10 @@ export function TaskChecklistItem({
   }
 
   function handleReopen() {
-    void withOperation((operationId) =>
-      callEdgeFunction(EDGE_FUNCTIONS.reopenTask, {
+    void withOperation(
+      `task:${task.id}:reopen:r${task.revision ?? 1}`,
+      EDGE_FUNCTIONS.reopenTask,
+      (operationId) => ({
         operation_id: operationId,
         task_id: task.id,
         expected_revision: task.revision ?? 1,
@@ -284,12 +285,16 @@ export function TaskChecklistItem({
       const image = evidenceFile
         ? { mime_type: evidenceFile.type, base64: await fileToBase64(evidenceFile) }
         : undefined;
-      await callEdgeFunction(EDGE_FUNCTIONS.addTaskCompletionEvidence, {
-        operation_id: newOperationId(),
-        task_id: task.id,
-        note: evidenceNote.trim() || undefined,
-        image,
-      });
+      await runCommand(
+        `task:${task.id}:completion-evidence:r${task.revision ?? 1}`,
+        EDGE_FUNCTIONS.addTaskCompletionEvidence,
+        (operationId) => ({
+          operation_id: operationId,
+          task_id: task.id,
+          note: evidenceNote.trim() || undefined,
+          image,
+        }),
+      );
       setEvidenceNote('');
       setEvidenceFile(null);
       setEditingEvidence(false);
