@@ -3,7 +3,7 @@ import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { getShoppingItemActions } from './shoppingActions';
 import type { PurchaseMethod, ShoppingItem, ShoppingItemStatus } from '../../lib/types';
 
@@ -157,6 +157,15 @@ function ShoppingItemRow({
   const revision = item.revision ?? 1;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const runCommand = useCommandAttempt();
+
+  function stable(endpoint: Parameters<typeof runCommand>[1], payload: Record<string, unknown>) {
+    return runCommand(
+      `shopping:${item.id}:${endpoint}:r${revision}`,
+      endpoint,
+      (operationId) => ({ operation_id: operationId, ...payload }),
+    );
+  }
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -178,13 +187,13 @@ function ShoppingItemRow({
   const assignee = members.find((m) => m.user_id === item.assignee_id);
   const assignmentMode = item.assignment_mode ?? (item.assignee_id ? 'person' : 'unassigned');
   const primaryAction = actions.canOrder
-    ? { label: '注文した', run: () => callEdgeFunction(EDGE_FUNCTIONS.orderShoppingItem, { operation_id: newOperationId(), shopping_item_id: item.id, expected_revision: revision }) }
+    ? { label: '注文した', run: () => stable(EDGE_FUNCTIONS.orderShoppingItem, { shopping_item_id: item.id, expected_revision: revision }) }
     : actions.canPurchase
-      ? { label: '購入した', run: () => callEdgeFunction(EDGE_FUNCTIONS.purchaseShoppingItem, { operation_id: newOperationId(), shopping_item_id: item.id, expected_revision: revision }) }
+      ? { label: '購入した', run: () => stable(EDGE_FUNCTIONS.purchaseShoppingItem, { shopping_item_id: item.id, expected_revision: revision }) }
       : actions.canArrive
-        ? { label: '到着した', run: () => callEdgeFunction(EDGE_FUNCTIONS.arriveShoppingItem, { operation_id: newOperationId(), shopping_item_id: item.id, expected_revision: revision }) }
+        ? { label: '到着した', run: () => stable(EDGE_FUNCTIONS.arriveShoppingItem, { shopping_item_id: item.id, expected_revision: revision }) }
         : assignmentMode === 'anyone' && item.status === 'wanted' && !item.active_claimant_actor_ref_id
-          ? { label: '自分がやる', run: () => callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, { operation_id: newOperationId(), shopping_item_id: item.id, action: 'claim', expected_revision: revision }) }
+          ? { label: '自分がやる', run: () => stable(EDGE_FUNCTIONS.claimShoppingItem, { shopping_item_id: item.id, action: 'claim', expected_revision: revision }) }
           : null;
 
   return (
@@ -224,8 +233,7 @@ function ShoppingItemRow({
             onChange={(e) => {
               if (!e.target.value) return;
               run(() =>
-                callEdgeFunction(EDGE_FUNCTIONS.assignShoppingItem, {
-                  operation_id: newOperationId(),
+                stable(EDGE_FUNCTIONS.assignShoppingItem, {
                   shopping_item_id: item.id,
                   assignee_user_id: e.target.value,
                   assignment_mode: 'person',
@@ -248,8 +256,7 @@ function ShoppingItemRow({
             disabled={busy}
             onClick={() =>
               run(() =>
-                callEdgeFunction(EDGE_FUNCTIONS.assignShoppingItem, {
-                  operation_id: newOperationId(),
+                stable(EDGE_FUNCTIONS.assignShoppingItem, {
                   shopping_item_id: item.id,
                   assignee_user_id: null,
                   assignment_mode: 'unassigned',
@@ -265,8 +272,7 @@ function ShoppingItemRow({
           <button
             type="button"
             disabled={busy}
-            onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.assignShoppingItem, {
-              operation_id: newOperationId(), shopping_item_id: item.id,
+            onClick={() => run(() => stable(EDGE_FUNCTIONS.assignShoppingItem, { shopping_item_id: item.id,
               assignment_mode: 'anyone', assignee_user_id: null, expected_revision: revision,
             }))}
           >
@@ -274,16 +280,14 @@ function ShoppingItemRow({
           </button>
         )}
         {assignmentMode === 'anyone' && item.status === 'wanted' && !item.active_claimant_actor_ref_id && !primaryAction && (
-          <button type="button" disabled={busy} onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, {
-            operation_id: newOperationId(), shopping_item_id: item.id, action: 'claim', expected_revision: revision,
+          <button type="button" disabled={busy} onClick={() => run(() => stable(EDGE_FUNCTIONS.claimShoppingItem, { shopping_item_id: item.id, action: 'claim', expected_revision: revision,
           }))}>自分がやる</button>
         )}
         {assignmentMode === 'anyone' && item.status === 'wanted' && item.active_claimant_actor_ref_id && (
           <button
             type="button"
             disabled={busy}
-            onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, {
-              operation_id: newOperationId(), shopping_item_id: item.id,
+            onClick={() => run(() => stable(EDGE_FUNCTIONS.claimShoppingItem, { shopping_item_id: item.id,
               action: item.active_claimant_actor_ref_id === currentActorRefId ? 'release' : 'takeover',
               expected_revision: revision,
             }))}
@@ -297,8 +301,7 @@ function ShoppingItemRow({
             disabled={busy}
             onClick={() =>
               run(() =>
-                callEdgeFunction(EDGE_FUNCTIONS.orderShoppingItem, {
-                  operation_id: newOperationId(),
+                stable(EDGE_FUNCTIONS.orderShoppingItem, {
                   shopping_item_id: item.id,
                   expected_revision: revision,
                 }),
@@ -314,8 +317,7 @@ function ShoppingItemRow({
             disabled={busy}
             onClick={() =>
               run(() =>
-                callEdgeFunction(EDGE_FUNCTIONS.purchaseShoppingItem, {
-                  operation_id: newOperationId(),
+                stable(EDGE_FUNCTIONS.purchaseShoppingItem, {
                   shopping_item_id: item.id,
                   expected_revision: revision,
                 }),
@@ -331,8 +333,7 @@ function ShoppingItemRow({
             disabled={busy}
             onClick={() =>
               run(() =>
-                callEdgeFunction(EDGE_FUNCTIONS.arriveShoppingItem, {
-                  operation_id: newOperationId(),
+                stable(EDGE_FUNCTIONS.arriveShoppingItem, {
                   shopping_item_id: item.id,
                   expected_revision: revision,
                 }),
@@ -348,8 +349,7 @@ function ShoppingItemRow({
             disabled={busy}
             onClick={() =>
               run(() =>
-                callEdgeFunction(EDGE_FUNCTIONS.cancelShoppingItem, {
-                  operation_id: newOperationId(),
+                stable(EDGE_FUNCTIONS.cancelShoppingItem, {
                   shopping_item_id: item.id,
                   expected_revision: revision,
                 }),
@@ -363,8 +363,7 @@ function ShoppingItemRow({
           <button
             type="button"
             disabled={busy}
-            onClick={() => run(() => callEdgeFunction(EDGE_FUNCTIONS.reopenShoppingItem, {
-              operation_id: newOperationId(), shopping_item_id: item.id,
+            onClick={() => run(() => stable(EDGE_FUNCTIONS.reopenShoppingItem, { shopping_item_id: item.id,
               expected_revision: revision, reason: '操作を取り消して未対応に戻す',
             }))}
           >
@@ -399,8 +398,11 @@ function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
     setError(null);
     setSubmitting(true);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.addShoppingItem, {
-        operation_id: newOperationId(),
+      await runCommand(
+        'shopping:add',
+        EDGE_FUNCTIONS.addShoppingItem,
+        (operationId) => ({
+        operation_id: operationId,
         title: title.trim(),
         purchase_method: purchaseMethod,
         assignee_user_id: assigneeId || undefined,
@@ -408,7 +410,8 @@ function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
         duplicate_sensitivity: 'avoid_duplicate',
         url: url.trim() || undefined,
         due_at: dueDate ? new Date(dueDate).toISOString() : undefined,
-      });
+      }),
+      );
       onAdded();
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '追加に失敗しました。');
