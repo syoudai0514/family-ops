@@ -47,7 +47,7 @@ const consultationAttempt = {
   terms: { candidate: '玄関で引き継ぐ' }, reply_due_at: null,
 };
 const consultationCommands = [];
-const state = { mode: 'normal', failAfterMutation: false, initialBriefDelayMs: 850, requestLog: [], browserEvents: [] };
+const state = { mode: 'normal', failAfterMutation: false, initialBriefDelayMs: 850, requestLog: [], browserEvents: [], networkEvents: [] };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -337,6 +337,13 @@ async function main() {
     client.on('Fetch.requestPaused', (params) => fulfillSupabaseRequest(client, params));
     await client.send('Page.enable');
     await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    client.on('Network.responseReceived', ({ response }) => {
+      if (response?.status >= 400) state.networkEvents.push({ kind: 'http', status: response.status, url: response.url });
+    });
+    client.on('Network.loadingFailed', ({ errorText, blockedReason, type }) => {
+      state.networkEvents.push({ kind: 'loading-failed', errorText, blockedReason: blockedReason ?? null, type: type ?? null });
+    });
     client.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
       state.browserEvents.push({ kind: 'exception', text: exceptionDetails?.exception?.description ?? exceptionDetails?.text ?? 'unknown exception' });
     });
@@ -504,6 +511,8 @@ async function main() {
       bodyText: client ? await evaluate(client, 'document.body?.innerText ?? ""').catch(() => null) : null,
       requestLog: state.requestLog,
       browserEvents: state.browserEvents,
+      networkEvents: state.networkEvents,
+      authenticatedAppModule: await fetch('http://127.0.0.1:4173/src/app/AuthenticatedApp.tsx').then(async (response) => ({ status: response.status, body: (await response.text()).slice(0, 16_000) })).catch((moduleError) => ({ error: String(moduleError) })),
     };
     await writeFile(path.join(ARTIFACT_DIR, 'failure-diagnostic.json'), `${JSON.stringify(diagnostic, null, 2)}\n`);
     console.error(`[cf14-browser] FAILURE DIAGNOSTIC ${JSON.stringify(diagnostic)}`);
