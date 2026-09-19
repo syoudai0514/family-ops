@@ -169,6 +169,27 @@ export async function proposeConciergeCandidates(text: string): Promise<Concierg
   return normalizeConciergeProposal(raw, text);
 }
 
+export async function resolveEditedConciergeCandidate(candidate: ConciergeCandidate): Promise<ConciergeCandidate> {
+  const raw = await callEdgeFunction<RawConciergeProposal>(EDGE_FUNCTIONS.proposeConciergeCandidates, {
+    candidate_override: {
+      candidateId: candidate.candidateId,
+      operationId: candidate.operationId,
+      kind: candidate.kind,
+      title: candidate.title,
+      sourceText: candidate.sourceText,
+      missingFields: candidate.missingFields,
+      intent: candidate.intent,
+    },
+  });
+  const resolved = normalizeConciergeProposal(raw, candidate.sourceText).candidates[0];
+  if (!resolved) throw new Error('変更後の内容を確認できませんでした。元の候補を残しています。');
+  return {
+    ...resolved,
+    candidateRevision: candidate.candidateRevision ?? 1,
+    messageReviewedRevision: candidate.messageReviewedRevision ?? null,
+  };
+}
+
 export function readOnlyDestination(intent: NonNullable<ConciergeProposal['read_only_intent']>): string {
   if (intent === 'today') return '/today';
   if (intent === 'tomorrow') return '/week';
