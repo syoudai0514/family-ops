@@ -3,6 +3,7 @@ import type { EdgeFunctionName } from '../../lib/edgeFunctions';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import type { ConciergeCandidate } from './conciergeFlow';
 import { buildConfirmedCommand, type ConfirmedCommandContext } from './confirmedCommand';
+import { executeCommandAttempt, prepareCommandAttempt } from '../../lib/commandAttempt';
 
 export type DuplicateDecision = 'existing' | 'update' | 'separate';
 type EdgeInvoker = (name: EdgeFunctionName, body: object) => Promise<unknown>;
@@ -52,7 +53,17 @@ export async function commitConciergeCandidate(
   const invoke = context.invoke ?? ((name, body) => callEdgeFunction(name, body));
   try {
     const command = buildConfirmedCommand(candidate, context, duplicateDecision);
-    const canonicalResult = await invoke(command.endpoint, command.payload);
+    const userId = context.me?.user_id;
+    const householdId = context.me?.household_id ?? context.members[0]?.household_id;
+    if (!userId || !householdId) return result(candidate, false, '家庭情報を確認できません。再読み込みしてください。');
+    const attempt = prepareCommandAttempt({
+      userId,
+      householdId,
+      operationId: command.operationId,
+      endpoint: command.endpoint,
+      payload: command.payload,
+    });
+    const canonicalResult = await executeCommandAttempt(attempt, (endpoint, payload) => invoke(endpoint, payload));
     return result(candidate, true, '登録しました', canonicalResult);
   } catch (error) {
     return result(candidate, false, error instanceof Error ? error.message : '登録に失敗しました。');
