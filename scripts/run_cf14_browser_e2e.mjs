@@ -150,10 +150,29 @@ function writeNoContentResponse(response, requestHeaders = {}) {
   response.end();
 }
 
-async function readRequestBody(request) {
-  const chunks = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString('utf8');
+async function readRequestBody(request, label = 'request-body') {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let settled = false;
+    const finish = (kind, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      state.browserEvents.push({
+        kind: `mock-${kind}`,
+        label,
+        bytes: chunks.reduce((total, chunk) => total + chunk.length, 0),
+        complete: request.complete,
+        destroyed: request.destroyed,
+      });
+      value instanceof Error ? reject(value) : resolve(Buffer.concat(chunks).toString('utf8'));
+    };
+    const timer = setTimeout(() => finish('body-timeout', new Error(`${label} did not finish within 2000ms`)), 2_000);
+    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    request.once('end', () => finish('body-end'));
+    request.once('aborted', () => finish('body-aborted', new Error(`${label} was aborted by the client`)));
+    request.once('error', (error) => finish('body-error', error));
+  });
 }
 
 function dailyBrief() {
@@ -226,11 +245,14 @@ async function handleMockSupabaseRequest(request, response) {
     // Drain the upload before responding. Returning while Chromium is still
     // streaming the JSON body can surface as net::ERR_ABORTED even though the
     // mock handler was entered, which would be false transport evidence.
-    await readRequestBody(request);
+    const requestBody = await readRequestBody(request, 'complete-task');
+    state.browserEvents.push({ kind: 'mock-complete-task-body', body: requestBody });
+    response.once('finish', () => state.browserEvents.push({ kind: 'mock-complete-task-response-finish', statusCode: response.statusCode }));
+    response.once('close', () => state.browserEvents.push({ kind: 'mock-complete-task-response-close', statusCode: response.statusCode }));
     state.failAfterMutation = true;
     writeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200, request.headers);
   } else if (pathname === '/functions/v1/negotiate-request') {
-    const requestBody = await readRequestBody(request);
+    const requestBody = await readRequestBody(request, 'negotiate-request');
     const command = requestBody ? JSON.parse(requestBody) : {};
     consultationCommands.push(command);
     consultationAttempt.state = 'accepted';
