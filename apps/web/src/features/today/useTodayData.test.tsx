@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTodayData } from './useTodayData';
+import { tokyoLocalDate } from './todayClock';
 
 const rpc = vi.fn();
 const rows: Record<string, Array<Record<string, unknown>>> = {};
@@ -123,6 +124,24 @@ describe('useTodayData canonical snapshot states', () => {
       completed_today: 1,
       critical_items: [],
     });
+  });
+
+  it('loads same-day completed work for a quiet correction surface', async () => {
+    const completed = {
+      ...task,
+      id: 'done-1',
+      scheduled_date: tokyoLocalDate(new Date()),
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      actual_completed_by_id: 'user-1',
+    };
+    rows.task_instances = [completed];
+    rpc.mockResolvedValueOnce({ data: emptyBrief, error: null });
+
+    const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
+    await waitFor(() => expect(result.current.status).toBe('empty'));
+
+    expect(result.current.completedTodayTasks.map((item) => item.id)).toEqual(['done-1']);
   });
 
   it('replaces a stale/ready snapshot atomically when a later successful resync returns empty', async () => {

@@ -33,6 +33,8 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   INTERNAL_ERROR: 500,
   // WP2 additions (task/request/shopping mutation boundary):
   TASK_TERMINAL: 409,
+  TASK_NOT_COMPLETED: 409,
+  TASK_REOPEN_USE_SUBTASKS: 409,
   REQUEST_NOT_PENDING: 409,
   REQUEST_NOT_RECIPIENT: 403,
   REQUEST_NOT_REQUESTER: 403,
@@ -120,6 +122,8 @@ const KNOWN_CODES = new Set([
   "INVITE_USED",
   "INVITE_TOKEN_ALREADY_ISSUED",
   "TASK_TERMINAL",
+  "TASK_NOT_COMPLETED",
+  "TASK_REOPEN_USE_SUBTASKS",
   "REQUEST_NOT_PENDING",
   "REQUEST_NOT_RECIPIENT",
   "REQUEST_NOT_REQUESTER",
@@ -192,6 +196,10 @@ export function describeCode(code: string): string {
       return "入力内容が不正です";
     case "TASK_TERMINAL":
       return "このタスクは既に完了・キャンセル・スキップされています";
+    case "TASK_NOT_COMPLETED":
+      return "この項目はすでに未完了です。最新の状態を確認してください";
+    case "TASK_REOPEN_USE_SUBTASKS":
+      return "チェック項目を外すと未完了に戻せます";
     case "REQUEST_NOT_PENDING":
       return "このお願いは既に対応済みです";
     case "REQUEST_NOT_RECIPIENT":

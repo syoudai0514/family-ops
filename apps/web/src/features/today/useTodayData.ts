@@ -179,6 +179,7 @@ interface TodaySnapshot {
   waitingRefsByTaskId: Map<string, DailyBriefWaitingRef>;
   carryoverTasks: TodayTaskInstance[];
   alreadyHandledTasks: TodayTaskInstance[];
+  completedTodayTasks: TodayTaskInstance[];
   subtasksByTaskId: Map<string, TaskSubtaskInstance[]>;
   executionTargetsByTaskId: Map<string, TaskExecutionTarget>;
   incomingRequests: RequestRow[];
@@ -225,6 +226,7 @@ function emptySnapshot(): TodaySnapshot {
     waitingRefsByTaskId: new Map(),
     carryoverTasks: [],
     alreadyHandledTasks: [],
+    completedTodayTasks: [],
     subtasksByTaskId: new Map(),
     executionTargetsByTaskId: new Map(),
     incomingRequests: [],
@@ -294,9 +296,10 @@ export function useTodayData(householdId: string | null, userId: string | null):
     setError(null);
 
     try {
+      const localDate = tokyoLocalDate(new Date());
       const { data: briefData, error: briefError } = await withTimeout(
         supabase.rpc('get_my_daily_brief', {
-          p_local_date: tokyoLocalDate(new Date()),
+          p_local_date: localDate,
         }),
         12_000,
         '今日の情報の読み込みに時間がかかっています。',
@@ -327,10 +330,17 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const handoverIds = unique(handoverRefs.map((item) => item.handover_id));
       const shoppingIds = unique((brief.shopping ?? []).map((item) => item.shopping_item_id));
 
-      const [taskRes, requestRes, handoverRes, shoppingRes] = await withTimeout(Promise.all([
+      const [taskRes, completedRes, requestRes, handoverRes, shoppingRes] = await withTimeout(Promise.all([
         allTaskIds.length
           ? supabase.from('task_instances').select('*').in('id', allTaskIds)
           : Promise.resolve({ data: [] as TodayTaskInstance[], error: null }),
+        supabase
+          .from('task_instances')
+          .select('*')
+          .eq('household_id', householdId)
+          .eq('scheduled_date', localDate)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false }),
         requestIds.length
           ? supabase.from('requests').select('*').in('id', requestIds)
           : Promise.resolve({ data: [] as RequestRow[], error: null }),
@@ -342,11 +352,26 @@ export function useTodayData(householdId: string | null, userId: string | null):
           : Promise.resolve({ data: [] as ShoppingItem[], error: null }),
       ]), 12_000, '今日の詳細情報の読み込みに時間がかかっています。');
 
-      for (const result of [taskRes, requestRes, handoverRes, shoppingRes]) {
+      for (const result of [taskRes, completedRes, requestRes, handoverRes, shoppingRes]) {
         if (result.error) throw result.error;
       }
 
-      const rawTaskRows = (taskRes.data ?? []) as TodayTaskInstance[];
+      const completedCandidateRows = ((completedRes.data ?? []) as TodayTaskInstance[])
+        .filter((task) =>
+          task.status === 'completed'
+          && task.scheduled_date === localDate
+          && (
+            task.assignment_mode === 'anyone'
+            || task.planned_assignee_id === userId
+            || task.actual_completed_by_id === userId
+          ),
+        );
+      const rawTaskById = new Map<string, TodayTaskInstance>();
+      for (const task of [...((taskRes.data ?? []) as TodayTaskInstance[]), ...completedCandidateRows]) {
+        rawTaskById.set(task.id, task);
+      }
+      const rawTaskRows = [...rawTaskById.values()];
+      const completedCandidateIds = completedCandidateRows.map((task) => task.id);
       const claimantActorRefIds = unique(rawTaskRows.map((task) => task.active_claimant_actor_ref_id ?? undefined));
       const claimantRefRes = claimantActorRefIds.length
         ? await withTimeout(
@@ -373,7 +398,8 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const taskById = new Map<string, TodayTaskInstance>(
         taskRows.map((task) => [task.id, task] as const),
       );
-      const visibleTasks = allTaskIds.map((id) => taskById.get(id)).filter((task): task is TodayTaskInstance => Boolean(task));
+      const visibleTaskIds = unique([...allTaskIds, ...completedCandidateIds]);
+      const visibleTasks = visibleTaskIds.map((id) => taskById.get(id)).filter((task): task is TodayTaskInstance => Boolean(task));
       const subtaskTaskIds = visibleTasks.filter((task) => task.completion_mode === 'subtasks').map((task) => task.id);
 
       const [subtaskRes, targetRes] = await withTimeout(Promise.all([
@@ -393,6 +419,16 @@ export function useTodayData(householdId: string | null, userId: string | null):
         current.push(row);
         groupedSubtasks.set(row.task_instance_id, current);
       }
+      const completedTodayIds = completedCandidateRows
+        .filter((task) =>
+          task.planned_assignee_id === userId
+          || task.actual_completed_by_id === userId
+          || (
+            task.assignment_mode === 'anyone'
+            && (groupedSubtasks.get(task.id) ?? []).some((item) => item.completed_by === userId)
+          ),
+        )
+        .map((task) => task.id);
       const targetMap = new Map<string, TaskExecutionTarget>();
       for (const row of targetRes.data ?? []) targetMap.set(row.task_instance_id, row as TaskExecutionTarget);
       const hydrate = (ids: string[]) => ids
@@ -430,6 +466,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
         waitingRefsByTaskId: new Map(waitingRefs.map((item) => [item.task_id, item])),
         carryoverTasks: hydrate(carryoverIds),
         alreadyHandledTasks: hydrate(handledIds),
+        completedTodayTasks: hydrate(completedTodayIds),
         subtasksByTaskId: groupedSubtasks,
         executionTargetsByTaskId: targetMap,
         incomingRequests: orderedRows(requestIds, requestRows),
