@@ -13,6 +13,7 @@ export const REQUEST_POLICY = {
   commitConciergeDuplicate: 'mutation',
   cancelTask: 'mutation',
   completeTask: 'mutation',
+  reopenTask: 'mutation',
   recordUnplannedActual: 'mutation',
   addTaskCompletionEvidence: 'mutation',
   setTaskWaiting: 'mutation',
