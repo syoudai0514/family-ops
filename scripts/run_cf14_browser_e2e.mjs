@@ -380,11 +380,26 @@ async function main() {
     await client.send('Page.enable');
     await client.send('Runtime.enable');
     await client.send('Network.enable');
-    client.on('Network.responseReceived', ({ response }) => {
-      if (response?.status >= 400) state.networkEvents.push({ kind: 'http', status: response.status, url: response.url });
+    client.on('Network.responseReceived', ({ requestId, response }) => {
+      if (response?.status >= 400 || response?.url?.includes('/functions/v1/complete-task')) {
+        state.networkEvents.push({
+          kind: 'http',
+          requestId: requestId ?? null,
+          status: response?.status ?? null,
+          url: response?.url ?? null,
+          headers: response?.headers ?? null,
+        });
+      }
     });
-    client.on('Network.loadingFailed', ({ errorText, blockedReason, type }) => {
-      state.networkEvents.push({ kind: 'loading-failed', errorText, blockedReason: blockedReason ?? null, type: type ?? null });
+    client.on('Network.loadingFailed', ({ requestId, errorText, blockedReason, corsErrorStatus, type }) => {
+      state.networkEvents.push({
+        kind: 'loading-failed',
+        requestId: requestId ?? null,
+        errorText,
+        blockedReason: blockedReason ?? null,
+        corsErrorStatus: corsErrorStatus ?? null,
+        type: type ?? null,
+      });
     });
     client.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
       state.browserEvents.push({ kind: 'exception', text: exceptionDetails?.exception?.description ?? exceptionDetails?.text ?? 'unknown exception' });
