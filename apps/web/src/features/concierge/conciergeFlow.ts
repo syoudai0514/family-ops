@@ -102,18 +102,43 @@ export type ConciergeRouteState = {
   actualOnly?: boolean;
 };
 
-const STORAGE_KEY = 'family-ops:concierge-draft';
+const LEGACY_STORAGE_KEY = 'family-ops:concierge-draft';
 
-export function saveConciergeDraft(value: string) {
-  try { sessionStorage.setItem(STORAGE_KEY, value); } catch { /* storage unavailable */ }
+export type ConciergeDraftScope = {
+  householdId?: string | null;
+  userId?: string | null;
+};
+
+export function conciergeDraftStorageKey(scope: ConciergeDraftScope): string | null {
+  if (!scope.householdId || !scope.userId) return null;
+  return `family-ops:concierge-draft:${scope.householdId}:${scope.userId}`;
 }
 
-export function loadConciergeDraft(): string {
-  try { return sessionStorage.getItem(STORAGE_KEY) ?? ''; } catch { return ''; }
+function clearLegacyConciergeDraft() {
+  try { sessionStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* storage unavailable */ }
 }
 
-export function clearConciergeDraft() {
-  try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* storage unavailable */ }
+export function saveConciergeDraft(scope: ConciergeDraftScope, value: string) {
+  const key = conciergeDraftStorageKey(scope);
+  clearLegacyConciergeDraft();
+  if (!key) return;
+  try { sessionStorage.setItem(key, value); } catch { /* storage unavailable */ }
+}
+
+export function loadConciergeDraft(scope: ConciergeDraftScope): string {
+  const key = conciergeDraftStorageKey(scope);
+  // Never adopt the old unscoped value: it may have been written by another
+  // signed-in household member on the same browser session.
+  clearLegacyConciergeDraft();
+  if (!key) return '';
+  try { return sessionStorage.getItem(key) ?? ''; } catch { return ''; }
+}
+
+export function clearConciergeDraft(scope: ConciergeDraftScope) {
+  const key = conciergeDraftStorageKey(scope);
+  clearLegacyConciergeDraft();
+  if (!key) return;
+  try { sessionStorage.removeItem(key); } catch { /* storage unavailable */ }
 }
 
 export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText: string): ConciergeProposal {
