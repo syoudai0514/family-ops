@@ -143,7 +143,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
     expect(screen.getByText('誰でもOK')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: '自分がやる' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '自分がやる（予約）' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
