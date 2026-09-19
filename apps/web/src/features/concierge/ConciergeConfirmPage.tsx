@@ -39,7 +39,9 @@ export function ConciergeConfirmPage() {
     const next = candidates.map((candidate) => replacement.get(candidate.candidateId) ?? priorResults.find((item) => item.candidateId === candidate.candidateId)).filter((item): item is ConciergeCommitResult => Boolean(item));
     setResults(next);
     setBusy(false);
-    if (next.length === candidates.length && next.every((item) => item.ok)) clearConciergeDraft();
+    if (next.length === candidates.length && next.every((item) => item.ok)) {
+      clearConciergeDraft({ householdId: household?.id ?? null, userId: me?.user_id ?? null });
+    }
   }
 
   async function register() {
