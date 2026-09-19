@@ -62,6 +62,7 @@ import {
 } from "./lineMultiIntent.ts";
 import { replyOrEnqueuePush } from "../_shared/lineMessaging.ts";
 import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
+import { resolveHouseholdCandidate } from "../_shared/resolveHouseholdCandidate.ts";
 import {
   buildItemPromptText,
   buildItemQuickReply,
@@ -754,6 +755,11 @@ async function buildMultiIntentPendingCandidates(
   const partner = await partnerUserId(client, actor);
   return Promise.all(candidates.map(async (candidate) => {
     const intent = candidate.intent;
+    const resolvedAction = await resolveHouseholdCandidate(client, {
+      candidate,
+      actorId: actor.user_id,
+      householdId: actor.household_id,
+    });
     const base = {
       candidate_id: candidate.candidateId,
       operation_id: candidate.operationId ?? await deterministicOperationId(
@@ -790,6 +796,35 @@ async function buildMultiIntentPendingCandidates(
       };
     }
     if (candidate.kind === "request") {
+      if (resolvedAction?.type === "assignment_change_request") {
+        return {
+          ...base,
+          action_type: "assignment_change_request" as const,
+          missing_fields: base.missing_fields.filter((field) => field !== "assignee"),
+          payload: {
+            task_id: resolvedAction.taskId,
+            expected_task_revision: resolvedAction.taskRevision,
+            recipient_user_id: resolvedAction.recipientUserId,
+            shared_message: intent?.sharedMessage ?? rewritePickupRequest(candidate.sourceText),
+            scope: resolvedAction.scope,
+            title: candidate.title,
+            due_at: resolvedAction.dueAt,
+            scheduled_date: resolvedAction.scheduledDate,
+          },
+        };
+      }
+      if (resolvedAction?.type === "needs_clarification") {
+        return {
+          ...base,
+          action_type: "assignment_change_request" as const,
+          missing_fields: [...new Set([...base.missing_fields, resolvedAction.field])],
+          payload: {
+            title: candidate.title,
+            shared_message: intent?.sharedMessage ?? rewritePickupRequest(candidate.sourceText),
+            scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
+          },
+        };
+      }
       const explicitRecipient = intent?.targetRole
         ? await householdUserForRole(client, actor.household_id, intent.targetRole)
         : null;
@@ -811,7 +846,7 @@ async function buildMultiIntentPendingCandidates(
       ...base,
       action_type: "task_create_once" as const,
       payload: {
-        title: candidate.title,
+        title: intent?.context && !candidate.title.includes(intent.context) ? `${candidate.title}（${intent.context}）`.slice(0, 80) : candidate.title,
         category: "todo",
         scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
         due_local_time: intent?.dueLocalTime ?? null,
@@ -819,6 +854,7 @@ async function buildMultiIntentPendingCandidates(
         routine_phase: "anytime",
         calendar_visibility: intent?.calendarVisibility ?? "hidden",
         subtasks: intent?.subtasks ?? [],
+        context: intent?.context ?? null,
       },
     };
   }));
