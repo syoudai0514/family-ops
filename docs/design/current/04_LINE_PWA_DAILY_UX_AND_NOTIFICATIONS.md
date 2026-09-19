@@ -407,7 +407,7 @@ This includes routine household work and continuing child-care routines such as 
 - live transport, when present, still wins;
 - `誰でもOK` stays visible to both adults; unclaimed shows `誰でもOK`, claimed shows the current `パパ対応中 / ママ対応中` state;
 - it is excluded from `担当未定 / まず確認`;
-- execution requires `自分がやる` claim first;
+- `自分がやる` claim is optional pre-coordination, not an execution prerequisite. An unclaimed `誰でもOK` task can be checked/completed directly and the actual performer is recorded; if another adult already holds the claim, direct execution stays blocked until takeover;
 - LINE Today exposes a contextual `誰でもOKを確認` entry whenever same-day anyone work exists, so claim/release stays discoverable in the daily channel;
 - claimant can release; the other adult can explicitly take over;
 - takeover does not mutate on the first LINE tap: the current claimant is fresh-read and shown before the explicit confirm tap;
@@ -417,7 +417,7 @@ This includes routine household work and continuing child-care routines such as 
 
 Task display:
 
-`牛乳を買う  誰でもOK [自分がやる]`
+`牛乳を買う  誰でもOK [自分がやる]`\n\nThe user may also complete/check the item directly without claiming first. Claim means “I plan to do this”, not “the UI is unlocked”.
 
 After claim:
 
@@ -434,6 +434,16 @@ other adult secondary detail only:
 Takeover confirmation must show current claimant to avoid accidental steal.
 
 No push “パパが担当しました” for normal claim; state is visible on Today/shopping.
+
+## 15.1 Completion correction
+
+Today keeps same-day completed work in a quiet, collapsible `完了済み` section so an accidental tap is recoverable without turning the home screen into a scorecard.
+
+- whole task: `未完了に戻す` performs a revision-checked canonical mutation;
+- checklist task: expand the completed item and uncheck the mistaken subtask; the parent atomically returns to `in_progress`;
+- correction never hard-deletes completion history. The previous actual participant is retained as removed history and a `completion_reverted` event is written;
+- completed partner work is not promoted into this personal correction surface merely to score the partner. The section contains tasks relevant to the current user or household-open `誰でもOK` work.
+
 
 ## 16. Completion notification policy
 
