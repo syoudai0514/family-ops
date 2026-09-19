@@ -120,7 +120,7 @@ export function TaskChecklistItem({
   const anyoneUnclaimed = anyoneTask && !task.active_claimant_actor_ref_id;
   const anyoneClaimedBySelf = anyoneTask && Boolean(currentUserId) && task.active_claimant_user_id === currentUserId;
   const anyoneClaimedByOther = anyoneTask && Boolean(task.active_claimant_actor_ref_id) && !anyoneClaimedBySelf;
-  const canExecute = !anyoneTask || anyoneClaimedBySelf;
+  const canExecute = !anyoneTask || anyoneUnclaimed || anyoneClaimedBySelf;
 
   function toggleExpanded() {
     setExpanded((value) => {
@@ -175,6 +175,16 @@ export function TaskChecklistItem({
         task_id: task.id,
         completion_actor: actor,
         complete_remaining_subtasks: task.completion_mode === 'subtasks',
+      }),
+    );
+  }
+
+  function handleReopen() {
+    void withOperation((operationId) =>
+      callEdgeFunction(EDGE_FUNCTIONS.reopenTask, {
+        operation_id: operationId,
+        task_id: task.id,
+        expected_revision: task.revision ?? 1,
       }),
     );
   }
@@ -361,6 +371,7 @@ export function TaskChecklistItem({
             className="secondary-button task-inline-finish"
             onClick={() => handleAnyoneClaim('claim')}
             disabled={busy}
+            title="先に自分がやると決めたいときに使います。押さなくてもチェックや完了はできます。"
           >
             自分がやる
           </button>
@@ -373,6 +384,28 @@ export function TaskChecklistItem({
             disabled={busy}
           >
             手放す
+          </button>
+        )}
+
+        {completed && task.completion_mode === 'whole' && (
+          <button
+            type="button"
+            className="secondary-button task-inline-finish"
+            onClick={handleReopen}
+            disabled={busy}
+          >
+            未完了に戻す
+          </button>
+        )}
+
+        {completed && task.completion_mode === 'subtasks' && (
+          <button
+            type="button"
+            className="secondary-button task-inline-finish"
+            onClick={toggleExpanded}
+            disabled={busy}
+          >
+            修正する
           </button>
         )}
 
@@ -448,7 +481,7 @@ export function TaskChecklistItem({
                   <input
                     type="checkbox"
                     checked={subtask.is_completed}
-                    disabled={busy || completed || !canExecute}
+                    disabled={busy || (!completed && !canExecute)}
                     onChange={() => handleToggleSubtask(subtask)}
                   />
                   <span className={subtask.is_completed ? 'checked' : ''}>
@@ -461,6 +494,9 @@ export function TaskChecklistItem({
           )}
           {optionalOnlyChecklist && !completed && (
             <li className="empty-hint">必要な項目だけチェックして、最後に「完了」を押します。</li>
+          )}
+          {completed && (
+            <li className="empty-hint">押し間違えた項目のチェックを外すと、未完了に戻ります。</li>
           )}
         </ul>
       )}

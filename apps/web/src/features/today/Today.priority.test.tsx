@@ -46,7 +46,7 @@ function data(overrides: Record<string, unknown> = {}) {
     exceptions: [{ kind: 'schedule_change', event_id: 'exception-1', title: '保育園が短縮' }],
     tasks: [morning, evening],
     taskGroups: { morning: [morning], daytime: [], evening: [evening], optional: [] },
-    waitingTasks: [waiting], waitingRefsByTaskId: new Map(), carryoverTasks: [], alreadyHandledTasks: [],
+    waitingTasks: [waiting], waitingRefsByTaskId: new Map(), carryoverTasks: [], alreadyHandledTasks: [], completedTodayTasks: [],
     subtasksByTaskId: new Map(), executionTargetsByTaskId: new Map(), incomingRequests: [], requestAttemptsByRequestId: new Map(),
     unreadHandovers: [{ id: 'handover-1', period: '今日', shared_text: '水筒を玄関へ' }],
     openShoppingItems: [], briefSchedule: [],
@@ -120,6 +120,21 @@ describe('Today first-flow priority contract', () => {
   // partner's ordinary completions in detail/history rather than pushing them as
   // scorekeeping. The card used to headline `残り N件・完了 N件` at <h2> size, which
   // on a live household morning read "残り 11件・完了 0件".
+  it('keeps same-day completed work in a quiet collapsed correction section', () => {
+    const completed = { ...task('done-1', '燃えるゴミのゴミ出し'), status: 'completed', completed_at: '2026-09-09T07:30:00+09:00' };
+    mockToday.mockReturnValue(data({ completedTodayTasks: [completed] }));
+
+    render(<MemoryRouter><Today /></MemoryRouter>);
+
+    const section = screen.getByRole('region', { name: '完了済み' });
+    expect(section).toHaveTextContent('完了済み（1件）');
+    expect(section).not.toHaveTextContent('燃えるゴミのゴミ出し');
+
+    fireEvent.click(screen.getByRole('button', { name: /完了済み（1件）/ }));
+    expect(section).toHaveTextContent('燃えるゴミのゴミ出し');
+    expect(section).toHaveTextContent('押し間違えた場合はここから未完了に戻せます');
+  });
+
   it('shows the partner state without scoring their day', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
 

@@ -188,6 +188,21 @@ Side effects:
 - linked request completed if task fully completed
 - notification according prefs
 
+### `POST /mutations/tasks/reopen`
+Input:
+- operation_id
+- task_id
+- expected_revision
+
+Auth:
+- caller household member
+
+Rules:
+- only a currently completed whole-task may be reopened directly
+- reopen clears completion truth and active actual participants, increments revision, and records `completion_reverted`
+- a linked completed request returns to accepted
+- checklist/subtask tasks are corrected by unchecking the mistaken subtask instead of erasing all progress
+
 ### `POST /mutations/subtasks/set-completion`
 Input:
 - operation_id
@@ -197,8 +212,8 @@ Input:
 
 Rules:
 - completed true writes completed_by/at
-- uncomplete allowed only while parent not terminal and caller household member
-- parent completion recalculated atomically
+- uncomplete is allowed for a completed checklist parent so an accidental last check can be corrected
+- parent completion recalculated atomically; removing a required check returns the parent to in_progress
 
 ## 3. Once reassignment
 

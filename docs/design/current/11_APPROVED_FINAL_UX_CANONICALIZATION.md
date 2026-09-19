@@ -171,7 +171,8 @@ The table below is the **main-governance material-clause index** so an implement
 | Task optional date/time fields, waiting, carryover, reschedule, early work, validity-period rules, role-derived fallback/unresolved assignment resolution and protected future occurrences | Q12-Q15, Q21-Q22, Q31, Q50-Q57, Q69; Baseline §§6, 9 |
 | Request / assignment lifecycle; first response tier; checking vs consulting; expiry/reproposal; request-vs-linked-ToDo truth; external agreement correction; separate reply/work deadlines | Q2, Q9, Q30, Q36, Q41-Q47, Q69, Q83-Q85; Baseline §7 |
 | Share/handover scope, validity, acknowledgement, notification and correction history | Q3, Q16, Q37-Q40, Q48-Q49; Baseline §8 |
-| Shopping action-level actual and formal `誰でもOK` claim/release/takeover | Q33, Q107-Q109; Baseline §§6.5, 12 |
+| Shopping action-level actual and `誰でもOK` optional claim/release/takeover | Q33, Q107-Q109; Baseline §§6.5, 12 |
+| Same-day completed correction surface; whole-task reopen and checklist uncheck | Q114; Baseline §6.5 plus completion/correction semantics |
 | Event template + AI candidates + human review; no event-wide coordinator; milestone/risk notification | Q17-Q19, Q58; Baseline §17 |
 | Concierge / universal input: transcription-first, multi-intent decomposition, ambiguity-only clarification, terminology semantics, duplicate choices | Q8, Q70-Q74, Q81; Baseline §§13, 16 |
 | LINE fixed menu, `今日`, context-aware `入力`, free-text `追加`, image triage, exact PWA deep link, no PWA self-success echo | Q4, Q25-Q26, Q35, Q65-Q80, Q87-Q88, Q96; Baseline §§13-15, 19.2 |
