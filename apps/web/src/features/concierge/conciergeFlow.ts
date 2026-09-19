@@ -14,9 +14,24 @@ export type ConciergeDuplicateMatch = {
   };
 };
 
+export type ConciergeResolvedAction =
+  | {
+      type: 'assignment_change_request';
+      taskId: string;
+      taskRevision: number;
+      recipientUserId: string;
+      scope: 'once' | 'this_week';
+      scheduledDate: string;
+      dueAt: string | null;
+      currentAssigneeId: string | null;
+    }
+  | { type: 'needs_clarification'; field: string; question: string };
+
 export type ConciergeCandidate = {
   candidateId: string;
   operationId: string;
+  candidateRevision: number;
+  messageReviewedRevision: number | null;
   kind: ConciergeCandidateKind;
   title: string;
   sourceText: string;
@@ -33,7 +48,11 @@ export type ConciergeCandidate = {
     targetUserId?: string | null;
     targetRole?: string | null;
     sharedMessage?: string | null;
+    subtasks?: string[];
+    context?: string | null;
+    calendarVisibility?: 'special' | 'hidden';
   } | null;
+  resolvedAction: ConciergeResolvedAction | null;
 };
 
 type RawLineIntent = {
@@ -41,6 +60,9 @@ type RawLineIntent = {
   dueLocalTime?: string | null;
   targetRole?: string | null;
   sharedMessage?: string | null;
+  subtasks?: string[];
+  context?: string | null;
+  calendarVisibility?: 'special' | 'hidden';
 };
 
 type RawConciergeCandidate = {
@@ -55,6 +77,7 @@ type RawConciergeCandidate = {
   ambiguousFields?: string[];
   missingFields: string[];
   duplicateMatch?: ConciergeDuplicateMatch | null;
+  resolvedAction?: ConciergeResolvedAction | null;
 };
 
 type RawConciergeProposal = {
@@ -104,6 +127,8 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
       return [{
         candidateId: candidate.candidateId,
         operationId: candidate.operationId,
+        candidateRevision: 1,
+        messageReviewedRevision: candidate.kind === 'request' && candidate.intent?.sharedMessage?.trim() ? 1 : null,
         kind: candidate.kind,
         title: candidate.title,
         sourceText: candidate.sourceText?.trim() || sourceText,
@@ -120,7 +145,11 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
           targetUserId: null,
           targetRole: candidate.intent.targetRole ?? null,
           sharedMessage: candidate.intent.sharedMessage ?? null,
+          subtasks: candidate.intent.subtasks ?? [],
+          context: candidate.intent.context ?? null,
+          calendarVisibility: candidate.intent.calendarVisibility ?? 'hidden',
         } : null,
+        resolvedAction: candidate.resolvedAction ?? null,
       } satisfies ConciergeCandidate];
     }),
   };
@@ -129,6 +158,8 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
 export function withActualScheduledDate(candidates: ConciergeCandidate[], scheduledDate: string): ConciergeCandidate[] {
   return candidates.map((candidate) => candidate.kind !== 'actual' ? candidate : {
     ...candidate,
+    candidateRevision: candidate.candidateRevision + 1,
+    messageReviewedRevision: candidate.kind === 'request' ? null : candidate.messageReviewedRevision,
     intent: { ...(candidate.intent ?? {}), scheduledDate },
   });
 }
