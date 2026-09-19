@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useHousehold } from '../../app/HouseholdContext';
 import { FamilyOpsApiError } from '../../lib/apiClient';
 import { TaskFormModal } from '../tasks/TaskFormModal';
 import { quickAddDestination, quickAddOptions } from '../tasks/QuickAdd';
-import { loadConciergeDraft, proposeConciergeCandidates, saveConciergeDraft, withActualScheduledDate, type ConciergeRouteState } from './conciergeFlow';
+import { conciergeDraftStorageKey, loadConciergeDraft, proposeConciergeCandidates, saveConciergeDraft, withActualScheduledDate, type ConciergeRouteState } from './conciergeFlow';
 import './concierge.css';
 
 type SpeechRecognitionLike = {
@@ -32,8 +33,15 @@ function todayInTokyo(): string {
 export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { household, me } = useHousehold();
   const incoming = (location.state ?? {}) as ConciergeRouteState;
-  const [text, setText] = useState(() => incoming.draft ?? loadConciergeDraft());
+  const draftScope = useMemo(() => ({
+    householdId: household?.id ?? null,
+    userId: me?.user_id ?? null,
+  }), [household?.id, me?.user_id]);
+  const draftStorageKey = conciergeDraftStorageKey(draftScope);
+  const loadedDraftKey = useRef<string | null>(null);
+  const [text, setText] = useState(() => incoming.draft ?? '');
   const today = useMemo(() => todayInTokyo(), []);
   const [actualDate, setActualDate] = useState(today);
   const [busy, setBusy] = useState(false);
@@ -41,7 +49,17 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const speechAvailable = useMemo(() => Boolean(getSpeechRecognition()), []);
 
-  useEffect(() => { saveConciergeDraft(text); }, [text]);
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    if (loadedDraftKey.current !== draftStorageKey) {
+      const initial = incoming.draft ?? loadConciergeDraft(draftScope);
+      loadedDraftKey.current = draftStorageKey;
+      if (initial !== text) setText(initial);
+      if (incoming.draft !== undefined) saveConciergeDraft(draftScope, incoming.draft);
+      return;
+    }
+    saveConciergeDraft(draftScope, text);
+  }, [draftScope, draftStorageKey, incoming.draft, text]);
 
   const originState: ConciergeRouteState = {
     originPath: incoming.originPath ?? '/today',
@@ -87,7 +105,7 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
     recognition.onresult = (event) => {
       const transcript = Array.from(event.results).map((result) => result[0]?.transcript ?? '').join(' ').trim();
       if (!transcript) return;
-      saveConciergeDraft(transcript);
+      saveConciergeDraft(draftScope, transcript);
       navigate('/concierge/transcript', { state: { ...originState, draft: transcript } });
     };
     recognition.onerror = () => setError('音声を文字にできませんでした。文字入力はそのまま使えます。');
