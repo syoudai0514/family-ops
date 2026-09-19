@@ -536,6 +536,45 @@ async function main() {
       screenshot: await screenshot(client, 'today-ready.png'),
     });
 
+    const rawFunctionFetchProbe = await evaluate(client, `(async () => {
+      const controller = new AbortController();
+      try {
+        const response = await fetch('/functions/v1/list-pending-actions', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer cf14-browser-access-token',
+            apikey: 'cf14-browser-publishable-key',
+          },
+          body: '{}',
+          signal: controller.signal,
+        });
+        return { ok: response.ok, status: response.status, text: await response.text() };
+      } catch (error) {
+        return { error: error?.name + ': ' + error?.message };
+      }
+    })()`);
+    const apiClientFunctionProbe = await evaluate(client, `(async () => {
+      try {
+        const module = await import('/src/lib/apiClient.ts');
+        const value = await module.callEdgeFunction('list-pending-actions', {});
+        return { ok: true, value };
+      } catch (error) {
+        return {
+          ok: false,
+          name: error?.name ?? null,
+          code: error?.code ?? null,
+          outcome: error?.outcome ?? null,
+          message: error?.message ?? String(error),
+        };
+      }
+    })()`);
+    state.browserEvents.push({
+      kind: 'function-fetch-probe',
+      raw: rawFunctionFetchProbe,
+      apiClient: apiClientFunctionProbe,
+    });
+
     await openConciergeFromQuickAdd(client);
     await waitForText(client, '思いついたことを、そのまま書いてください');
     assert.equal(await evaluate(client, `(() => {
