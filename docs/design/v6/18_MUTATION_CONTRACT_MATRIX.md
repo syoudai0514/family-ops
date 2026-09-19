@@ -189,6 +189,9 @@ Side effects:
 - notification according prefs
 
 ### `POST /mutations/tasks/reopen`
+
+Edge adapter note: the deployed `complete-task` Edge Function carries this mutation with `action=reopen`; the canonical database RPC remains separately named `server_tx_reopen_task`. This avoids consuming another provider function slot without weakening auth or mutation semantics.
+
 Input:
 - operation_id
 - task_id
