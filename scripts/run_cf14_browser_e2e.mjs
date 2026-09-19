@@ -223,6 +223,9 @@ async function handleMockSupabaseRequest(request, response) {
     return;
   }
 
+  const requestBody = request.method === 'POST' || request.method === 'PATCH' || request.method === 'PUT'
+    ? await readRequestBody(request, `${request.method} ${url.pathname}`)
+    : '';
   const pathname = url.pathname;
   if (pathname === '/rest/v1/household_members') {
     writeJsonResponse(response, url.searchParams.has('user_id') && !url.searchParams.has('household_id') ? membership : [membership], 200, request.headers);
@@ -257,14 +260,12 @@ async function handleMockSupabaseRequest(request, response) {
     // Drain the upload before responding. Returning while Chromium is still
     // streaming the JSON body can surface as net::ERR_ABORTED even though the
     // mock handler was entered, which would be false transport evidence.
-    const requestBody = await readRequestBody(request, 'complete-task');
     state.browserEvents.push({ kind: 'mock-complete-task-body', body: requestBody });
     response.once('finish', () => state.browserEvents.push({ kind: 'mock-complete-task-response-finish', statusCode: response.statusCode }));
     response.once('close', () => state.browserEvents.push({ kind: 'mock-complete-task-response-close', statusCode: response.statusCode }));
     state.failAfterMutation = true;
     writeEdgeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200);
   } else if (pathname === '/functions/v1/negotiate-request') {
-    const requestBody = await readRequestBody(request, 'negotiate-request');
     const command = requestBody ? JSON.parse(requestBody) : {};
     consultationCommands.push(command);
     consultationAttempt.state = 'accepted';
