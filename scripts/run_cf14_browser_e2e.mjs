@@ -47,7 +47,7 @@ const consultationAttempt = {
   terms: { candidate: '玄関で引き継ぐ' }, reply_due_at: null,
 };
 const consultationCommands = [];
-const state = { mode: 'normal', failAfterMutation: false, initialBriefDelayMs: 850, requestLog: [] };
+const state = { mode: 'normal', failAfterMutation: false, initialBriefDelayMs: 850, requestLog: [], browserEvents: [] };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -159,7 +159,11 @@ function planningTaskRows(url) {
   const filters = url.searchParams.getAll('scheduled_date');
   if (filters.some((value) => value.startsWith('gte.') || value.startsWith('lte.'))) return [];
   const exact = filters.find((value) => value.startsWith('eq.'))?.slice(3);
-  return exact && exact !== TODAY ? [] : [task];
+  if (exact && exact !== TODAY) return [];
+  if (url.searchParams.getAll('status').some((value) => value === 'eq.completed')) {
+    return task.status === 'completed' ? [task] : [];
+  }
+  return [task];
 }
 
 async function fulfillSupabaseRequest(client, { requestId, request }) {
@@ -333,6 +337,14 @@ async function main() {
     client.on('Fetch.requestPaused', (params) => fulfillSupabaseRequest(client, params));
     await client.send('Page.enable');
     await client.send('Runtime.enable');
+    client.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
+      state.browserEvents.push({ kind: 'exception', text: exceptionDetails?.exception?.description ?? exceptionDetails?.text ?? 'unknown exception' });
+    });
+    client.on('Runtime.consoleAPICalled', ({ type, args }) => {
+      if (type === 'error' || type === 'warning') {
+        state.browserEvents.push({ kind: `console-${type}`, text: (args ?? []).map((arg) => arg.value ?? arg.description ?? '').join(' ') });
+      }
+    });
     await client.send('Fetch.enable', { patterns: [{ urlPattern: `${MOCK_SUPABASE_URL}/*`, requestStage: 'Request' }] });
     await client.send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 3, mobile: true });
 
@@ -485,6 +497,17 @@ async function main() {
     };
     await writeFile(path.join(ARTIFACT_DIR, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
     console.log(`[cf14-browser] PASS ${scenarios.length} real-browser authoring scenarios; CF-14 remains FAIL/PENDING.`);
+  } catch (error) {
+    const diagnostic = {
+      error: error instanceof Error ? error.stack ?? error.message : String(error),
+      url: client ? await evaluate(client, 'window.location.href').catch(() => null) : null,
+      bodyText: client ? await evaluate(client, 'document.body?.innerText ?? ""').catch(() => null) : null,
+      requestLog: state.requestLog,
+      browserEvents: state.browserEvents,
+    };
+    await writeFile(path.join(ARTIFACT_DIR, 'failure-diagnostic.json'), `${JSON.stringify(diagnostic, null, 2)}\n`);
+    console.error(`[cf14-browser] FAILURE DIAGNOSTIC ${JSON.stringify(diagnostic)}`);
+    throw error;
   } finally {
     client?.close();
     await stopChild(chrome?.child);
