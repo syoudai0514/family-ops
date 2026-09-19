@@ -330,7 +330,7 @@ export function TaskChecklistItem({
             disabled={busy}
             title="先に担当を予約したいときだけ使います。チェックや完了はこのまま直接できます。"
           >
-            自分がやる
+            自分がやる（予約）
           </button>
         )}
         {anyoneClaimedBySelf && !completed && (
