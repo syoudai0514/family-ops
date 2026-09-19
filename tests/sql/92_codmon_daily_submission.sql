@@ -119,25 +119,6 @@ begin
 
   perform private.fn_seed_codmon_daily_for_household_v1(hh,workday);
 
-  -- The seed runs before this future workday. It must create recurrence rules
-  -- only; it must NOT freeze tomorrow's "yesterday owner" before tomorrow.
-  resolved:=private.fn_codmon_readiness_v1(hh,workday,null);
-  if resolved->>'state'<>'waiting_inputs'
-     or coalesce((resolved->>'input_completed_count')::int,-1)<>0
-     or jsonb_array_length(resolved->'inputs')<>4
-     or resolved->>'submit_task_id'<>submit_task::text then
-    raise exception 'FAIL codmon readiness: initial waiting projection %',resolved;
-  end if;
-  if (public.server_read_daily_brief(u1,workday)->'codmon'->>'state')<>'waiting_inputs' then
-    raise exception 'FAIL codmon readiness: DailyBrief did not expose waiting state';
-  end if;
-  if public.server_render_daily_brief_text(u1,workday) not like '%コドモン 9:15まで%' then
-    raise exception 'FAIL codmon readiness: LINE renderer omitted readiness';
-  end if;
-  if (private.fn_codmon_readiness_v1(hh,workday,gen_random_uuid())->>'state')<>'data_incomplete' then
-    raise exception 'FAIL codmon readiness: test context leaked production inputs';
-  end if;
-
   if exists(
     select 1
     from public.task_instances ti
@@ -221,6 +202,25 @@ begin
   if submit_task is null
      or (select planned_assignee_id from public.task_instances where id=submit_task) is distinct from u1 then
     raise exception 'FAIL codmon: final submit did not follow morning/dropoff owner';
+  end if;
+
+  -- Once the workday materializer has created the four input tasks and the
+  -- final submit task, the shared readiness projection must be waiting.
+  resolved:=private.fn_codmon_readiness_v1(hh,workday,null);
+  if resolved->>'state'<>'waiting_inputs'
+     or coalesce((resolved->>'input_completed_count')::int,-1)<>0
+     or jsonb_array_length(resolved->'inputs')<>4
+     or resolved->>'submit_task_id'<>submit_task::text then
+    raise exception 'FAIL codmon readiness: initial waiting projection %',resolved;
+  end if;
+  if (public.server_read_daily_brief(u1,workday)->'codmon'->>'state')<>'waiting_inputs' then
+    raise exception 'FAIL codmon readiness: DailyBrief did not expose waiting state';
+  end if;
+  if public.server_render_daily_brief_text(u1,workday) not like '%コドモン 9:15まで%' then
+    raise exception 'FAIL codmon readiness: LINE renderer omitted readiness';
+  end if;
+  if (private.fn_codmon_readiness_v1(hh,workday,gen_random_uuid())->>'state')<>'data_incomplete' then
+    raise exception 'FAIL codmon readiness: test context leaked production inputs';
   end if;
 
   if exists(
