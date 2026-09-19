@@ -1,71 +1,142 @@
 # Family Ops Purpose-first convergence implementation
 
-Status: IMPLEMENTATION IN PROGRESS  
-Date: 2026-09-17  
+Status: **IMPLEMENTATION CHECKPOINT / NOT MERGE-READY**  
+Date: 2026-09-19  
 Branch: `impl/purpose-first-convergence-20260917`  
-CURRENT main anchor: `900313187c2460901f91d8aea66051e57729b50b`  
+Checkpoint HEAD before this status update: `6205298b31f3db7fafae2d5bf06838ae67aeff6e`  
+CURRENT main at checkpoint: `789b81ee26a7b370528ad7c16ae8ff50a0c25efb`  
+PR: #113 (Draft)  
 Astra review source: `review/astra-purpose-ux-20260917@8e1e00e9aa0b8d7c5bae45e4e3bc776bfb5dba14`
 
-## 1. Fresh-read authority result
+## 1. CURRENT / authority
 
-Implementation began by fresh-reading CURRENT GitHub rather than treating the handoff anchor as truth. At start of this work, `main` was still exactly `900313187c2460901f91d8aea66051e57729b50b`; the Astra review branch was still exactly `8e1e00e9aa0b8d7c5bae45e4e3bc776bfb5dba14`.
+Implementation started from a fresh-read `main=900313187c2460901f91d8aea66051e57729b50b`.
+During implementation, CURRENT main advanced via PR #114 to:
 
-Authority follows Accepted ADR 0012/0013:
+`789b81ee26a7b370528ad7c16ae8ff50a0c25efb`
 
-1. accepted ADR governing the exact architecture decision;
-2. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` for requirements/UX;
-3. `docs/design/current/` for current detailed design;
-4. non-conflicting legacy design;
+Therefore the implementation branch is no longer based on CURRENT main. Current comparison:
+
+- merge base: `900313187c2460901f91d8aea66051e57729b50b`
+- branch: 17 commits ahead of CURRENT main
+- branch: 25 commits behind CURRENT main
+- status: diverged
+- GitHub currently reports PR #113 as mergeable, but it is intentionally still Draft and must be reconciled with CURRENT main before merge-ready judgment.
+
+Authority remains:
+
+1. Accepted ADRs governing the exact architecture decision.
+2. `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`.
+3. `docs/design/current/`.
+4. non-conflicting legacy design.
 5. implementation/tests.
 
-No `AGENTS.md` or `START-HERE` exists in the CURRENT tree. The Requirements README confirms that the main-branch Baseline is the requirements/UX source of truth even where stale metadata/header text describes a review candidate.
+Astra review/design is implementation input, not a replacement source of truth.
 
-## 2. Purpose and acceptance rule
+## 2. Purpose-first findings / current implementation state
 
-The implementation is judged by reducing household memory, classification, reconfirmation, and “did it send?” burden, not by feature count or CI alone. Completion must align:
+| Finding | State at this checkpoint | Main implementation |
+|---|---|---|
+| PF-01 Quick Add input-first | **implemented, verification incomplete** | `+` opens free input first; old category-first entry moved under secondary “選んで入力” |
+| PF-02 confirmed outbound truth | **implemented, verification incomplete** | confirmed payload builder; raw/private `sourceText` is not request-body fallback; request condition edits invalidate message review |
+| PF-03 Codmon readiness | **implemented, DB regression failing** | shared readiness projection; DailyBrief/LINE projection; Today submit row shows remaining inputs/assignees and gates normal completion |
+| PF-04 bounded wait / unknown outcome | **implemented across primary consumers, verification incomplete** | auth/read/mutation/proposal deadlines; mutation `unknown`; stable operation ID/payload journal; Requests/Today task/Checkin/Shopping/Handover/Nursery/TaskForm consumers connected |
+| PF-07 semantic parity | **implemented, verification incomplete** | shared pickup resolver; assignment-change request path retained; expected task revision CAS; subtasks/context/calendar visibility preserved |
+| PF-05 PWA AI consultation | **DEFERRED** | PO decision required; not implemented |
+| PF-06 Codmon bulk exclusion | **DEFERRED** | PO decision required; bulk semantics intentionally unchanged |
 
-`Purpose -> Requirements -> CURRENT design -> implementation -> tests/evidence -> real-use scenario`.
+## 3. Key safety/behavior changes now present
 
-Physical F2 is explicitly outside this branch task and must be rerun later against the final merged exact HEAD.
+### PF-01
+- Quick Add no longer requires category choice before typing.
+- Concierge heading/CTA are ordinary “追加 / 内容を確認”; no unapproved PWA-consultation scope is introduced.
+- Manual task/event/request/shopping/handover/nursery/routine/preparation/actual routes remain reachable as fallback.
 
-## 3. CURRENT finding mapping
+### PF-02 / PF-07
+- `confirmedCommand.ts` is the normalization boundary used for preview and mutation payload.
+- Recipient-facing request body must be explicitly reviewed; raw/private source text is not sent implicitly.
+- Title/date/recipient changes advance candidate revision and invalidate stale body review.
+- Pickup-change cues resolve to the existing assignment-change domain rather than silently degrading to a generic light request.
+- Assignment proposal carries expected task revision and the DB command fails stale rather than applying an old target.
+- Parsed preparation subtasks, context, and calendar visibility survive into create-task payloads.
+- LINE no longer silently truncates an overlong context-expanded task title; it requests correction instead.
 
-| Finding | CURRENT evidence | Requirement/design mapping | Classification | This branch |
-|---|---|---|---|---|
-| PF-01 | `QuickAdd.tsx` still opens a ten-choice modal before free input; `ConciergePage` still presents “AIで整理” as a separate mechanism | Baseline Q70/Q73/Q74; UX principle “normal case shortest” | conforming UX fix | IMPLEMENT |
-| PF-02 | `ConciergeResultsPage.saveEdit` updates title/date but not `sharedMessage`; `ConciergeConfirmPage` does not show the actual outbound body/recipient/time; `conciergeCommit.ts` falls back to raw `sourceText` for request body | human-confirmed authority, Q70/Q71, Request safety | implementation defect / P0 | IMPLEMENT |
-| PF-03 | Q113 guard exists, but Today/Task rendering does not expose the same four-input readiness and remaining owner inline; reminder and submit readiness can diverge on missing rows | Baseline Q113; `12_CODMON_DAILY_SUBMISSION.md` | conforming UX/consistency fix | IMPLEMENT |
-| PF-04 | `apiClient.callEdgeFunction` has no deadline for auth, fetch, or body read; mutation callers cannot distinguish “not sent” from “outcome unknown” | recovery/idempotency/current design; operation receipts | implementation defect | IMPLEMENT |
-| PF-07 | shared LINE parser already has subtasks/context/calendarVisibility, but PWA `conciergeFlow.ts` drops those fields and `conciergeCommit.ts` forces `completion_mode=whole` and `calendar_visibility=hidden`; generic PWA request path does not preserve existing pickup assignment-change semantics | Request agreement vs linked Task execution, assignment safety, Q70/Q71 | implementation defect | IMPLEMENT |
-| PF-05 | Astra proposes PWA consultation response | no PO approval in CURRENT canonical or this session | product proposal | **DEFERRED / DO NOT IMPLEMENT** |
-| PF-06 | Astra proposes excluding Codmon final send from generic bulk completion | current Q113 does not authorize that exception; no PO approval | product proposal | **DEFERRED / DO NOT IMPLEMENT** |
+### PF-04
+- Common client deadlines:
+  - auth: 12s
+  - read: 12s
+  - mutation: 30s
+  - AI proposal: 45s
+- Mutation dispatch timeout/network/5xx/malformed-success is treated conservatively as `outcome=unknown`, not “not sent”.
+- Stable command attempts are scoped by user/household and preserve the same operation ID and exact payload for retry/recovery.
+- Same operation ID with a different payload is rejected.
+- Requests cleanup failure after confirmed send is separated from send failure to avoid duplicate request creation.
 
-## 4. Implementation decision
+### PF-03
+- `private.fn_codmon_readiness_v1` is the shared readiness source for DailyBrief, LINE text, submit guard, and 09:00 reminder logic.
+- States: `not_applicable / data_incomplete / waiting_inputs / ready_to_submit / acknowledged`.
+- The existing `codmon_submit` task is retained; no separate provider-submission model is created.
+- Today shows remaining Codmon inputs and their assignees inline.
+- Final acknowledgement uses the existing complete-task command only after all four required inputs are ready.
+- PF-06 bulk eligibility is unchanged.
 
-Astra’s PF-01/02/03/04/07 design is materially compatible with CURRENT Requirements and Accepted ADRs. It is used as an implementation design, not as a second source of truth. No new product scope is required.
+## 4. CURRENT CI at checkpoint HEAD 6205298b...
 
-Implementation order:
+### PASS
+- Operational safety CI: **PASS**
+- Supabase real CLI integration stack: **PASS**
+- Edge functions: deno lint / type-check / unit / auth matrix: **PASS**
 
-- **S1:** PF-07 semantic parity + PF-02 confirmed outbound truth + PF-01 input-first Add.
-- **S2:** PF-04 bounded API waits + stable command-attempt recovery using the same operation ID/payload.
-- **S3:** PF-03 shared Codmon readiness + inline Today/LINE clarity, without changing PF-06 bulk semantics.
-- **Final:** targeted/full CI, five-perspective self-review, canonical design/evidence update, PR merge-ready.
+### FAIL
+1. **DB SQL suite**
+   - Failing test: `tests/sql/92_codmon_daily_submission.sql`
+   - Current failure is in the newly added readiness assertion:
+     `initial waiting projection` sees `data_incomplete` with all four input rows missing.
+   - The assertion was inserted before this fixture materializes the Codmon occurrences. This must be moved after materialization; CURRENT DB migration application itself and real Supabase integration completed successfully.
 
-## 5. Non-negotiable boundaries
+2. **Web CI / CF-14 real-browser evidence**
+   - Browser run times out waiting for `ブラウザ証拠タスク`.
+   - Captured browser evidence showed Today remaining at `読み込み中…`; this is not yet closed.
+   - Because CF-14 runs before lint/typecheck/test/build, those later web steps were skipped in the failing run. Web cannot be called GREEN yet.
 
-- Request creation/consultation does not change assignment; accepted linked Task remains execution truth.
-- Existing pickup assignment change must not silently degrade into a new light request.
-- Raw/private user input must never be an implicit recipient-facing request body.
-- Preview and mutation are produced from the same confirmed payload.
-- Unknown network outcome is not reported as “not sent”; retry reuses the same operation identity and payload.
-- Codmon remains input/send acknowledgement only: no provider auto-submit and no duplicate storage of meal/health text.
-- Codmon readiness is the fixed four required input codes, same household/date/test context, row present and completed.
-- No extra push notifications, no quota relaxation, no score dashboard.
-- Existing migrations are immutable; any schema/RPC addition is a new additive migration.
-- No production mutation/deploy, main merge, real-wife notification, or Physical F2 in this task.
+## 5. Main divergence
 
-## 6. Evidence status at checkpoint S0
+CURRENT main advanced after this branch began through PR #114 (“Allow direct anyone actuals and safe completion undo”).
 
-Fresh source confirms PF-01, PF-02, PF-04, and the field-loss portion of PF-07 remain present at CURRENT main. Existing tests currently encode the old QuickAdd ten-option-first behavior and do not exercise the Results edit -> exact transported request body integration, so those expectations must be changed rather than treated as proof of correctness.
+Before continuing implementation or declaring merge-ready, required next step is:
 
-NEXT ACTION: implement S1 on this branch, add regression coverage for the Tuesday->Wednesday/body mismatch and preparation subtask preservation, then push the S1 exact HEAD before moving to bounded-network recovery.
+1. fresh-read PR #114/current main changes,
+2. reconcile/rebase or merge CURRENT main into this branch without losing either lane,
+3. rerun targeted tests,
+4. rerun full CI,
+5. repair any semantic conflicts rather than resolving mechanically.
+
+The old `90031318...` anchor is now historical only.
+
+## 6. Remaining work before merge-ready
+
+- fix Codmon SQL test placement and rerun DB suite;
+- diagnose and fix CF-14/Today loading failure, then obtain web lint/typecheck/test/build results;
+- reconcile CURRENT main `789b81ee...` and re-check affected source;
+- finish targeted regressions for request edit→actual payload, mixed pickup+shopping, unknown-response recovery, and Codmon UI states;
+- update canonical `docs/design/current/` in the same change unit where current design needs clarification;
+- complete Purpose → Requirements → CURRENT design → implementation → tests → real-use scenario self-review;
+- update PR #113 final report/checklist.
+
+## 7. Explicitly not done
+
+- no production deploy/mutation;
+- no main merge;
+- no Physical F2;
+- no notification to the real wife account;
+- no PF-05 or PF-06 requirement change.
+
+## 8. Checkpoint judgment
+
+The work is safely persisted and the material conforming implementation is substantially in place, but **this branch is not merge-ready and must not be described as GREEN**.
+
+The two immediate blockers are:
+1. CURRENT main divergence;
+2. CI failures in Codmon regression placement and CF-14 browser/Today loading.
+
+This document is the implementation checkpoint. CURRENT GitHub remains authoritative for subsequent continuation.
