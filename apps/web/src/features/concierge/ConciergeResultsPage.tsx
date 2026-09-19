@@ -24,7 +24,7 @@ export function ConciergeResultsPage() {
   function resolveAssignee(candidateId: string, role: 'papa' | 'mama') {
     setCandidates((current) => current.map((candidate) => candidate.candidateId !== candidateId ? candidate : {
       ...candidate,
-      candidateRevision: candidate.candidateRevision + 1,
+      candidateRevision: (candidate.candidateRevision ?? 1) + 1,
       messageReviewedRevision: candidate.kind === 'request' ? candidate.messageReviewedRevision : null,
       intent: { ...(candidate.intent ?? {}), targetRole: role },
       missingFields: candidate.missingFields.filter((field) => field !== 'assignee'),
@@ -46,7 +46,7 @@ export function ConciergeResultsPage() {
       const nextMessage = candidate.kind === 'request' ? editMessage.trim() : candidate.intent?.sharedMessage ?? null;
       const conditionChanged = candidate.title !== nextTitle || candidate.intent?.scheduledDate !== nextDate;
       const messageChanged = candidate.kind === 'request' && (candidate.intent?.sharedMessage ?? '') !== nextMessage;
-      const nextRevision = conditionChanged || messageChanged ? candidate.candidateRevision + 1 : candidate.candidateRevision;
+      const nextRevision = conditionChanged || messageChanged ? (candidate.candidateRevision ?? 1) + 1 : candidate.candidateRevision;
       return {
         ...candidate,
         candidateRevision: nextRevision,
@@ -63,7 +63,7 @@ export function ConciergeResultsPage() {
   function confirmRequestMessage(candidateId: string) {
     setCandidates((current) => current.map((candidate) => candidate.candidateId !== candidateId ? candidate : {
       ...candidate,
-      messageReviewedRevision: candidate.candidateRevision,
+      messageReviewedRevision: candidate.candidateRevision ?? 1,
     }));
   }
 

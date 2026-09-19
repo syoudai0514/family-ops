@@ -75,7 +75,7 @@ function taskTitle(candidate: ConciergeCandidate): string {
 export function requestMessageIsReviewed(candidate: ConciergeCandidate): boolean {
   if (candidate.kind !== 'request') return true;
   return Boolean(candidate.intent?.sharedMessage?.trim()) &&
-    candidate.messageReviewedRevision === candidate.candidateRevision;
+    candidate.messageReviewedRevision === (candidate.candidateRevision ?? 1);
 }
 
 export function buildConfirmedCommand(
@@ -102,7 +102,7 @@ export function buildConfirmedCommand(
     return {
       candidateId: candidate.candidateId,
       operationId: candidate.operationId,
-      candidateRevision: candidate.candidateRevision,
+      candidateRevision: candidate.candidateRevision ?? 1,
       endpoint: EDGE_FUNCTIONS.commitConciergeDuplicate,
       payload: {
         operation_id: candidate.operationId,
@@ -123,7 +123,7 @@ export function buildConfirmedCommand(
     return {
       candidateId: candidate.candidateId,
       operationId: candidate.operationId,
-      candidateRevision: candidate.candidateRevision,
+      candidateRevision: candidate.candidateRevision ?? 1,
       endpoint: EDGE_FUNCTIONS.createTask,
       payload: {
         operation_id: candidate.operationId,
@@ -143,7 +143,7 @@ export function buildConfirmedCommand(
     return {
       candidateId: candidate.candidateId,
       operationId: candidate.operationId,
-      candidateRevision: candidate.candidateRevision,
+      candidateRevision: candidate.candidateRevision ?? 1,
       endpoint: EDGE_FUNCTIONS.addShoppingItem,
       payload: {
         operation_id: candidate.operationId,
@@ -161,7 +161,7 @@ export function buildConfirmedCommand(
     return {
       candidateId: candidate.candidateId,
       operationId: candidate.operationId,
-      candidateRevision: candidate.candidateRevision,
+      candidateRevision: candidate.candidateRevision ?? 1,
       endpoint: EDGE_FUNCTIONS.createHandover,
       payload: {
         operation_id: candidate.operationId,
@@ -183,7 +183,7 @@ export function buildConfirmedCommand(
       return {
         candidateId: candidate.candidateId,
         operationId: candidate.operationId,
-        candidateRevision: candidate.candidateRevision,
+        candidateRevision: candidate.candidateRevision ?? 1,
         endpoint: EDGE_FUNCTIONS.createAssignmentChangeRequest,
         payload: {
           operation_id: candidate.operationId,
@@ -207,7 +207,7 @@ export function buildConfirmedCommand(
     return {
       candidateId: candidate.candidateId,
       operationId: candidate.operationId,
-      candidateRevision: candidate.candidateRevision,
+      candidateRevision: candidate.candidateRevision ?? 1,
       endpoint: EDGE_FUNCTIONS.sendRequest,
       payload: {
         operation_id: candidate.operationId,
@@ -223,7 +223,7 @@ export function buildConfirmedCommand(
   return {
     candidateId: candidate.candidateId,
     operationId: candidate.operationId,
-    candidateRevision: candidate.candidateRevision,
+    candidateRevision: candidate.candidateRevision ?? 1,
     endpoint: EDGE_FUNCTIONS.recordUnplannedActual,
     payload: { operation_id: candidate.operationId, title: candidate.title, scheduled_date: scheduledDate },
     preview: previewBase,

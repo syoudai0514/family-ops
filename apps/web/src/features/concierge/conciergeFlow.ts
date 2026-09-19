@@ -52,7 +52,7 @@ export type ConciergeCandidate = {
     context?: string | null;
     calendarVisibility?: 'special' | 'hidden';
   } | null;
-  resolvedAction: ConciergeResolvedAction | null;
+  resolvedAction?: ConciergeResolvedAction | null;
 };
 
 type RawLineIntent = {
@@ -158,7 +158,7 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
 export function withActualScheduledDate(candidates: ConciergeCandidate[], scheduledDate: string): ConciergeCandidate[] {
   return candidates.map((candidate) => candidate.kind !== 'actual' ? candidate : {
     ...candidate,
-    candidateRevision: candidate.candidateRevision + 1,
+    candidateRevision: (candidate.candidateRevision ?? 1) + 1,
     messageReviewedRevision: candidate.kind === 'request' ? null : candidate.messageReviewedRevision,
     intent: { ...(candidate.intent ?? {}), scheduledDate },
   });
