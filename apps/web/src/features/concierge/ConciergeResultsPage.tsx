@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { readOnlyDestination, resolveEditedConciergeCandidate, type ConciergeCandidate, type ConciergeRouteState } from './conciergeFlow';\nimport { requestMessageIsReviewed } from './confirmedCommand';
+import { readOnlyDestination, resolveEditedConciergeCandidate, type ConciergeCandidate, type ConciergeRouteState } from './conciergeFlow';
+import { requestMessageIsReviewed } from './confirmedCommand';
 import './concierge.css';
 
 const KIND_LABEL: Record<ConciergeCandidate['kind'], string> = {
@@ -17,7 +18,8 @@ export function ConciergeResultsPage() {
   const [selected, setSelected] = useState(() => new Set(initialCandidates.filter((candidate) => !actualOnly || candidate.kind === 'actual').map((candidate) => candidate.candidateId)));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
-  const [editDate, setEditDate] = useState('');\n  const [editMessage, setEditMessage] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editMessage, setEditMessage] = useState('');
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const visibleCandidates = useMemo(() => actualOnly ? candidates.filter((candidate) => candidate.kind === 'actual') : candidates, [actualOnly, candidates]);
@@ -47,7 +49,8 @@ export function ConciergeResultsPage() {
   function beginEdit(candidate: ConciergeCandidate) {
     setEditingId(candidate.candidateId);
     setEditTitle(candidate.title);
-    setEditDate(candidate.intent?.scheduledDate ?? '');\n    setEditMessage(candidate.intent?.sharedMessage ?? '');
+    setEditDate(candidate.intent?.scheduledDate ?? '');
+    setEditMessage(candidate.intent?.sharedMessage ?? '');
   }
 
   async function saveEdit(candidateId: string) {
