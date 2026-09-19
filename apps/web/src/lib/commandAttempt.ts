@@ -19,23 +19,29 @@ export type CommandAttempt = {
 const PREFIX = 'family-ops:command-attempt:v1';
 const RESUME_MS = 24 * 60 * 60 * 1000;
 const memory = new Map<string, CommandAttempt>();
+const linkMemory = new Map<string, string>();
 
 function linkKey(userId: string, householdId: string, logicalKey: string) {
   return `${PREFIX}:link:${userId}:${householdId}:${encodeURIComponent(logicalKey)}`;
 }
 
 function readLinkedOperationId(userId: string, householdId: string, logicalKey: string): string | null {
-  try { return sessionStorage.getItem(linkKey(userId, householdId, logicalKey)); } catch { return null; }
+  const key = linkKey(userId, householdId, logicalKey);
+  try { return sessionStorage.getItem(key) ?? linkMemory.get(key) ?? null; } catch { return linkMemory.get(key) ?? null; }
 }
 
 function writeLink(attempt: CommandAttempt) {
   if (!attempt.logicalKey) return;
-  try { sessionStorage.setItem(linkKey(attempt.userId, attempt.householdId, attempt.logicalKey), attempt.operationId); } catch { /* memory-only attempt */ }
+  const key = linkKey(attempt.userId, attempt.householdId, attempt.logicalKey);
+  linkMemory.set(key, attempt.operationId);
+  try { sessionStorage.setItem(key, attempt.operationId); } catch { /* memory-only link */ }
 }
 
 function removeLink(attempt: CommandAttempt) {
   if (!attempt.logicalKey) return;
-  try { sessionStorage.removeItem(linkKey(attempt.userId, attempt.householdId, attempt.logicalKey)); } catch { /* no-op */ }
+  const key = linkKey(attempt.userId, attempt.householdId, attempt.logicalKey);
+  linkMemory.delete(key);
+  try { sessionStorage.removeItem(key); } catch { /* no-op */ }
 }
 
 function keyFor(userId: string, householdId: string, operationId: string) {
@@ -84,6 +90,11 @@ export function loadCommandAttempt(userId: string, householdId: string, operatio
     return null;
   }
   return value;
+}
+
+export function loadStableCommandAttempt(userId: string, householdId: string, logicalKey: string): CommandAttempt | null {
+  const operationId = readLinkedOperationId(userId, householdId, logicalKey);
+  return operationId ? loadCommandAttempt(userId, householdId, operationId) : null;
 }
 
 export function prepareCommandAttempt(input: Omit<CommandAttempt, 'version' | 'state' | 'createdAt'>): CommandAttempt {
