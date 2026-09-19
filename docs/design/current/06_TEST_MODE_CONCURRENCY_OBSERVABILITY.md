@@ -232,6 +232,38 @@ Some actions also require semantic uniqueness:
 
 Operation receipt alone does not replace business unique constraints.
 
+### 9.4 Client retry / recovery evidence
+
+A bounded client wait does not imply that a side-effecting request failed. For user
+mutations, observability and tests distinguish:
+
+- `not_sent`: authentication/validation/offline failure before dispatch;
+- `rejected`: deterministic business/CAS rejection;
+- `unknown`: dispatch may have happened but the response was not trustworthy
+  (network loss, timeout after dispatch, server 5xx, malformed success envelope);
+- `succeeded`: canonical server result or idempotent replay confirms the command.
+
+For `unknown`, the client keeps the same confirmed payload and `operation_id`
+for the logical command. A retry with a changed payload is an idempotency
+conflict, not a new interpretation of the old command. Client recovery state is
+scoped by real user + household, expires from automatic resume after 24 hours,
+and must not include JWT/API keys, provider secrets, raw private input, or image
+binary. If session storage is unavailable, the active tab keeps the logical
+operation link in memory rather than silently minting another UUID.
+
+Evidence for recovery-sensitive behavior must prove the boundary that matters,
+not merely assert UI text:
+
+- lost response after server commit -> one canonical mutation and one replayed
+  receipt/result, never duplicate business effect;
+- stale/CAS conflict -> latest authoritative state is shown before a new command;
+- successful Today snapshot followed by read failure -> prior snapshot remains
+  visible as stale rather than becoming a false empty state;
+- user/household switch -> another identity cannot read or resume the stored
+  envelope;
+- browser authoring evidence remains F1 evidence and must not be relabeled as
+  Physical F2 or real-provider evidence.
+
 ## 10. Optimistic concurrency
 
 Mutable aggregates expose `revision`.

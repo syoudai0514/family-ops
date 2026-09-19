@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { useCurrentRoutineSessions, type CurrentRoutineSessionType } from './useCurrentRoutineSessions';
 
 type SessionType = 'dropoff' | 'pickup' | 'nonpickup_evening';
@@ -126,6 +126,7 @@ function useRoutineSession(sessionId: string | undefined) {
 export function CheckinPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { user } = useAuth();
+  const runCommand = useCommandAttempt();
   const navigate = useNavigate();
   const location = useLocation();
   const currentInputs = useCurrentRoutineSessions(Boolean(user));
@@ -162,10 +163,14 @@ export function CheckinPage() {
     try {
       const rescheduledTo = action === 'rescheduled' ? rescheduleDates[taskInstanceId] : null;
       if (action === 'rescheduled' && !rescheduledTo) { setActionError('再予定の日を選んでください。'); return; }
-      await callEdgeFunction(EDGE_FUNCTIONS.routineSessionItemAction, {
-        operation_id: newOperationId(), session_id: sessionId, task_instance_id: taskInstanceId, action,
-        rescheduled_to: rescheduledTo, reconciliation_operation_id: canCorrectBulk ? reconciliationOperationId : null,
-      });
+      await runCommand(
+        `checkin:${sessionId}:item:${taskInstanceId}:${action}:${rescheduledTo ?? '-'}:${canCorrectBulk ? reconciliationOperationId ?? '-' : '-'}`,
+        EDGE_FUNCTIONS.routineSessionItemAction,
+        (operationId) => ({
+          operation_id: operationId, session_id: sessionId, task_instance_id: taskInstanceId, action,
+          rescheduled_to: rescheduledTo, reconciliation_operation_id: canCorrectBulk ? reconciliationOperationId : null,
+        }),
+      );
       setReconciliationMessage(canCorrectBulk ? '一括完了の例外を修正しました。' : null);
       await refresh();
     } catch (err) { setActionError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。'); }
@@ -175,9 +180,11 @@ export function CheckinPage() {
   async function runSubtaskAction(subtask: SubtaskRow) {
     setActionError(null); setBusyItemId(subtask.id);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.setSubtaskCompletion, {
-        operation_id: newOperationId(), subtask_instance_id: subtask.id, completed: !subtask.is_completed, completion_actor: 'self',
-      });
+      await runCommand(
+        `checkin:${sessionId}:subtask:${subtask.id}:${!subtask.is_completed}`,
+        EDGE_FUNCTIONS.setSubtaskCompletion,
+        (operationId) => ({ operation_id: operationId, subtask_instance_id: subtask.id, completed: !subtask.is_completed, completion_actor: 'self' }),
+      );
       await refresh();
     } catch (err) { setActionError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。'); }
     finally { setBusyItemId(null); }
@@ -186,9 +193,11 @@ export function CheckinPage() {
   async function runReconciliation(responseKind: ReconciliationResponse) {
     setActionError(null); setBusyAll(true);
     try {
-      const result = await callEdgeFunction<ReconciliationResult>(EDGE_FUNCTIONS.reconcileRoutineSession, {
-        operation_id: newOperationId(), session_id: sessionId, response_kind: responseKind,
-      });
+      const result = await runCommand<ReconciliationResult>(
+        `checkin:${sessionId}:reconcile:${responseKind}:g${session.assignment_generation}`,
+        EDGE_FUNCTIONS.reconcileRoutineSession,
+        (operationId) => ({ operation_id: operationId, session_id: sessionId, response_kind: responseKind }),
+      );
       if (responseKind === 'all_done' && result.reconciliation_operation_id) {
         setReconciliationOperationId(result.reconciliation_operation_id);
         setReconciliationMessage('完了として記録しました。直後なら例外修正・元に戻すができます。');
@@ -206,7 +215,11 @@ export function CheckinPage() {
     if (!reconciliationOperationId) return;
     setBusyAll(true); setActionError(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.reconcileRoutineSession, { action: 'undo', operation_id: newOperationId(), target_operation_id: reconciliationOperationId });
+      await runCommand(
+        `checkin:${sessionId}:undo:${reconciliationOperationId}`,
+        EDGE_FUNCTIONS.reconcileRoutineSession,
+        (operationId) => ({ action: 'undo', operation_id: operationId, target_operation_id: reconciliationOperationId }),
+      );
       setReconciliationOperationId(null); setIndividualMode(false); setReconciliationMessage('一括完了を元に戻しました。');
       await refresh();
     } catch (err) { setActionError(err instanceof FamilyOpsApiError ? err.message : '元に戻せませんでした。最新の状態を確認してください。'); }

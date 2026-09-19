@@ -53,6 +53,31 @@ Codmon providerへの自動送信・画面自動操作はこのscopeに含めな
 
 UIだけのdisabled制御には依存しない。LINE / PWA / routine-session / future command pathのどこからcompleteされても同じDB invariantを通す。
 
+### 5.1 Shared readiness projection
+
+Codmon readinessは `private.fn_codmon_readiness_v1` の1つの投影を基準にし、
+DailyBrief / LINE Today / final-submit guard / 09:00 reminderで別々に推測しない。
+
+状態は次の5つ。
+
+- `not_applicable`: Codmon未設定、または通常提出対象でない日。
+- `data_incomplete`: 提出対象日だが、固定4 input または submit task が欠落/重複しており安全に判断できない。
+- `waiting_inputs`: 必要行は一意に存在するが、4 input のいずれかが未完了。
+- `ready_to_submit`: 4 input がすべてcompletedで、submit taskが未完了。
+- `acknowledged`: 人がCodmonで送信した事実をFamily Ops上で完了申告済み。後からinputを訂正しても、この送信履歴を自動で巻き戻さない。
+
+投影は少なくとも `local_date`, `deadline_at`, `submit_task_id`,
+`input_completed_count`, `required_input_count=4`, inputごとの
+`code/task_id/title/assignee/status/resolution`、submit担当を返す。
+inputの `resolution` は `present | missing | duplicate` とし、欠落/重複を
+“未完了0件”としてready扱いしない。deadlineはsubmit taskの `due_at` を
+優先し、必要時だけ09:15 JSTをfallbackにする。
+
+Todayでは別dashboardを増やさず `codmon_submit` 行へ残入力と担当をinline表示する。
+`ready_to_submit` までは通常の完了操作を無効化し、ready時の申告は
+「コドモンで送信した」とする。この操作はproviderを送信するbuttonではなく、
+外部Codmon上で人が実際に送信した後のacknowledgementである。
+
 ## 6. Reminder
 
 09:00 JST時点で`codmon_submit`が未完了なら1回評価する。

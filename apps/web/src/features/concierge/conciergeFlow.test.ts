@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeConciergeProposal, withActualScheduledDate, type ConciergeCandidate } from './conciergeFlow';
+import { conciergeDraftStorageKey, normalizeConciergeProposal, withActualScheduledDate, type ConciergeCandidate } from './conciergeFlow';
 import { commitConciergeCandidate, conciergeRequestDueAt } from './conciergeCommit';
 
 const member = (userId: string, role: 'papa' | 'mama') => ({
@@ -26,6 +26,14 @@ const context = (invoke: (name: string, body: object) => Promise<unknown>) => ({
 });
 
 describe('Concierge canonical flow', () => {
+  it('scopes drafts to the signed-in household member and has no unscoped fallback key', () => {
+    expect(conciergeDraftStorageKey({ householdId: 'hh-1', userId: 'user-1' }))
+      .toBe('family-ops:concierge-draft:hh-1:user-1');
+    expect(conciergeDraftStorageKey({ householdId: 'hh-1', userId: 'user-2' }))
+      .not.toBe(conciergeDraftStorageKey({ householdId: 'hh-1', userId: 'user-1' }));
+    expect(conciergeDraftStorageKey({ householdId: null, userId: 'user-1' })).toBeNull();
+  });
+
   it('normalizes shared semantic metadata and stable operation identity before rendering', () => {
     const proposal = normalizeConciergeProposal({
       read_only_intent: null, clarification: null,

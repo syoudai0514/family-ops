@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createServer, request as httpRequest } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 const APP_URL = 'http://127.0.0.1:4173/today';
-const MOCK_SUPABASE_URL = 'http://127.0.0.1:54321';
+const MOCK_SUPABASE_URL = 'http://127.0.0.1:4173';
+const VITE_URL = 'http://127.0.0.1:4174';
 const ARTIFACT_DIR = path.resolve('artifacts/cf14-browser');
 const SOURCE_HEAD = process.env.CF14_SOURCE_HEAD || process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA || 'local-authoring';
 const TODAY = new Intl.DateTimeFormat('en-CA', {
@@ -47,7 +49,7 @@ const consultationAttempt = {
   terms: { candidate: '玄関で引き継ぐ' }, reply_due_at: null,
 };
 const consultationCommands = [];
-const state = { mode: 'normal', failAfterMutation: false, initialBriefDelayMs: 850, requestLog: [] };
+const state = { mode: 'normal', failAfterMutation: false, initialBriefDelayMs: 850, requestLog: [], browserEvents: [], networkEvents: [] };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -121,29 +123,37 @@ class CdpClient {
   close() { this.socket?.close(); }
 }
 
-function jsonResponse(value, responseCode = 200) {
+function corsHeaders(requestHeaders = {}) {
+  const requestedHeaders = requestHeaders['access-control-request-headers'];
   return {
-    responseCode,
-    responseHeaders: [
-      { name: 'access-control-allow-origin', value: 'http://127.0.0.1:4173' },
-      { name: 'access-control-allow-headers', value: '*' },
-      { name: 'access-control-allow-methods', value: 'GET,POST,PATCH,DELETE,OPTIONS' },
-      { name: 'content-type', value: 'application/json; charset=utf-8' },
-      { name: 'content-range', value: '0-0/1' },
-    ],
-    body: Buffer.from(JSON.stringify(value)).toString('base64'),
+    'access-control-allow-origin': 'http://127.0.0.1:4173',
+    'access-control-allow-headers': typeof requestedHeaders === 'string' && requestedHeaders.trim()
+      ? requestedHeaders
+      : 'authorization, apikey, content-type, x-client-info, x-supabase-api-version',
+    'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
   };
 }
 
-function noContentResponse() {
-  return {
-    responseCode: 204,
-    responseHeaders: [
-      { name: 'access-control-allow-origin', value: 'http://127.0.0.1:4173' },
-      { name: 'access-control-allow-headers', value: '*' },
-      { name: 'access-control-allow-methods', value: 'GET,POST,PATCH,DELETE,OPTIONS' },
-    ],
-  };
+function writeJsonResponse(response, value, statusCode = 200, requestHeaders = {}) {
+  if (response.destroyed || response.writableEnded) return;
+  response.writeHead(statusCode, {
+    ...corsHeaders(requestHeaders),
+    'content-type': 'application/json; charset=utf-8',
+    'content-range': '0-0/1',
+  });
+  response.end(JSON.stringify(value));
+}
+
+function writeNoContentResponse(response, requestHeaders = {}) {
+  if (response.destroyed || response.writableEnded) return;
+  response.writeHead(204, corsHeaders(requestHeaders));
+  response.end();
+}
+
+async function readRequestBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function dailyBrief() {
@@ -159,64 +169,136 @@ function planningTaskRows(url) {
   const filters = url.searchParams.getAll('scheduled_date');
   if (filters.some((value) => value.startsWith('gte.') || value.startsWith('lte.'))) return [];
   const exact = filters.find((value) => value.startsWith('eq.'))?.slice(3);
-  return exact && exact !== TODAY ? [] : [task];
+  if (exact && exact !== TODAY) return [];
+  if (url.searchParams.getAll('status').some((value) => value === 'eq.completed')) {
+    return task.status === 'completed' ? [task] : [];
+  }
+  return [task];
 }
 
-async function fulfillSupabaseRequest(client, { requestId, request }) {
-  const url = new URL(request.url);
-  state.requestLog.push({ method: request.method, url: request.url, mode: state.mode, failAfterMutation: state.failAfterMutation });
+async function handleMockSupabaseRequest(request, response) {
+  const url = new URL(request.url ?? '/', MOCK_SUPABASE_URL);
+  state.requestLog.push({
+    requestId: `http-${state.requestLog.length + 1}`,
+    method: request.method,
+    url: url.toString(),
+    headers: request.headers,
+    mode: state.mode,
+    failAfterMutation: state.failAfterMutation,
+  });
+
   if (request.method === 'OPTIONS') {
-    await client.send('Fetch.fulfillRequest', { requestId, ...noContentResponse() });
+    writeNoContentResponse(response, request.headers);
     return;
   }
 
   const pathname = url.pathname;
-  let response;
   if (pathname === '/rest/v1/household_members') {
-    response = url.searchParams.has('user_id') && !url.searchParams.has('household_id') ? jsonResponse(membership) : jsonResponse([membership]);
+    writeJsonResponse(response, url.searchParams.has('user_id') && !url.searchParams.has('household_id') ? membership : [membership], 200, request.headers);
   } else if (pathname === '/rest/v1/households') {
-    response = jsonResponse(household);
+    writeJsonResponse(response, household, 200, request.headers);
   } else if (pathname === '/rest/v1/profiles') {
-    response = jsonResponse([{ user_id: membership.user_id, display_name: 'パパ' }]);
+    writeJsonResponse(response, [{ user_id: membership.user_id, display_name: 'パパ' }], 200, request.headers);
   } else if (pathname === '/rest/v1/rpc/get_my_daily_brief') {
-    if (state.mode === 'initial-error') response = jsonResponse({ code: 'CF14_INITIAL', message: 'CF14_BROWSER_INITIAL_READ_FAILED' }, 500);
-    else if (state.failAfterMutation) response = jsonResponse({ code: 'CF14_STALE', message: 'CF14_BROWSER_STALE_REFRESH' }, 500);
-    else {
+    if (state.mode === 'initial-error') {
+      writeJsonResponse(response, { code: 'CF14_INITIAL', message: 'CF14_BROWSER_INITIAL_READ_FAILED' }, 500, request.headers);
+    } else if (state.failAfterMutation) {
+      writeJsonResponse(response, { code: 'CF14_STALE', message: 'CF14_BROWSER_STALE_REFRESH' }, 500, request.headers);
+    } else {
       if (state.initialBriefDelayMs > 0) await sleep(state.initialBriefDelayMs);
-      response = jsonResponse(dailyBrief());
+      writeJsonResponse(response, dailyBrief(), 200, request.headers);
     }
   } else if (pathname === '/rest/v1/task_instances') {
-    response = jsonResponse(planningTaskRows(url));
+    writeJsonResponse(response, planningTaskRows(url), 200, request.headers);
   } else if (pathname === '/rest/v1/requests') {
-    response = jsonResponse([consultationRequest]);
+    writeJsonResponse(response, [consultationRequest], 200, request.headers);
   } else if (pathname === '/rest/v1/request_attempts') {
-    response = jsonResponse([consultationAttempt]);
+    writeJsonResponse(response, [consultationAttempt], 200, request.headers);
   } else if (pathname.startsWith('/rest/v1/')) {
-    response = jsonResponse([]);
+    writeJsonResponse(response, [], 200, request.headers);
   } else if (pathname === '/functions/v1/list-pending-actions') {
-    response = jsonResponse([]);
+    writeJsonResponse(response, [], 200, request.headers);
   } else if (pathname === '/functions/v1/get-current-routine-sessions') {
-    response = jsonResponse({ sessions: [] });
+    writeJsonResponse(response, { sessions: [] }, 200, request.headers);
   } else if (pathname === '/functions/v1/get-today-schedule') {
-    response = jsonResponse({ household_id: household.id, local_date: TODAY, calendar_connected: false, calendar_stale: false, occurrences: [], assignments: [] });
+    writeJsonResponse(response, { household_id: household.id, local_date: TODAY, calendar_connected: false, calendar_stale: false, occurrences: [], assignments: [] }, 200, request.headers);
   } else if (pathname === '/functions/v1/complete-task') {
+    // Drain the upload before responding. Returning while Chromium is still
+    // streaming the JSON body can surface as net::ERR_ABORTED even though the
+    // mock handler was entered, which would be false transport evidence.
+    await readRequestBody(request);
     state.failAfterMutation = true;
-    response = jsonResponse({ task_id: task.id, status: 'completed' });
+    writeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200, request.headers);
   } else if (pathname === '/functions/v1/negotiate-request') {
-    const command = JSON.parse(request.postData ?? '{}');
+    const requestBody = await readRequestBody(request);
+    const command = requestBody ? JSON.parse(requestBody) : {};
     consultationCommands.push(command);
     consultationAttempt.state = 'accepted';
     consultationAttempt.revision += 1;
     consultationRequest.status = 'accepted';
-    response = jsonResponse({ state: 'accepted' });
+    writeJsonResponse(response, { state: 'accepted' }, 200, request.headers);
   } else if (pathname.startsWith('/functions/v1/')) {
-    response = jsonResponse({});
+    writeJsonResponse(response, {}, 200, request.headers);
   } else if (pathname === '/auth/v1/user') {
-    response = jsonResponse({ id: membership.user_id, aud: 'authenticated', role: 'authenticated' });
+    writeJsonResponse(response, { id: membership.user_id, aud: 'authenticated', role: 'authenticated' }, 200, request.headers);
   } else {
-    response = jsonResponse({ message: `Unhandled CF-14 mock path: ${pathname}` }, 404);
+    writeJsonResponse(response, { message: `Unhandled CF-14 mock path: ${pathname}` }, 404, request.headers);
   }
-  await client.send('Fetch.fulfillRequest', { requestId, ...response });
+}
+
+function isMockSupabasePath(url = '/') {
+  return url.startsWith('/rest/v1/')
+    || url.startsWith('/functions/v1/')
+    || url.startsWith('/auth/v1/')
+    || url.startsWith('/realtime/v1/');
+}
+
+function proxyToVite(request, response) {
+  const upstream = httpRequest({
+    hostname: '127.0.0.1',
+    port: 4174,
+    path: request.url ?? '/',
+    method: request.method,
+    headers: { ...request.headers, host: '127.0.0.1:4174' },
+  }, (upstreamResponse) => {
+    const headers = { ...upstreamResponse.headers };
+    delete headers.connection;
+    response.writeHead(upstreamResponse.statusCode ?? 502, headers);
+    upstreamResponse.pipe(response);
+  });
+  upstream.on('error', (error) => {
+    state.browserEvents.push({ kind: 'vite-proxy-error', url: request.url ?? null, error: String(error) });
+    if (!response.headersSent) response.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
+    if (!response.writableEnded) response.end('CF14 Vite proxy failure');
+  });
+  request.pipe(upstream);
+}
+
+async function startMockSupabase() {
+  const server = createServer((request, response) => {
+    if (!isMockSupabasePath(request.url ?? '/')) {
+      proxyToVite(request, response);
+      return;
+    }
+    void handleMockSupabaseRequest(request, response).catch((error) => {
+      state.browserEvents.push({ kind: 'mock-server-error', url: request.url ?? null, error: String(error) });
+      if (!response.headersSent && !response.destroyed) {
+        writeJsonResponse(response, { message: 'CF14 mock server failure' }, 500, request.headers);
+      } else if (!response.destroyed) {
+        response.destroy(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(4173, '127.0.0.1', resolve);
+  });
+  return server;
+}
+
+async function stopServer(server) {
+  if (!server?.listening) return;
+  await new Promise((resolve) => server.close(() => resolve()));
 }
 
 async function evaluate(client, expression) {
@@ -254,18 +336,13 @@ async function openConciergeFromQuickAdd(client) {
     if (!button) return false; button.click(); return true;
   })()`);
   assert.equal(openedAdd, true, 'Today must expose the canonical Quick Add action');
-  await waitForText(client, '追加するもの');
-  const openedConcierge = await evaluate(client, `(() => {
-    const button = [...document.querySelectorAll('button')].find((candidate) => candidate.textContent?.includes('おうちコンシェルジュ'));
-    if (!button) return false; button.click(); return true;
-  })()`);
-  assert.equal(openedConcierge, true, 'Quick Add must expose the Concierge journey');
   await waitForPath(client, '/concierge');
+  await waitForText(client, '思いついたことを、そのまま書いてください');
 }
 
 async function startVite() {
   const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
-    'run', 'dev', '-w', 'apps/web', '--', '--host', '127.0.0.1', '--port', '4173', '--strictPort',
+    'run', 'dev', '-w', 'apps/web', '--', '--host', '127.0.0.1', '--port', '4174', '--strictPort',
   ], {
     cwd: process.cwd(),
     env: {
@@ -281,7 +358,7 @@ async function startVite() {
   child.stderr.on('data', (chunk) => { output += String(chunk); });
   child.on('exit', (code) => { if (code) console.error(`[cf14-browser] Vite exited ${code}\n${output}`); });
   await waitFor(async () => {
-    try { return (await fetch('http://127.0.0.1:4173/')).ok; } catch { return false; }
+    try { return (await fetch(VITE_URL)).ok; } catch { return false; }
   }, { timeoutMs: 20_000, intervalMs: 100, label: 'Vite dev server' });
   return child;
 }
@@ -327,18 +404,59 @@ async function stopChild(child) {
 async function main() {
   await rm(ARTIFACT_DIR, { recursive: true, force: true });
   await mkdir(ARTIFACT_DIR, { recursive: true });
+  let mockSupabase;
   let vite;
   let chrome;
   let client;
   try {
+    mockSupabase = await startMockSupabase();
     vite = await startVite();
     chrome = await startChrome();
     client = new CdpClient(chrome.page.webSocketDebuggerUrl);
     await client.connect();
-    client.on('Fetch.requestPaused', (params) => fulfillSupabaseRequest(client, params));
     await client.send('Page.enable');
     await client.send('Runtime.enable');
-    await client.send('Fetch.enable', { patterns: [{ urlPattern: `${MOCK_SUPABASE_URL}/*`, requestStage: 'Request' }] });
+    await client.send('Network.enable');
+    await client.send('Log.enable');
+    const networkRequestUrls = new Map();
+    client.on('Network.requestWillBeSent', ({ requestId, request }) => {
+      if (requestId && request?.url) networkRequestUrls.set(requestId, request.url);
+    });
+    client.on('Log.entryAdded', ({ entry }) => {
+      if (entry?.level === 'error' || entry?.level === 'warning') {
+        state.browserEvents.push({ kind: `browser-log-${entry.level}`, text: entry.text ?? '', url: entry.url ?? null });
+      }
+    });
+    client.on('Network.responseReceived', ({ requestId, response }) => {
+      if (response?.status >= 400 || response?.url?.includes('/functions/v1/complete-task')) {
+        state.networkEvents.push({
+          kind: 'http',
+          requestId: requestId ?? null,
+          status: response?.status ?? null,
+          url: response?.url ?? null,
+          headers: response?.headers ?? null,
+        });
+      }
+    });
+    client.on('Network.loadingFailed', ({ requestId, errorText, blockedReason, corsErrorStatus, type }) => {
+      state.networkEvents.push({
+        kind: 'loading-failed',
+        requestId: requestId ?? null,
+        url: requestId ? networkRequestUrls.get(requestId) ?? null : null,
+        errorText,
+        blockedReason: blockedReason ?? null,
+        corsErrorStatus: corsErrorStatus ?? null,
+        type: type ?? null,
+      });
+    });
+    client.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
+      state.browserEvents.push({ kind: 'exception', text: exceptionDetails?.exception?.description ?? exceptionDetails?.text ?? 'unknown exception' });
+    });
+    client.on('Runtime.consoleAPICalled', ({ type, args }) => {
+      if (type === 'error' || type === 'warning') {
+        state.browserEvents.push({ kind: `console-${type}`, text: (args ?? []).map((arg) => arg.value ?? arg.description ?? '').join(' ') });
+      }
+    });
     await client.send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 3, mobile: true });
 
     const session = {
@@ -384,7 +502,7 @@ async function main() {
     });
 
     await openConciergeFromQuickAdd(client);
-    await waitForText(client, 'おうちコンシェルジュ');
+    await waitForText(client, '思いついたことを、そのまま書いてください');
     assert.equal(await evaluate(client, `(() => {
       const textarea = document.querySelector('textarea'); if (!textarea) return false;
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(textarea, '戻り状態の下書き');
@@ -411,28 +529,37 @@ async function main() {
     await waitForPath(client, '/today');
     await waitForText(client, task.title);
 
+    // The Back/return scenario intentionally causes browser navigation and
+    // cancels superseded reads. Start the stale-state mutation scenario from a
+    // fresh Today navigation so those cancelled requests cannot invalidate the
+    // mutation interception under test.
     state.initialBriefDelayMs = 0;
+    state.failAfterMutation = false;
+    await navigate(client, APP_URL);
+    await waitForText(client, task.title);
+    await sleep(150);
+
     assert.equal(await evaluate(client, `(() => {
       const buttons = [...document.querySelectorAll('button[aria-label=${JSON.stringify(`${task.title}を完了にする`)}]')];
       const button = buttons.at(-1); if (!button) return false; button.click(); return true;
     })()`), true, 'Nested Today task completion action must exist');
-    await waitForText(client, '読み込みに失敗しました。', 8_000);
+    await waitForText(client, '通信が不安定なため、最後に取得できた内容を表示しています。', 8_000);
     await waitForText(client, task.title, 2_000);
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-STALE',
       entryBoundary: 'real task interaction succeeds, then canonical Today refresh fails',
-      visibleAssertion: '読み込みに失敗しました。 is visible while the previously rendered task remains visible',
+      visibleAssertion: 'stale-state guidance is visible while the previously rendered task remains visible',
       screenshot: await screenshot(client, 'today-stale-refresh.png'),
     });
 
     state.mode = 'initial-error';
     state.failAfterMutation = false;
     await navigate(client, `${APP_URL}?cf14=initial-error`);
-    await waitForText(client, '読み込みに失敗しました。', 8_000);
+    await waitForText(client, 'サーバーへ接続できませんでした。', 8_000);
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-ERROR',
       entryBoundary: 'real Chrome Today navigation with failing canonical read',
-      visibleAssertion: '読み込みに失敗しました。 is rendered as the user-visible read failure',
+      visibleAssertion: 'the bounded-read connection error is rendered as the user-visible read failure',
       screenshot: await screenshot(client, 'today-error.png'),
     });
 
@@ -490,10 +617,24 @@ async function main() {
     };
     await writeFile(path.join(ARTIFACT_DIR, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
     console.log(`[cf14-browser] PASS ${scenarios.length} real-browser authoring scenarios; CF-14 remains FAIL/PENDING.`);
+  } catch (error) {
+    const diagnostic = {
+      error: error instanceof Error ? error.stack ?? error.message : String(error),
+      url: client ? await evaluate(client, 'window.location.href').catch(() => null) : null,
+      bodyText: client ? await evaluate(client, 'document.body?.innerText ?? ""').catch(() => null) : null,
+      requestLog: state.requestLog,
+      browserEvents: state.browserEvents,
+      networkEvents: state.networkEvents,
+      authenticatedAppModule: await fetch(`${VITE_URL}/src/app/AuthenticatedApp.tsx`).then(async (response) => ({ status: response.status, body: (await response.text()).slice(0, 16_000) })).catch((moduleError) => ({ error: String(moduleError) })),
+    };
+    await writeFile(path.join(ARTIFACT_DIR, 'failure-diagnostic.json'), `${JSON.stringify(diagnostic, null, 2)}\n`);
+    console.error(`[cf14-browser] FAILURE DIAGNOSTIC ${JSON.stringify(diagnostic)}`);
+    throw error;
   } finally {
     client?.close();
     await stopChild(chrome?.child);
     await stopChild(vite);
+    await stopServer(mockSupabase);
     if (chrome?.userDataDir) {
       try {
         await rm(chrome.userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
