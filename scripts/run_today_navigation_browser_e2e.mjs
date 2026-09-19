@@ -37,7 +37,7 @@ const task = {
   actual_completed_by_id: null, completed_at: null, attention_state: 'active', waiting_note: null,
   next_check_at: null, revision: 1, task_definitions: null,
 };
-const state = { initialBriefDelayMs: 800, requests: [], browserEvents: [] };
+const state = { initialBriefDelayMs: 800, requests: [], browserEvents: [], networkEvents: [] };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -297,6 +297,13 @@ async function main() {
     client.on('Fetch.requestPaused', (params) => fulfillRequest(client, params));
     await client.send('Page.enable');
     await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    client.on('Network.responseReceived', ({ response }) => {
+      if (response?.status >= 400) state.networkEvents.push({ kind: 'http', status: response.status, url: response.url });
+    });
+    client.on('Network.loadingFailed', ({ errorText, blockedReason, type }) => {
+      state.networkEvents.push({ kind: 'loading-failed', errorText, blockedReason: blockedReason ?? null, type: type ?? null });
+    });
     client.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
       state.browserEvents.push({ kind: 'exception', text: exceptionDetails?.exception?.description ?? exceptionDetails?.text ?? 'unknown exception' });
     });
@@ -398,6 +405,8 @@ async function main() {
       bodyText: client ? await evaluate(client, 'document.body?.innerText ?? ""').catch(() => null) : null,
       requests: state.requests,
       browserEvents: state.browserEvents,
+      networkEvents: state.networkEvents,
+      authenticatedAppModule: await fetch('http://127.0.0.1:4173/src/app/AuthenticatedApp.tsx').then(async (response) => ({ status: response.status, body: (await response.text()).slice(0, 16_000) })).catch((moduleError) => ({ error: String(moduleError) })),
     };
     await writeFile(path.join(ARTIFACT_DIR, 'failure-diagnostic.json'), `${JSON.stringify(diagnostic, null, 2)}\n`);
     console.error(`[today-browser] FAILURE DIAGNOSTIC ${JSON.stringify(diagnostic)}`);
