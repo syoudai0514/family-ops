@@ -328,9 +328,9 @@ export function TaskChecklistItem({
             className="secondary-button task-inline-finish"
             onClick={() => handleAnyoneClaim('claim')}
             disabled={busy}
-            title="先に担当を予約したいときだけ使います。チェックや完了はこのまま直接できます。"
+            title="先に自分がやると決めたいときに使います。押さなくてもチェックや完了はできます。"
           >
-            自分がやる（予約）
+            自分がやる
           </button>
         )}
         {anyoneClaimedBySelf && !completed && (
