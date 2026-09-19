@@ -177,9 +177,6 @@ function planningTaskRows(url) {
 
 async function handleMockSupabaseRequest(request, response) {
   const url = new URL(request.url ?? '/', MOCK_SUPABASE_URL);
-  const requestBody = request.method === 'POST' || request.method === 'PATCH'
-    ? await readRequestBody(request)
-    : '';
   state.requestLog.push({
     requestId: `http-${state.requestLog.length + 1}`,
     method: request.method,
@@ -225,9 +222,14 @@ async function handleMockSupabaseRequest(request, response) {
   } else if (pathname === '/functions/v1/get-today-schedule') {
     writeJsonResponse(response, { household_id: household.id, local_date: TODAY, calendar_connected: false, calendar_stale: false, occurrences: [], assignments: [] }, 200, request.headers);
   } else if (pathname === '/functions/v1/complete-task') {
+    // This endpoint does not need request-body inspection for CF-14. Respond
+    // immediately after the HTTP request reaches the mock so the browser
+    // mutation boundary is independent of request-stream timing.
+    request.resume();
     state.failAfterMutation = true;
     writeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200, request.headers);
   } else if (pathname === '/functions/v1/negotiate-request') {
+    const requestBody = await readRequestBody(request);
     const command = requestBody ? JSON.parse(requestBody) : {};
     consultationCommands.push(command);
     consultationAttempt.state = 'accepted';
@@ -382,6 +384,16 @@ async function main() {
     await client.send('Page.enable');
     await client.send('Runtime.enable');
     await client.send('Network.enable');
+    await client.send('Log.enable');
+    const networkRequestUrls = new Map();
+    client.on('Network.requestWillBeSent', ({ requestId, request }) => {
+      if (requestId && request?.url) networkRequestUrls.set(requestId, request.url);
+    });
+    client.on('Log.entryAdded', ({ entry }) => {
+      if (entry?.level === 'error' || entry?.level === 'warning') {
+        state.browserEvents.push({ kind: `browser-log-${entry.level}`, text: entry.text ?? '', url: entry.url ?? null });
+      }
+    });
     client.on('Network.responseReceived', ({ requestId, response }) => {
       if (response?.status >= 400 || response?.url?.includes('/functions/v1/complete-task')) {
         state.networkEvents.push({
@@ -397,6 +409,7 @@ async function main() {
       state.networkEvents.push({
         kind: 'loading-failed',
         requestId: requestId ?? null,
+        url: requestId ? networkRequestUrls.get(requestId) ?? null : null,
         errorText,
         blockedReason: blockedReason ?? null,
         corsErrorStatus: corsErrorStatus ?? null,
