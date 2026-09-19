@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { assignmentDecisionCommand, type AssignmentDecision } from './assignmentDecision';
@@ -106,6 +107,7 @@ export function TaskChecklistItem({
   const [assignmentUserId, setAssignmentUserId] = useState(task.planned_assignee_id ?? members[0]?.user_id ?? '');
   const [assignmentDecision, setAssignmentDecision] = useState<AssignmentDecision>('request');
   const [assignmentMessage, setAssignmentMessage] = useState('');
+  const runCommand = useCommandAttempt();
   const doneSubtasks = subtasks.filter((item) => item.is_completed).length;
   const requiredSubtasks = subtasks.filter((item) => item.required);
   const optionalOnlyChecklist =
@@ -124,11 +126,15 @@ export function TaskChecklistItem({
     });
   }
 
-  async function withOperation(fn: (operationId: string) => Promise<unknown>): Promise<boolean> {
+  async function withOperation(
+    logicalKey: string,
+    endpoint: Parameters<typeof runCommand>[1],
+    buildPayload: (operationId: string) => Record<string, unknown>,
+  ): Promise<boolean> {
     setError(null);
     setBusy(true);
     try {
-      await fn(newOperationId());
+      await runCommand(logicalKey, endpoint, buildPayload);
       onChanged();
       return true;
     } catch (err) {
@@ -144,8 +150,10 @@ export function TaskChecklistItem({
   }
 
   function handleAnyoneClaim(action: 'claim' | 'release' | 'takeover') {
-    void withOperation((operationId) =>
-      callEdgeFunction(EDGE_FUNCTIONS.changeTaskAssignment, {
+    void withOperation(
+      `task:${task.id}:assignment:${action}:r${task.revision ?? 1}`,
+      EDGE_FUNCTIONS.changeTaskAssignment,
+      (operationId) => ({
         operation_id: operationId,
         task_id: task.id,
         claim_action: action,
@@ -155,8 +163,10 @@ export function TaskChecklistItem({
   }
 
   function handleComplete() {
-    void withOperation((operationId) =>
-      callEdgeFunction(EDGE_FUNCTIONS.completeTask, {
+    void withOperation(
+      `task:${task.id}:complete:${actor}:r${task.revision ?? 1}`,
+      EDGE_FUNCTIONS.completeTask,
+      (operationId) => ({
         operation_id: operationId,
         task_id: task.id,
         completion_actor: actor,
@@ -166,17 +176,18 @@ export function TaskChecklistItem({
   }
 
   function handleCancel() {
-    void withOperation((operationId) =>
-      callEdgeFunction(EDGE_FUNCTIONS.cancelTask, {
-        operation_id: operationId,
-        task_id: task.id,
-      }),
+    void withOperation(
+      `task:${task.id}:cancel:r${task.revision ?? 1}`,
+      EDGE_FUNCTIONS.cancelTask,
+      (operationId) => ({ operation_id: operationId, task_id: task.id }),
     );
   }
 
   function handleToggleSubtask(subtask: TaskSubtaskInstance) {
-    void withOperation((operationId) =>
-      callEdgeFunction(EDGE_FUNCTIONS.setSubtaskCompletion, {
+    void withOperation(
+      `subtask:${subtask.id}:complete:${!subtask.is_completed}:${actor}`,
+      EDGE_FUNCTIONS.setSubtaskCompletion,
+      (operationId) => ({
         operation_id: operationId,
         subtask_instance_id: subtask.id,
         completed: !subtask.is_completed,
@@ -187,23 +198,31 @@ export function TaskChecklistItem({
 
   function handleWaitingSubmit(event: FormEvent) {
     event.preventDefault();
-    void withOperation((operationId) => callEdgeFunction(EDGE_FUNCTIONS.setTaskWaiting, {
-      operation_id: operationId,
-      task_id: task.id,
-      waiting_action: task.attention_state === 'waiting' ? 'update' : 'set',
-      waiting_note: waitingNote.trim() || null,
-      next_check_at: nextCheckAt ? new Date(nextCheckAt).toISOString() : undefined,
-      expected_revision: task.revision ?? 1,
-    })).then((succeeded) => { if (succeeded) setEditingWaiting(false); });
+    void withOperation(
+      `task:${task.id}:waiting:${task.attention_state === 'waiting' ? 'update' : 'set'}:r${task.revision ?? 1}`,
+      EDGE_FUNCTIONS.setTaskWaiting,
+      (operationId) => ({
+        operation_id: operationId,
+        task_id: task.id,
+        waiting_action: task.attention_state === 'waiting' ? 'update' : 'set',
+        waiting_note: waitingNote.trim() || null,
+        next_check_at: nextCheckAt ? new Date(nextCheckAt).toISOString() : undefined,
+        expected_revision: task.revision ?? 1,
+      }),
+    ).then((succeeded) => { if (succeeded) setEditingWaiting(false); });
   }
 
   function handleResumeWaiting() {
-    void withOperation((operationId) => callEdgeFunction(EDGE_FUNCTIONS.setTaskWaiting, {
-      operation_id: operationId,
-      task_id: task.id,
-      waiting_action: 'resume',
-      expected_revision: task.revision ?? 1,
-    }));
+    void withOperation(
+      `task:${task.id}:waiting:resume:r${task.revision ?? 1}`,
+      EDGE_FUNCTIONS.setTaskWaiting,
+      (operationId) => ({
+        operation_id: operationId,
+        task_id: task.id,
+        waiting_action: 'resume',
+        expected_revision: task.revision ?? 1,
+      }),
+    );
   }
 
   function handleAssignmentSubmit(event: FormEvent) {
@@ -212,17 +231,26 @@ export function TaskChecklistItem({
       setError('担当する人を選んでください。');
       return;
     }
-    void withOperation((operationId) => {
-      const command = assignmentDecisionCommand({
+    const template = assignmentDecisionCommand({
+      decision: assignmentDecision,
+      operationId: '00000000-0000-4000-8000-000000000000',
+      taskId: task.id,
+      assigneeUserId: assignmentUserId,
+      expectedRevision: task.revision ?? 1,
+      sharedMessage: assignmentMessage,
+    });
+    void withOperation(
+      `task:${task.id}:assignment-decision:${assignmentDecision}:${assignmentUserId}:r${task.revision ?? 1}`,
+      template.endpoint,
+      (operationId) => assignmentDecisionCommand({
         decision: assignmentDecision,
         operationId,
         taskId: task.id,
         assigneeUserId: assignmentUserId,
         expectedRevision: task.revision ?? 1,
         sharedMessage: assignmentMessage,
-      });
-      return callEdgeFunction(command.endpoint, command.body);
-    }).then((succeeded) => { if (succeeded) setEditingAssignment(false); });
+      }).body,
+    ).then((succeeded) => { if (succeeded) setEditingAssignment(false); });
   }
 
   async function handleEvidenceSubmit(event: FormEvent) {
