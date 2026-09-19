@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const APP_URL = 'http://127.0.0.1:4173/today';
-const MOCK_SUPABASE_URL = 'http://127.0.0.1:54321';
+const MOCK_SUPABASE_URL = 'http://127.0.0.1:4173';
 const ARTIFACT_DIR = path.resolve('artifacts/cf14-browser');
 const SOURCE_HEAD = process.env.CF14_SOURCE_HEAD || process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA || 'local-authoring';
 const TODAY = new Intl.DateTimeFormat('en-CA', {
@@ -409,7 +409,13 @@ async function main() {
         state.browserEvents.push({ kind: `console-${type}`, text: (args ?? []).map((arg) => arg.value ?? arg.description ?? '').join(' ') });
       }
     });
-    await client.send('Fetch.enable', { patterns: [{ urlPattern: `${MOCK_SUPABASE_URL}/*`, requestStage: 'Request' }] });
+    await client.send('Fetch.enable', {
+      patterns: [
+        { urlPattern: `${MOCK_SUPABASE_URL}/rest/v1/*`, requestStage: 'Request' },
+        { urlPattern: `${MOCK_SUPABASE_URL}/functions/v1/*`, requestStage: 'Request' },
+        { urlPattern: `${MOCK_SUPABASE_URL}/auth/v1/*`, requestStage: 'Request' },
+      ],
+    });
     await client.send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 3, mobile: true });
 
     const session = {
