@@ -169,6 +169,7 @@ export function TaskChecklistItem({
     void withOperation((operationId) =>
       callEdgeFunction(EDGE_FUNCTIONS.reopenTask, {
         operation_id: operationId,
+        action: 'reopen',
         task_id: task.id,
         expected_revision: task.revision ?? 1,
       }),
