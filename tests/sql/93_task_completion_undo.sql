@@ -1,6 +1,8 @@
 -- Q114: accidental task completion can be corrected without deleting audit history.
 \set ON_ERROR_STOP on
 
+begin;
+
 insert into auth.users(id) values
   ('93000000-0000-0000-0000-000000000001'),
   ('93000000-0000-0000-0000-000000000002');
@@ -145,4 +147,5 @@ $$;
 reset role;
 reset request.jwt.claim.sub;
 
+rollback;
 select 'task_completion_undo: PASS' as result;
