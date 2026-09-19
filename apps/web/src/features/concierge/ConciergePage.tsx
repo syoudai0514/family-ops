@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FamilyOpsApiError } from '../../lib/apiClient';
+import { FamilyOpsApiError } from '../../lib/apiClient';\nimport { TaskFormModal } from '../tasks/TaskFormModal';\nimport { quickAddDestination, quickAddOptions } from '../tasks/QuickAdd';
 import { loadConciergeDraft, proposeConciergeCandidates, saveConciergeDraft, withActualScheduledDate, type ConciergeRouteState } from './conciergeFlow';
 import './concierge.css';
 
@@ -35,7 +35,7 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
   const today = useMemo(() => todayInTokyo(), []);
   const [actualDate, setActualDate] = useState(today);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);\n  const [taskFormOpen, setTaskFormOpen] = useState(false);
   const speechAvailable = useMemo(() => Boolean(getSpeechRecognition()), []);
 
   useEffect(() => { saveConciergeDraft(text); }, [text]);
@@ -110,15 +110,41 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
         </div>
       )}
       <label className="concierge-input-label">
-        <span>何でも書いてください</span>
+        <span>{actualOnly ? '何をやったか書いてください' : '思いついたことを、そのまま書いてください'}</span>
         <textarea value={text} onChange={(event) => setText(event.target.value)} rows={7} placeholder={actualOnly ? '例：掃除機かけた' : '例：明日は水遊び。水着を準備。牛乳がなくなりそう。金曜のお迎えお願い。'} />
       </label>
       {error && <p role="alert" className="error-text">{error}</p>}
       <div className="concierge-actions">
         {!actualOnly && <button type="button" className="secondary-button" disabled={!speechAvailable || busy} onClick={startVoice}>🎙 話す</button>}
-        <button type="button" disabled={busy} onClick={() => void organize()}>{busy ? '整理中…' : actualOnly ? '実績候補を確認' : 'AIで整理'}</button>
+        <button type="button" disabled={busy} onClick={() => void organize()}>{busy ? '確認内容を作成中…' : actualOnly ? '実績候補を確認' : '内容を確認'}</button>
       </div>
+      {!actualOnly && <details className="card">
+        <summary><b>選んで入力</b></summary>
+        <p className="meta">自由入力が合わない時だけ、今までの入力画面を選べます。</p>
+        <div className="quick-add-list">
+          {quickAddOptions.map((option) => (
+            <button key={option.target} type="button" onClick={() => {
+              if (option.target === 'task') {
+                setTaskFormOpen(true);
+                return;
+              }
+              navigate(quickAddDestination(option.target), { state: originState });
+            }}>
+              <b>{option.label}</b>
+              {option.detail && <small>{option.detail}</small>}
+            </button>
+          ))}
+        </div>
+      </details>}
       <p className="meta">確認するまでは、登録も家族への送信もしません。</p>
+      {taskFormOpen && <TaskFormModal
+        mode="create"
+        onClose={() => setTaskFormOpen(false)}
+        onSaved={() => {
+          setTaskFormOpen(false);
+          navigate(originState.originPath ?? '/today', { replace: true, state: { restoreScrollY: originState.originScrollY ?? 0 } });
+        }}
+      />}
     </div>
   );
 }
