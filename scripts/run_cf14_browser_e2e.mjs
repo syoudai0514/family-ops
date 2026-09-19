@@ -488,7 +488,16 @@ async function main() {
     await waitForPath(client, '/today');
     await waitForText(client, task.title);
 
+    // The Back/return scenario intentionally causes browser navigation and
+    // cancels superseded reads. Start the stale-state mutation scenario from a
+    // fresh Today navigation so those cancelled requests cannot invalidate the
+    // mutation interception under test.
     state.initialBriefDelayMs = 0;
+    state.failAfterMutation = false;
+    await navigate(client, APP_URL);
+    await waitForText(client, task.title);
+    await sleep(150);
+
     assert.equal(await evaluate(client, `(() => {
       const buttons = [...document.querySelectorAll('button[aria-label=${JSON.stringify(`${task.title}を完了にする`)}]')];
       const button = buttons.at(-1); if (!button) return false; button.click(); return true;
