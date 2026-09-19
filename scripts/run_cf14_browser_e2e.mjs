@@ -135,12 +135,19 @@ function jsonResponse(value, responseCode = 200) {
   };
 }
 
-function noContentResponse() {
+function noContentResponse(requestHeaders = {}) {
+  const requestedHeaders = Object.entries(requestHeaders)
+    .find(([name]) => name.toLowerCase() === 'access-control-request-headers')?.[1];
   return {
     responseCode: 204,
     responseHeaders: [
       { name: 'access-control-allow-origin', value: 'http://127.0.0.1:4173' },
-      { name: 'access-control-allow-headers', value: 'authorization, apikey, content-type, x-client-info, x-supabase-api-version' },
+      {
+        name: 'access-control-allow-headers',
+        value: typeof requestedHeaders === 'string' && requestedHeaders.trim()
+          ? requestedHeaders
+          : 'authorization, apikey, content-type, x-client-info, x-supabase-api-version',
+      },
       { name: 'access-control-allow-methods', value: 'GET,POST,PATCH,DELETE,OPTIONS' },
     ],
   };
@@ -170,7 +177,7 @@ async function fulfillSupabaseRequest(client, { requestId, request }) {
   const url = new URL(request.url);
   state.requestLog.push({ requestId, method: request.method, url: request.url, headers: request.headers, mode: state.mode, failAfterMutation: state.failAfterMutation });
   if (request.method === 'OPTIONS') {
-    await client.send('Fetch.fulfillRequest', { requestId, ...noContentResponse() });
+    await client.send('Fetch.fulfillRequest', { requestId, ...noContentResponse(request.headers) });
     return;
   }
 
