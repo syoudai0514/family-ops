@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 const APP_URL = 'http://127.0.0.1:4173/today';
-const MOCK_SUPABASE_URL = 'http://127.0.0.1:54321';
+const MOCK_SUPABASE_URL = 'http://127.0.0.1:4173';
+const VITE_URL = 'http://127.0.0.1:4174';
 const ARTIFACT_DIR = path.resolve('artifacts/cf14-browser');
 const SOURCE_HEAD = process.env.CF14_SOURCE_HEAD || process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA || 'local-authoring';
 const TODAY = new Intl.DateTimeFormat('en-CA', {
@@ -245,8 +246,40 @@ async function handleMockSupabaseRequest(request, response) {
   }
 }
 
+function isMockSupabasePath(url = '/') {
+  return url.startsWith('/rest/v1/')
+    || url.startsWith('/functions/v1/')
+    || url.startsWith('/auth/v1/')
+    || url.startsWith('/realtime/v1/');
+}
+
+function proxyToVite(request, response) {
+  const upstream = httpRequest({
+    hostname: '127.0.0.1',
+    port: 4174,
+    path: request.url ?? '/',
+    method: request.method,
+    headers: { ...request.headers, host: '127.0.0.1:4174' },
+  }, (upstreamResponse) => {
+    const headers = { ...upstreamResponse.headers };
+    delete headers.connection;
+    response.writeHead(upstreamResponse.statusCode ?? 502, headers);
+    upstreamResponse.pipe(response);
+  });
+  upstream.on('error', (error) => {
+    state.browserEvents.push({ kind: 'vite-proxy-error', url: request.url ?? null, error: String(error) });
+    if (!response.headersSent) response.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
+    if (!response.writableEnded) response.end('CF14 Vite proxy failure');
+  });
+  request.pipe(upstream);
+}
+
 async function startMockSupabase() {
   const server = createServer((request, response) => {
+    if (!isMockSupabasePath(request.url ?? '/')) {
+      proxyToVite(request, response);
+      return;
+    }
     void handleMockSupabaseRequest(request, response).catch((error) => {
       state.browserEvents.push({ kind: 'mock-server-error', url: request.url ?? null, error: String(error) });
       if (!response.headersSent && !response.destroyed) {
@@ -258,7 +291,7 @@ async function startMockSupabase() {
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(54321, '127.0.0.1', resolve);
+    server.listen(4173, '127.0.0.1', resolve);
   });
   return server;
 }
@@ -309,7 +342,7 @@ async function openConciergeFromQuickAdd(client) {
 
 async function startVite() {
   const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
-    'run', 'dev', '-w', 'apps/web', '--', '--host', '127.0.0.1', '--port', '4173', '--strictPort',
+    'run', 'dev', '-w', 'apps/web', '--', '--host', '127.0.0.1', '--port', '4174', '--strictPort',
   ], {
     cwd: process.cwd(),
     env: {
@@ -325,7 +358,7 @@ async function startVite() {
   child.stderr.on('data', (chunk) => { output += String(chunk); });
   child.on('exit', (code) => { if (code) console.error(`[cf14-browser] Vite exited ${code}\n${output}`); });
   await waitFor(async () => {
-    try { return (await fetch('http://127.0.0.1:4173/')).ok; } catch { return false; }
+    try { return (await fetch(VITE_URL)).ok; } catch { return false; }
   }, { timeoutMs: 20_000, intervalMs: 100, label: 'Vite dev server' });
   return child;
 }
@@ -592,7 +625,7 @@ async function main() {
       requestLog: state.requestLog,
       browserEvents: state.browserEvents,
       networkEvents: state.networkEvents,
-      authenticatedAppModule: await fetch('http://127.0.0.1:4173/src/app/AuthenticatedApp.tsx').then(async (response) => ({ status: response.status, body: (await response.text()).slice(0, 16_000) })).catch((moduleError) => ({ error: String(moduleError) })),
+      authenticatedAppModule: await fetch(`${VITE_URL}/src/app/AuthenticatedApp.tsx`).then(async (response) => ({ status: response.status, body: (await response.text()).slice(0, 16_000) })).catch((moduleError) => ({ error: String(moduleError) })),
     };
     await writeFile(path.join(ARTIFACT_DIR, 'failure-diagnostic.json'), `${JSON.stringify(diagnostic, null, 2)}\n`);
     console.error(`[cf14-browser] FAILURE DIAGNOSTIC ${JSON.stringify(diagnostic)}`);
