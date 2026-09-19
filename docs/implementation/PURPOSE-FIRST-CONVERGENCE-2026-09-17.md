@@ -1,9 +1,9 @@
 # Family Ops Purpose-first convergence implementation
 
 Status: **CHECKPOINT / NOT MERGE-READY**  
-Date: 2026-09-19 19:58 JST  
+Date: 2026-09-20 07:14 JST  
 Branch: `impl/purpose-first-convergence-20260917`  
-Code HEAD before this checkpoint document: `3f340fbc3d2344f7fdae13cc7ae99d81ea813c3c`  
+Code HEAD before this checkpoint document: `987ff61cc9b91b750cc511cefecbdd9258c04c25`  
 CURRENT main: `371164f90d602108858f299ffb47f671e8ed4e27`  
 PR: #113 (Draft)  
 Astra review source: `review/astra-purpose-ux-20260917@8e1e00e9aa0b8d7c5bae45e4e3bc776bfb5dba14`
@@ -15,7 +15,7 @@ CURRENT main was fresh-read and merged into this implementation branch through s
 Current comparison at this checkpoint:
 
 - branch is **ahead of CURRENT main**
-- ahead: 34 commits
+- ahead: 52 commits
 - behind: 0
 - PR #113 remains Draft
 - GitHub reports the PR as mergeable, but it is not yet merge-ready because one required browser evidence lane is still failing
@@ -61,7 +61,7 @@ The previous main-divergence blocker is therefore closed.
 - partner assignment-change requests carry `expected_task_revision`
 - backend review confirmed the principal mutation endpoints pass `operation_id` into canonical server transaction/RPC boundaries
 
-## 4. Verification at code HEAD 3f340fbc...
+## 4. Verification at code HEAD 987ff61c...
 
 ### PASS
 - Operational safety CI: **PASS**
@@ -71,11 +71,12 @@ The previous main-divergence blocker is therefore closed.
 - Edge functions lint/check/auth matrix: **PASS**
 
 ### Remaining FAIL
-- Web job fails only at the early **CF-14 real-browser authoring E2E** step.
-- Because that step precedes normal web lint/typecheck/test/build, the later web stages are not yet final evidence for this HEAD.
-- Current CF-14 failure occurs after Today renders successfully and after the canonical task is visible.
-- The failure log contains `Fetch.fulfillRequest: Invalid InterceptionId` around the mocked `complete-task` boundary. The expected post-mutation stale-state assertion is therefore not reached correctly.
-- `useTodayData` already has a focused regression proving **successful snapshot -> failed refresh -> stale while retaining the last good snapshot**. Current evidence points to the browser harness interception race, not a need to weaken product stale semantics.
+- Exact code HEAD CI #1295 fails only in the web job at the early **CF-14 real-browser authoring E2E** step.
+- On the same HEAD, DB, Supabase real CLI integration, Edge checks, Operational Safety CI, and Today Navigation Evidence are PASS.
+- The harness has been moved off CDP response interception and through a real local HTTP/same-origin gateway. The `complete-task` POST now reaches that gateway, so the earlier preflight/CDP ambiguity is closed.
+- Chrome still reports `net::ERR_ABORTED` for that mutation response, so the expected post-mutation stale-state assertion is not reached. The next debugging boundary is the mock response/request-stream handling around that POST, not the Today stale-state product semantics.
+- `useTodayData` already has a focused regression proving **successful snapshot -> failed refresh -> stale while retaining the last good snapshot**.
+- Because CF-14 runs before the ordinary web lint/typecheck/unit/build stages, those later stages still lack exact-head final evidence.
 
 ## 5. Important defects closed
 
@@ -87,7 +88,22 @@ The previous main-divergence blocker is therefore closed.
 - new PR #114 reopen/evidence operations bypassing PF-04 stable attempts: **closed**
 - Today direct assignment resolution bypassing PF-04 stable attempts/CAS: **closed**
 
-## 6. Remaining work before merge-ready
+## 6. Progress estimate
+
+**Overall convergence progress: 90%.**
+
+Basis for this estimate:
+
+- purpose-first implementation findings PF-01 / PF-02 / PF-03 / PF-04 / PF-07 are implemented;
+- PF-05 / PF-06 remain intentionally deferred pending PO decisions and are not counted as defects;
+- CURRENT main is reconciled (behind 0);
+- DB, real Supabase integration, Edge, Operational Safety, and Today Navigation evidence are green;
+- canonical design updates for command recovery, Today stale behavior, Codmon readiness, and recovery evidence are incorporated;
+- the remaining merge-readiness blocker is CF-14 browser authoring evidence plus the downstream exact-head web lint/typecheck/unit/build run and final self-review.
+
+This percentage is a work-completion estimate, not a CI pass score and not a production/F2 GO declaration.
+
+## 7. Remaining work before merge-ready
 
 1. fix the CF-14 browser harness interception race without weakening product behavior;
 2. rerun CF-14 and then obtain web lint/typecheck/test/build on the exact same HEAD;
@@ -96,7 +112,7 @@ The previous main-divergence blocker is therefore closed.
 5. complete the final Purpose -> Requirements -> CURRENT design -> implementation -> tests -> real-use scenario review;
 6. update PR #113 body/checklist and only remove Draft if the exact final HEAD is fully GREEN.
 
-## 7. Explicitly not done
+## 8. Explicitly not done
 
 - no production deployment or production mutation
 - no merge of PR #113 to main
@@ -104,10 +120,10 @@ The previous main-divergence blocker is therefore closed.
 - no notification to the real wife account
 - no PF-05/PF-06 product decision change
 
-## 8. Checkpoint judgment
+## 9. Checkpoint judgment
 
 The implementation is materially further along than the previous checkpoint. Main is reconciled, Codmon DB verification is green, app boot is repaired, Today navigation evidence is green, and PF-04 coverage is broader and safer.
 
 **The branch is still NOT merge-ready / NOT fully GREEN.**
 
-The immediate blocker is now narrowly isolated to the CF-14 browser evidence harness around the mocked post-mutation boundary. After that is repaired, the exact-head web lint/typecheck/test/build and final cross-product alignment review are still required.
+The immediate blocker is now narrowly isolated to CF-14 around the real-browser `complete-task` response boundary. Once that evidence passes, the exact-head web lint/typecheck/unit/build stages and the final cross-product alignment review remain before PR #113 can be considered merge-ready.
