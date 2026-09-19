@@ -150,6 +150,18 @@ function writeNoContentResponse(response, requestHeaders = {}) {
   response.end();
 }
 
+function writeEdgeJsonResponse(response, value, statusCode = 200) {
+  if (response.destroyed || response.writableEnded) return;
+  const body = Buffer.from(JSON.stringify(value));
+  response.writeHead(statusCode, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': String(body.length),
+    'cache-control': 'no-store',
+    connection: 'close',
+  });
+  response.end(body);
+}
+
 async function readRequestBody(request, label = 'request-body') {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -250,7 +262,7 @@ async function handleMockSupabaseRequest(request, response) {
     response.once('finish', () => state.browserEvents.push({ kind: 'mock-complete-task-response-finish', statusCode: response.statusCode }));
     response.once('close', () => state.browserEvents.push({ kind: 'mock-complete-task-response-close', statusCode: response.statusCode }));
     state.failAfterMutation = true;
-    writeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200, request.headers);
+    writeEdgeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200);
   } else if (pathname === '/functions/v1/negotiate-request') {
     const requestBody = await readRequestBody(request, 'negotiate-request');
     const command = requestBody ? JSON.parse(requestBody) : {};
