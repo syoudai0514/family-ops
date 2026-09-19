@@ -407,7 +407,7 @@ This includes routine household work and continuing child-care routines such as 
 - live transport, when present, still wins;
 - `誰でもOK` stays visible to both adults; unclaimed shows `誰でもOK`, claimed shows the current `パパ対応中 / ママ対応中` state;
 - it is excluded from `担当未定 / まず確認`;
-- `自分がやる` claim is optional pre-coordination, not an execution prerequisite. An unclaimed `誰でもOK` task can be checked/completed directly and the actual performer is recorded; if another adult already holds the claim, direct execution stays blocked until takeover;
+- `自分がやる` is optional pre-coordination, not an execution prerequisite. An unclaimed `誰でもOK` task can be checked/completed directly and the actual performer is recorded; if another adult already holds the claim, direct execution stays blocked until takeover;
 - LINE Today exposes a contextual `誰でもOKを確認` entry whenever same-day anyone work exists, so claim/release stays discoverable in the daily channel;
 - claimant can release; the other adult can explicitly take over;
 - takeover does not mutate on the first LINE tap: the current claimant is fresh-read and shown before the explicit confirm tap;
@@ -417,7 +417,9 @@ This includes routine household work and continuing child-care routines such as 
 
 Task display:
 
-`牛乳を買う  誰でもOK [自分がやる]`\n\nThe user may also complete/check the item directly without claiming first. Claim means “I plan to do this”, not “the UI is unlocked”.
+`牛乳を買う  誰でもOK [自分がやる]`
+
+The user may also complete/check the item directly without pressing `自分がやる` first. `自分がやる` means “I will handle this”, not “the UI is unlocked”.
 
 After claim:
 
