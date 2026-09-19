@@ -188,7 +188,7 @@ Side effects:
 - linked request completed if task fully completed
 - notification according prefs
 
-### `POST /mutations/tasks/reopen`
+### `POST /mutations/tasks/reopen` (implemented by the existing `complete-task` Edge Function with `action=reopen`)
 Input:
 - operation_id
 - task_id
