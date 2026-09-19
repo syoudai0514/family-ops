@@ -13,11 +13,30 @@ export type CommandAttempt = {
   state: CommandAttemptState;
   createdAt: string;
   result?: { entityId?: string; status?: string };
+  logicalKey?: string;
 };
 
 const PREFIX = 'family-ops:command-attempt:v1';
 const RESUME_MS = 24 * 60 * 60 * 1000;
 const memory = new Map<string, CommandAttempt>();
+
+function linkKey(userId: string, householdId: string, logicalKey: string) {
+  return `${PREFIX}:link:${userId}:${householdId}:${encodeURIComponent(logicalKey)}`;
+}
+
+function readLinkedOperationId(userId: string, householdId: string, logicalKey: string): string | null {
+  try { return sessionStorage.getItem(linkKey(userId, householdId, logicalKey)); } catch { return null; }
+}
+
+function writeLink(attempt: CommandAttempt) {
+  if (!attempt.logicalKey) return;
+  try { sessionStorage.setItem(linkKey(attempt.userId, attempt.householdId, attempt.logicalKey), attempt.operationId); } catch { /* memory-only attempt */ }
+}
+
+function removeLink(attempt: CommandAttempt) {
+  if (!attempt.logicalKey) return;
+  try { sessionStorage.removeItem(linkKey(attempt.userId, attempt.householdId, attempt.logicalKey)); } catch { /* no-op */ }
+}
 
 function keyFor(userId: string, householdId: string, operationId: string) {
   return `${PREFIX}:${userId}:${householdId}:${operationId}`;
@@ -39,12 +58,14 @@ function persist(attempt: CommandAttempt) {
   const key = keyFor(attempt.userId, attempt.householdId, attempt.operationId);
   memory.set(key, attempt);
   try { sessionStorage.setItem(key, JSON.stringify(attempt)); } catch { /* memory fallback */ }
+  writeLink(attempt);
 }
 
 function remove(attempt: CommandAttempt) {
   const key = keyFor(attempt.userId, attempt.householdId, attempt.operationId);
   memory.delete(key);
   try { sessionStorage.removeItem(key); } catch { /* memory fallback */ }
+  removeLink(attempt);
 }
 
 export function loadCommandAttempt(userId: string, householdId: string, operationId: string): CommandAttempt | null {
@@ -80,6 +101,25 @@ export function prepareCommandAttempt(input: Omit<CommandAttempt, 'version' | 's
   const attempt: CommandAttempt = { ...input, version: 1, state: 'prepared', createdAt: new Date().toISOString() };
   persist(attempt);
   return attempt;
+}
+
+export function prepareStableCommandAttempt(input: {
+  userId: string;
+  householdId: string;
+  logicalKey: string;
+  endpoint: EdgeFunctionName;
+  buildPayload: (operationId: string) => Readonly<Record<string, unknown>>;
+}): CommandAttempt {
+  const linkedOperationId = readLinkedOperationId(input.userId, input.householdId, input.logicalKey);
+  const operationId = linkedOperationId ?? crypto.randomUUID();
+  return prepareCommandAttempt({
+    userId: input.userId,
+    householdId: input.householdId,
+    operationId,
+    logicalKey: input.logicalKey,
+    endpoint: input.endpoint,
+    payload: input.buildPayload(operationId),
+  });
 }
 
 export async function executeCommandAttempt<T>(
