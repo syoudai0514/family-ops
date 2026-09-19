@@ -276,6 +276,9 @@ Rules:
 - failure to check for an update must not block Today; the current shell remains usable and the next resume/focus retries.
 - PWA recovery is always reachable: the app header exposes a reload control, and top-of-page downward pull supports pull-to-refresh. The gesture activates only from scroll-top, requires a deliberate vertical threshold, ignores interactive/modal targets, and debounces accidental horizontal/short pulls.
 - auth/household/Today reads have finite client-side timeouts. A timeout never leaves a permanent spinner: initial-gate failures become a retry/reload state, while a household refresh after a successful load keeps the existing app shell/nav mounted instead of replacing it with a blocking loader.
+- after Today has a successful snapshot, a later refresh/read failure keeps that snapshot visible as stale and explains that the last confirmed content is being shown; it must not replace known content with a false empty state.
+- mutation timeout/network uncertainty after dispatch is shown as result-unknown, not “failed/not sent”. Retrying the same logical action reuses the exact confirmed payload and `operation_id`; changing recipient/body/target requires resolving the previous outcome first.
+- local recovery state and Concierge drafts are scoped by signed-in user + household. Legacy unscoped Concierge text is not silently adopted after an account/household switch.
 - generic full-screen loading surfaces reveal a manual reload action if loading exceeds the recovery threshold. Reloading preserves Supabase auth/session/local state.
 - PWA Today does not add a separate KPI/dashboard row for `要対応 / 残り / 待ち / 明日影響`; the actionable sections themselves carry those states and counts.
 - morning/daytime rendering may place current own work above passive handover/info while preserving urgent actions and exceptions first.
