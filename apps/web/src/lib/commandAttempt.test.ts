@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FamilyOpsApiError } from './apiClient';
-import { executeCommandAttempt, loadCommandAttempt, prepareCommandAttempt, prepareStableCommandAttempt } from './commandAttempt';
+import { executeCommandAttempt, loadCommandAttempt, loadStableCommandAttempt, prepareCommandAttempt, prepareStableCommandAttempt } from './commandAttempt';
 
 describe('commandAttempt', () => {
   beforeEach(() => sessionStorage.clear());
@@ -34,6 +34,23 @@ describe('commandAttempt', () => {
       buildPayload: (operationId) => ({ operation_id: operationId, recipient_user_id: 'u2', shared_message: 'A' }),
     });
     expect(retry.operationId).toBe(first.operationId);
+  });
+
+  it('keeps the logical operation link in memory when sessionStorage writes are unavailable', () => {
+    const storageSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('storage blocked', 'SecurityError');
+    });
+    const first = prepareStableCommandAttempt({
+      userId: 'u1', householdId: 'h1', logicalKey: 'request:send:u2:memory-only', endpoint: 'send-request',
+      buildPayload: (operationId) => ({ operation_id: operationId, recipient_user_id: 'u2', shared_message: 'A' }),
+    });
+    const retry = prepareStableCommandAttempt({
+      userId: 'u1', householdId: 'h1', logicalKey: 'request:send:u2:memory-only', endpoint: 'send-request',
+      buildPayload: (operationId) => ({ operation_id: operationId, recipient_user_id: 'u2', shared_message: 'A' }),
+    });
+    expect(retry.operationId).toBe(first.operationId);
+    expect(loadStableCommandAttempt('u1', 'h1', 'request:send:u2:memory-only')?.operationId).toBe(first.operationId);
+    storageSpy.mockRestore();
   });
 
   it('does not expose an attempt to another user or household', () => {
