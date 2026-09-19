@@ -216,9 +216,10 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '未完了に戻す' }));
 
-    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('reopen-task', {
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
       operation_id: '69000000-0000-4000-8000-000000000001',
       task_id: 'task-1',
+      action: 'reopen',
       expected_revision: 7,
     }));
   });
