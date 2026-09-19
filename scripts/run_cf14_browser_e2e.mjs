@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 const APP_URL = 'http://127.0.0.1:4173/today';
-const MOCK_SUPABASE_URL = 'http://127.0.0.1:4173';
+const MOCK_SUPABASE_URL = 'http://127.0.0.1:54321';
 const ARTIFACT_DIR = path.resolve('artifacts/cf14-browser');
 const SOURCE_HEAD = process.env.CF14_SOURCE_HEAD || process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA || 'local-authoring';
 const TODAY = new Intl.DateTimeFormat('en-CA', {
@@ -121,36 +122,37 @@ class CdpClient {
   close() { this.socket?.close(); }
 }
 
-function jsonResponse(value, responseCode = 200) {
+function corsHeaders(requestHeaders = {}) {
+  const requestedHeaders = requestHeaders['access-control-request-headers'];
   return {
-    responseCode,
-    responseHeaders: [
-      { name: 'access-control-allow-origin', value: 'http://127.0.0.1:4173' },
-      { name: 'access-control-allow-headers', value: 'authorization, apikey, content-type, x-client-info, x-supabase-api-version' },
-      { name: 'access-control-allow-methods', value: 'GET,POST,PATCH,DELETE,OPTIONS' },
-      { name: 'content-type', value: 'application/json; charset=utf-8' },
-      { name: 'content-range', value: '0-0/1' },
-    ],
-    body: Buffer.from(JSON.stringify(value)).toString('base64'),
+    'access-control-allow-origin': 'http://127.0.0.1:4173',
+    'access-control-allow-headers': typeof requestedHeaders === 'string' && requestedHeaders.trim()
+      ? requestedHeaders
+      : 'authorization, apikey, content-type, x-client-info, x-supabase-api-version',
+    'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
   };
 }
 
-function noContentResponse(requestHeaders = {}) {
-  const requestedHeaders = Object.entries(requestHeaders)
-    .find(([name]) => name.toLowerCase() === 'access-control-request-headers')?.[1];
-  return {
-    responseCode: 204,
-    responseHeaders: [
-      { name: 'access-control-allow-origin', value: 'http://127.0.0.1:4173' },
-      {
-        name: 'access-control-allow-headers',
-        value: typeof requestedHeaders === 'string' && requestedHeaders.trim()
-          ? requestedHeaders
-          : 'authorization, apikey, content-type, x-client-info, x-supabase-api-version',
-      },
-      { name: 'access-control-allow-methods', value: 'GET,POST,PATCH,DELETE,OPTIONS' },
-    ],
-  };
+function writeJsonResponse(response, value, statusCode = 200, requestHeaders = {}) {
+  if (response.destroyed || response.writableEnded) return;
+  response.writeHead(statusCode, {
+    ...corsHeaders(requestHeaders),
+    'content-type': 'application/json; charset=utf-8',
+    'content-range': '0-0/1',
+  });
+  response.end(JSON.stringify(value));
+}
+
+function writeNoContentResponse(response, requestHeaders = {}) {
+  if (response.destroyed || response.writableEnded) return;
+  response.writeHead(204, corsHeaders(requestHeaders));
+  response.end();
+}
+
+async function readRequestBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function dailyBrief() {
@@ -173,61 +175,95 @@ function planningTaskRows(url) {
   return [task];
 }
 
-async function fulfillSupabaseRequest(client, { requestId, request }) {
-  const url = new URL(request.url);
-  state.requestLog.push({ requestId, method: request.method, url: request.url, headers: request.headers, mode: state.mode, failAfterMutation: state.failAfterMutation });
+async function handleMockSupabaseRequest(request, response) {
+  const url = new URL(request.url ?? '/', MOCK_SUPABASE_URL);
+  const requestBody = request.method === 'POST' || request.method === 'PATCH'
+    ? await readRequestBody(request)
+    : '';
+  state.requestLog.push({
+    requestId: `http-${state.requestLog.length + 1}`,
+    method: request.method,
+    url: url.toString(),
+    headers: request.headers,
+    mode: state.mode,
+    failAfterMutation: state.failAfterMutation,
+  });
+
   if (request.method === 'OPTIONS') {
-    await client.send('Fetch.fulfillRequest', { requestId, ...noContentResponse(request.headers) });
+    writeNoContentResponse(response, request.headers);
     return;
   }
 
   const pathname = url.pathname;
-  let response;
   if (pathname === '/rest/v1/household_members') {
-    response = url.searchParams.has('user_id') && !url.searchParams.has('household_id') ? jsonResponse(membership) : jsonResponse([membership]);
+    writeJsonResponse(response, url.searchParams.has('user_id') && !url.searchParams.has('household_id') ? membership : [membership], 200, request.headers);
   } else if (pathname === '/rest/v1/households') {
-    response = jsonResponse(household);
+    writeJsonResponse(response, household, 200, request.headers);
   } else if (pathname === '/rest/v1/profiles') {
-    response = jsonResponse([{ user_id: membership.user_id, display_name: 'パパ' }]);
+    writeJsonResponse(response, [{ user_id: membership.user_id, display_name: 'パパ' }], 200, request.headers);
   } else if (pathname === '/rest/v1/rpc/get_my_daily_brief') {
-    if (state.mode === 'initial-error') response = jsonResponse({ code: 'CF14_INITIAL', message: 'CF14_BROWSER_INITIAL_READ_FAILED' }, 500);
-    else if (state.failAfterMutation) response = jsonResponse({ code: 'CF14_STALE', message: 'CF14_BROWSER_STALE_REFRESH' }, 500);
-    else {
+    if (state.mode === 'initial-error') {
+      writeJsonResponse(response, { code: 'CF14_INITIAL', message: 'CF14_BROWSER_INITIAL_READ_FAILED' }, 500, request.headers);
+    } else if (state.failAfterMutation) {
+      writeJsonResponse(response, { code: 'CF14_STALE', message: 'CF14_BROWSER_STALE_REFRESH' }, 500, request.headers);
+    } else {
       if (state.initialBriefDelayMs > 0) await sleep(state.initialBriefDelayMs);
-      response = jsonResponse(dailyBrief());
+      writeJsonResponse(response, dailyBrief(), 200, request.headers);
     }
   } else if (pathname === '/rest/v1/task_instances') {
-    response = jsonResponse(planningTaskRows(url));
+    writeJsonResponse(response, planningTaskRows(url), 200, request.headers);
   } else if (pathname === '/rest/v1/requests') {
-    response = jsonResponse([consultationRequest]);
+    writeJsonResponse(response, [consultationRequest], 200, request.headers);
   } else if (pathname === '/rest/v1/request_attempts') {
-    response = jsonResponse([consultationAttempt]);
+    writeJsonResponse(response, [consultationAttempt], 200, request.headers);
   } else if (pathname.startsWith('/rest/v1/')) {
-    response = jsonResponse([]);
+    writeJsonResponse(response, [], 200, request.headers);
   } else if (pathname === '/functions/v1/list-pending-actions') {
-    response = jsonResponse([]);
+    writeJsonResponse(response, [], 200, request.headers);
   } else if (pathname === '/functions/v1/get-current-routine-sessions') {
-    response = jsonResponse({ sessions: [] });
+    writeJsonResponse(response, { sessions: [] }, 200, request.headers);
   } else if (pathname === '/functions/v1/get-today-schedule') {
-    response = jsonResponse({ household_id: household.id, local_date: TODAY, calendar_connected: false, calendar_stale: false, occurrences: [], assignments: [] });
+    writeJsonResponse(response, { household_id: household.id, local_date: TODAY, calendar_connected: false, calendar_stale: false, occurrences: [], assignments: [] }, 200, request.headers);
   } else if (pathname === '/functions/v1/complete-task') {
     state.failAfterMutation = true;
-    response = jsonResponse({ task_id: task.id, status: 'completed' });
+    writeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200, request.headers);
   } else if (pathname === '/functions/v1/negotiate-request') {
-    const command = JSON.parse(request.postData ?? '{}');
+    const command = requestBody ? JSON.parse(requestBody) : {};
     consultationCommands.push(command);
     consultationAttempt.state = 'accepted';
     consultationAttempt.revision += 1;
     consultationRequest.status = 'accepted';
-    response = jsonResponse({ state: 'accepted' });
+    writeJsonResponse(response, { state: 'accepted' }, 200, request.headers);
   } else if (pathname.startsWith('/functions/v1/')) {
-    response = jsonResponse({});
+    writeJsonResponse(response, {}, 200, request.headers);
   } else if (pathname === '/auth/v1/user') {
-    response = jsonResponse({ id: membership.user_id, aud: 'authenticated', role: 'authenticated' });
+    writeJsonResponse(response, { id: membership.user_id, aud: 'authenticated', role: 'authenticated' }, 200, request.headers);
   } else {
-    response = jsonResponse({ message: `Unhandled CF-14 mock path: ${pathname}` }, 404);
+    writeJsonResponse(response, { message: `Unhandled CF-14 mock path: ${pathname}` }, 404, request.headers);
   }
-  await client.send('Fetch.fulfillRequest', { requestId, ...response });
+}
+
+async function startMockSupabase() {
+  const server = createServer((request, response) => {
+    void handleMockSupabaseRequest(request, response).catch((error) => {
+      state.browserEvents.push({ kind: 'mock-server-error', url: request.url ?? null, error: String(error) });
+      if (!response.headersSent && !response.destroyed) {
+        writeJsonResponse(response, { message: 'CF14 mock server failure' }, 500, request.headers);
+      } else if (!response.destroyed) {
+        response.destroy(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(54321, '127.0.0.1', resolve);
+  });
+  return server;
+}
+
+async function stopServer(server) {
+  if (!server?.listening) return;
+  await new Promise((resolve) => server.close(() => resolve()));
 }
 
 async function evaluate(client, expression) {
@@ -333,50 +369,16 @@ async function stopChild(child) {
 async function main() {
   await rm(ARTIFACT_DIR, { recursive: true, force: true });
   await mkdir(ARTIFACT_DIR, { recursive: true });
+  let mockSupabase;
   let vite;
   let chrome;
   let client;
   try {
+    mockSupabase = await startMockSupabase();
     vite = await startVite();
     chrome = await startChrome();
     client = new CdpClient(chrome.page.webSocketDebuggerUrl);
     await client.connect();
-    const handledPausedRequests = new Set();
-    client.on('Fetch.requestPaused', async (params) => {
-      if (handledPausedRequests.has(params.requestId)) {
-        state.browserEvents.push({
-          kind: 'duplicate-request-paused',
-          requestId: params.requestId,
-          url: params.request?.url ?? null,
-        });
-        return;
-      }
-      handledPausedRequests.add(params.requestId);
-      try {
-        await fulfillSupabaseRequest(client, params);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes('Invalid InterceptionId')) {
-          // Chrome can cancel a paused request when React navigation/refresh
-          // supersedes it. The interception is already gone, so there is
-          // nothing left to fulfill; this is not a mock transport failure.
-          state.browserEvents.push({
-            kind: 'fetch-interception-discarded',
-            requestId: params.requestId,
-            url: params.request?.url ?? null,
-            error: message,
-          });
-          return;
-        }
-        state.browserEvents.push({
-          kind: 'fetch-interception-error',
-          requestId: params.requestId,
-          url: params.request?.url ?? null,
-          error: message,
-        });
-        throw error;
-      }
-    });
     await client.send('Page.enable');
     await client.send('Runtime.enable');
     await client.send('Network.enable');
@@ -408,13 +410,6 @@ async function main() {
       if (type === 'error' || type === 'warning') {
         state.browserEvents.push({ kind: `console-${type}`, text: (args ?? []).map((arg) => arg.value ?? arg.description ?? '').join(' ') });
       }
-    });
-    await client.send('Fetch.enable', {
-      patterns: [
-        { urlPattern: `${MOCK_SUPABASE_URL}/rest/v1/*`, requestStage: 'Request' },
-        { urlPattern: `${MOCK_SUPABASE_URL}/functions/v1/*`, requestStage: 'Request' },
-        { urlPattern: `${MOCK_SUPABASE_URL}/auth/v1/*`, requestStage: 'Request' },
-      ],
     });
     await client.send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 3, mobile: true });
 
@@ -593,6 +588,7 @@ async function main() {
     client?.close();
     await stopChild(chrome?.child);
     await stopChild(vite);
+    await stopServer(mockSupabase);
     if (chrome?.userDataDir) {
       try {
         await rm(chrome.userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
