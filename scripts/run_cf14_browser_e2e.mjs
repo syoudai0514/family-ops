@@ -430,23 +430,23 @@ async function main() {
       const buttons = [...document.querySelectorAll('button[aria-label=${JSON.stringify(`${task.title}を完了にする`)}]')];
       const button = buttons.at(-1); if (!button) return false; button.click(); return true;
     })()`), true, 'Nested Today task completion action must exist');
-    await waitForText(client, '読み込みに失敗しました。', 8_000);
+    await waitForText(client, '通信が不安定なため、最後に取得できた内容を表示しています。', 8_000);
     await waitForText(client, task.title, 2_000);
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-STALE',
       entryBoundary: 'real task interaction succeeds, then canonical Today refresh fails',
-      visibleAssertion: '読み込みに失敗しました。 is visible while the previously rendered task remains visible',
+      visibleAssertion: 'stale-state guidance is visible while the previously rendered task remains visible',
       screenshot: await screenshot(client, 'today-stale-refresh.png'),
     });
 
     state.mode = 'initial-error';
     state.failAfterMutation = false;
     await navigate(client, `${APP_URL}?cf14=initial-error`);
-    await waitForText(client, '読み込みに失敗しました。', 8_000);
+    await waitForText(client, 'サーバーへ接続できませんでした。', 8_000);
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-ERROR',
       entryBoundary: 'real Chrome Today navigation with failing canonical read',
-      visibleAssertion: '読み込みに失敗しました。 is rendered as the user-visible read failure',
+      visibleAssertion: 'the bounded-read connection error is rendered as the user-visible read failure',
       screenshot: await screenshot(client, 'today-error.png'),
     });
 
