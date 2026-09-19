@@ -280,6 +280,7 @@ export function Today() {
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
   const [editingPendingAction, setEditingPendingAction] = useState<PendingAction | null>(null);
   const [shoppingCollapsed, setShoppingCollapsed] = useState(true);
+  const [completedCollapsed, setCompletedCollapsed] = useState(true);
 
   const reconciliationSessions = data.reconciliation.sessions as Array<{
     id?: string;
@@ -570,6 +571,28 @@ export function Today() {
     );
   }
 
+  function renderCompleted() {
+    const completedTasks = data.completedTodayTasks ?? [];
+    if (completedTasks.length === 0) return null;
+    return (
+      <section className="card collapsible compact-section" aria-label="完了済み">
+        <button
+          type="button"
+          className="collapsible-toggle"
+          onClick={() => setCompletedCollapsed((value) => !value)}
+        >
+          完了済み（{completedTasks.length}件）{completedCollapsed ? '▼' : '▲'}
+        </button>
+        {!completedCollapsed && (
+          <>
+            <p className="empty-hint">押し間違えた場合はここから未完了に戻せます。</p>
+            {renderTaskList(completedTasks)}
+          </>
+        )}
+      </section>
+    );
+  }
+
   async function handleEditAsRequest(action: PendingAction) {
     navigate('/requests', {
       state: { pendingActionRawText: String(action.normalized_payload.raw_text ?? '') },
@@ -696,6 +719,7 @@ export function Today() {
       )}
 
       {optionalTasks.length > 0 && renderTaskSection('余裕があれば', optionalTasks)}
+      {renderCompleted()}
 
       {clock.daypart !== 'evening' && renderTomorrowImpact()}
       {clock.daypart !== 'evening' && renderShopping()}
