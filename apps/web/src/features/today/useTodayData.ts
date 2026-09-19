@@ -419,6 +419,16 @@ export function useTodayData(householdId: string | null, userId: string | null):
         current.push(row);
         groupedSubtasks.set(row.task_instance_id, current);
       }
+      const completedTodayIds = completedCandidateRows
+        .filter((task) =>
+          task.planned_assignee_id === userId
+          || task.actual_completed_by_id === userId
+          || (
+            task.assignment_mode === 'anyone'
+            && (groupedSubtasks.get(task.id) ?? []).some((item) => item.completed_by === userId)
+          ),
+        )
+        .map((task) => task.id);
       const targetMap = new Map<string, TaskExecutionTarget>();
       for (const row of targetRes.data ?? []) targetMap.set(row.task_instance_id, row as TaskExecutionTarget);
       const hydrate = (ids: string[]) => ids
@@ -456,7 +466,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
         waitingRefsByTaskId: new Map(waitingRefs.map((item) => [item.task_id, item])),
         carryoverTasks: hydrate(carryoverIds),
         alreadyHandledTasks: hydrate(handledIds),
-        completedTodayTasks: hydrate(completedCandidateIds),
+        completedTodayTasks: hydrate(completedTodayIds),
         subtasksByTaskId: groupedSubtasks,
         executionTargetsByTaskId: targetMap,
         incomingRequests: orderedRows(requestIds, requestRows),
