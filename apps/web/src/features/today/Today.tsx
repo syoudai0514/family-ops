@@ -15,9 +15,8 @@ import { PendingActionEditModal } from './PendingActionEditModal';
 import { PERIOD_LABELS } from '../handovers/Handovers';
 import { TaskFormModal } from '../tasks/TaskFormModal';
 import { QuickAdd } from '../tasks/QuickAdd';
-import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { formatDateTimeJa } from '../../lib/date';
 import { formatTokyoHeading } from './todayClock';
@@ -92,6 +91,7 @@ function RequestQuickActions({
   const [error, setError] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
   const actionable = isTodayRequestAttemptActionable(attempt);
+  const runCommand = useCommandAttempt();
 
   async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     if (!attempt || !isTodayRequestAttemptActionable(attempt)) {
@@ -108,11 +108,15 @@ function RequestQuickActions({
           : kind === 'accept'
             ? EDGE_FUNCTIONS.acceptRequest
             : EDGE_FUNCTIONS.declineRequest;
-      const result = await callEdgeFunction<{ reproposal_required?: boolean }>(functionName, {
-        operation_id: newOperationId(),
-        ...todayRequestTransitionPayload(request.id, attempt),
-        ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}),
-      });
+      const result = await runCommand<{ reproposal_required?: boolean }>(
+        `request:${request.id}:attempt:${attempt.id}:respond:${kind}:r${attempt.revision}:t${attempt.terms_revision}`,
+        functionName,
+        (operationId) => ({
+          operation_id: operationId,
+          ...todayRequestTransitionPayload(request.id, attempt),
+          ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}),
+        }),
+      );
       if (result.reproposal_required) {
         setError('返事期限を過ぎています。お願い画面から新しい条件で提案してください。');
       }
