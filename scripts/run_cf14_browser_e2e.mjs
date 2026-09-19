@@ -223,10 +223,10 @@ async function handleMockSupabaseRequest(request, response) {
   } else if (pathname === '/functions/v1/get-today-schedule') {
     writeJsonResponse(response, { household_id: household.id, local_date: TODAY, calendar_connected: false, calendar_stale: false, occurrences: [], assignments: [] }, 200, request.headers);
   } else if (pathname === '/functions/v1/complete-task') {
-    // This endpoint does not need request-body inspection for CF-14. Respond
-    // immediately after the HTTP request reaches the mock so the browser
-    // mutation boundary is independent of request-stream timing.
-    request.resume();
+    // Drain the upload before responding. Returning while Chromium is still
+    // streaming the JSON body can surface as net::ERR_ABORTED even though the
+    // mock handler was entered, which would be false transport evidence.
+    await readRequestBody(request);
     state.failAfterMutation = true;
     writeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200, request.headers);
   } else if (pathname === '/functions/v1/negotiate-request') {
