@@ -18,6 +18,7 @@ import { QuickAdd } from '../tasks/QuickAdd';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { formatDateTimeJa } from '../../lib/date';
 import { formatTokyoHeading } from './todayClock';
 import { useTodayClock } from './useTodayClock';
@@ -188,6 +189,7 @@ function AssignmentNeededQuickAction({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const runCommand = useCommandAttempt();
 
   async function run(action: 'self' | 'partner') {
     if (!task || !userId) {
@@ -202,21 +204,30 @@ function AssignmentNeededQuickAction({
     setError(null);
     try {
       if (action === 'self') {
-        await callEdgeFunction(EDGE_FUNCTIONS.changeTaskAssignment, {
-          operation_id: newOperationId(),
-          task_id: task.id,
-          assignee_user_id: userId,
-          already_agreed: true,
-          expected_revision: task.revision ?? 1,
-        });
+        await runCommand(
+          `task:${task.id}:resolve-assignment:self:${userId}:r${task.revision ?? 1}`,
+          EDGE_FUNCTIONS.changeTaskAssignment,
+          (operationId) => ({
+            operation_id: operationId,
+            task_id: task.id,
+            assignee_user_id: userId,
+            already_agreed: true,
+            expected_revision: task.revision ?? 1,
+          }),
+        );
       } else {
-        await callEdgeFunction(EDGE_FUNCTIONS.createAssignmentChangeRequest, {
-          operation_id: newOperationId(),
-          task_id: task.id,
-          recipient_user_id: partnerId,
-          scope: 'once',
-          shared_message: 'この担当をお願いできますか？',
-        });
+        await runCommand(
+          `task:${task.id}:resolve-assignment:request:${partnerId}:r${task.revision ?? 1}`,
+          EDGE_FUNCTIONS.createAssignmentChangeRequest,
+          (operationId) => ({
+            operation_id: operationId,
+            task_id: task.id,
+            recipient_user_id: partnerId,
+            scope: 'once',
+            shared_message: 'この担当をお願いできますか？',
+            expected_task_revision: task.revision ?? 1,
+          }),
+        );
       }
       setOpen(false);
       await onChanged();
