@@ -126,7 +126,7 @@ function jsonResponse(value, responseCode = 200) {
     responseCode,
     responseHeaders: [
       { name: 'access-control-allow-origin', value: 'http://127.0.0.1:4173' },
-      { name: 'access-control-allow-headers', value: '*' },
+      { name: 'access-control-allow-headers', value: 'authorization, apikey, content-type, x-client-info, x-supabase-api-version' },
       { name: 'access-control-allow-methods', value: 'GET,POST,PATCH,DELETE,OPTIONS' },
       { name: 'content-type', value: 'application/json; charset=utf-8' },
       { name: 'content-range', value: '0-0/1' },
@@ -140,7 +140,7 @@ function noContentResponse() {
     responseCode: 204,
     responseHeaders: [
       { name: 'access-control-allow-origin', value: 'http://127.0.0.1:4173' },
-      { name: 'access-control-allow-headers', value: '*' },
+      { name: 'access-control-allow-headers', value: 'authorization, apikey, content-type, x-client-info, x-supabase-api-version' },
       { name: 'access-control-allow-methods', value: 'GET,POST,PATCH,DELETE,OPTIONS' },
     ],
   };
@@ -168,7 +168,7 @@ function planningTaskRows(url) {
 
 async function fulfillSupabaseRequest(client, { requestId, request }) {
   const url = new URL(request.url);
-  state.requestLog.push({ method: request.method, url: request.url, mode: state.mode, failAfterMutation: state.failAfterMutation });
+  state.requestLog.push({ requestId, method: request.method, url: request.url, headers: request.headers, mode: state.mode, failAfterMutation: state.failAfterMutation });
   if (request.method === 'OPTIONS') {
     await client.send('Fetch.fulfillRequest', { requestId, ...noContentResponse() });
     return;
@@ -334,7 +334,29 @@ async function main() {
     chrome = await startChrome();
     client = new CdpClient(chrome.page.webSocketDebuggerUrl);
     await client.connect();
-    client.on('Fetch.requestPaused', (params) => fulfillSupabaseRequest(client, params));
+    const handledPausedRequests = new Set();
+    client.on('Fetch.requestPaused', async (params) => {
+      if (handledPausedRequests.has(params.requestId)) {
+        state.browserEvents.push({
+          kind: 'duplicate-request-paused',
+          requestId: params.requestId,
+          url: params.request?.url ?? null,
+        });
+        return;
+      }
+      handledPausedRequests.add(params.requestId);
+      try {
+        await fulfillSupabaseRequest(client, params);
+      } catch (error) {
+        state.browserEvents.push({
+          kind: 'fetch-interception-error',
+          requestId: params.requestId,
+          url: params.request?.url ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    });
     await client.send('Page.enable');
     await client.send('Runtime.enable');
     await client.send('Network.enable');
