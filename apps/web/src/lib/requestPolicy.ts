@@ -1,4 +1,4 @@
-import type { EdgeFunctionName } from './edgeFunctions';
+import { EDGE_FUNCTIONS, type EdgeFunctionName } from './edgeFunctions';
 
 export type RequestPolicyKind = 'read' | 'proposal' | 'mutation';
 
@@ -84,7 +84,14 @@ export const REQUEST_POLICY = {
   deleteNurserySourceImage: 'mutation',
   listGoogleEventReviews: 'read',
   resolveGoogleEventReview: 'mutation',
-} satisfies Record<EdgeFunctionName, RequestPolicyKind>;
+} satisfies Record<keyof typeof EDGE_FUNCTIONS, RequestPolicyKind>;
+
+const REQUEST_POLICY_BY_FUNCTION = Object.fromEntries(
+  (Object.keys(EDGE_FUNCTIONS) as Array<keyof typeof EDGE_FUNCTIONS>).map((key) => [
+    EDGE_FUNCTIONS[key],
+    REQUEST_POLICY[key],
+  ]),
+) as Record<EdgeFunctionName, RequestPolicyKind>;
 
 export const REQUEST_DEADLINES_MS: Record<RequestPolicyKind | 'auth', number> = {
   auth: 12_000,
@@ -94,5 +101,5 @@ export const REQUEST_DEADLINES_MS: Record<RequestPolicyKind | 'auth', number> = 
 };
 
 export function requestPolicyFor(name: EdgeFunctionName): RequestPolicyKind {
-  return REQUEST_POLICY[name];
+  return REQUEST_POLICY_BY_FUNCTION[name];
 }
