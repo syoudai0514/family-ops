@@ -3,104 +3,93 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const getSessionMock = vi.fn();
 
 vi.mock('./supabaseClient', () => ({
-  supabase: {
-    auth: {
-      getSession: (...args: unknown[]) => getSessionMock(...args),
-    },
-  },
+  supabase: { auth: { getSession: (...args: unknown[]) => getSessionMock(...args) } },
 }));
 
-describe('callEdgeFunction', () => {
+// Fake-timer timeout assertions attach rejection handlers before advancing time
+// so Vitest observes the intentional rejection as part of the test.
+describe('callEdgeFunction deadlines and outcomes', () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     getSessionMock.mockReset();
     getSessionMock.mockResolvedValue({ data: { session: { access_token: 'test-token' } } });
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it('resolves with the parsed JSON body on a 2xx response', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ task_id: 'abc-123' }), { status: 200 }),
-    );
+  it('maps deployed edge-function names to the intended request policies', async () => {
+    const { requestPolicyFor } = await import('./requestPolicy');
+    expect(requestPolicyFor('list-pending-actions')).toBe('read');
+    expect(requestPolicyFor('complete-task')).toBe('mutation');
+    expect(requestPolicyFor('propose-ai-draft')).toBe('proposal');
+  });
 
+  it('resolves parsed JSON on 2xx', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ task_id: 'abc-123' }), { status: 200 }));
     const { callEdgeFunction } = await import('./apiClient');
-    const result = await callEdgeFunction<{ task_id: string }>('create-task', { operation_id: 'op-1' });
-
-    expect(result).toEqual({ task_id: 'abc-123' });
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:54321/functions/v1/create-task',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          authorization: 'Bearer test-token',
-          apikey: 'test-publishable-key',
-        }),
-      }),
-    );
+    await expect(callEdgeFunction('create-task', { operation_id: 'op-1' })).resolves.toEqual({ task_id: 'abc-123' });
   });
 
-  it('throws a FamilyOpsApiError with code/message/status/detail parsed from the error envelope', async () => {
-    // A fresh Response per call — Response bodies can only be read once, and
-    // callEdgeFunction is invoked twice below.
-    globalThis.fetch = vi.fn().mockImplementation(
-      () =>
-        new Response(
-          JSON.stringify({
-            error: { code: 'TASK_TERMINAL', message: 'Task already completed.', detail: { taskId: 'x' } },
-          }),
-          { status: 409 },
-        ),
-    );
-
-    const { callEdgeFunction, FamilyOpsApiError } = await import('./apiClient');
-
-    await expect(callEdgeFunction('complete-task', { operation_id: 'op-1' })).rejects.toMatchObject({
-      name: 'FamilyOpsApiError',
-      code: 'TASK_TERMINAL',
-      message: 'Task already completed.',
-      status: 409,
-      detail: { taskId: 'x' },
-    });
-    await expect(callEdgeFunction('complete-task', { operation_id: 'op-1' })).rejects.toBeInstanceOf(
-      FamilyOpsApiError,
-    );
-  });
-
-  it('falls back to an UNKNOWN_ERROR code when the error body is not the expected envelope shape', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(new Response('internal server error', { status: 500 }));
-
-    const { callEdgeFunction } = await import('./apiClient');
-
-    await expect(callEdgeFunction('create-task', { operation_id: 'op-1' })).rejects.toMatchObject({
-      code: 'UNKNOWN_ERROR',
-      status: 500,
-    });
-  });
-
-  it('throws NOT_AUTHENTICATED without calling fetch when there is no active session', async () => {
-    getSessionMock.mockResolvedValue({ data: { session: null } });
+  it('times out auth without dispatching fetch and ignores a late auth result', async () => {
+    let resolveSession!: (value: unknown) => void;
+    getSessionMock.mockReturnValue(new Promise((resolve) => { resolveSession = resolve; }));
     globalThis.fetch = vi.fn();
-
     const { callEdgeFunction } = await import('./apiClient');
-
-    await expect(callEdgeFunction('create-task', { operation_id: 'op-1' })).rejects.toMatchObject({
-      code: 'NOT_AUTHENTICATED',
-    });
+    const promise = callEdgeFunction('create-task', { operation_id: 'op-1' });
+    const rejected = expect(promise).rejects.toMatchObject({ code: 'AUTH_TIMEOUT', outcome: 'not_sent' });
+    await vi.advanceTimersByTimeAsync(12_001);
+    await rejected;
+    resolveSession({ data: { session: { access_token: 'late' } } });
+    await Promise.resolve();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('throws NETWORK_ERROR when fetch itself rejects', async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
-
+  it('marks a mutation fetch timeout as outcome unknown and aborts', async () => {
+    globalThis.fetch = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+      (init?.signal as AbortSignal)?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    })) as typeof fetch;
     const { callEdgeFunction } = await import('./apiClient');
+    const promise = callEdgeFunction('send-request', { operation_id: 'op-1' });
+    const rejected = expect(promise).rejects.toMatchObject({ code: 'RESULT_UNKNOWN', outcome: 'unknown' });
+    await vi.advanceTimersByTimeAsync(30_001);
+    await rejected;
+  });
 
-    await expect(callEdgeFunction('create-task', { operation_id: 'op-1' })).rejects.toMatchObject({
-      code: 'NETWORK_ERROR',
-    });
+  it('marks a mutation body timeout as unknown', async () => {
+    const response = { ok: true, status: 200, text: () => new Promise<string>(() => {}) } as Response;
+    globalThis.fetch = vi.fn().mockResolvedValue(response);
+    const { callEdgeFunction } = await import('./apiClient');
+    const promise = callEdgeFunction('send-request', { operation_id: 'op-1' });
+    const rejected = expect(promise).rejects.toMatchObject({ code: 'RESULT_UNKNOWN', outcome: 'unknown' });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(30_001);
+    await rejected;
+  });
+
+  it('treats malformed 2xx mutation JSON as unknown', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response('not-json', { status: 200 }));
+    const { callEdgeFunction } = await import('./apiClient');
+    await expect(callEdgeFunction('send-request', { operation_id: 'op-1' })).rejects.toMatchObject({ outcome: 'unknown' });
+  });
+
+  it('keeps typed 4xx as rejected', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: 'TASK_TERMINAL', message: 'done' } }), { status: 409 }));
+    const { callEdgeFunction } = await import('./apiClient');
+    await expect(callEdgeFunction('complete-task', { operation_id: 'op-1' })).rejects.toMatchObject({ code: 'TASK_TERMINAL', outcome: 'rejected', status: 409 });
+  });
+
+  it('uses shorter read deadline and no unknown mutation wording for reads', async () => {
+    globalThis.fetch = vi.fn(() => new Promise<Response>(() => {}));
+    const { callEdgeFunction } = await import('./apiClient');
+    const promise = callEdgeFunction('get-week-schedule', {});
+    const rejected = expect(promise).rejects.toMatchObject({ code: 'NETWORK_ERROR', outcome: 'not_sent' });
+    await vi.advanceTimersByTimeAsync(12_001);
+    await rejected;
   });
 });

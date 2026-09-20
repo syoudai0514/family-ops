@@ -407,14 +407,19 @@ async function execute(client: SupabaseClient, item: PendingActionItem): Promise
       };
     }
     case 'assignment_change_request': {
-      const { data, error } = await client.rpc('server_tx_create_assignment_change_request', {
+      const rpc = typeof p.expected_task_revision === 'number'
+        ? 'server_tx_create_assignment_change_request_v2'
+        : 'server_tx_create_assignment_change_request';
+      const args: Record<string, unknown> = {
         p_actor_id: item.actor_id,
         p_operation_id: item.operation_id,
         p_task_id: p.task_id,
         p_recipient_user_id: p.recipient_user_id,
         p_shared_message: p.shared_message ?? null,
         p_scope: p.scope ?? 'once',
-      });
+      };
+      if (rpc.endsWith('_v2')) args.p_expected_task_revision = p.expected_task_revision;
+      const { data, error } = await client.rpc(rpc, args);
       if (error) throw new Error(error.message);
       return {
         result_type: 'request',

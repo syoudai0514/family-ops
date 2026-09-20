@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useHousehold } from '../../app/HouseholdContext';
-import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { supabase } from '../../lib/supabaseClient';
 
 type AnyoneItem = {
@@ -36,6 +36,7 @@ export function claimantAction(item: AnyoneItem, actorRefId: string | null): 'cl
 const ACTION_LABEL = { claim: '自分がやる', release: '手放す', takeover: '引き継ぐ' } as const;
 
 export function AnyoneOwnerPage() {
+  const runCommand = useCommandAttempt();
   const { household } = useHousehold();
   const [items, setItems] = useState<AnyoneItem[]>([]);
   const [actorRefId, setActorRefId] = useState<string | null>(null);
@@ -64,12 +65,16 @@ export function AnyoneOwnerPage() {
     setBusyId(item.shopping_item_id);
     setError(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.claimShoppingItem, {
-        operation_id: newOperationId(),
-        shopping_item_id: item.shopping_item_id,
-        action,
-        expected_revision: item.revision ?? 1,
-      });
+      await runCommand(
+        `shopping:${item.shopping_item_id}:claim:${action}:r${item.revision ?? 1}`,
+        EDGE_FUNCTIONS.claimShoppingItem,
+        (operationId) => ({
+          operation_id: operationId,
+          shopping_item_id: item.shopping_item_id,
+          action,
+          expected_revision: item.revision ?? 1,
+        }),
+      );
       await load();
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '担当状態を更新できませんでした。');
