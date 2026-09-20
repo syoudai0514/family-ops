@@ -6,6 +6,8 @@ vi.mock('./supabaseClient', () => ({
   supabase: { auth: { getSession: (...args: unknown[]) => getSessionMock(...args) } },
 }));
 
+// Fake-timer timeout assertions attach rejection handlers before advancing time
+// so Vitest observes the intentional rejection as part of the test.
 describe('callEdgeFunction deadlines and outcomes', () => {
   const originalFetch = globalThis.fetch;
 
