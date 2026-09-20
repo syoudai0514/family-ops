@@ -191,6 +191,7 @@ export function CheckinPage() {
   }
 
   async function runReconciliation(responseKind: ReconciliationResponse) {
+    if (!session) return;
     setActionError(null); setBusyAll(true);
     try {
       const result = await runCommand<ReconciliationResult>(

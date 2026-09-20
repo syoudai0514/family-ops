@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
-import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { getShoppingItemActions } from './shoppingActions';
@@ -384,6 +384,7 @@ function ShoppingItemRow({
 
 function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
   const { members } = useHousehold();
+  const runCommand = useCommandAttempt();
   const [title, setTitle] = useState('');
   const [purchaseMethod, setPurchaseMethod] = useState<PurchaseMethod>('undecided');
   const [assigneeId, setAssigneeId] = useState('');

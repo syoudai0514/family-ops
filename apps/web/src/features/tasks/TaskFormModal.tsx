@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Modal } from '../../components/Modal';
-import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { todayIsoDate } from '../../lib/date';

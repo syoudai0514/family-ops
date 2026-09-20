@@ -5,6 +5,8 @@ import type { ConciergeCandidate } from './conciergeFlow';
 function candidate(overrides: Partial<ConciergeCandidate> & Pick<ConciergeCandidate, 'candidateId' | 'title'>): ConciergeCandidate {
   return {
     operationId: `00000000-0000-4000-8000-${overrides.candidateId.padEnd(12, '0').slice(0, 12)}`,
+    candidateRevision: 1,
+    messageReviewedRevision: null,
     kind: 'task',
     sourceText: overrides.title,
     sourceSpan: null,

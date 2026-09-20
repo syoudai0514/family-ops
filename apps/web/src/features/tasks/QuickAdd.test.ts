@@ -4,7 +4,7 @@ import { QUICK_ADD_PRIMARY_DESTINATION, quickAddDestination, quickAddOptions } f
 describe('Quick Add destinations', () => {
   it('opens free input first instead of requiring a category choice', () => {
     expect(QUICK_ADD_PRIMARY_DESTINATION).toBe('/concierge');
-    expect(quickAddOptions.some((option) => option.target === 'concierge')).toBe(false);
+    expect(quickAddOptions.map((option) => option.target)).not.toContain('concierge');
   });
 
   it('keeps the target hashes that RoutineSchedule scrolls and focuses', () => {

@@ -58,7 +58,7 @@ function resolveTarget(candidate: ConciergeCandidate, context: ConfirmedCommandC
   return context.members.find((member) => member.family_role === role)?.user_id ?? null;
 }
 
-function targetLabel(candidate: ConciergeCandidate, context: ConfirmedCommandContext, targetUserId: string | null): string | undefined {
+function targetLabel(context: ConfirmedCommandContext, targetUserId: string | null): string | undefined {
   if (!targetUserId) return undefined;
   const member = context.members.find((row) => row.user_id === targetUserId);
   return member?.profile?.display_name ?? (member?.family_role === 'papa' ? 'パパ' : member?.family_role === 'mama' ? 'ママ' : '家族');
@@ -195,7 +195,7 @@ export function buildConfirmedCommand(
         },
         preview: {
           ...previewBase,
-          recipientLabel: targetLabel(candidate, context, candidate.resolvedAction.recipientUserId),
+          recipientLabel: targetLabel(context, candidate.resolvedAction.recipientUserId),
           sharedMessage,
           scopeLabel: candidate.resolvedAction.scope === 'this_week' ? '今週だけ' : '今回だけ',
           dateLabel: candidate.resolvedAction.scheduledDate,
@@ -216,7 +216,7 @@ export function buildConfirmedCommand(
         shared_message: sharedMessage,
         due_at: dueAt(candidate),
       },
-      preview: { ...previewBase, recipientLabel: targetLabel(candidate, context, targetUserId), sharedMessage },
+      preview: { ...previewBase, recipientLabel: targetLabel(context, targetUserId), sharedMessage },
     };
   }
 

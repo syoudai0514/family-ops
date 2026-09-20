@@ -184,7 +184,7 @@ export function withActualScheduledDate(candidates: ConciergeCandidate[], schedu
   return candidates.map((candidate) => candidate.kind !== 'actual' ? candidate : {
     ...candidate,
     candidateRevision: (candidate.candidateRevision ?? 1) + 1,
-    messageReviewedRevision: candidate.kind === 'request' ? null : candidate.messageReviewedRevision,
+    messageReviewedRevision: candidate.messageReviewedRevision,
     intent: { ...(candidate.intent ?? {}), scheduledDate },
   });
 }

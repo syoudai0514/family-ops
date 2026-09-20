@@ -38,9 +38,12 @@ function isApiErrorEnvelope(value: unknown): value is ApiErrorEnvelope {
 }
 
 class PhaseTimeoutError extends Error {
-  constructor(readonly phase: 'auth' | 'fetch' | 'body') {
+  readonly phase: 'auth' | 'fetch' | 'body';
+
+  constructor(phase: 'auth' | 'fetch' | 'body') {
     super(`${phase} deadline exceeded`);
     this.name = 'PhaseTimeoutError';
+    this.phase = phase;
   }
 }
 

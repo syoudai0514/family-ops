@@ -62,6 +62,7 @@ function todayData(overrides: Partial<TodayData> = {}): TodayData {
       carryovers: [],
     },
     morningSummary: { completedCount: 0, totalCount: 0 },
+    codmon: null,
     refresh,
     ...overrides,
   };

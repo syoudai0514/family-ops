@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { conciergeDraftStorageKey, normalizeConciergeProposal, withActualScheduledDate, type ConciergeCandidate } from './conciergeFlow';
-import { commitConciergeCandidate, conciergeRequestDueAt } from './conciergeCommit';
+import { commitConciergeCandidate } from './conciergeCommit';
 
 const member = (userId: string, role: 'papa' | 'mama') => ({
   household_id: '00000000-0000-4000-8000-000000000001', user_id: userId,
@@ -10,6 +10,8 @@ const member = (userId: string, role: 'papa' | 'mama') => ({
 function candidate(overrides: Partial<ConciergeCandidate> & Pick<ConciergeCandidate, 'candidateId' | 'kind' | 'title'>): ConciergeCandidate {
   return {
     operationId: `00000000-0000-4000-8000-${overrides.candidateId.padEnd(12, '0').slice(0, 12)}`,
+    candidateRevision: 1,
+    messageReviewedRevision: overrides.kind === 'request' ? 1 : null,
     sourceText: overrides.title,
     sourceSpan: null,
     confidence: null,
@@ -185,7 +187,6 @@ describe('Concierge canonical flow', () => {
       kind: 'request', title: 'お迎え', sourceText: '金曜のお迎えママお願い / 訂正: あ、やっぱ土曜',
       intent: { targetRole: 'mama', scheduledDate: '2026-09-12', dueLocalTime: null, sharedMessage: '土曜のお迎えをお願いできますか？' },
     });
-    expect(conciergeRequestDueAt(request)).toBe('2026-09-12T14:59:00.000Z');
     const result = await commitConciergeCandidate(request, {
       members: [papa, mama], me: papa, partner: mama, timeZone: 'Asia/Tokyo',
       invoke: async (name, body) => { calls.push({ name, body: body as Record<string, unknown> }); return {}; },

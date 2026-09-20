@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
