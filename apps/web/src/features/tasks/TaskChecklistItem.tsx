@@ -185,6 +185,7 @@ export function TaskChecklistItem({
       (operationId) => ({
         operation_id: operationId,
         task_id: task.id,
+        action: 'reopen',
         expected_revision: task.revision ?? 1,
       }),
     );

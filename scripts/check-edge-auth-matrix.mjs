@@ -62,8 +62,6 @@ const GAP_FILL_FUNCTIONS = new Set([
   'correct-task-actual',
   'change-task-assignment',
   'add-task-completion-evidence',
-  // Q114 accidental whole-task completion correction. Authenticated and revision-checked.
-  'reopen-task',
   // Q89-Q106 authenticated nursery review surfaces + worker-token processor.
   'get-nursery-review',
   'list-nursery-reviews',
