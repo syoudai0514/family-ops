@@ -91,7 +91,7 @@ describe('Concierge canonical flow', () => {
     expect(calls).toEqual([{ name: 'create-task', body: {
       operation_id: '00000000-0000-4000-8000-000000000123', title: '水着を準備',
       scheduled_date: '2026-09-08', due_local_time: null, planned_assignee_user_id: null,
-      completion_mode: 'whole', calendar_visibility: 'hidden',
+      completion_mode: 'whole', calendar_visibility: 'hidden', subtasks: null,
     } }]);
   });
 
