@@ -704,11 +704,11 @@ async function main() {
     state.mode = 'initial-error';
     state.failAfterMutation = false;
     await navigate(client, `${APP_URL}?cf14=initial-error`);
-    await waitForText(client, 'サーバーへ接続できませんでした。', 8_000);
+    await waitForText(client, '読み込みに失敗しました。', 8_000);
     scenarios.push({
       scenarioId: 'CF14-TODAY-REAL-BROWSER-ERROR',
       entryBoundary: 'real Chrome Today navigation with failing canonical read',
-      visibleAssertion: 'the bounded-read connection error is rendered as the user-visible read failure',
+      visibleAssertion: 'the initial canonical Today read failure is rendered as a user-visible error state',
       screenshot: await screenshot(client, 'today-error.png'),
     });
 
