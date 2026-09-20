@@ -21,6 +21,13 @@ describe('callEdgeFunction deadlines and outcomes', () => {
     vi.restoreAllMocks();
   });
 
+  it('maps deployed edge-function names to the intended request policies', async () => {
+    const { requestPolicyFor } = await import('./requestPolicy');
+    expect(requestPolicyFor('list-pending-actions')).toBe('read');
+    expect(requestPolicyFor('complete-task')).toBe('mutation');
+    expect(requestPolicyFor('propose-ai-draft')).toBe('proposal');
+  });
+
   it('resolves parsed JSON on 2xx', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ task_id: 'abc-123' }), { status: 200 }));
     const { callEdgeFunction } = await import('./apiClient');
