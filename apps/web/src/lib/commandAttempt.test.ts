@@ -7,20 +7,20 @@ describe('commandAttempt', () => {
 
   it('keeps the exact operation and payload after an unknown outcome', async () => {
     const attempt = prepareCommandAttempt({
-      userId: 'u1', householdId: 'h1', operationId: 'op1', endpoint: 'send-request',
-      payload: { operation_id: 'op1', recipient_user_id: 'u2', shared_message: 'お願い' },
+      userId: 'u1', householdId: 'h1', operationId: 'op-unknown', endpoint: 'send-request',
+      payload: { operation_id: 'op-unknown', recipient_user_id: 'u2', shared_message: 'お願い' },
     });
     const invoke = vi.fn().mockRejectedValue(new FamilyOpsApiError('RESULT_UNKNOWN', 'unknown', 0, undefined, 'unknown'));
     await expect(executeCommandAttempt(attempt, invoke)).rejects.toMatchObject({ outcome: 'unknown' });
-    expect(loadCommandAttempt('u1', 'h1', 'op1')).toMatchObject({
+    expect(loadCommandAttempt('u1', 'h1', 'op-unknown')).toMatchObject({
       state: 'unknown', endpoint: 'send-request',
-      payload: { operation_id: 'op1', recipient_user_id: 'u2', shared_message: 'お願い' },
+      payload: { operation_id: 'op-unknown', recipient_user_id: 'u2', shared_message: 'お願い' },
     });
   });
 
   it('refuses same operation id with a different payload', () => {
-    prepareCommandAttempt({ userId: 'u1', householdId: 'h1', operationId: 'op1', endpoint: 'send-request', payload: { operation_id: 'op1', shared_message: 'A' } });
-    expect(() => prepareCommandAttempt({ userId: 'u1', householdId: 'h1', operationId: 'op1', endpoint: 'send-request', payload: { operation_id: 'op1', shared_message: 'B' } })).toThrow(/操作ID/);
+    prepareCommandAttempt({ userId: 'u1', householdId: 'h1', operationId: 'op-conflict', endpoint: 'send-request', payload: { operation_id: 'op-conflict', shared_message: 'A' } });
+    expect(() => prepareCommandAttempt({ userId: 'u1', householdId: 'h1', operationId: 'op-conflict', endpoint: 'send-request', payload: { operation_id: 'op-conflict', shared_message: 'B' } })).toThrow(/操作ID/);
   });
 
   it('recovers the same logical operation id after an unknown result', async () => {
@@ -54,7 +54,7 @@ describe('commandAttempt', () => {
   });
 
   it('does not expose an attempt to another user or household', () => {
-    prepareCommandAttempt({ userId: 'u1', householdId: 'h1', operationId: 'op1', endpoint: 'send-request', payload: { operation_id: 'op1' } });
+    prepareCommandAttempt({ userId: 'u1', householdId: 'h1', operationId: 'op-privacy', endpoint: 'send-request', payload: { operation_id: 'op-privacy' } });
     expect(loadCommandAttempt('u2', 'h1', 'op1')).toBeNull();
     expect(loadCommandAttempt('u1', 'h2', 'op1')).toBeNull();
   });

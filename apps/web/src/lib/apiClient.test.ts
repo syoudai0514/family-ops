@@ -40,8 +40,9 @@ describe('callEdgeFunction deadlines and outcomes', () => {
     globalThis.fetch = vi.fn();
     const { callEdgeFunction } = await import('./apiClient');
     const promise = callEdgeFunction('create-task', { operation_id: 'op-1' });
+    const rejected = expect(promise).rejects.toMatchObject({ code: 'AUTH_TIMEOUT', outcome: 'not_sent' });
     await vi.advanceTimersByTimeAsync(12_001);
-    await expect(promise).rejects.toMatchObject({ code: 'AUTH_TIMEOUT', outcome: 'not_sent' });
+    await rejected;
     resolveSession({ data: { session: { access_token: 'late' } } });
     await Promise.resolve();
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -53,8 +54,9 @@ describe('callEdgeFunction deadlines and outcomes', () => {
     })) as typeof fetch;
     const { callEdgeFunction } = await import('./apiClient');
     const promise = callEdgeFunction('send-request', { operation_id: 'op-1' });
+    const rejected = expect(promise).rejects.toMatchObject({ code: 'RESULT_UNKNOWN', outcome: 'unknown' });
     await vi.advanceTimersByTimeAsync(30_001);
-    await expect(promise).rejects.toMatchObject({ code: 'RESULT_UNKNOWN', outcome: 'unknown' });
+    await rejected;
   });
 
   it('marks a mutation body timeout as unknown', async () => {
@@ -62,9 +64,10 @@ describe('callEdgeFunction deadlines and outcomes', () => {
     globalThis.fetch = vi.fn().mockResolvedValue(response);
     const { callEdgeFunction } = await import('./apiClient');
     const promise = callEdgeFunction('send-request', { operation_id: 'op-1' });
+    const rejected = expect(promise).rejects.toMatchObject({ code: 'RESULT_UNKNOWN', outcome: 'unknown' });
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(30_001);
-    await expect(promise).rejects.toMatchObject({ code: 'RESULT_UNKNOWN', outcome: 'unknown' });
+    await rejected;
   });
 
   it('treats malformed 2xx mutation JSON as unknown', async () => {
@@ -83,7 +86,8 @@ describe('callEdgeFunction deadlines and outcomes', () => {
     globalThis.fetch = vi.fn(() => new Promise<Response>(() => {}));
     const { callEdgeFunction } = await import('./apiClient');
     const promise = callEdgeFunction('get-week-schedule', {});
+    const rejected = expect(promise).rejects.toMatchObject({ code: 'NETWORK_ERROR', outcome: 'not_sent' });
     await vi.advanceTimersByTimeAsync(12_001);
-    await expect(promise).rejects.toMatchObject({ code: 'NETWORK_ERROR', outcome: 'not_sent' });
+    await rejected;
   });
 });

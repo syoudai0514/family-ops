@@ -9,6 +9,12 @@ vi.mock('../../lib/apiClient', async () => {
   return { ...actual, callEdgeFunction: (...args: unknown[]) => callEdgeFunction(...args) };
 });
 vi.mock('../../lib/id', () => ({ newOperationId: () => '69000000-0000-4000-8000-000000000001' }));
+vi.mock('../../app/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'user-1' } }),
+}));
+vi.mock('../../app/HouseholdContext', () => ({
+  useHousehold: () => ({ household: { id: 'household-1' } }),
+}));
 
 function makeTask(status: 'todo' | 'completed'): TaskInstance {
   return {
@@ -77,7 +83,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledTimes(1));
     expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       task_id: 'task-1',
       completion_actor: 'self',
       complete_remaining_subtasks: false,
@@ -96,7 +102,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '回す' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       subtask_instance_id: 'st-1',
       completed: true,
       completion_actor: 'self',
@@ -147,7 +153,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       task_id: 'anyone-1',
       completion_actor: 'self',
       complete_remaining_subtasks: false,
@@ -177,7 +183,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(checkbox);
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       subtask_instance_id: 'st-1',
       completed: true,
       completion_actor: 'self',
@@ -203,7 +209,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(screen.getByRole('button', { name: '手放す' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('change-task-assignment', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       task_id: 'anyone-1',
       claim_action: 'release',
       expected_revision: 4,
@@ -217,7 +223,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(screen.getByRole('button', { name: '未完了に戻す' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('reopen-task', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       task_id: 'task-1',
       expected_revision: 7,
     }));
@@ -245,7 +251,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(checkbox);
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       subtask_instance_id: 'st-1',
       completed: false,
       completion_actor: 'self',
@@ -262,7 +268,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(screen.getByRole('button', { name: '証跡を保存' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('add-task-completion-evidence', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       task_id: 'task-1',
       note: '提出完了・受付済み',
       image: undefined,

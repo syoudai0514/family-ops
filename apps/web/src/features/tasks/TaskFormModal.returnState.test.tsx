@@ -5,7 +5,10 @@ import type { TaskInstance } from '../../lib/types';
 import { TaskFormModal } from './TaskFormModal';
 
 vi.mock('../../app/HouseholdContext', () => ({
-  useHousehold: () => ({ members: [] }),
+  useHousehold: () => ({ members: [], household: { id: 'household-1' } }),
+}));
+vi.mock('../../app/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'user-1' } }),
 }));
 vi.mock('./useTaskCategories', () => ({
   useTaskCategories: () => ({ categories: [{ code: 'other', label: 'その他' }] }),

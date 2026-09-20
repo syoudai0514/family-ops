@@ -23,9 +23,10 @@ function candidate(overrides: Partial<ConciergeCandidate> & Pick<ConciergeCandid
   };
 }
 
-const context = (invoke: (name: string, body: object) => Promise<unknown>) => ({
-  members: [], me: null, partner: null, timeZone: 'Asia/Tokyo', invoke,
-});
+const context = (invoke: (name: string, body: object) => Promise<unknown>) => {
+  const me = member('00000000-0000-4000-8000-000000000099', 'papa');
+  return { members: [me], me, partner: null, timeZone: 'Asia/Tokyo', invoke };
+};
 
 describe('Concierge canonical flow', () => {
   it('scopes drafts to the signed-in household member and has no unscoped fallback key', () => {
