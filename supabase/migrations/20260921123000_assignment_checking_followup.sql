@@ -200,7 +200,7 @@ begin
   perform private.fn_complete_canonical_operation_v1(v_receipt_id, 'request', p_request_id, v_result);
   return v_result;
 end;
-$function$
+$function$;
 
 
 
