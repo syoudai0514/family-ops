@@ -72,16 +72,16 @@ begin
     raise exception 'FAIL requester Daily Brief omitted checking assignment request';
   end if;
   if not exists (
-    select 1 from jsonb_array_elements(coalesce(recipient_brief->'waiting_checks','[]'::jsonb)) x
+    select 1 from jsonb_array_elements(coalesce(recipient_brief->'urgent_actions','[]'::jsonb)) x
     where x->>'request_id'=req::text
-      and x->>'title' like '%最終確認待ち%'
+      and x->>'title' like '%最終確認待ち（確定（引受））%'
   ) then
-    raise exception 'FAIL recipient Daily Brief omitted final-confirm request';
+    raise exception 'FAIL recipient Daily Brief omitted explicit final-confirm request';
   end if;
   requester_text:=private.fn_render_daily_brief_text_v3(requester_brief,'morning');
   recipient_text:=private.fn_render_daily_brief_text_v3(recipient_brief,'evening');
   if position('引き受ける意向' in requester_text)=0
-     or position('最終確認待ち' in recipient_text)=0 then
+     or position('最終確認待ち（確定（引受））' in recipient_text)=0 then
     raise exception 'FAIL scheduled Daily Brief renderer dropped unresolved request status';
   end if;
 
