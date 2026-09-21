@@ -16,3 +16,14 @@ export function requestTransitionArgs(actorId: string, operationId: string,
     p_expected_revision: body.expected_revision, p_expected_terms_revision: body.expected_terms_revision,
     p_source: source };
 }
+
+
+export function isLineAssignmentAcceptanceReady(
+  attempt: { state?: unknown; revision?: unknown; terms_revision?: unknown } | null | undefined,
+  expectedRevision: number,
+  expectedTermsRevision: number,
+): boolean {
+  return attempt?.state === 'checking'
+    && Number(attempt.revision) === expectedRevision
+    && Number(attempt.terms_revision) === expectedTermsRevision;
+}
