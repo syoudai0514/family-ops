@@ -38,12 +38,6 @@ begin
         and type='request.checking' and title='引き受ける意向あり')<>1 then
     raise exception 'FAIL requester did not receive one checking-status notification';
   end if;
-  if (select planned_assignee_id from public.task_instances
-      where id=(select assignment_task_instance_id from public.requests where id=req)) is not null then
-    -- Light requests have no assignment target; this guard is intentionally a no-op.
-    null;
-  end if;
-
   update public.request_attempts
   set updated_at=now()-interval '11 minutes'
   where id=attempt;
