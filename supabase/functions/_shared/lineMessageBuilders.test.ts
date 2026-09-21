@@ -178,7 +178,7 @@ Deno.test('assignment acceptance confirmation is explicit and carries material t
   assertStringIncludes(raw, '対象日時: 9/14 18:20');
   assertStringIncludes(raw, '今回だけ');
   assertStringIncludes(raw, 'この送迎に連動する当日の家事も担当が切り替わります。');
-  assertStringIncludes(raw, '確定して引き受ける');
+  assertStringIncludes(raw, '確定（引受）');
   assertStringIncludes(raw, 'action=accept_assignment_change&request_id=req-confirm');
   assertStringIncludes(raw, 'action=cancel_accept_assignment_change&request_id=req-confirm');
 });

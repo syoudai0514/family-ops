@@ -530,7 +530,7 @@ export function buildAssignmentAcceptanceConfirmFlex(data: {
       ]),
       footer: compactActionFooter([
         {
-          label: "確定して引き受ける",
+          label: "確定（引受）",
           data: `action=accept_assignment_change&request_id=${data.requestId}&attempt_id=${data.attemptId}&revision=${data.revision}&terms_revision=${data.termsRevision}`,
           primary: true,
         },
