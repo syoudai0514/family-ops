@@ -10,6 +10,8 @@ declare
   req uuid; attempt uuid; task_id uuid;
   original_due timestamptz; changed_due timestamptz:=now()+interval '5 days 3 hours';
   request_revision bigint; before_task_revision bigint;
+  requester_brief jsonb; recipient_brief jsonb;
+  requester_text text; recipient_text text;
 begin
   insert into auth.users(id) values(u),(v);
   hh:=(public.server_tx_create_household(u,gen_random_uuid(),'XC convergence','Owner')->>'household_id')::uuid;
@@ -55,6 +57,32 @@ begin
   end if;
   if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
     raise exception 'FAIL checking/reminder changed assignment before final confirmation';
+  end if;
+
+  -- Scheduled Daily Brief must keep this unresolved handoff visible even
+  -- though the pickup already has a current assignee. This is the exact gap
+  -- that assignment_needed-only enrichment could not represent.
+  requester_brief:=public.server_read_daily_brief(u,current_date);
+  recipient_brief:=public.server_read_daily_brief(v,current_date);
+  if not exists (
+    select 1 from jsonb_array_elements(coalesce(requester_brief->'waiting_checks','[]'::jsonb)) x
+    where x->>'request_id'=req::text
+      and x->>'title' like '%引き受ける意向%'
+  ) then
+    raise exception 'FAIL requester Daily Brief omitted checking assignment request';
+  end if;
+  if not exists (
+    select 1 from jsonb_array_elements(coalesce(recipient_brief->'urgent_actions','[]'::jsonb)) x
+    where x->>'request_id'=req::text
+      and x->>'title' like '%最終確認待ち（確定（引受））%'
+  ) then
+    raise exception 'FAIL recipient Daily Brief omitted explicit final-confirm request';
+  end if;
+  requester_text:=private.fn_render_daily_brief_text_v3(requester_brief,'morning');
+  recipient_text:=private.fn_render_daily_brief_text_v3(recipient_brief,'evening');
+  if position('引き受ける意向' in requester_text)=0
+     or position('最終確認待ち（確定（引受））' in recipient_text)=0 then
+    raise exception 'FAIL scheduled Daily Brief renderer dropped unresolved request status';
   end if;
 
   -- XC-05: free consultation prose never mutates work truth.  A saved,
