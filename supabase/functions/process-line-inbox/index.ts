@@ -1,4 +1,4 @@
-import { requestTransitionArgs } from '../_shared/requestTransition.ts';
+import { isLineAssignmentAcceptanceReady, requestTransitionArgs } from '../_shared/requestTransition.ts';
 // verify_jwt=false — worker class (see supabase/config.toml +
 // EDGE_FUNCTION_AUTH_MATRIX.md "Worker"). docs/design/v6/06_LINE_INTEGRATION.md
 // #3 "Worker process-line-inbox every 1 min handles parse/action."
@@ -1561,12 +1561,35 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       .eq("id", fields.attempt_id)
       .maybeSingle();
     if (!request || request.request_kind !== "assignment_change" || request.status !== "pending"
-      || !attempt || !["pending", "checking"].includes(String(attempt.state))
+      || !attempt || attempt.state !== "pending"
       || Number(attempt.revision) !== expectedRevision
       || Number(attempt.terms_revision) !== expectedTermsRevision) {
       await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
       return;
     }
+
+    // First-stage acceptance is a real canonical transition. This makes the
+    // final confirmation card depend on a fresh attempt revision, so a
+    // duplicate/late tap on the original request card cannot confirm it.
+    const checkingOperationId = await deterministicOperationId("line-request-checking", item.provider_event_id);
+    const { data: checking, error: checkingError } = await client.rpc(
+      "server_tx_transition_request_v2",
+      requestTransitionArgs(actor.user_id, checkingOperationId, {
+        request_id: fields.request_id,
+        attempt_id: fields.attempt_id,
+        action: "checking",
+        expected_revision: expectedRevision,
+        expected_terms_revision: expectedTermsRevision,
+      }, "line"),
+    );
+    if (checkingError || checking?.state !== "checking"
+      || !Number.isSafeInteger(Number(checking?.revision))
+      || !Number.isSafeInteger(Number(checking?.terms_revision))) {
+      await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
+      return;
+    }
+    const confirmationRevision = Number(checking.revision);
+    const confirmationTermsRevision = Number(checking.terms_revision);
 
     let hasDependentChanges = false;
     if (request.assignment_task_instance_id) {
@@ -1614,8 +1637,8 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       message: buildAssignmentAcceptanceConfirmFlex({
         requestId: fields.request_id,
         attemptId: fields.attempt_id,
-        revision: expectedRevision,
-        termsRevision: expectedTermsRevision,
+        revision: confirmationRevision,
+        termsRevision: confirmationTermsRevision,
         title: String(request.shared_title ?? "担当変更"),
         workDueAt: typeof request.due_at === "string" ? request.due_at : null,
         scope: request.assignment_scope === "this_week" ? "this_week" : "once",
@@ -1664,11 +1687,31 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       await sendConfirmation(client, item, actor, "このボタンは古い内容です。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
       return;
     }
+    const expectedRevision = Number(fields.revision);
+    const expectedTermsRevision = Number(fields.terms_revision);
+    if (fields.action === "accept_assignment_change") {
+      const { data: currentAttempt } = await client.from("request_attempts")
+        .select("state,revision,terms_revision")
+        .eq("household_id", actor.household_id)
+        .eq("request_id", fields.request_id)
+        .eq("id", fields.attempt_id)
+        .maybeSingle();
+      if (!isLineAssignmentAcceptanceReady(currentAttempt, expectedRevision, expectedTermsRevision)) {
+        await sendConfirmation(
+          client,
+          item,
+          actor,
+          "最終確認が必要です。最新のお願いから「引き受ける」を押し、確認画面で確定してください。",
+          menuQuickReplies(),
+        );
+        return;
+      }
+    }
     const operationId = await deterministicOperationId("line-request-transition", item.provider_event_id);
     const { data, error } = await client.rpc("server_tx_transition_request_v2", requestTransitionArgs(actor.user_id, operationId, {
       request_id: fields.request_id, attempt_id: fields.attempt_id,
       action: fields.action === "accept_assignment_change" ? "accept" : "decline",
-      expected_revision: Number(fields.revision), expected_terms_revision: Number(fields.terms_revision),
+      expected_revision: expectedRevision, expected_terms_revision: expectedTermsRevision,
     }, 'line'));
     if (error) {
       await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
