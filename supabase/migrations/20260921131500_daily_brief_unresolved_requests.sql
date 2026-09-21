@@ -157,6 +157,25 @@ begin
     limit 1
   ) pending on true;
 
+  -- Recipient-side unresolved Requests are already part of urgent_actions
+  -- in the canonical base reader. Make the checking state explicit enough for
+  -- scheduled LINE: it is not just "確認中"; the remaining action is the final
+  -- confirmation button. Remove the generic state suffix to avoid duplicate
+  -- wording such as "最終確認待ち（確認中）".
+  select coalesce(jsonb_agg(
+    case
+      when item->>'request_id' is not null and item->>'state'='checking' then
+        (item - 'state' - 'title')
+        || jsonb_build_object(
+          'title','お願い「'||coalesce(nullif(item->>'title',''),'お願い')||'」：最終確認待ち（確定（引受））'
+        )
+      else item
+    end
+    order by ord
+  ),'[]'::jsonb)
+  into v_urgent
+  from jsonb_array_elements(v_urgent) with ordinality as entries(item,ord);
+
   -- Unresolved Requests must remain visible in every scheduled Daily Brief,
   -- even when the underlying task already has an assignee. The previous
   -- assignment-negotiation enrichment only covered assignment_needed rows,
