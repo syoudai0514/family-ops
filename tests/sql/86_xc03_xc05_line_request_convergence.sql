@@ -21,9 +21,16 @@ begin
   -- Recipient-side checking is a canonical intent signal, not assignment truth.
   -- Requester gets one useful status update; recipient gets one follow-up only
   -- if explicit final confirmation is still missing after 10 minutes.
-  c:=public.server_tx_send_request_v2(
-    u,gen_random_uuid(),v,'Checking follow-up','確認フォロー',
-    now()+interval '2 days',now()+interval '1 day'
+  insert into public.task_instances(
+    household_id,origin,title,category,routine_phase,scheduled_date,planned_assignee_id,
+    completion_mode,status,source,created_by,assignment_mode,assignment_source,
+    planned_assignee_actor_ref_id,due_at
+  ) values(
+    hh,'manual','Checking follow-up pickup','pickup','evening',current_date,u,
+    'whole','todo','xc_test',u,'person','manual',ar,now()+interval '2 days'
+  ) returning id into task_id;
+  c:=public.server_tx_create_assignment_change_request(
+    u,gen_random_uuid(),task_id,v,'確認フォロー','once'
   );
   req:=(c->>'request_id')::uuid;
   attempt:=(c->>'attempt_id')::uuid;
@@ -49,6 +56,9 @@ begin
       where household_id=hh and recipient_user_id=v
         and type='request.checking' and title='最終確認が残っています')<>1 then
     raise exception 'FAIL checking follow-up reminder missing or duplicated';
+  end if;
+  if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
+    raise exception 'FAIL checking/reminder changed assignment before final confirmation';
   end if;
 
   -- XC-05: free consultation prose never mutates work truth.  A saved,
