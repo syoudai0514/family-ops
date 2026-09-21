@@ -45,12 +45,8 @@ begin
         and type='request.checking' and title='引き受ける意向あり')<>1 then
     raise exception 'FAIL requester did not receive one checking-status notification';
   end if;
-  update public.request_attempts
-  set updated_at=now()-interval '11 minutes'
-  where id=attempt;
-
-  perform public.server_tx_dispatch_request_checking_reminders_v1(now(),100);
-  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '1 minute',100);
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '11 minutes',100);
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '12 minutes',100);
 
   if (select count(*) from public.user_notifications
       where household_id=hh and recipient_user_id=v
