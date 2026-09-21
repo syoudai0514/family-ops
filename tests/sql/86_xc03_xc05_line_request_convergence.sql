@@ -18,6 +18,27 @@ begin
   select id into ar from public.domain_actor_refs where household_id=hh and real_user_id=u;
   select id into br from public.domain_actor_refs where household_id=hh and real_user_id=v;
 
+  -- Recipient-side checking is a transient confirmation guard. It must be
+  -- canonical for CAS/recovery but must not notify the requester.
+  c:=public.server_tx_send_request_v2(
+    u,gen_random_uuid(),v,'Silent checking','確認通知は不要',
+    now()+interval '2 days',now()+interval '1 day'
+  );
+  req:=(c->>'request_id')::uuid;
+  attempt:=(c->>'attempt_id')::uuid;
+  r:=public.server_tx_transition_request_v2(
+    v,gen_random_uuid(),req,attempt,'checking',null,1,1,'line'
+  );
+  if r->>'state'<>'checking' then
+    raise exception 'FAIL checking transition did not persist';
+  end if;
+  if exists (
+    select 1 from public.user_notifications
+    where household_id=hh and type='request.checking'
+  ) then
+    raise exception 'FAIL transient checking notified requester';
+  end if;
+
   -- XC-05: free consultation prose never mutates work truth.  A saved,
   -- whitelisted material_patch is a distinct explicit structure.
   original_due:=now()+interval '3 days';
