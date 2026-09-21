@@ -245,6 +245,7 @@ begin
      and requester.id = r.requester_actor_ref_id
     where a.test_context_id is null
       and r.test_context_id is null
+      and r.request_kind = 'assignment_change'
       and a.state = 'checking'
       and a.updated_at <= p_now_utc - interval '10 minutes'
       and (a.reply_due_at is null or a.reply_due_at > p_now_utc)
