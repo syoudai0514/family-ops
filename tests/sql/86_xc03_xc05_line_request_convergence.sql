@@ -18,10 +18,11 @@ begin
   select id into ar from public.domain_actor_refs where household_id=hh and real_user_id=u;
   select id into br from public.domain_actor_refs where household_id=hh and real_user_id=v;
 
-  -- Recipient-side checking is a transient confirmation guard. It must be
-  -- canonical for CAS/recovery but must not notify the requester.
+  -- Recipient-side checking is a canonical intent signal, not assignment truth.
+  -- Requester gets one useful status update; recipient gets one follow-up only
+  -- if explicit final confirmation is still missing after 10 minutes.
   c:=public.server_tx_send_request_v2(
-    u,gen_random_uuid(),v,'Silent checking','確認通知は不要',
+    u,gen_random_uuid(),v,'Checking follow-up','確認フォロー',
     now()+interval '2 days',now()+interval '1 day'
   );
   req:=(c->>'request_id')::uuid;
@@ -32,11 +33,28 @@ begin
   if r->>'state'<>'checking' then
     raise exception 'FAIL checking transition did not persist';
   end if;
-  if exists (
-    select 1 from public.user_notifications
-    where household_id=hh and type='request.checking'
-  ) then
-    raise exception 'FAIL transient checking notified requester';
+  if (select count(*) from public.user_notifications
+      where household_id=hh and recipient_user_id=u
+        and type='request.checking' and title='引き受ける意向あり')<>1 then
+    raise exception 'FAIL requester did not receive one checking-status notification';
+  end if;
+  if (select planned_assignee_id from public.task_instances
+      where id=(select assignment_task_instance_id from public.requests where id=req)) is not null then
+    -- Light requests have no assignment target; this guard is intentionally a no-op.
+    null;
+  end if;
+
+  update public.request_attempts
+  set updated_at=now()-interval '11 minutes'
+  where id=attempt;
+
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now(),100);
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '1 minute',100);
+
+  if (select count(*) from public.user_notifications
+      where household_id=hh and recipient_user_id=v
+        and type='request.checking' and title='最終確認が残っています')<>1 then
+    raise exception 'FAIL checking follow-up reminder missing or duplicated';
   end if;
 
   -- XC-05: free consultation prose never mutates work truth.  A saved,
