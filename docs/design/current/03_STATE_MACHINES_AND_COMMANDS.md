@@ -305,6 +305,7 @@ Terminal states cannot transition back.
 - requester gets at most one immediate status notification for entering checking
 - status note updates do not each notify
 - final `やる/難しい` notifies
+- Assignment-change LINE `引き受ける` first tap records an explicit `acceptance_intent` on the checking attempt; ordinary `確認してみる` does not. Only explicit acceptance intent receives the final-confirmation reminder and wording in Daily Brief. Both paths retain the original assignee until final acceptance. A reminder never accepts on behalf of the recipient.
 
 ### 5.3 `相談する`
 

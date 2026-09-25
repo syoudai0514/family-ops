@@ -7,7 +7,7 @@ declare
   v uuid:=gen_random_uuid();
   hh uuid; ar uuid; br uuid;
   c jsonb; r jsonb; terms jsonb; patch jsonb;
-  req uuid; attempt uuid; task_id uuid;
+  req uuid; attempt uuid; task_id uuid; intent_req uuid; intent_attempt uuid; intent_task uuid;
   original_due timestamptz; changed_due timestamptz:=now()+interval '5 days 3 hours';
   request_revision bigint; before_task_revision bigint;
   requester_brief jsonb; recipient_brief jsonb;
@@ -37,7 +37,7 @@ begin
   req:=(c->>'request_id')::uuid;
   attempt:=(c->>'attempt_id')::uuid;
   r:=public.server_tx_transition_request_v2(
-    v,gen_random_uuid(),req,attempt,'checking',null,1,1,'line'
+    v,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,1,1,'line'
   );
   if r->>'state'<>'checking' then
     raise exception 'FAIL checking transition did not persist';
@@ -58,6 +58,49 @@ begin
   if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
     raise exception 'FAIL checking/reminder changed assignment before final confirmation';
   end if;
+  intent_req:=req; intent_attempt:=attempt; intent_task:=task_id;
+
+  insert into public.task_instances(
+    household_id,origin,title,category,routine_phase,scheduled_date,planned_assignee_id,
+    completion_mode,status,source,created_by,assignment_mode,assignment_source,
+    planned_assignee_actor_ref_id,due_at
+  ) values (
+    hh,'manual','Ordinary schedule checking','pickup','evening',current_date,u,
+    'whole','todo','xc_test',u,'person','manual',ar,now()+interval '2 days'
+  ) returning id into task_id;
+
+  -- Ordinary schedule checking must never be described as acceptance intent
+  -- or receive a final-confirmation reminder.
+  c:=public.server_tx_create_assignment_change_request(
+    u,gen_random_uuid(),task_id,v,'予定確認だけ','once'
+  );
+  req:=(c->>'request_id')::uuid;
+  attempt:=(c->>'attempt_id')::uuid;
+  r:=public.server_tx_transition_request_v2(
+    v,gen_random_uuid(),req,attempt,'checking',null,1,1,'pwa'
+  );
+  if (select acceptance_intent from public.request_attempts where id=attempt) then
+    raise exception 'FAIL ordinary checking marked acceptance intent';
+  end if;
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '11 minutes',100);
+  if exists (select 1 from public.user_notifications
+      where recipient_user_id=v and payload->>'attempt_id'=attempt::text
+        and title='最終確認が残っています') then
+    raise exception 'FAIL ordinary checking received final-confirm reminder';
+  end if;
+  if not exists (select 1 from public.user_notifications
+      where recipient_user_id=u and payload->>'attempt_id'=attempt::text
+        and title='相手が確認中です') then
+    raise exception 'FAIL ordinary checking requester status missing';
+  end if;
+  recipient_brief:=public.server_read_daily_brief(v,current_date);
+  if exists (select 1 from jsonb_array_elements(coalesce(recipient_brief->'waiting_checks','[]'::jsonb)) x
+      where x->>'attempt_id'=attempt::text and x->>'title' like '%確定（引受）%') then
+    raise exception 'FAIL ordinary checking mislabelled final confirmation in Daily Brief';
+  end if;
+
+  -- Resume the intent scenario for the Daily Brief checks below.
+  req:=intent_req; attempt:=intent_attempt; task_id:=intent_task;
 
   -- Scheduled Daily Brief must keep this unresolved handoff visible even
   -- though the pickup already has a current assignee. This is the exact gap

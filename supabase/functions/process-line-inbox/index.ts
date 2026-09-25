@@ -1578,6 +1578,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
         request_id: fields.request_id,
         attempt_id: fields.attempt_id,
         action: "checking",
+        terms: { acceptance_intent: true },
         expected_revision: expectedRevision,
         expected_terms_revision: expectedTermsRevision,
       }, "line"),
