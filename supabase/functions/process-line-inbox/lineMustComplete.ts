@@ -716,7 +716,7 @@ async function promptAssignmentRequestAccept(ctx: LineMustCompleteContext, field
   }
   const scopeLabel = view.request.assignment_scope === "this_week" ? "今週だけ" : "今回だけ";
   let confirmationRevision = revision;
-  if (view.attempt.state === "pending") {
+  if (view.attempt.state === "pending" || !view.attempt.acceptance_intent) {
     const operationId = await deterministicOperationId("line-request-checking", ctx.eventId, requestId, attemptId);
     const { data, error } = await ctx.client.rpc("server_tx_transition_request_v2", {
       p_actor_id: ctx.actorId, p_operation_id: operationId,

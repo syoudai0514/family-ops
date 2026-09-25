@@ -112,6 +112,20 @@ begin
     raise exception 'FAIL ordinary checking mislabelled final confirmation in Daily Brief';
   end if;
 
+  -- After checking their schedule, the recipient may still choose to accept
+  -- in LINE. That new first tap must record intent and advance the revision;
+  -- it cannot retroactively reinterpret the earlier checking action.
+  r:=public.server_tx_transition_request_v2(
+    v,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,2,1,'line'
+  );
+  if r->>'state'<>'checking' or (r->>'revision')::int<>3
+    or not (select acceptance_intent from public.request_attempts where id=attempt) then
+    raise exception 'FAIL ordinary checking could not advance to explicit acceptance intent';
+  end if;
+  if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
+    raise exception 'FAIL intent promotion changed assignment before final confirmation';
+  end if;
+
   -- Resume the intent scenario for the Daily Brief checks below.
   req:=intent_req; attempt:=intent_attempt; task_id:=intent_task;
 

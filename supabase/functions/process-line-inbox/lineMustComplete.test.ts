@@ -137,11 +137,11 @@ Deno.test("LINE assignment acceptance survives closing the chat before final con
     assertEquals(name, "server_tx_transition_request_v2");
     if (args.p_action === "checking") {
       assertEquals(args.p_terms, { acceptance_intent: true });
-      assertEquals(args.p_expected_revision, 1);
+      assertEquals(args.p_expected_revision, attempt.revision);
       attempt.state = "checking";
       attempt.acceptance_intent = true;
-      attempt.revision = 2;
-      return { data: { state: "checking", revision: 2 }, error: null };
+      attempt.revision += 1;
+      return { data: { state: "checking", revision: attempt.revision }, error: null };
     }
     assertEquals(args.p_action, "accept");
     assertEquals(args.p_expected_revision, 2);
@@ -167,6 +167,12 @@ Deno.test("LINE assignment acceptance survives closing the chat before final con
   }), true);
   assertEquals(calls.length, 2);
   assertStringIncludes(replies.at(-1)?.text ?? "", "最終確認が必要");
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_request_prompt_accept", request_id: "request-1", attempt_id: "attempt-1",
+    revision: "2", terms_revision: "1",
+  }), true);
+  assertEquals(attempt.revision, 3);
+  assertEquals(calls.map((call) => call.args.p_action), ["checking", "accept", "checking"]);
 });
 
 Deno.test("LINE waiting resume preserves revision CAS and canonical source", async () => {

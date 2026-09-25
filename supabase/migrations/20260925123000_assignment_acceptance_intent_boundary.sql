@@ -77,7 +77,14 @@ begin
   v_new_terms_revision := v_attempt.terms_revision;
 
   if p_action = 'checking' then
-    if v_party <> 'recipient' or v_attempt.state <> 'pending' then raise exception 'REQUEST_TRANSITION_INVALID'; end if;
+    if v_party <> 'recipient' or
+      (v_attempt.state <> 'pending' and not (v_attempt.state = 'checking'
+        and not v_attempt.acceptance_intent
+        and v_request.request_kind = 'assignment_change'
+        and p_source = 'line'
+        and coalesce(p_terms = '{"acceptance_intent":true}'::jsonb,false))) then
+      raise exception 'REQUEST_TRANSITION_INVALID';
+    end if;
     v_acceptance_intent := coalesce(v_request.request_kind = 'assignment_change'
       and p_source = 'line' and p_terms = '{"acceptance_intent":true}'::jsonb, false);
     if p_terms is not null and not v_acceptance_intent then

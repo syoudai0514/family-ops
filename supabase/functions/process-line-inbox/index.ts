@@ -1555,13 +1555,13 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       .eq("recipient_id", actor.user_id)
       .maybeSingle();
     const { data: attempt } = await client.from("request_attempts")
-      .select("id,state,revision,terms_revision")
+      .select("id,state,revision,terms_revision,acceptance_intent")
       .eq("household_id", actor.household_id)
       .eq("request_id", fields.request_id)
       .eq("id", fields.attempt_id)
       .maybeSingle();
     if (!request || request.request_kind !== "assignment_change" || request.status !== "pending"
-      || !attempt || attempt.state !== "pending"
+      || !attempt || (attempt.state !== "pending" && (attempt.state !== "checking" || attempt.acceptance_intent))
       || Number(attempt.revision) !== expectedRevision
       || Number(attempt.terms_revision) !== expectedTermsRevision) {
       await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
