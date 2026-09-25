@@ -1692,7 +1692,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     const expectedTermsRevision = Number(fields.terms_revision);
     if (fields.action === "accept_assignment_change") {
       const { data: currentAttempt } = await client.from("request_attempts")
-        .select("state,revision,terms_revision")
+        .select("state,revision,terms_revision,acceptance_intent")
         .eq("household_id", actor.household_id)
         .eq("request_id", fields.request_id)
         .eq("id", fields.attempt_id)

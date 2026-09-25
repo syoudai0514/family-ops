@@ -55,6 +55,19 @@ begin
         and type='request.checking' and title='最終確認が残っています')<>1 then
     raise exception 'FAIL checking follow-up reminder missing or duplicated';
   end if;
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '61 minutes',100);
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '62 minutes',100);
+  if (select count(*) from public.user_notifications
+      where household_id=hh and recipient_user_id=v
+        and type='request.checking' and title='最終確認が残っています')<>2 then
+    raise exception 'FAIL second reminder missing or duplicated';
+  end if;
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '3 days',100);
+  if (select count(*) from public.user_notifications
+      where household_id=hh and recipient_user_id=v
+        and type='request.checking' and title='最終確認が残っています')<>2 then
+    raise exception 'FAIL reminder sent after reply deadline';
+  end if;
   if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
     raise exception 'FAIL checking/reminder changed assignment before final confirmation';
   end if;

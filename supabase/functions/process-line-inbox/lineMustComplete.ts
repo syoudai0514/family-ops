@@ -46,6 +46,7 @@ type AttemptView = {
   id: string;
   request_id: string;
   state: string;
+  acceptance_intent: boolean;
   revision: number;
   terms_revision: number;
   reply_due_at: string | null;
@@ -596,7 +597,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
     ? ["pending", "checking", "consulting", "awaiting_confirmation", "expired"]
     : ["pending", "checking", "consulting", "awaiting_confirmation"];
   const { data: attemptData, error: attemptError } = await ctx.client.from("request_attempts")
-    .select("id,request_id,state,revision,terms_revision,terms,reply_due_at,created_at")
+    .select("id,request_id,state,acceptance_intent,revision,terms_revision,terms,reply_due_at,created_at")
     .in("request_id", ids)
     .in("state", states)
     .order("created_at", { ascending: false });
@@ -619,6 +620,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
       id: str(attemptRow.id) ?? "",
       request_id: id,
       state: str(attemptRow.state) ?? "",
+      acceptance_intent: attemptRow.acceptance_intent === true,
       revision: num(attemptRow.revision) ?? 1,
       terms_revision: num(attemptRow.terms_revision) ?? 1,
       reply_due_at: str(attemptRow.reply_due_at),
@@ -668,12 +670,16 @@ async function openRequests(ctx: LineMustCompleteContext): Promise<void> {
     if (party === "requester") quick.push(postback("再提案する", encodeFields("mc_request_repropose", { request_id: request.id, request_revision: request.revision })));
   } else if (party === "recipient" && ["pending", "checking"].includes(attempt.state)) {
     if (request.request_kind === "assignment_change") {
-      quick.push(postback("引き受ける", encodeFields("mc_request_prompt_accept", {
-        request_id: request.id,
-        attempt_id: attempt.id,
-        revision: attempt.revision,
-        terms_revision: attempt.terms_revision,
-      })));
+      if (attempt.state === "checking" && attempt.acceptance_intent) {
+        quick.push(postback("確定（引受）", requestActionData(view, "accept")));
+      } else {
+        quick.push(postback("引き受ける", encodeFields("mc_request_prompt_accept", {
+          request_id: request.id,
+          attempt_id: attempt.id,
+          revision: attempt.revision,
+          terms_revision: attempt.terms_revision,
+        })));
+      }
       quick.push(postback("難しい", requestActionData(view, "decline")));
       quick.push(postback("相談する", requestActionData(view, "consult")));
     } else {
@@ -709,6 +715,22 @@ async function promptAssignmentRequestAccept(ctx: LineMustCompleteContext, field
     return;
   }
   const scopeLabel = view.request.assignment_scope === "this_week" ? "今週だけ" : "今回だけ";
+  let confirmationRevision = revision;
+  if (view.attempt.state === "pending") {
+    const operationId = await deterministicOperationId("line-request-checking", ctx.eventId, requestId, attemptId);
+    const { data, error } = await ctx.client.rpc("server_tx_transition_request_v2", {
+      p_actor_id: ctx.actorId, p_operation_id: operationId,
+      p_request_id: requestId, p_attempt_id: attemptId,
+      p_action: "checking", p_terms: { acceptance_intent: true },
+      p_expected_revision: revision, p_expected_terms_revision: termsRevision,
+      p_source: "line",
+    });
+    if (error || record(data)?.state !== "checking" || !num(record(data)?.revision)) {
+      await ctx.reply("内容が更新されています。お願いの返事から最新の内容を確認してください。", [message("お願いを確認", "お願いの返事")]);
+      return;
+    }
+    confirmationRevision = num(record(data)?.revision) ?? revision;
+  }
   const summary = [
     "この担当変更を引き受けますか？",
     `${formatJst(view.request.due_at)} ${view.request.shared_title}`,
@@ -717,7 +739,7 @@ async function promptAssignmentRequestAccept(ctx: LineMustCompleteContext, field
     "送り/お迎えに連動する当日の家事がある場合は、同日のルールどおり担当も切り替わります。",
   ].join("\n");
   await ctx.reply(summary, [
-    postback("引き受ける", requestActionData(view, "accept")),
+    postback("確定（引受）", requestActionData({ ...view, attempt: { ...view.attempt, revision: confirmationRevision } }, "accept")),
     message("戻る", "お願いの返事"),
   ]);
 }
@@ -730,6 +752,16 @@ async function transitionRequest(ctx: LineMustCompleteContext, fields: Record<st
   const termsRevision = Number(fields.terms_revision);
   if (!requestId || !attemptId || !action || !Number.isFinite(revision) || !Number.isFinite(termsRevision)) return;
   if (!["accept", "decline", "checking", "consult", "confirm_terms"].includes(action)) return;
+  if (action === "accept") {
+    const current = (await activeRequests(ctx, true)).find((view) =>
+      view.request.id === requestId && view.attempt.id === attemptId);
+    if (!current || (current.request.request_kind === "assignment_change" &&
+      (current.attempt.state !== "checking" || !current.attempt.acceptance_intent
+      || current.attempt.revision !== revision || current.attempt.terms_revision !== termsRevision))) {
+      await ctx.reply("最終確認が必要です。お願いの返事から最新の内容を確認してください。", [message("お願いを確認", "お願いの返事")]);
+      return;
+    }
+  }
   const operationId = await deterministicOperationId("line-request", ctx.eventId, requestId, attemptId, action, String(revision), String(termsRevision));
   const { data, error } = await ctx.client.rpc("server_tx_transition_request_v2", {
     p_actor_id: ctx.actorId,

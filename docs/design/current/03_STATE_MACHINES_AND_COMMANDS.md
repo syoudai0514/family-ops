@@ -306,6 +306,7 @@ Terminal states cannot transition back.
 - status note updates do not each notify
 - final `やる/難しい` notifies
 - Assignment-change LINE `引き受ける` first tap records an explicit `acceptance_intent` on the checking attempt; ordinary `確認してみる` does not. Only explicit acceptance intent receives the final-confirmation reminder and wording in Daily Brief. Both paths retain the original assignee until final acceptance. A reminder never accepts on behalf of the recipient.
+- The recipient can reopen `お願いの返事` after leaving LINE and use the current revision's `確定（引受）` action. The requester sees intent without assignment success. Follow-ups have distinct idempotency keys at 10 and 60 minutes after the first tap; each requires the still-active attempt and an unexpired reply deadline. The morning/evening Daily Brief keeps the unresolved request visible without turning it into repeated standalone pushes.
 
 ### 5.3 `相談する`
 
