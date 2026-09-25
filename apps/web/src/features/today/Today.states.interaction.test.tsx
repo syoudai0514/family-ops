@@ -39,6 +39,8 @@ function todayData(overrides: Partial<TodayData> = {}): TodayData {
     tasks: [],
     taskGroups: { morning: [], daytime: [], evening: [], optional: [] },
     waitingTasks: [],
+    requestWaiting: [],
+    requesterStatuses: [],
     waitingRefsByTaskId: new Map(),
     carryoverTasks: [],
     alreadyHandledTasks: [],
