@@ -1748,7 +1748,11 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       p_request_id: fields.request_id,
     });
     if (error) {
-      if (/REQUEST_NOT_PENDING|REQUEST_ACCEPT_NOT_ALLOWED/.test(error.message)) await sendConfirmation(client, item, actor, "このお願いはすでに処理済みです。");
+      if (/REQUEST_FINAL_CONFIRMATION_REQUIRED/.test(error.message)) {
+        await sendConfirmation(client, item, actor,
+          "最終確認が必要です。「お願いの返事」から最新のお願いを開き、「引き受ける」→「確定（引受）」で確認してください。",
+          [{ type: "message", label: "お願いを確認", text: "お願いの返事" }]);
+      } else if (/REQUEST_NOT_PENDING|REQUEST_ACCEPT_NOT_ALLOWED/.test(error.message)) await sendConfirmation(client, item, actor, "このお願いはすでに処理済みです。");
       else console.error("process-line-inbox: accept request failed", error.message);
       return;
     }

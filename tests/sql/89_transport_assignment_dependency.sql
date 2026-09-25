@@ -132,8 +132,11 @@ begin
   req:=(c->>'request_id')::uuid;
   attempt:=(c->>'attempt_id')::uuid;
 
+  perform public.server_tx_transition_request_v2(
+    u2,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,1,1,'line'
+  );
   r:=public.server_tx_transition_request_v2(
-    u2,gen_random_uuid(),req,attempt,'accept',null,1,1,'line'
+    u2,gen_random_uuid(),req,attempt,'accept',null,2,1,'line'
   );
 
   if r->>'state'<>'accepted' then
@@ -172,8 +175,11 @@ begin
   req:=(c->>'request_id')::uuid;
   attempt:=(c->>'attempt_id')::uuid;
 
+  perform public.server_tx_transition_request_v2(
+    u2,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,1,1,'line'
+  );
   r:=public.server_tx_transition_request_v2(
-    u2,gen_random_uuid(),req,attempt,'accept',null,1,1,'line'
+    u2,gen_random_uuid(),req,attempt,'accept',null,2,1,'line'
   );
 
   if r->>'state'<>'accepted' then

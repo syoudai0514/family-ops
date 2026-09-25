@@ -150,6 +150,12 @@ begin
 
   elsif p_action = 'accept' then
     if v_party <> 'recipient' or v_attempt.state not in ('pending', 'checking') then raise exception 'REQUEST_TRANSITION_INVALID'; end if;
+    -- An old LINE button or compatibility RPC must not bypass the visible
+    -- first tap and the separate final confirmation for assignment changes.
+    if p_source = 'line' and v_request.request_kind = 'assignment_change'
+      and (v_attempt.state <> 'checking' or not v_attempt.acceptance_intent) then
+      raise exception 'REQUEST_FINAL_CONFIRMATION_REQUIRED';
+    end if;
     v_new_state := 'accepted';
     update public.request_attempts
     set state = 'accepted', accepted_at = now(), revision = revision + 1

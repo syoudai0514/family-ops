@@ -36,6 +36,16 @@ begin
   );
   req:=(c->>'request_id')::uuid;
   attempt:=(c->>'attempt_id')::uuid;
+  begin
+    perform public.server_tx_transition_request_v2(
+      v,gen_random_uuid(),req,attempt,'accept',null,1,1,'line');
+    raise exception 'FAIL old LINE action bypassed assignment final confirmation';
+  exception when others then
+    if sqlerrm <> 'REQUEST_FINAL_CONFIRMATION_REQUIRED' then raise; end if;
+  end;
+  if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
+    raise exception 'FAIL old LINE action changed assignment';
+  end if;
   r:=public.server_tx_transition_request_v2(
     v,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,1,1,'line'
   );
@@ -95,6 +105,13 @@ begin
   if (select acceptance_intent from public.request_attempts where id=attempt) then
     raise exception 'FAIL ordinary checking marked acceptance intent';
   end if;
+  begin
+    perform public.server_tx_transition_request_v2(
+      v,gen_random_uuid(),req,attempt,'accept',null,2,1,'line');
+    raise exception 'FAIL ordinary checking bypassed assignment final confirmation';
+  exception when others then
+    if sqlerrm <> 'REQUEST_FINAL_CONFIRMATION_REQUIRED' then raise; end if;
+  end;
   perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '11 minutes',100);
   if exists (select 1 from public.user_notifications
       where recipient_user_id=v and payload->>'attempt_id'=attempt::text
