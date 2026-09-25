@@ -1,6 +1,18 @@
 -- Distinguish an explicit LINE acceptance-intent tap from ordinary schedule checking.
 alter table public.request_attempts add column acceptance_intent boolean not null default false;
 
+-- Preserve an in-flight final-confirmation card across this deployment. The
+-- earlier notification is specific to the LINE first tap, unlike generic
+-- checking; historical attempts that are already terminal stay untouched.
+update public.request_attempts a
+set acceptance_intent = true
+from public.user_notifications n
+where a.state = 'checking'
+  and a.test_context_id is null
+  and n.household_id = a.household_id
+  and n.payload->>'attempt_id' = a.id::text
+  and n.payload->>'followup' = 'recipient_final_confirmation';
+
 CREATE OR REPLACE FUNCTION private.fn_command_transition_request_attempt_v1(p_household_id uuid, p_operator_user_id uuid, p_actor_ref_id uuid, p_test_context_id uuid, p_request_id uuid, p_attempt_id uuid, p_action text, p_terms jsonb, p_expected_revision bigint, p_expected_terms_revision integer, p_operation_id uuid, p_source text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -532,4 +544,3 @@ begin
   );
 end;
 $function$
-
