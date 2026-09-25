@@ -78,8 +78,8 @@ begin
 
   if p_action = 'checking' then
     if v_party <> 'recipient' or v_attempt.state <> 'pending' then raise exception 'REQUEST_TRANSITION_INVALID'; end if;
-    v_acceptance_intent := v_request.request_kind = 'assignment_change'
-      and p_source = 'line' and p_terms = '{"acceptance_intent":true}'::jsonb;
+    v_acceptance_intent := coalesce(v_request.request_kind = 'assignment_change'
+      and p_source = 'line' and p_terms = '{"acceptance_intent":true}'::jsonb, false);
     if p_terms is not null and not v_acceptance_intent then
       raise exception 'REQUEST_CHECKING_TERMS_INVALID';
     end if;
