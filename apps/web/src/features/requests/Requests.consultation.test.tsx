@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { OutgoingRequestRow } from './Requests';
+import { IncomingRequestRow, OutgoingRequestRow } from './Requests';
 import { callEdgeFunction } from '../../lib/apiClient';
 import type { RequestRow } from '../../lib/types';
 
@@ -51,5 +51,28 @@ describe('requester consultation from the actual PWA row', () => {
         }),
       }),
     })));
+  });
+});
+
+describe('recipient assignment confirmation in the PWA request list', () => {
+  beforeEach(() => { vi.clearAllMocks(); vi.mocked(callEdgeFunction).mockResolvedValue({ state: 'accepted' }); });
+
+  it('requires a fresh review of the exact attempt revision before changing the owner', async () => {
+    const assignment = { ...request, assignment_task_instance_id: 'pickup-1', assignment_scope: 'once',
+      due_at: '2099-09-11T09:20:00Z' } as RequestRow;
+    const pending = { id: 'assignment-attempt', request_id: request.id, state: 'pending' as const,
+      revision: 3, terms_revision: 1, terms: {}, reply_due_at: '2099-09-10T12:00:00Z' };
+    const view = render(<ul><IncomingRequestRow request={assignment} attempt={pending} onChanged={vi.fn()} /></ul>);
+    fireEvent.click(screen.getByRole('button', { name: '引き受ける' }));
+    expect(callEdgeFunction).not.toHaveBeenCalled();
+    expect(screen.getByRole('group', { name: '担当変更の最終確認' })).toHaveTextContent('お迎え');
+    view.rerender(<ul><IncomingRequestRow request={assignment} attempt={{ ...pending, revision: 4 }} onChanged={vi.fn()} /></ul>);
+    fireEvent.click(screen.getByRole('button', { name: '確定（引受）' }));
+    expect(callEdgeFunction).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('内容が更新されています');
+    fireEvent.click(screen.getByRole('button', { name: '引き受ける' }));
+    fireEvent.click(screen.getByRole('button', { name: '確定（引受）' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('accept-assignment-change-request',
+      expect.objectContaining({ request_id: request.id, attempt_id: pending.id, expected_revision: 4, expected_terms_revision: 1 })));
   });
 });

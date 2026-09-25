@@ -36,6 +36,7 @@ export interface TodayRequestAttempt {
   revision: number;
   terms_revision: number;
   reply_due_at: string | null;
+  acceptance_intent?: boolean;
 }
 
 export interface DailyBriefScheduleItem {
@@ -65,6 +66,7 @@ export interface DailyBriefAction {
   reply_due_at?: string | null;
   due_at?: string | null;
   agreement_established?: boolean;
+  acceptance_intent?: boolean;
 }
 
 export interface DailyBriefException {
@@ -77,7 +79,12 @@ export interface DailyBriefException {
 }
 
 export interface DailyBriefWaitingRef {
-  task_id: string;
+  task_id?: string;
+  kind?: string;
+  request_id?: string;
+  attempt_id?: string;
+  title?: string;
+  reply_due_at?: string | null;
   waiting_note?: string | null;
   next_check_at?: string | null;
   hard_due_at?: string | null;
@@ -178,6 +185,8 @@ interface TodaySnapshot {
   tasks: TodayTaskInstance[];
   taskGroups: TodayTaskGroups;
   waitingTasks: TodayTaskInstance[];
+  requestWaiting: DailyBriefWaitingRef[];
+  requesterStatuses: DailyBriefAction[];
   waitingRefsByTaskId: Map<string, DailyBriefWaitingRef>;
   carryoverTasks: TodayTaskInstance[];
   alreadyHandledTasks: TodayTaskInstance[];
@@ -226,6 +235,8 @@ function emptySnapshot(): TodaySnapshot {
     tasks: [],
     taskGroups: EMPTY_GROUPS,
     waitingTasks: [],
+    requestWaiting: [],
+    requesterStatuses: [],
     waitingRefsByTaskId: new Map(),
     carryoverTasks: [],
     alreadyHandledTasks: [],
@@ -250,6 +261,7 @@ function isSnapshotEmpty(snapshot: TodaySnapshot) {
     && snapshot.exceptions.length === 0
     && snapshot.tasks.length === 0
     && snapshot.waitingTasks.length === 0
+    && snapshot.requestWaiting.length === 0
     && snapshot.carryoverTasks.length === 0
     && snapshot.alreadyHandledTasks.length === 0
     && snapshot.incomingRequests.length === 0
@@ -451,6 +463,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
           revision: item.revision ?? 0,
           terms_revision: item.terms_revision ?? 0,
           reply_due_at: item.reply_due_at ?? null,
+          acceptance_intent: item.acceptance_intent === true,
         });
       }
 
@@ -467,13 +480,15 @@ export function useTodayData(householdId: string | null, userId: string | null):
           optional: groupHydrate(groupRefs.optional),
         },
         waitingTasks: hydrate(waitingIds),
-        waitingRefsByTaskId: new Map(waitingRefs.map((item) => [item.task_id, item])),
+        requestWaiting: waitingRefs.filter((item) => item.kind === 'request_followup' && Boolean(item.request_id)),
+        requesterStatuses: requestActions.filter((item) => requestRows.some((row) => row.id === item.request_id && row.requester_id === userId)),
+        waitingRefsByTaskId: new Map(waitingRefs.filter((item) => Boolean(item.task_id)).map((item) => [item.task_id!, item])),
         carryoverTasks: hydrate(carryoverIds),
         alreadyHandledTasks: hydrate(handledIds),
         completedTodayTasks: hydrate(completedTodayIds),
         subtasksByTaskId: groupedSubtasks,
         executionTargetsByTaskId: targetMap,
-        incomingRequests: orderedRows(requestIds, requestRows),
+        incomingRequests: orderedRows(requestIds, requestRows).filter((row) => row.recipient_id === userId),
         requestAttemptsByRequestId: attemptMap,
         unreadHandovers: orderedRows(handoverIds, (handoverRes.data ?? []) as Handover[]),
         openShoppingItems: orderedRows(shoppingIds, (shoppingRes.data ?? []) as ShoppingItem[]),

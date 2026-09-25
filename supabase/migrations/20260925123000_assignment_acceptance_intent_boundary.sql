@@ -471,26 +471,37 @@ begin
     limit 1
   ) pending on true;
 
-  -- Recipient-side unresolved Requests are already part of urgent_actions
-  -- in the canonical base reader. Make the checking state explicit enough for
-  -- scheduled LINE: it is not just "確認中"; the remaining action is the final
-  -- confirmation button. Remove the generic state suffix to avoid duplicate
-  -- wording such as "最終確認待ち（確認中）".
+  -- Retain the exact actionable Attempt snapshot for PWA Today. The base
+  -- reader has the Attempt ID but does not expose terms_revision; removing
+  -- state for presentation made the recipient's request disappear entirely.
   select coalesce(jsonb_agg(
     case
-      when item->>'request_id' is not null and item->>'state'='checking'
-        and exists (select 1 from public.request_attempts ca
-          where ca.id=(item->>'attempt_id')::uuid and ca.acceptance_intent) then
-        (item - 'state' - 'title')
-        || jsonb_build_object(
-          'title','お願い「'||coalesce(nullif(item->>'title',''),'お願い')||'」：最終確認待ち（確定（引受））'
+      when current_attempt.id is not null then
+        item || jsonb_build_object(
+          'state',current_attempt.state,
+          'revision',current_attempt.revision,
+          'terms_revision',current_attempt.terms_revision,
+          'reply_due_at',current_attempt.reply_due_at,
+          'acceptance_intent',current_attempt.acceptance_intent
         )
+        || case when current_attempt.state='checking' and current_attempt.acceptance_intent
+          then jsonb_build_object('title',
+            'お願い「'||coalesce(nullif(item->>'title',''),'お願い')||'」：最終確認待ち（確定（引受））')
+          else '{}'::jsonb end
       else item
     end
     order by ord
   ),'[]'::jsonb)
   into v_urgent
-  from jsonb_array_elements(v_urgent) with ordinality as entries(item,ord);
+  from jsonb_array_elements(v_urgent) with ordinality as entries(item,ord)
+  left join lateral (
+    select a.id,a.state,a.revision,a.terms_revision,a.reply_due_at,a.acceptance_intent
+    from public.request_attempts a
+    where a.household_id=v_household_id
+      and a.request_id=nullif(item->>'request_id','')::uuid
+      and a.id=nullif(item->>'attempt_id','')::uuid
+      and a.test_context_id is null
+  ) current_attempt on true;
 
   -- Unresolved Requests must remain visible in every scheduled Daily Brief,
   -- even when the underlying task already has an assignee. The previous
@@ -510,8 +521,6 @@ begin
           then 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：相手が引き受ける意向・最終確認待ち'
         when r.requester_id=p_actor_id and a.state='checking'
           then 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：相手が予定を確認中'
-        when r.recipient_id=p_actor_id and a.state='checking'
-          then 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：予定を確認中'
         when r.requester_id=p_actor_id and a.state='consulting'
           then 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：相談中'
         when r.requester_id=p_actor_id and a.state='awaiting_confirmation'
@@ -520,6 +529,8 @@ begin
           then 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：返事が必要'
         when r.recipient_id=p_actor_id and a.state='checking' and a.acceptance_intent
           then 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：最終確認待ち（確定（引受））'
+        when r.recipient_id=p_actor_id and a.state='checking'
+          then 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：予定を確認中'
         when r.recipient_id=p_actor_id and a.state='consulting'
           then 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：相談中'
         else 'お願い「'||coalesce(nullif(r.shared_title,''),'お願い')||'」：条件の確認待ち'

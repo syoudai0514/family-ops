@@ -162,8 +162,12 @@ begin
     select 1 from jsonb_array_elements(coalesce(recipient_brief->'urgent_actions','[]'::jsonb)) x
     where x->>'request_id'=req::text
       and x->>'title' like '%最終確認待ち（確定（引受））%'
+      and x->>'state'='checking'
+      and (x->>'revision')::bigint=2
+      and (x->>'terms_revision')::integer=1
+      and (x->>'acceptance_intent')::boolean=true
   ) then
-    raise exception 'FAIL recipient Daily Brief omitted explicit final-confirm request';
+    raise exception 'FAIL recipient Daily Brief lost final-confirm snapshot for Today';
   end if;
   requester_text:=private.fn_render_daily_brief_text_v3(requester_brief,'morning');
   recipient_text:=private.fn_render_daily_brief_text_v3(recipient_brief,'evening');

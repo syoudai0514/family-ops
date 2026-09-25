@@ -94,7 +94,7 @@ begin
          raise exception 'FAIL stale task accepted';
        exception when others then if sqlerrm<>'AGGREGATE_REVISION_CONFLICT' then raise; end if; end;
        if (select state from public.request_attempts where id=attempt)
-          <> case when channel='line' then 'checking' else 'pending' end then
+          <> (case when channel='line' then 'checking' else 'pending' end) then
          raise exception 'FAIL stale task half applied'; end if;
        continue;
      else
@@ -107,7 +107,7 @@ begin
          exception when others then if sqlerrm<>'LANE_A_INJECTED_FAILURE' then raise; end if; end;
          perform set_config('lane_a.inject_failure','off',true);
          if (select state from public.request_attempts where id=attempt)
-              <> case when channel='line' then 'checking' else 'pending' end
+              <> (case when channel='line' then 'checking' else 'pending' end)
            or (select planned_assignee_actor_ref_id from public.task_instances where id=task_id)<>ar
            or exists(select 1 from public.task_events where payload->>'attempt_id'=attempt::text) then
            raise exception 'FAIL transaction left partial state'; end if;
