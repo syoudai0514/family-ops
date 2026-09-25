@@ -1,0 +1,32 @@
+# おうちノート CURRENT product conformance review — 2026-09-25
+
+Status: **source/automated-test review completed for the principal product flows; product acceptance remains NO-GO pending real two-account F2**. Read GitHub main, PR head, CI, and production catalog fresh before using this record. This is a review ledger, not an alternative requirements source.
+
+## Authority and evidence rules
+
+Accepted ADRs → `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` (currently Appendix A Q1–Q114, including Q60-1/Q60-2) → `docs/design/current/` → non-conflicting v6 design → source/tests. `ISSUE-48-Q1-Q112-CONFORMANCE-MATRIX.md`, historical review verdicts, and old handoffs do not establish CURRENT product PASS. Baseline §2.1 requires purpose → requirement → approved UX → source → test → real family use on the same exact release candidate.
+
+## Cross-product review
+
+| Flow / requirement | CURRENT source and automated evidence inspected | Judgment and real-use boundary |
+|---|---|---|
+| Today, priority, partner, daypart (Q1, Q23–25, Q35, Q67–68, Q75, Q87–88) | `useTodayData.ts` reads `get_my_daily_brief`; `Today.tsx`; `process-line-inbox/lineMustComplete.ts`; latest `server_read_daily_brief_pre_codmon_readiness_v1`; Today/clock tests and SQL Daily Brief tests | Shared read model exists. Two-device LINE/PWA parity, real scheduled delivery, and long-open mobile state are **not newly verified** by this review. |
+| Request, assignment, deadlines and notifications (Q2, Q9, Q30, Q36, Q41–47, Q83–86, §28.4) | `request_attempts`, `server_tx_transition_request_v2`, both LINE request adapters, `send-notifications/requestNotificationPayload.ts`, SQL 86 and Edge unit tests | **Material gaps found and repaired in PR #125:** ordinary checking was mislabeled as acceptance intent; delivery flattened distinct requester/reminder text; one reminder only; LINE resume and ordinary-checking→intent route were incomplete. DB/transport assertions cover intent, CAS, 10/60-minute dedup, deadline stop and no pre-confirmation assignment. Real two-account postback and push evidence still required. |
+| Task/actual/check-in/correction (Q5–7, Q29, Q31, Q53, Q59–66, Q107–109, Q114) | `TodayTaskItem.tsx`, `CheckinPage.tsx`, `AnyoneOwnerPage.tsx`, LINE `lineMustComplete.ts`, whole-task reopen through `complete-task`, SQL tests and Web component tests | Source supports normal completion, grouped reconciliation/undo, anyone claim/takeover and completed-item correction. Actual performer, parent/subtask correction and same-day LINE/PWA state need physical F2 readback; automated tests alone are not final PASS. |
+| Codmon daily inputs (Q113, §19.18) | `12_CODMON_DAILY_SUBMISSION.md`, `codmonReadiness.ts`, daily submission/reminder migrations and SQL tests | Source models 9:15 deadline, responsibility and submission acknowledgement. Confirm 09:00 real scheduled dispatch, required inputs and external submission on a school day before product PASS. |
+| AI/Concierge and mixed natural language (Q70–74, Q81, §28.3) | `ConciergePage.tsx`, `confirmedCommand.ts`, `process-line-inbox/lineIntent.ts`, AI/NL tests and current candidate/command paths | Read-only query, correction, private draft and exact confirmed mutation paths have automated evidence. Representative live natural-language and cross-channel correction require real F2; historical 180-case corpus is not a fresh live-provider verdict. |
+| Handover and shopping (Q3, Q16, Q33, Q37–40, Q48–49, Q107–109) | `Handovers.tsx`, `Shopping.tsx`, `AnyoneOwnerPage.tsx`, LINE handover and shopping commands, relevant SQL/Web tests | Distinct share acknowledgement, shopping claim and purchase state are implemented in source. Real recipient visibility, duplicate execution suppression and correction remain physical acceptance scenarios. |
+| Nursery image and events (Q17–19, Q89–106) | `NurseryReviewPage.tsx`, image intake/review/confirm Edge functions and SQL 66–72, event planner | Human review and fact/inference/source boundaries have source/test coverage. No new real provider-image/OCR→review→confirm→LINE/PWA evidence was collected here. |
+| Google Calendar authority (Q34, Q110–112) | `GoogleEventReviewPage.tsx`, Google sync/review functions and SQL provider/authority tests | Changed/deleted/duplicate-event policies have source coverage; a live provider callback and protected-human-value readback remain unverified. |
+| Identity, recovery and PWA continuity (§20, §23, §28.1–28.2) | Auth/household entry, test simulation, PWA update flows, backup/recovery controls; CI and operational-safety workflow | Isolation and automated controls exist. This review did not repeat actual iPhone/Android resume, two real LINE-account F2 or disposable restore. No wife-account message may be sent as a test shortcut. |
+
+## Production boundary
+
+At review time, production `family-ops` has the 2026-09-21 `assignment_checking_followup` and `daily_brief_unresolved_requests` migrations. It does **not** have PR #125's `request_attempts.acceptance_intent` column. A read-only preflight found zero production unresolved request attempts and zero queued/processing notification outbox rows. Production is therefore **not** aligned to this candidate. Deploy schema before the new `process-line-inbox` and `send-notifications` Edge bundles; never deploy the new readers/writers against the old schema. Fresh preflight is required immediately before a rollout.
+
+## Closure criteria
+
+1. The exact PR head must pass Web, DB, Edge, real CLI-stack integration, and operational safety CI.
+2. Review the requirements change and migration/Edge rollout against the repository's independent-review gate before merging.
+3. On the deployed exact release, use Papa real LINE/iPhone and the separate Mama test LINE/Android, never the real wife's LINE. Check received request card → first tap → requester status → close and reopen LINE → `お願いの返事` → explicit final confirmation → assignment and dependent task Today readback. Also check ordinary `確認してみる` has no acceptance reminder, 10/60-minute follow-ups without auto-accept, and scheduled Daily Brief inclusion. Use safe test dates/short reply windows; do not manipulate production recipients to manufacture evidence.
+4. Run the remaining real-use scenarios in the table and mark each with device/provider evidence bound to one exact HEAD. Until then, technical CI GREEN is scoped source validation and **not** whole-product/F2 PASS.
