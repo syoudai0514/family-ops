@@ -676,7 +676,9 @@ async function openRequests(ctx: LineMustCompleteContext): Promise<void> {
     && attempt.state === "checking" && attempt.acceptance_intent
     ? `\n${request.assignment_scope === "this_week" ? "今週だけ" : "今回だけ"}\n確定すると、この担当があなたに変わります。送り/お迎えに連動する当日の家事がある場合は、同日のルールどおり担当も切り替わります。`
     : "";
-  const summary = `${request.shared_title}\n返事期限: ${formatJst(attempt.reply_due_at)}\n作業期限: ${formatJst(request.due_at)}\n状態: ${attempt.state}${finalConfirmDetails}`;
+  const stateLabel = attempt.state === "checking" && attempt.acceptance_intent
+    ? "最終確認待ち" : simulationStateLabel(attempt.state);
+  const summary = `${request.shared_title}\n返事期限: ${formatJst(attempt.reply_due_at)}\n作業期限: ${formatJst(request.due_at)}\n状態: ${stateLabel}${finalConfirmDetails}`;
   const quick: LineQuickReplyAction[] = [];
   if (attempt.state === "expired") {
     if (party === "requester") quick.push(postback("再提案する", encodeFields("mc_request_repropose", { request_id: request.id, request_revision: request.revision })));

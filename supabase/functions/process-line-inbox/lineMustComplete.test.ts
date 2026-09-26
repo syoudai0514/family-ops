@@ -155,6 +155,7 @@ Deno.test("LINE assignment acceptance survives closing the chat before final con
   assertStringIncludes(replies[0].text, "この担当変更を引き受けますか");
   assertEquals(await tryHandleLineMustCompleteText(ctx, "お願いの返事"), true);
   assertStringIncludes(replies[1].text, "今回だけ");
+  assertStringIncludes(replies[1].text, "状態: 最終確認待ち");
   assertStringIncludes(replies[1].text, "確定すると、この担当があなたに変わります");
   assert(replies[1].quickReplies.some((action) => action.type === "postback" && action.label === "確定（引受）"));
   assertEquals(await tryHandleLineMustCompletePostback(ctx, {
