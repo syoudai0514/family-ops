@@ -588,7 +588,8 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
     .eq("household_id", ctx.householdId)
     .is("test_context_id", null)
     .or(`requester_actor_ref_id.eq.${selfActorRef},recipient_actor_ref_id.eq.${selfActorRef}`)
-    .in("status", ["pending", "accepted"])
+    // Expired attempts project to legacy cancelled, but can still be reproposed.
+    .in("status", ["pending", "accepted", "cancelled"])
     .order("created_at", { ascending: false });
   if (requestError) return [];
   const requestRows = records(requestData);
@@ -601,7 +602,6 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
     .select("id,request_id,state,acceptance_intent,revision,terms_revision,terms,reply_due_at,created_at")
     .in("request_id", ids)
     .is("test_context_id", null)
-    .in("state", states)
     .order("created_at", { ascending: false });
   if (attemptError) return [];
   const latest = new Map<string, JsonObject>();
@@ -614,7 +614,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
     const id = str(row.id);
     if (!id) continue;
     const attemptRow = latest.get(id);
-    if (!attemptRow) continue;
+    if (!attemptRow || !states.includes(str(attemptRow.state) ?? "")) continue;
     const requester = str(row.requester_actor_ref_id);
     const recipient = str(row.recipient_actor_ref_id);
     if (!requester || !recipient) continue;

@@ -208,6 +208,38 @@ Deno.test("LINE reentry prioritizes a recipient's unfinished confirmation over n
   assert(replies[0].quickReplies.some((action) => action.type === "postback" && action.label === "確定（引受）"));
 });
 
+Deno.test("LINE reentry keeps an expired reproposal but ignores an older expired attempt after acceptance", async () => {
+  const request = { id: "request-expired", request_kind: "assignment_change", shared_title: "お迎え",
+    due_at: "2026-11-22T09:00:00Z", assignment_scope: "once",
+    requester_actor_ref_id: "actor-recipient", recipient_actor_ref_id: "actor-other",
+    revision: 1, created_at: "2026-09-20T12:00:00Z" };
+  const expired = { id: "attempt-expired", request_id: request.id, state: "expired", acceptance_intent: false,
+    revision: 2, terms_revision: 1, reply_due_at: "2026-09-21T10:00:00Z", terms: {}, created_at: request.created_at };
+  const attempts = [expired];
+  const fromImpl = (table: string) => {
+    const data = table === "requests" ? [request] : table === "request_attempts" ? attempts : null;
+    const builder: Record<string, unknown> = {};
+    for (const key of ["select", "eq", "is", "or", "order"])
+      builder[key] = () => builder;
+    builder.in = (column: string, values: string[]) => {
+      if (table === "requests" && column === "status") assert(values.includes("cancelled"));
+      return builder;
+    };
+    builder.maybeSingle = () => Promise.resolve({ data: { id: "actor-recipient" }, error: null });
+    builder.then = (resolve: (value: unknown) => void, reject: (reason: unknown) => void) =>
+      Promise.resolve({ data, error: null }).then(resolve, reject);
+    return builder;
+  };
+  const { ctx, replies } = makeContext(() => { throw new Error("Unexpected RPC"); }, fromImpl);
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "お願いの返事"), true);
+  assert(replies[0].quickReplies.some((action) => action.type === "postback" && action.label === "再提案する"));
+
+  attempts.unshift({ ...expired, id: "attempt-accepted", state: "accepted",
+    created_at: "2026-09-22T12:00:00Z" });
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "お願いの返事"), true);
+  assertStringIncludes(replies[1].text, "いま返事・相談できるお願いはありません");
+});
+
 Deno.test("LINE waiting resume preserves revision CAS and canonical source", async () => {
   const { ctx, calls, replies } = makeContext((name, args) => {
     assertEquals(name, "server_tx_set_task_waiting");
