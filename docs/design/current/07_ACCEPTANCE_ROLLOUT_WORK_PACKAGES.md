@@ -4,7 +4,7 @@
 
 本書は詳細設計を実装順序・acceptance・production gateへ落とす。
 
-このPRは **NO IMPLEMENTATION**。独立レビューでGOになるまで実装開始しない。
+本書を起案した詳細設計PRは **NO IMPLEMENTATION** だった。ADR 0013はその後の独立レビューでAcceptedとなり、実装は開始済みである。以下の受け入れ・production gateは後続の変更にも適用する。
 
 CURRENT物理制約は `08_CURRENT_MAIN_PHYSICAL_SCHEMA_ALIGNMENT.md`、ActorRef legacy互換は `08_ACTORREF_LEGACY_IDENTITY_COMPATIBILITY.md` を必ず併読する。
 
@@ -578,7 +578,7 @@ For Family Event Google ownership also retain:
 
 ## 10. Final implementation gate
 
-Do not begin implementation until independent design review returns GO.
+Implementation began after the detailed-design independent review returned GO and ADR 0013 was accepted. Later implementation changes still require the release evidence and product/real-use gate above.
 
 After implementation starts, do not advance a work package to production unless its acceptance, production-safety checks, **and §2.1 Product outcome / real-use acceptance gate** are satisfied.
 

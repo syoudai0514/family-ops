@@ -586,9 +586,10 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
   const { data: requestData, error: requestError } = await ctx.client.from("requests")
     .select("id,request_kind,shared_title,due_at,assignment_scope,requester_actor_ref_id,recipient_actor_ref_id,revision,created_at")
     .eq("household_id", ctx.householdId)
+    .is("test_context_id", null)
     .or(`requester_actor_ref_id.eq.${selfActorRef},recipient_actor_ref_id.eq.${selfActorRef}`)
-    .order("created_at", { ascending: false })
-    .limit(12);
+    .in("status", ["pending", "accepted"])
+    .order("created_at", { ascending: false });
   if (requestError) return [];
   const requestRows = records(requestData);
   const ids = requestRows.map((row) => str(row.id)).filter((v): v is string => Boolean(v));
@@ -599,6 +600,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
   const { data: attemptData, error: attemptError } = await ctx.client.from("request_attempts")
     .select("id,request_id,state,acceptance_intent,revision,terms_revision,terms,reply_due_at,created_at")
     .in("request_id", ids)
+    .is("test_context_id", null)
     .in("state", states)
     .order("created_at", { ascending: false });
   if (attemptError) return [];
@@ -658,7 +660,13 @@ function requestActionData(view: { request: RequestView; attempt: AttemptView },
 
 async function openRequests(ctx: LineMustCompleteContext): Promise<void> {
   const views = await activeRequests(ctx, true);
-  const view = views[0];
+  // A newer sent request must not hide a recipient's unfinished final tap.
+  const view = views.find((candidate) => candidate.party === "recipient"
+    && candidate.request.request_kind === "assignment_change"
+    && candidate.attempt.state === "checking" && candidate.attempt.acceptance_intent)
+    ?? views.find((candidate) => candidate.party === "recipient"
+      && ["pending", "checking", "consulting", "awaiting_confirmation"].includes(candidate.attempt.state))
+    ?? views[0];
   if (!view) {
     await ctx.reply("いま返事・相談できるお願いはありません。");
     return;

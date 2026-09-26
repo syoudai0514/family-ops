@@ -45,6 +45,12 @@ The approved final prototype spec is pinned on `design/ouchi-concierge-prototype
 
 ## Production boundary
 
+### 2026-09-26 second-pass review and release decision
+
+The implementing assistant re-read the actual PR #125 head, main, canonical gate, changed source, exact-head CI, and production migration/function catalog. This is a **self-review**, not an independent reviewer submission. It found a LINE re-entry defect: `お願いの返事` selected only the first of the 12 newest requests, so newer sent or finished requests could hide a recipient's unfinished assignment confirmation. The same PR now removes that history cap and prioritizes the recipient's explicit final-confirmation attempt; a two-request regression covers the selection. Re-run exact-head CI after this change.
+
+The canonical release gate in design 07 §2.1 and §8–10 still requires observed real iPhone/Android and separate LINE-account behavior on the release candidate before calling the change product PASS or advancing the affected work package to production. The implementer cannot create that observation through code or self-review. Do not substitute the simulated actor, CI, or historical F2 screenshots from another SHA. The approved test recipient is the separate Mama test LINE account; never send to the real wife's LINE.
+
 At review time, production `family-ops` has the 2026-09-21 `assignment_checking_followup` and `daily_brief_unresolved_requests` migrations. It does **not** have PR #125's `request_attempts.acceptance_intent` column. A read-only preflight found zero production unresolved request attempts and zero queued/processing notification outbox rows. Production is therefore **not** aligned to this candidate. Deploy schema before the new `process-line-inbox` and `send-notifications` Edge bundles; never deploy the new readers/writers against the old schema. Fresh preflight is required immediately before a rollout.
 
 ## Closure criteria
