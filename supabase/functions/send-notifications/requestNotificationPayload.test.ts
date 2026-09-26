@@ -56,4 +56,12 @@ Deno.test('request outcome notifications state the actual result', () => {
     requestOutcomeText({ type: 'request.checking', title: '確認中です', body: 'お迎え' }),
     '相手が確認中です。\nお迎え\nまだ成立していません。',
   );
+  assertEquals(
+    requestOutcomeText({ type: 'request.checking', title: '引き受ける意向あり', body: '相手が「引き受ける」を押しました。最終確認待ちです。', payload: { followup: 'recipient_final_confirmation' } }),
+    '引き受ける意向あり\n相手が「引き受ける」を押しました。最終確認待ちです。',
+  );
+  assertEquals(
+    requestOutcomeText({ type: 'request.checking', title: '最終確認が残っています', body: '「お迎え」はまだ確定していません。', payload: { reminder: 'final_confirmation' } }),
+    '最終確認が残っています\n「お迎え」はまだ確定していません。',
+  );
 });

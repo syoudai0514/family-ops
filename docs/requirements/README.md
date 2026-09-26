@@ -7,6 +7,8 @@
 - `FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md` — 要求・UXの唯一の正（Source of Truth）。
 - `FAMILY-OPS-INDEPENDENT-REVIEW-REQUEST.md` — 上記Baselineを独立レビューするための標準依頼文。
 
+CURRENT Appendix AはQ1〜Q114（Q60-1/Q60-2を含む）。Q113は毎朝のコドモン連絡帳、Q114は完了訂正。`docs/implementation/ISSUE-48-Q1-Q112-CONFORMANCE-MATRIX.md`はIssue #48当時の履歴であり、Q113/Q114やその後の修正のCURRENT適合証拠には使わない。
+
 `main`上のBaselineだけがmerge済みCURRENTである。feature/docs branchで次versionを編集中の場合、そのbranch版を`main`のCURRENTとして扱わない。
 
 ## Approved UX governance references

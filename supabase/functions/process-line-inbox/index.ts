@@ -1555,13 +1555,13 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       .eq("recipient_id", actor.user_id)
       .maybeSingle();
     const { data: attempt } = await client.from("request_attempts")
-      .select("id,state,revision,terms_revision")
+      .select("id,state,revision,terms_revision,acceptance_intent")
       .eq("household_id", actor.household_id)
       .eq("request_id", fields.request_id)
       .eq("id", fields.attempt_id)
       .maybeSingle();
     if (!request || request.request_kind !== "assignment_change" || request.status !== "pending"
-      || !attempt || attempt.state !== "pending"
+      || !attempt || (attempt.state !== "pending" && (attempt.state !== "checking" || attempt.acceptance_intent))
       || Number(attempt.revision) !== expectedRevision
       || Number(attempt.terms_revision) !== expectedTermsRevision) {
       await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
@@ -1578,6 +1578,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
         request_id: fields.request_id,
         attempt_id: fields.attempt_id,
         action: "checking",
+        terms: { acceptance_intent: true },
         expected_revision: expectedRevision,
         expected_terms_revision: expectedTermsRevision,
       }, "line"),
@@ -1691,7 +1692,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     const expectedTermsRevision = Number(fields.terms_revision);
     if (fields.action === "accept_assignment_change") {
       const { data: currentAttempt } = await client.from("request_attempts")
-        .select("state,revision,terms_revision")
+        .select("state,revision,terms_revision,acceptance_intent")
         .eq("household_id", actor.household_id)
         .eq("request_id", fields.request_id)
         .eq("id", fields.attempt_id)
@@ -1747,7 +1748,11 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       p_request_id: fields.request_id,
     });
     if (error) {
-      if (/REQUEST_NOT_PENDING|REQUEST_ACCEPT_NOT_ALLOWED/.test(error.message)) await sendConfirmation(client, item, actor, "このお願いはすでに処理済みです。");
+      if (/REQUEST_FINAL_CONFIRMATION_REQUIRED/.test(error.message)) {
+        await sendConfirmation(client, item, actor,
+          "最終確認が必要です。「お願いの返事」から最新のお願いを開き、「引き受ける」→「確定（引受）」で確認してください。",
+          [{ type: "message", label: "お願いを確認", text: "お願いの返事" }]);
+      } else if (/REQUEST_NOT_PENDING|REQUEST_ACCEPT_NOT_ALLOWED/.test(error.message)) await sendConfirmation(client, item, actor, "このお願いはすでに処理済みです。");
       else console.error("process-line-inbox: accept request failed", error.message);
       return;
     }

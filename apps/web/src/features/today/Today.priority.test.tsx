@@ -144,6 +144,59 @@ describe('Today first-flow priority contract', () => {
     expect(partner.querySelector('h2')).toBeNull();
   });
 
+  it('keeps assignment acceptance in Today behind an explicit revision-bound confirmation', async () => {
+    const request = {
+      id: 'assignment-request', household_id: 'household-1', requester_id: 'user-2', recipient_id: 'user-1',
+      shared_title: '明日のお迎え', shared_message: '代われますか', due_at: '2099-09-11T09:20:00Z',
+      status: 'pending', assignment_task_instance_id: 'pickup-1', assignment_scope: 'once',
+      linked_task_instance_id: null, accepted_at: null, declined_at: null, completed_at: null, cancelled_at: null,
+    };
+    const attempt = { id: 'assignment-attempt', request_id: request.id, state: 'pending' as const,
+      revision: 3, terms_revision: 1, reply_due_at: '2099-09-10T12:00:00Z' };
+    const snapshot = data({
+      incomingRequests: [request], requestAttemptsByRequestId: new Map([[request.id, attempt]]),
+      urgentActions: [{ kind: 'request', request_id: request.id, title: request.shared_title }],
+    });
+    mockToday.mockReturnValue(snapshot);
+    const view = render(<MemoryRouter><Today /></MemoryRouter>);
+
+    expect(screen.getByRole('button', { name: '引き受ける' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '相談する' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'やる' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '引き受ける' }));
+    expect(mockCallEdgeFunction).not.toHaveBeenCalled();
+    const confirmation = screen.getByRole('group', { name: '担当変更の最終確認' });
+    expect(confirmation).toHaveTextContent('明日のお迎え');
+    expect(confirmation).toHaveTextContent('今回だけ');
+    expect(confirmation).toHaveTextContent('連動する当日の家事');
+
+    mockToday.mockReturnValue(data({ ...snapshot, requestAttemptsByRequestId: new Map([[request.id, { ...attempt, revision: 4 }]]) }));
+    view.rerender(<MemoryRouter><Today /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: '確定（引受）' }));
+    expect(mockCallEdgeFunction).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('内容が更新されています');
+
+    fireEvent.click(screen.getByRole('button', { name: '引き受ける' }));
+    fireEvent.click(screen.getByRole('button', { name: '確定（引受）' }));
+    await waitFor(() => expect(mockCallEdgeFunction).toHaveBeenCalledWith(
+      EDGE_FUNCTIONS.acceptAssignmentChangeRequest,
+      expect.objectContaining({ request_id: request.id, attempt_id: attempt.id, expected_revision: 4, expected_terms_revision: 1 }),
+    ));
+  });
+
+  it('shows the requester follow-up without offering recipient acceptance controls', () => {
+    mockToday.mockReturnValue(data({
+      urgentActions: [{ kind: 'request', request_id: 'request-2', title: '相手が確認中' }],
+      requesterStatuses: [{ kind: 'request', request_id: 'request-2', title: '相手が確認中' }],
+      requestWaiting: [{ kind: 'request_followup', request_id: 'request-3', title: '相手が引き受ける意向・最終確認待ち' }],
+      waitingTasks: [],
+    }));
+    render(<MemoryRouter><Today /></MemoryRouter>);
+    expect(screen.getByRole('region', { name: 'まず確認' })).toHaveTextContent('相手が確認中');
+    expect(screen.getByRole('region', { name: '待ち・確認' })).toHaveTextContent('最終確認待ち');
+    expect(screen.queryByRole('button', { name: '引き受ける' })).not.toBeInTheDocument();
+  });
+
   it('leads the partner card with the items that change the reader\'s own behaviour', () => {
     mockToday.mockReturnValue(data({
       partnerSummary: {

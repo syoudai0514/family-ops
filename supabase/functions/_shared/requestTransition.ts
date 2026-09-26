@@ -19,11 +19,12 @@ export function requestTransitionArgs(actorId: string, operationId: string,
 
 
 export function isLineAssignmentAcceptanceReady(
-  attempt: { state?: unknown; revision?: unknown; terms_revision?: unknown } | null | undefined,
+  attempt: { state?: unknown; revision?: unknown; terms_revision?: unknown; acceptance_intent?: unknown } | null | undefined,
   expectedRevision: number,
   expectedTermsRevision: number,
 ): boolean {
   return attempt?.state === 'checking'
+    && attempt.acceptance_intent === true
     && Number(attempt.revision) === expectedRevision
     && Number(attempt.terms_revision) === expectedTermsRevision;
 }

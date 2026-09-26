@@ -22,9 +22,14 @@ Deno.test('LINE assignment acceptance requires the explicit checking stage and f
     { state: 'checking', revision: 2, terms_revision: 1 },
     2,
     1,
+  ), false);
+  assertEquals(isLineAssignmentAcceptanceReady(
+    { state: 'checking', revision: 2, terms_revision: 1, acceptance_intent: true },
+    2,
+    1,
   ), true);
   assertEquals(isLineAssignmentAcceptanceReady(
-    { state: 'checking', revision: 2, terms_revision: 1 },
+    { state: 'checking', revision: 2, terms_revision: 1, acceptance_intent: true },
     1,
     1,
   ), false);

@@ -90,12 +90,21 @@ function RequestQuickActions({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
+  const [confirmAccept, setConfirmAccept] = useState<{ attemptId: string; revision: number; termsRevision: number } | null>(null);
+  const isAssignmentChange = Boolean(request.assignment_task_instance_id);
   const actionable = isTodayRequestAttemptActionable(attempt);
   const runCommand = useCommandAttempt();
 
   async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     if (!attempt || !isTodayRequestAttemptActionable(attempt)) {
       setError('このお願いは最新状態を確認してから返事してください。');
+      return;
+    }
+    if (kind === 'accept' && isAssignmentChange &&
+      (!confirmAccept || confirmAccept.attemptId !== attempt.id ||
+        confirmAccept.revision !== attempt.revision || confirmAccept.termsRevision !== attempt.terms_revision)) {
+      setConfirmAccept(null);
+      setError('内容が更新されています。最新の担当変更を開き直して確認してください。');
       return;
     }
     setBusy(true);
@@ -120,6 +129,7 @@ function RequestQuickActions({
       if (result.reproposal_required) {
         setError('返事期限を過ぎています。お願い画面から新しい条件で提案してください。');
       }
+      if (kind === 'accept') setConfirmAccept(null);
       await onChanged();
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。');
@@ -132,9 +142,10 @@ function RequestQuickActions({
     <li className="request-item">
       <div>
         <strong>{request.shared_title}</strong>
+        {isAssignmentChange && <span className="task-item-meta">{request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更</span>}
         {request.shared_message && <p>{request.shared_message}</p>}
         {attempt && (
-          <span className="task-item-meta">返事状態: {REQUEST_STATE_LABELS[attempt.state]}</span>
+          <span className="task-item-meta">返事状態: {attempt.state === 'checking' && attempt.acceptance_intent ? '最終確認待ち' : REQUEST_STATE_LABELS[attempt.state]}</span>
         )}
         {attempt?.reply_due_at && (
           <span className="task-item-meta">返事期限: {formatDateTimeJa(attempt.reply_due_at)}</span>
@@ -143,16 +154,29 @@ function RequestQuickActions({
           <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>
         )}
       </div>
-      {actionable && (
+      {actionable && !confirmAccept && (
         <div className="task-item-actions">
-          <button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button>
+          {isAssignmentChange
+            ? <button type="button" disabled={busy} onClick={() => attempt && setConfirmAccept({ attemptId: attempt.id, revision: attempt.revision, termsRevision: attempt.terms_revision })}>引き受ける</button>
+            : <button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button>}
           <button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button>
-          <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>
-            その他の返答
-          </button>
+          {isAssignmentChange
+            ? <button type="button" className="text-button" disabled={busy} onClick={() => respond('consult')}>相談する</button>
+            : <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>その他の返答</button>}
         </div>
       )}
-      {actionable && showOther && attempt && (
+      {actionable && isAssignmentChange && confirmAccept && (
+        <div className="request-other-actions" role="group" aria-label="担当変更の最終確認">
+          <p><strong>この担当変更を引き受けますか？</strong></p>
+          <p className="task-item-meta">{request.shared_title} · {request.due_at ? formatDateTimeJa(request.due_at) : '日時未設定'} · {request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}</p>
+          <p className="task-item-meta">確定すると、この担当があなたに変わります。送り/お迎えに連動する当日の家事がある場合は、同日のルールどおり担当も切り替わります。</p>
+          <div className="task-item-actions">
+            <button type="button" disabled={busy} onClick={() => respond('accept')}>確定（引受）</button>
+            <button type="button" className="text-button" disabled={busy} onClick={() => setConfirmAccept(null)}>戻る</button>
+          </div>
+        </div>
+      )}
+      {actionable && !isAssignmentChange && showOther && attempt && (
         <div className="request-other-actions">
           {attempt.state === 'pending' && (
             <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('checking')}>
@@ -409,6 +433,12 @@ export function Today() {
               onChanged={data.refresh}
             />
           ))}
+          {(data.requesterStatuses ?? []).map((action) => (
+            <li className="request-item" key={`requester:${action.request_id}`}>
+              <strong>{action.title ?? '相手の返事を待っています'}</strong>
+              <button type="button" className="text-button" onClick={() => navigate('/requests')}>お願いを確認</button>
+            </li>
+          ))}
           {nonRequestUrgent.map((action, index) => (
             action.kind === 'assignment_needed' && action.task_id ? (
               <AssignmentNeededQuickAction
@@ -463,14 +493,22 @@ export function Today() {
   }
 
   function renderWaiting() {
-    if (data.waitingTasks.length === 0) return null;
+    const requestWaiting = data.requestWaiting ?? [];
+    if (data.waitingTasks.length === 0 && requestWaiting.length === 0) return null;
     return (
       <section id="today-waiting" className="card compact-section waiting-summary" aria-label="待ち・確認">
         <div className="section-heading">
           <div><p className="eyebrow">待ち・確認</p><h2>確認すること</h2></div>
-          <span>{data.waitingTasks.length}件</span>
+          <span>{data.waitingTasks.length + requestWaiting.length}件</span>
         </div>
-        {renderTaskList(data.waitingTasks)}
+        {data.waitingTasks.length > 0 && renderTaskList(data.waitingTasks)}
+        {requestWaiting.length > 0 && <ul className="request-list">
+          {requestWaiting.map((item) => <li className="request-item" key={`waiting-request:${item.request_id}`}>
+            <strong>{item.title ?? 'お願いの返事を待っています'}</strong>
+            {item.reply_due_at && <span className="task-item-meta">返事期限: {formatDateTimeJa(item.reply_due_at)}</span>}
+            <button type="button" className="text-button" onClick={() => navigate('/requests')}>お願いを確認</button>
+          </li>)}
+        </ul>}
       </section>
     );
   }

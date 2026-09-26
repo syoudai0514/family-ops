@@ -10,6 +10,8 @@ type RequestPayload = {
   accept_pending_action_id?: string;
   decline_pending_action_id?: string;
   recipient_label?: string;
+  followup?: string;
+  reminder?: string;
 };
 
 type RequestNotificationItem = {
@@ -67,6 +69,12 @@ export function requestOutcomeText(item: RequestNotificationItem): string | null
     return `お願いは「難しい」と返されました。\n${subject}\nお願いは成立していません。`;
   }
   if (item.type === "request.checking") {
+    if (item.payload?.reminder === 'final_confirmation') {
+      return `${item.title ?? '最終確認が残っています'}\n${item.body ?? subject}`;
+    }
+    if (item.payload?.followup === 'recipient_final_confirmation') {
+      return `${item.title ?? '引き受ける意向あり'}\n${item.body ?? subject}`;
+    }
     return `相手が確認中です。\n${subject}\nまだ成立していません。`;
   }
   if (item.type === "request.cancelled") {

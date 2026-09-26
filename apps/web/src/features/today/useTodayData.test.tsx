@@ -126,6 +126,40 @@ describe('useTodayData canonical snapshot states', () => {
     });
   });
 
+  it('keeps the actionable recipient attempt snapshot and never offers the requester recipient controls', async () => {
+    rows.task_instances = [];
+    const assignment = { id: 'request-1', requester_id: 'user-2', recipient_id: 'user-1', shared_title: 'お迎え' };
+    const action = { request_id: assignment.id, attempt_id: 'attempt-1', state: 'checking',
+      revision: 2, terms_revision: 1, acceptance_intent: true, reply_due_at: '2099-09-10T12:00:00Z' };
+    rows.requests = [assignment];
+    rpc.mockResolvedValueOnce({ data: { ...emptyBrief, urgent_actions: [action] }, error: null });
+    const recipient = renderHook(() => useTodayData('household-1', 'user-1'));
+    await waitFor(() => expect(recipient.result.current.status).toBe('ready'));
+    expect(recipient.result.current.incomingRequests.map((item) => item.id)).toEqual([assignment.id]);
+    expect(recipient.result.current.requestAttemptsByRequestId.get(assignment.id)).toEqual({
+      id: action.attempt_id, request_id: assignment.id, state: 'checking', revision: 2,
+      terms_revision: 1, acceptance_intent: true, reply_due_at: action.reply_due_at,
+    });
+    recipient.unmount();
+
+    rows.requests = [{ ...assignment, requester_id: 'user-1', recipient_id: 'user-2' }];
+    rpc.mockResolvedValueOnce({ data: { ...emptyBrief, urgent_actions: [action] }, error: null });
+    const requester = renderHook(() => useTodayData('household-1', 'user-1'));
+    await waitFor(() => expect(requester.result.current.status).toBe('ready'));
+    expect(requester.result.current.incomingRequests).toEqual([]);
+    expect(requester.result.current.requesterStatuses).toHaveLength(1);
+  });
+
+  it('keeps an unresolved requester follow-up visible even without task rows', async () => {
+    rows.task_instances = [];
+    rpc.mockResolvedValueOnce({ data: { ...emptyBrief, waiting_checks: [
+      { kind: 'request_followup', request_id: 'request-2', title: '相手が引き受ける意向・最終確認待ち' },
+    ] }, error: null });
+    const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.requestWaiting[0].title).toContain('最終確認待ち');
+  });
+
   it('loads same-day completed work for a quiet correction surface', async () => {
     const completed = {
       ...task,

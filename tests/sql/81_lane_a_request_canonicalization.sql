@@ -15,7 +15,7 @@ do $$
 declare
  u uuid:=gen_random_uuid(); v uuid:=gen_random_uuid(); hh uuid; ar uuid; br uuid; task_id uuid;
  c jsonb; result jsonb; replay jsonb; req uuid; attempt uuid; op uuid; terms jsonb; phase text; channel text;
- count_before integer; work_due timestamptz; reply_due timestamptz; actual_reply timestamptz;
+ count_before integer; accept_revision bigint; work_due timestamptz; reply_due timestamptz; actual_reply timestamptz;
  next_tuesday timestamptz; next_friday timestamptz; anchor_before timestamptz;
  line_accept_op uuid; line_payload jsonb;
 begin
@@ -40,6 +40,12 @@ begin
        raise exception 'FAIL create mutated assignment'; end if;
      if (select request_kind from public.requests where id=req)<>'assignment_change' then raise exception 'FAIL wrong kind'; end if;
      if exists(select 1 from public.assignment_change_request_tasks where request_id=req) then raise exception 'FAIL legacy scope written'; end if;
+     accept_revision:=1;
+     if channel='line' and phase in ('pending','atomicity','stale_task') then
+       perform public.server_tx_transition_request_v2(
+         v,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,1,1,'line');
+       accept_revision:=2;
+     end if;
      if phase='checking' then
        perform public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'checking',null,1,1,channel);
        if (select planned_assignee_actor_ref_id from public.task_instances where id=task_id)<>ar then raise exception 'FAIL checking assigned'; end if;
@@ -47,7 +53,13 @@ begin
          perform public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'accept',null,1,1,'line');
          raise exception 'FAIL stale LINE revision accepted';
        exception when others then if sqlerrm<>'REQUEST_ATTEMPT_STALE' then raise; end if; end;
-       result:=public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'accept',null,2,1,channel);
+       accept_revision:=2;
+       if channel='line' then
+         perform public.server_tx_transition_request_v2(
+           v,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,2,1,'line');
+         accept_revision:=3;
+       end if;
+       result:=public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'accept',null,accept_revision,1,channel);
      elsif phase='consulting' then
        perform public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'consult',null,1,1,channel);
        select a.terms into terms from public.request_attempts a where id=attempt;
@@ -78,28 +90,31 @@ begin
      elsif phase='stale_task' then
        update public.task_instances set revision=revision+1 where id=task_id;
        begin
-         perform public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'accept',null,1,1,channel);
+         perform public.server_tx_transition_request_v2(v,gen_random_uuid(),req,attempt,'accept',null,accept_revision,1,channel);
          raise exception 'FAIL stale task accepted';
        exception when others then if sqlerrm<>'AGGREGATE_REVISION_CONFLICT' then raise; end if; end;
-       if (select state from public.request_attempts where id=attempt)<>'pending' then raise exception 'FAIL stale task half applied'; end if;
+       if (select state from public.request_attempts where id=attempt)
+          <> (case when channel='line' then 'checking' else 'pending' end) then
+         raise exception 'FAIL stale task half applied'; end if;
        continue;
      else
        op:=gen_random_uuid();
        if phase='atomicity' then
          perform set_config('lane_a.inject_failure','on',true);
          begin
-           perform public.server_tx_transition_request_v2(v,op,req,attempt,'accept',null,1,1,channel);
+           perform public.server_tx_transition_request_v2(v,op,req,attempt,'accept',null,accept_revision,1,channel);
            raise exception 'FAIL injected failure missed';
          exception when others then if sqlerrm<>'LANE_A_INJECTED_FAILURE' then raise; end if; end;
          perform set_config('lane_a.inject_failure','off',true);
-         if (select state from public.request_attempts where id=attempt)<>'pending'
+         if (select state from public.request_attempts where id=attempt)
+              <> (case when channel='line' then 'checking' else 'pending' end)
            or (select planned_assignee_actor_ref_id from public.task_instances where id=task_id)<>ar
            or exists(select 1 from public.task_events where payload->>'attempt_id'=attempt::text) then
            raise exception 'FAIL transaction left partial state'; end if;
        end if;
-       result:=public.server_tx_transition_request_v2(v,op,req,attempt,'accept',null,1,1,channel);
+       result:=public.server_tx_transition_request_v2(v,op,req,attempt,'accept',null,accept_revision,1,channel);
        select count(*) into count_before from public.user_notifications where household_id=hh;
-       replay:=public.server_tx_transition_request_v2(v,op,req,attempt,'accept',null,1,1,channel);
+       replay:=public.server_tx_transition_request_v2(v,op,req,attempt,'accept',null,accept_revision,1,channel);
        if result<>replay or count_before<>(select count(*) from public.user_notifications where household_id=hh) then
          raise exception 'FAIL operation replay duplicated mutation/notification'; end if;
      end if;

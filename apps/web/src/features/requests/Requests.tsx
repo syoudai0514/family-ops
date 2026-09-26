@@ -192,16 +192,24 @@ function statusLabel(status: RequestRow['status']): string {
   switch (status) { case 'pending': return '保留中'; case 'accepted': return '引き受け済み'; case 'declined': return '難しい'; case 'completed': return '完了'; case 'cancelled': return 'キャンセル済み'; default: return status; }
 }
 
-function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; initialShowOther?: boolean }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [showOther, setShowOther] = useState(initialShowOther); const [confirmAccept, setConfirmAccept] = useState(false);
+export function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; initialShowOther?: boolean }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [showOther, setShowOther] = useState(initialShowOther);
+  const [confirmAccept, setConfirmAccept] = useState<{ attemptId: string; revision: number; termsRevision: number } | null>(null);
   async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
+    if (kind === 'accept' && request.assignment_task_instance_id &&
+      (!confirmAccept || confirmAccept.attemptId !== attempt.id ||
+        confirmAccept.revision !== attempt.revision || confirmAccept.termsRevision !== attempt.terms_revision)) {
+      setConfirmAccept(null);
+      setError('内容が更新されています。最新の担当変更を開き直して確認してください。');
+      return;
+    }
     setBusy(true); setError(null);
     try {
       const functionName = kind === 'checking' || kind === 'consult' ? EDGE_FUNCTIONS.respondRequest : kind === 'accept' && request.assignment_task_instance_id ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
       const result = await callEdgeFunction<{ reproposal_required?: boolean }>(functionName, { operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision, ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}) });
       if (result.reproposal_required) setError('この依頼は期限切れです。新しい担当変更のお願いを作成してください。');
-      if (kind === 'accept') setConfirmAccept(false);
+      if (kind === 'accept') setConfirmAccept(null);
       await onChanged();
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
@@ -226,7 +234,7 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
     {isActive && attempt?.state !== 'consulting' && attempt?.state !== 'awaiting_confirmation' && !confirmAccept && (
       <div className="task-item-actions">
         {isAssignmentChange
-          ? <button type="button" disabled={busy} onClick={() => setConfirmAccept(true)}>引き受ける</button>
+          ? <button type="button" disabled={busy} onClick={() => attempt && setConfirmAccept({ attemptId: attempt.id, revision: attempt.revision, termsRevision: attempt.terms_revision })}>引き受ける</button>
           : <button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button>}
         <button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button>
         {isAssignmentChange
@@ -235,13 +243,13 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
       </div>
     )}
     {isActive && isAssignmentChange && confirmAccept && (
-      <div className="request-other-actions" aria-label="担当変更の最終確認">
+      <div className="request-other-actions" role="group" aria-label="担当変更の最終確認">
         <p><strong>この担当変更を引き受けますか？</strong></p>
-        <p className="task-item-meta">{request.due_at ? `${formatDateTimeJa(request.due_at)} / ` : ''}{request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}</p>
+        <p className="task-item-meta">{request.shared_title} · {request.due_at ? formatDateTimeJa(request.due_at) : '日時未設定'} · {request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}</p>
         <p className="task-item-meta">確定すると、この担当があなたに変わります。送り/お迎えに連動する当日の家事がある場合は、既存ルールどおり担当も切り替わります。</p>
         <div className="task-item-actions">
-          <button type="button" disabled={busy} onClick={() => respond('accept')}>引き受ける</button>
-          <button type="button" className="text-button" disabled={busy} onClick={() => setConfirmAccept(false)}>戻る</button>
+          <button type="button" disabled={busy} onClick={() => respond('accept')}>確定（引受）</button>
+          <button type="button" className="text-button" disabled={busy} onClick={() => setConfirmAccept(null)}>戻る</button>
         </div>
       </div>
     )}

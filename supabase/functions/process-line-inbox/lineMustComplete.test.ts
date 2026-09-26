@@ -115,6 +115,132 @@ Deno.test("LINE request action forwards immutable attempt revisions and fails st
   assertStringIncludes(replies[0].text, "古くなっています");
 });
 
+Deno.test("LINE assignment acceptance survives closing the chat before final confirmation", async () => {
+  const attempt = { id: "attempt-1", request_id: "request-1", state: "pending",
+    acceptance_intent: false, revision: 1, terms_revision: 1,
+    reply_due_at: "2026-11-22T10:00:00Z", terms: {}, created_at: "2026-09-25T12:00:00Z" };
+  const request = { id: "request-1", request_kind: "assignment_change", shared_title: "お迎え",
+    due_at: "2026-11-22T09:00:00Z", assignment_scope: "once",
+    requester_actor_ref_id: "actor-requester", recipient_actor_ref_id: "actor-recipient",
+    revision: 1, created_at: "2026-09-25T12:00:00Z" };
+  const fromImpl = (table: string) => {
+    const data = table === "requests" ? [request] : table === "request_attempts" ? [attempt] : null;
+    const builder: Record<string, unknown> = {};
+    for (const key of ["select", "eq", "is", "or", "in", "order", "limit"])
+      builder[key] = () => builder;
+    builder.maybeSingle = () => Promise.resolve({ data: { id: "actor-recipient" }, error: null });
+    builder.then = (resolve: (value: unknown) => void, reject: (reason: unknown) => void) =>
+      Promise.resolve({ data, error: null }).then(resolve, reject);
+    return builder;
+  };
+  const { ctx, calls, replies } = makeContext((name, args) => {
+    assertEquals(name, "server_tx_transition_request_v2");
+    if (args.p_action === "checking") {
+      assertEquals(args.p_terms, { acceptance_intent: true });
+      assertEquals(args.p_expected_revision, attempt.revision);
+      attempt.state = "checking";
+      attempt.acceptance_intent = true;
+      attempt.revision += 1;
+      return { data: { state: "checking", revision: attempt.revision }, error: null };
+    }
+    assertEquals(args.p_action, "accept");
+    assertEquals(args.p_expected_revision, 2);
+    return { data: { state: "accepted" }, error: null };
+  }, fromImpl);
+
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_request_prompt_accept", request_id: "request-1", attempt_id: "attempt-1",
+    revision: "1", terms_revision: "1",
+  }), true);
+  assertStringIncludes(replies[0].text, "この担当変更を引き受けますか");
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "お願いの返事"), true);
+  assertStringIncludes(replies[1].text, "今回だけ");
+  assertStringIncludes(replies[1].text, "状態: 最終確認待ち");
+  assertStringIncludes(replies[1].text, "確定すると、この担当があなたに変わります");
+  assert(replies[1].quickReplies.some((action) => action.type === "postback" && action.label === "確定（引受）"));
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_request", request_id: "request-1", attempt_id: "attempt-1",
+    request_action: "accept", revision: "2", terms_revision: "1",
+  }), true);
+  assertEquals(calls.map((call) => call.args.p_action), ["checking", "accept"]);
+  attempt.acceptance_intent = false;
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_request", request_id: "request-1", attempt_id: "attempt-1",
+    request_action: "accept", revision: "2", terms_revision: "1",
+  }), true);
+  assertEquals(calls.length, 2);
+  assertStringIncludes(replies.at(-1)?.text ?? "", "最終確認が必要");
+  assertEquals(await tryHandleLineMustCompletePostback(ctx, {
+    action: "mc_request_prompt_accept", request_id: "request-1", attempt_id: "attempt-1",
+    revision: "2", terms_revision: "1",
+  }), true);
+  assertEquals(attempt.revision, 3);
+  assertEquals(calls.map((call) => call.args.p_action), ["checking", "accept", "checking"]);
+});
+
+Deno.test("LINE reentry prioritizes a recipient's unfinished confirmation over newer sent requests", async () => {
+  const older = { id: "request-older", request_kind: "assignment_change", shared_title: "お迎え",
+    due_at: "2026-11-22T09:00:00Z", assignment_scope: "once",
+    requester_actor_ref_id: "actor-other", recipient_actor_ref_id: "actor-recipient",
+    revision: 1, created_at: "2026-09-20T12:00:00Z" };
+  const newer = { ...older, id: "request-newer", shared_title: "送ったお願い",
+    requester_actor_ref_id: "actor-recipient", recipient_actor_ref_id: "actor-other",
+    created_at: "2026-09-25T12:00:00Z" };
+  const attempts = [
+    { id: "attempt-newer", request_id: newer.id, state: "pending", acceptance_intent: false,
+      revision: 1, terms_revision: 1, reply_due_at: "2026-11-22T10:00:00Z", terms: {}, created_at: newer.created_at },
+    { id: "attempt-older", request_id: older.id, state: "checking", acceptance_intent: true,
+      revision: 2, terms_revision: 1, reply_due_at: "2026-11-22T10:00:00Z", terms: {}, created_at: older.created_at },
+  ];
+  const fromImpl = (table: string) => {
+    const data = table === "requests" ? [newer, older] : table === "request_attempts" ? attempts : null;
+    const builder: Record<string, unknown> = {};
+    for (const key of ["select", "eq", "is", "or", "in", "order"])
+      builder[key] = () => builder;
+    builder.limit = () => { throw new Error("A history cap hides old unfinished requests"); };
+    builder.maybeSingle = () => Promise.resolve({ data: { id: "actor-recipient" }, error: null });
+    builder.then = (resolve: (value: unknown) => void, reject: (reason: unknown) => void) =>
+      Promise.resolve({ data, error: null }).then(resolve, reject);
+    return builder;
+  };
+  const { ctx, replies } = makeContext(() => { throw new Error("Unexpected RPC"); }, fromImpl);
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "お願いの返事"), true);
+  assertStringIncludes(replies[0].text, "お迎え");
+  assert(replies[0].quickReplies.some((action) => action.type === "postback" && action.label === "確定（引受）"));
+});
+
+Deno.test("LINE reentry keeps an expired reproposal but ignores an older expired attempt after acceptance", async () => {
+  const request = { id: "request-expired", request_kind: "assignment_change", shared_title: "お迎え",
+    due_at: "2026-11-22T09:00:00Z", assignment_scope: "once",
+    requester_actor_ref_id: "actor-recipient", recipient_actor_ref_id: "actor-other",
+    revision: 1, created_at: "2026-09-20T12:00:00Z" };
+  const expired = { id: "attempt-expired", request_id: request.id, state: "expired", acceptance_intent: false,
+    revision: 2, terms_revision: 1, reply_due_at: "2026-09-21T10:00:00Z", terms: {}, created_at: request.created_at };
+  const attempts = [expired];
+  const fromImpl = (table: string) => {
+    const data = table === "requests" ? [request] : table === "request_attempts" ? attempts : null;
+    const builder: Record<string, unknown> = {};
+    for (const key of ["select", "eq", "is", "or", "order"])
+      builder[key] = () => builder;
+    builder.in = (column: string, values: string[]) => {
+      if (table === "requests" && column === "status") assert(values.includes("cancelled"));
+      return builder;
+    };
+    builder.maybeSingle = () => Promise.resolve({ data: { id: "actor-recipient" }, error: null });
+    builder.then = (resolve: (value: unknown) => void, reject: (reason: unknown) => void) =>
+      Promise.resolve({ data, error: null }).then(resolve, reject);
+    return builder;
+  };
+  const { ctx, replies } = makeContext(() => { throw new Error("Unexpected RPC"); }, fromImpl);
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "お願いの返事"), true);
+  assert(replies[0].quickReplies.some((action) => action.type === "postback" && action.label === "再提案する"));
+
+  attempts.unshift({ ...expired, id: "attempt-accepted", state: "accepted",
+    created_at: "2026-09-22T12:00:00Z" });
+  assertEquals(await tryHandleLineMustCompleteText(ctx, "お願いの返事"), true);
+  assertStringIncludes(replies[1].text, "いま返事・相談できるお願いはありません");
+});
+
 Deno.test("LINE waiting resume preserves revision CAS and canonical source", async () => {
   const { ctx, calls, replies } = makeContext((name, args) => {
     assertEquals(name, "server_tx_set_task_waiting");

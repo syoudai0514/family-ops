@@ -119,8 +119,11 @@ begin
     raise exception 'FAIL f2-line-assignment: active request still duplicated as 担当未定';
   end if;
 
+  perform public.server_tx_transition_request_v2(
+    v,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,1,1,'line'
+  );
   result := public.server_tx_transition_request_v2(
-    v,gen_random_uuid(),req,attempt,'accept',null,1,1,'line'
+    v,gen_random_uuid(),req,attempt,'accept',null,2,1,'line'
   );
   if result->>'state' <> 'accepted'
      or (select planned_assignee_actor_ref_id from public.task_instances where id=t_partner) is distinct from br

@@ -4,10 +4,10 @@
 
 This document is the binding physical-alignment contract between the accepted Family Ops product/domain design and the actual CURRENT `main` schema/runtime.
 
-- CURRENT `main`: `7729c93ee10db29b145592763886cfa5f9a019e0`
+- Physical-inventory review anchor at the time of this document: `7729c93ee10db29b145592763886cfa5f9a019e0`. This is historical evidence, not the current `main` ref; fresh-read GitHub and production catalog before every migration/deploy.
 - Requirements Source of Truth: `docs/requirements/FAMILY-OPS-REQUIREMENTS-UX-BASELINE.md`
 - ADR 0012: Accepted
-- ADR 0013: Proposed until detailed-design independent review returns `GO`
+- ADR 0013: Accepted after the detailed-design independent review returned `GO` (see `docs/adr/README.md`).
 
 This document does **not** create a second product-requirements layer. It fixes migration, compatibility, cutover, and CURRENT-runtime details that cannot safely be left to implementer invention.
 
@@ -735,4 +735,4 @@ Required gate:
 - schedule/shopping/all-day paths executable without product-truth invention
 - Requirements Final-GO MEDIUM 3 remain PASS
 
-If any BLOCKER/HIGH remains, do not merge PR #41, do not accept ADR 0013, and do not begin implementation.
+This was the historical pre-implementation gate for PR #41 and ADR 0013, which subsequently passed and was accepted. New BLOCKER/HIGH findings still block the affected release under `07_ACCEPTANCE_ROLLOUT_WORK_PACKAGES.md` §2.1 and §8–10.

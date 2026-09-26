@@ -7,7 +7,7 @@ declare
   v uuid:=gen_random_uuid();
   hh uuid; ar uuid; br uuid;
   c jsonb; r jsonb; terms jsonb; patch jsonb;
-  req uuid; attempt uuid; task_id uuid;
+  req uuid; attempt uuid; task_id uuid; intent_req uuid; intent_attempt uuid; intent_task uuid;
   original_due timestamptz; changed_due timestamptz:=now()+interval '5 days 3 hours';
   request_revision bigint; before_task_revision bigint;
   requester_brief jsonb; recipient_brief jsonb;
@@ -36,8 +36,18 @@ begin
   );
   req:=(c->>'request_id')::uuid;
   attempt:=(c->>'attempt_id')::uuid;
+  begin
+    perform public.server_tx_transition_request_v2(
+      v,gen_random_uuid(),req,attempt,'accept',null,1,1,'line');
+    raise exception 'FAIL old LINE action bypassed assignment final confirmation';
+  exception when others then
+    if sqlerrm <> 'REQUEST_FINAL_CONFIRMATION_REQUIRED' then raise; end if;
+  end;
+  if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
+    raise exception 'FAIL old LINE action changed assignment';
+  end if;
   r:=public.server_tx_transition_request_v2(
-    v,gen_random_uuid(),req,attempt,'checking',null,1,1,'line'
+    v,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,1,1,'line'
   );
   if r->>'state'<>'checking' then
     raise exception 'FAIL checking transition did not persist';
@@ -55,9 +65,86 @@ begin
         and type='request.checking' and title='最終確認が残っています')<>1 then
     raise exception 'FAIL checking follow-up reminder missing or duplicated';
   end if;
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '61 minutes',100);
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '62 minutes',100);
+  if (select count(*) from public.user_notifications
+      where household_id=hh and recipient_user_id=v
+        and type='request.checking' and title='最終確認が残っています')<>2 then
+    raise exception 'FAIL second reminder missing or duplicated';
+  end if;
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '3 days',100);
+  if (select count(*) from public.user_notifications
+      where household_id=hh and recipient_user_id=v
+        and type='request.checking' and title='最終確認が残っています')<>2 then
+    raise exception 'FAIL reminder sent after reply deadline';
+  end if;
   if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
     raise exception 'FAIL checking/reminder changed assignment before final confirmation';
   end if;
+  intent_req:=req; intent_attempt:=attempt; intent_task:=task_id;
+
+  insert into public.task_instances(
+    household_id,origin,title,category,routine_phase,scheduled_date,planned_assignee_id,
+    completion_mode,status,source,created_by,assignment_mode,assignment_source,
+    planned_assignee_actor_ref_id,due_at
+  ) values (
+    hh,'manual','Ordinary schedule checking','pickup','evening',current_date,u,
+    'whole','todo','xc_test',u,'person','manual',ar,now()+interval '2 days'
+  ) returning id into task_id;
+
+  -- Ordinary schedule checking must never be described as acceptance intent
+  -- or receive a final-confirmation reminder.
+  c:=public.server_tx_create_assignment_change_request(
+    u,gen_random_uuid(),task_id,v,'予定確認だけ','once'
+  );
+  req:=(c->>'request_id')::uuid;
+  attempt:=(c->>'attempt_id')::uuid;
+  r:=public.server_tx_transition_request_v2(
+    v,gen_random_uuid(),req,attempt,'checking',null,1,1,'pwa'
+  );
+  if (select acceptance_intent from public.request_attempts where id=attempt) then
+    raise exception 'FAIL ordinary checking marked acceptance intent';
+  end if;
+  begin
+    perform public.server_tx_transition_request_v2(
+      v,gen_random_uuid(),req,attempt,'accept',null,2,1,'line');
+    raise exception 'FAIL ordinary checking bypassed assignment final confirmation';
+  exception when others then
+    if sqlerrm <> 'REQUEST_FINAL_CONFIRMATION_REQUIRED' then raise; end if;
+  end;
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '11 minutes',100);
+  if exists (select 1 from public.user_notifications
+      where recipient_user_id=v and payload->>'attempt_id'=attempt::text
+        and title='最終確認が残っています') then
+    raise exception 'FAIL ordinary checking received final-confirm reminder';
+  end if;
+  if not exists (select 1 from public.user_notifications
+      where recipient_user_id=u and payload->>'attempt_id'=attempt::text
+        and title='相手が確認中です') then
+    raise exception 'FAIL ordinary checking requester status missing';
+  end if;
+  recipient_brief:=public.server_read_daily_brief(v,current_date);
+  if exists (select 1 from jsonb_array_elements(coalesce(recipient_brief->'waiting_checks','[]'::jsonb)) x
+      where x->>'attempt_id'=attempt::text and x->>'title' like '%確定（引受）%') then
+    raise exception 'FAIL ordinary checking mislabelled final confirmation in Daily Brief';
+  end if;
+
+  -- After checking their schedule, the recipient may still choose to accept
+  -- in LINE. That new first tap must record intent and advance the revision;
+  -- it cannot retroactively reinterpret the earlier checking action.
+  r:=public.server_tx_transition_request_v2(
+    v,gen_random_uuid(),req,attempt,'checking','{"acceptance_intent":true}'::jsonb,2,1,'line'
+  );
+  if r->>'state'<>'checking' or (r->>'revision')::int<>3
+    or not (select acceptance_intent from public.request_attempts where id=attempt) then
+    raise exception 'FAIL ordinary checking could not advance to explicit acceptance intent';
+  end if;
+  if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
+    raise exception 'FAIL intent promotion changed assignment before final confirmation';
+  end if;
+
+  -- Resume the intent scenario for the Daily Brief checks below.
+  req:=intent_req; attempt:=intent_attempt; task_id:=intent_task;
 
   -- Scheduled Daily Brief must keep this unresolved handoff visible even
   -- though the pickup already has a current assignee. This is the exact gap
@@ -75,8 +162,12 @@ begin
     select 1 from jsonb_array_elements(coalesce(recipient_brief->'urgent_actions','[]'::jsonb)) x
     where x->>'request_id'=req::text
       and x->>'title' like '%最終確認待ち（確定（引受））%'
+      and x->>'state'='checking'
+      and (x->>'revision')::bigint=2
+      and (x->>'terms_revision')::integer=1
+      and (x->>'acceptance_intent')::boolean=true
   ) then
-    raise exception 'FAIL recipient Daily Brief omitted explicit final-confirm request';
+    raise exception 'FAIL recipient Daily Brief lost final-confirm snapshot for Today';
   end if;
   requester_text:=private.fn_render_daily_brief_text_v3(requester_brief,'morning');
   recipient_text:=private.fn_render_daily_brief_text_v3(recipient_brief,'evening');
