@@ -168,9 +168,18 @@ jq -e --arg app "$APP_ID" --arg slot "$SLOT_ID" '
 }
 
 # app-save-hub is a shared personal save service. Validate the exact contract,
-# its RLS boundary, single trusted owner, and absence of a conflicting Family
-# Ops namespace owner. The Management API is operator/admin transport; normal
-# app access remains user_id-scoped by RLS.
+# its RLS boundary, the trusted owner, and absence of a conflicting Family Ops
+# namespace owner. The Management API is operator/admin transport; normal app
+# access remains user_id-scoped by RLS.
+#
+# The owner is the earliest-created auth user (restore_drill.sh and
+# backup_freshness_check.sh select it the same way). Other people may sign in to
+# other apps that share this project (friends using mana-evo), so "exactly one
+# auth user" is only required while the Family Ops namespace is still EMPTY --
+# first run, or the owner account was lost. Once the namespace holds rows they
+# must all belong to that owner (foreign_namespace_rows == 0). That keeps the
+# fail-closed case: an empty namespace with several users never gets household
+# data written under whichever account happens to be oldest.
 TARGET_PREFLIGHT="$WORKDIR/target-preflight.json"
 api_query "$TARGET_PROJECT_REF" \
   "select
@@ -185,12 +194,14 @@ api_query "$TARGET_PROJECT_REF" \
      (select count(*) from pg_policies where schemaname='public' and tablename='app_saves' and (coalesce(qual,'') like '%auth.uid()%' or coalesce(with_check,'') like '%auth.uid()%')) >= 3 as app_saves_user_policies,
      (select count(*) from pg_policies where schemaname='public' and tablename='app_save_backups' and (coalesce(qual,'') like '%auth.uid()%' or coalesce(with_check,'') like '%auth.uid()%')) >= 2 as app_save_backups_user_policies,
      (select count(*) from public.app_saves s where s.app_id='${APP_ID}' and s.slot_id='${SLOT_ID}' and s.user_id <> (select id from auth.users order by created_at nulls last, id limit 1)) +
-     (select count(*) from public.app_save_backups b where b.app_id='${APP_ID}' and b.slot_id='${SLOT_ID}' and b.user_id <> (select id from auth.users order by created_at nulls last, id limit 1)) as foreign_namespace_rows;" \
+     (select count(*) from public.app_save_backups b where b.app_id='${APP_ID}' and b.slot_id='${SLOT_ID}' and b.user_id <> (select id from auth.users order by created_at nulls last, id limit 1)) as foreign_namespace_rows,
+     (select count(*) from public.app_saves s where s.app_id='${APP_ID}' and s.slot_id='${SLOT_ID}') +
+     (select count(*) from public.app_save_backups b where b.app_id='${APP_ID}' and b.slot_id='${SLOT_ID}') as namespace_rows;" \
   "$TARGET_PREFLIGHT"
 
 jq -e '
   length == 1 and
-  .[0].auth_user_count == 1 and
+  (.[0].auth_user_count == 1 or .[0].namespace_rows > 0) and
   .[0].owner_user_id != null and
   .[0].app_saves_exists == true and
   .[0].app_save_backups_exists == true and

@@ -30,8 +30,11 @@ freshness and restore selection MUST include the exact owner `user_id`, app_id
 and slot_id. Never prune/delete by app/slot without owner scope.
 
 `app_saves`/`app_save_backups` RLS remains enabled and user-scoped. The backup
-script preflights the single trusted app-save-hub owner, RLS and namespace owner
-before writing. This is operational namespace isolation inside one personal
+script preflights the trusted app-save-hub owner (earliest-created auth user), RLS
+and namespace owner before writing. Other people may hold accounts for other
+apps in the same project; "exactly one auth user" is required only while the
+Family Ops namespace is empty (first run or a lost owner), and once it holds
+rows they must all belong to the owner. This is operational namespace isolation inside one personal
 save service, not a claim of adversarial tenant isolation between the owner's
 own apps.
 
