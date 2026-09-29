@@ -786,7 +786,17 @@ async function buildMultiIntentPendingCandidates(
       return { ...base, action_type: "handover_create" as const, payload: { shared_text: candidate.title, period: "today", categories: ["general"] } };
     }
     if (candidate.kind === "actual") {
-      return { ...base, action_type: "actual_record" as const, missing_fields: [...base.missing_fields, "実績にする作業"], payload: { title: candidate.title, scheduled_date: jstIsoDateOffset(0) } };
+      // A "done" report inside a longer message. A bare report is matched to
+      // today's open tasks before we get here (lineCompletionReport.ts); this
+      // one did not match a task, so it is kept as a shared note the partner
+      // can read. It used to become an actual_record draft with an unfillable
+      // "実績にする作業" field: a review card with no way to confirm it.
+      return {
+        ...base,
+        kind: "share" as const,
+        action_type: "handover_create" as const,
+        payload: { shared_text: candidate.sourceText || candidate.title, period: "today", categories: ["general"] },
+      };
     }
     if (candidate.kind === "shopping") {
       return {
