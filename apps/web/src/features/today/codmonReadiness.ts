@@ -34,6 +34,8 @@ export type TaskCompletionPrerequisite = {
   detailLabels: string[];
   blocking: boolean;
   actionLabel?: string;
+  /** Completion goes through this command instead of a plain task completion. */
+  completeAction?: 'codmon_submitted';
 };
 
 function memberLabel(
@@ -62,11 +64,16 @@ export function buildCodmonCompletionPrerequisite(
         if (input.resolution === 'duplicate') return `${input.title}（重複・要確認）`;
         return `${input.title}（${memberLabel(input.assignee_user_id, input.assignee_label, members)}）`;
       });
+    // Owner decision 2026-09-30: sending Codmon ends the job. Inputs nobody
+    // ticked here are closed together with the submission, so the button is
+    // never locked behind four checkboxes (LINE works the same way).
     return {
       state: readiness.state,
-      message: '9:15まで。残っている入力を確認してからコドモンを送信します。',
+      message: '9:15まで。コドモンで送信したら押してください。まだチェックのない入力も、まとめて完了になります。',
       detailLabels: remaining,
-      blocking: true,
+      blocking: false,
+      actionLabel: 'コドモンで送信した',
+      completeAction: 'codmon_submitted',
     };
   }
 
@@ -77,6 +84,7 @@ export function buildCodmonCompletionPrerequisite(
       detailLabels: [],
       blocking: false,
       actionLabel: 'コドモンで送信した',
+      completeAction: 'codmon_submitted',
     };
   }
 

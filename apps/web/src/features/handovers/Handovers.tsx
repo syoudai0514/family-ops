@@ -9,6 +9,7 @@ import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { todayIsoDate } from '../../lib/date';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type { Handover, HandoverPeriod } from '../../lib/types';
+import { HandoverActions } from './HandoverActions';
 
 const HANDOVER_REALTIME_TABLES = ['handovers', 'handover_reads'];
 
@@ -158,14 +159,14 @@ export function Handovers() {
       <ul className="handover-list">
         {handovers.length === 0 && <li className="empty-hint">まだ引き継ぎはありません。</li>}
         {handovers.map((h) => (
-          <HandoverRow key={h.id} handover={h} isRead={readIds.has(h.id)} onChanged={refresh} />
+          <HandoverRow key={h.id} handover={h} isRead={readIds.has(h.id)} onChanged={refresh} currentUserId={user?.id ?? null} />
         ))}
       </ul>
     </div>
   );
 }
 
-function HandoverRow({ handover, isRead, onChanged }: { handover: Handover; isRead: boolean; onChanged: () => void }) {
+function HandoverRow({ handover, isRead, onChanged, currentUserId }: { handover: Handover; isRead: boolean; onChanged: () => void; currentUserId: string | null }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -196,11 +197,14 @@ function HandoverRow({ handover, isRead, onChanged }: { handover: Handover; isRe
         {handover.valid_until && <p className="task-item-meta">有効期限: {new Date(handover.valid_until).toLocaleString('ja-JP')} {new Date(handover.valid_until).getTime() < Date.now() ? '（期限切れ）' : ''}</p>}
         {handover.ack_policy === 'required' && <p className="task-item-meta">重要: 確認の返答が必要です。</p>}
       </div>
-      {!isRead && (
+      {handover.status !== 'expired' && handover.status !== 'superseded' ? (
+        <HandoverActions handover={handover} currentUserId={currentUserId} isRead={isRead} onChanged={onChanged} />
+      ) : !isRead && (
         <button type="button" disabled={busy} onClick={markRead}>
           {handover.ack_policy === 'required' ? '確認した' : '既読にする'}
         </button>
       )}
+      {handover.status === 'expired' && <p className="task-item-meta">終了した共有</p>}
       {error && (
         <p role="alert" className="error-text">
           {error}

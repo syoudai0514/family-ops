@@ -37,6 +37,22 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
     return jsonResponse(result);
   }
 
+  // "コドモンで送信した": closes the still-open Codmon inputs and the submit task
+  // in one transaction (owner decision 2026-09-30: sending Codmon ends the job).
+  if (body["action"] === "codmon_submitted") {
+    const result = await callServerTx<{ ok: true; task_id: string; inputs_closed: number }>(
+      serviceClient,
+      "server_tx_acknowledge_codmon_submission_v1",
+      {
+        p_actor_id: actorId,
+        p_operation_id: operationId,
+        p_submit_task_id: taskId,
+        p_source: "pwa",
+      },
+    );
+    return jsonResponse(result);
+  }
+
   const completionActor = body["completion_actor"];
   if (completionActor !== "self" && completionActor !== "partner") {
     throw new FamilyOpsError("INVALID_INPUT", "completion_actor must be 'self' or 'partner'", 400);

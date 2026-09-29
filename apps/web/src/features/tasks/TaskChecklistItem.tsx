@@ -166,6 +166,14 @@ export function TaskChecklistItem({
   }
 
   function handleComplete() {
+    if (completionPrerequisite?.completeAction === 'codmon_submitted') {
+      void withOperation(
+        `task:${task.id}:codmon-submitted:r${task.revision ?? 1}`,
+        EDGE_FUNCTIONS.completeTask,
+        (operationId) => ({ operation_id: operationId, task_id: task.id, action: 'codmon_submitted' }),
+      );
+      return;
+    }
     void withOperation(
       `task:${task.id}:complete:${actor}:r${task.revision ?? 1}`,
       EDGE_FUNCTIONS.completeTask,

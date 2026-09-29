@@ -9,6 +9,10 @@ Deno.test("brief and Codmon reminder carry a link to Today", () => {
     assertEquals(buildTodayLinkFooter("daily_brief.v2"), "▶ 完了・詳細はここから\nhttps://family-ops-web.vercel.app/today");
     assertEquals(buildTodayLinkFooter("codmon.deadline"), "▶ 入力状況を開く\nhttps://family-ops-web.vercel.app/today");
     assertEquals(buildTodayLinkFooter("request.received"), "");
+    assertEquals(
+      buildTodayLinkFooter("daily_brief.v2", "u-papa"),
+      "▶ 完了・詳細はここから\nhttps://family-ops-web.vercel.app/today?for=u-papa",
+    );
   } finally {
     Deno.env.delete("APP_BASE_URL");
   }

@@ -49,7 +49,18 @@ Codmon providerへの自動送信・画面自動操作はこのscopeに含めな
 
 `codmon_submit` をcompletedへ遷移させる前に、同一household / same scheduled_date / same test-contextの4 input task codeが全てcompletedであることをDB boundaryで検証する。
 
-1つでも未完了/欠落なら `CODMON_INPUTS_INCOMPLETE` (409)。PWAは「残っている入力を先に完了」と表示する。
+1つでも未完了/欠落なら `CODMON_INPUTS_INCOMPLETE` (409)。
+
+### 5.0 送信の申告で入力もまとめて閉じる（2026-09-30 / Requirements §29.1）
+
+人が「コドモンで送信した」と申告する経路（LINEの完了報告、PWAの `コドモンで送信した`）は、`codmon_submit` を直接completeせず `public.server_tx_acknowledge_codmon_submission_v1` を使う。
+
+1. readinessが `waiting_inputs` なら、未完了（todo / in_progress）でpresentな各inputを、canonical `server_tx_complete_task` で完了にする。実施者はそのinputのplanned assignee（未割当なら申告者）。
+2. 続けて `codmon_submit` を申告者の実施として完了にする。上記の不変条件はここで満たされる。
+3. 1と2は同一トランザクション。inputごとの操作IDは申告の操作IDから決定的に導出し、再送でもreplayになる。
+4. `data_incomplete`（欠落・重複）はinputを閉じず、guardが `CODMON_INPUTS_INCOMPLETE` を返す。
+
+`codmon_submit` を通常の完了操作でcompleteする経路のguardは変更しない。
 
 UIだけのdisabled制御には依存しない。LINE / PWA / routine-session / future command pathのどこからcompleteされても同じDB invariantを通す。
 
@@ -74,9 +85,10 @@ inputの `resolution` は `present | missing | duplicate` とし、欠落/重複
 優先し、必要時だけ09:15 JSTをfallbackにする。
 
 Todayでは別dashboardを増やさず `codmon_submit` 行へ残入力と担当をinline表示する。
-`ready_to_submit` までは通常の完了操作を無効化し、ready時の申告は
-「コドモンで送信した」とする。この操作はproviderを送信するbuttonではなく、
-外部Codmon上で人が実際に送信した後のacknowledgementである。
+`waiting_inputs` / `ready_to_submit` のどちらでも申告は「コドモンで送信した」とし、
+waiting時は「まだチェックのない入力も、まとめて完了になります」と残入力を示す（§5.0）。
+この操作はproviderを送信するbuttonではなく、外部Codmon上で人が実際に送信した後の
+acknowledgementである。
 
 ## 6. Reminder
 
@@ -106,7 +118,7 @@ Todayでは別dashboardを増やさず `codmon_submit` 行へ残入力と担当�
 2. 将生 pickup input / 詩乃 pickup inputが当日pickup担当へ付く。
 3. 詩乃朝食とfinal submitが朝/dropoff担当へ付く。
 4. 詩乃昨日夕飯・様子が前日担当へ付く。
-5. input未完了ではfinal submitを完了できない。
+5. input未完了でも「コドモンで送信した」（LINE「コドモン送りました」を含む）で、残inputとfinal submitが同時に完了する（§5.0）。通常の完了操作では従来どおり完了できない。
 6. 4 input完了後はfinal submitを1tap完了できる。
 7. 09:00残件notificationが担当別にまとまり、同じminute retryで重複しない。
 8. 土日祝に通常task/reminderが出ない。

@@ -44,6 +44,7 @@ export const EDGE_FUNCTIONS = {
   reopenShoppingItem: 'reopen-shopping-item',
   createHandover: 'create-handover',
   markHandoverRead: 'mark-handover-read',
+  endHandover: 'end-handover',
   markNotificationRead: 'mark-notification-read',
   updateNotificationPreferences: 'update-notification-preferences',
   createLineLinkToken: 'create-line-link-token',

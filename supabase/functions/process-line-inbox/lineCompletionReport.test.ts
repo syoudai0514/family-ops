@@ -74,15 +74,30 @@ Deno.test("rank: a bare やった lists the most recently due task first", () =>
 
 type Call = { fn: string; args: Record<string, unknown> };
 
-function fakeContext(opts: { tasks: unknown[]; defs: unknown[]; rpcError?: string }) {
+function fakeContext(opts: {
+  tasks: unknown[];
+  defs: Array<{ id: string; code: string }>;
+  rpcError?: string;
+  rpcData?: unknown;
+}) {
   const calls: Call[] = [];
   const replies: Array<{ text: string; quick?: unknown[] }> = [];
   const builder = (table: string) => {
+    const filters: Record<string, unknown> = {};
     const chain: Record<string, unknown> = {};
     const self = () => chain;
-    for (const m of ["eq", "is", "in", "or", "limit"]) chain[m] = self;
-    chain.select = self;
-    chain.maybeSingle = () => Promise.resolve({ data: { revision: 4 }, error: null });
+    for (const m of ["is", "in", "or", "limit", "select"]) chain[m] = self;
+    chain.eq = (column: string, value: unknown) => {
+      filters[column] = value;
+      return chain;
+    };
+    chain.maybeSingle = () => {
+      if (table === "task_definitions") {
+        return Promise.resolve({ data: opts.defs.find((d) => d.id === filters.id) ?? null, error: null });
+      }
+      const task = (opts.tasks as Array<Record<string, unknown>>).find((t) => t.id === filters.id);
+      return Promise.resolve({ data: task ? { ...task, revision: 4 } : { revision: 4 }, error: null });
+    };
     chain.then = (resolve: (v: unknown) => void) =>
       resolve({ data: table === "task_instances" ? opts.tasks : opts.defs, error: null });
     return chain;
@@ -91,7 +106,10 @@ function fakeContext(opts: { tasks: unknown[]; defs: unknown[]; rpcError?: strin
     from: (table: string) => builder(table),
     rpc: (fn: string, args: Record<string, unknown>) => {
       calls.push({ fn, args });
-      return Promise.resolve({ error: opts.rpcError ? { message: opts.rpcError } : null });
+      return Promise.resolve({
+        data: opts.rpcError ? null : opts.rpcData ?? null,
+        error: opts.rpcError ? { message: opts.rpcError } : null,
+      });
     },
   };
   const ctx = {
@@ -110,8 +128,8 @@ function fakeContext(opts: { tasks: unknown[]; defs: unknown[]; rpcError?: strin
 }
 
 const rows = [
-  { id: "t-c", title: "コドモン送信", due_at: null, revision: 3, task_definition_id: "d-c" },
-  { id: "t-d", title: "送り", due_at: null, revision: 3, task_definition_id: "d-d" },
+  { id: "t-c", title: "コドモン送信（将生・詩乃がそろってから）", due_at: null, revision: 3, task_definition_id: "d-c", planned_assignee_id: "u1" },
+  { id: "t-d", title: "送り", due_at: null, revision: 3, task_definition_id: "d-d", planned_assignee_id: "u1" },
 ];
 const defs = [{ id: "d-c", code: "codmon_submit" }, { id: "d-d", code: "dropoff" }];
 
@@ -121,7 +139,7 @@ Deno.test("handler: 送りました with Codmon and dropoff open asks which one 
   assertEquals(calls.length, 0);
   assertEquals(replies[0].text, "どの作業を完了にしますか？");
   const labels = (replies[0].quick as Array<{ label: string }>).map((q) => q.label);
-  assertEquals(labels, ["コドモン送信", "送り", "今日を見る"]);
+  assertEquals(labels, ["コドモン送信（将生・詩乃がそろってから）", "送り", "今日を見る"]);
 });
 
 Deno.test("handler: a single match completes through the canonical RPC and offers 取り消す", async () => {
@@ -137,6 +155,42 @@ Deno.test("handler: a single match completes through the canonical RPC and offer
   assertEquals(undo.data, "action=reopen_task&task_id=t-d&revision=4");
 });
 
+// Live 2026-09-30 05:43: "コドモン送りました！" was refused with
+// "コドモンの入力がそろっていません". Sending Codmon now ends the job.
+Deno.test("handler: コドモン送りました closes the submit and the unticked inputs in one command", async () => {
+  const { ctx, calls, replies } = fakeContext({ tasks: rows, defs, rpcData: { ok: true, inputs_closed: 4 } });
+  assertEquals(await tryHandleCompletionReport(ctx, "コドモン送りました！"), true);
+  assertEquals(calls.length, 1);
+  assertEquals(calls[0].fn, "server_tx_acknowledge_codmon_submission_v1");
+  assertEquals(calls[0].args.p_submit_task_id, "t-c");
+  assertEquals(calls[0].args.p_source, "line");
+  assertEquals(
+    replies[0].text,
+    "✓ コドモン送信を完了にしました。\nチェックされていなかった入力4件も、まとめて完了にしました。",
+  );
+});
+
+Deno.test("handler: the partner can report Codmon sent even though submit is assigned to the other parent", async () => {
+  const partnerSubmit = [{ ...rows[0], planned_assignee_id: "u2" }];
+  const { ctx, calls } = fakeContext({ tasks: partnerSubmit, defs, rpcData: { inputs_closed: 0 } });
+  assertEquals(await tryHandleCompletionReport(ctx, "コドモン送りました"), true);
+  assertEquals(calls[0].fn, "server_tx_acknowledge_codmon_submission_v1");
+});
+
+Deno.test("handler: other people's ordinary tasks are never offered", async () => {
+  const partnerDropoff = [{ ...rows[1], planned_assignee_id: "u2" }];
+  const { ctx, calls, replies } = fakeContext({ tasks: partnerDropoff, defs });
+  assertEquals(await tryHandleCompletionReport(ctx, "送りました"), true);
+  assertEquals(calls.length, 0);
+  assertEquals(replies[0].text.startsWith("今日の未完了の作業は見つかりませんでした。"), true);
+});
+
+Deno.test("complete (button path): a Codmon submit id is routed by its task code", async () => {
+  const { ctx, calls } = fakeContext({ tasks: rows, defs, rpcData: { inputs_closed: 2 } });
+  await completeTaskAndReply(ctx, "t-c", { operationId: "op" });
+  assertEquals(calls[0].fn, "server_tx_acknowledge_codmon_submission_v1");
+});
+
 Deno.test("handler: unrelated text and unmatched hints fall through to the normal flow", async () => {
   const { ctx, calls, replies } = fakeContext({ tasks: rows, defs });
   assertEquals(await tryHandleCompletionReport(ctx, "牛乳買った"), false);
@@ -144,20 +198,19 @@ Deno.test("handler: unrelated text and unmatched hints fall through to the norma
   assertEquals(calls.length + replies.length, 0);
 });
 
-Deno.test("handler: incomplete Codmon inputs are explained, not silently dropped", async () => {
-  const { ctx, replies } = fakeContext({ tasks: [rows[0]], defs, rpcError: "CODMON_INPUTS_INCOMPLETE" });
-  assertEquals(await tryHandleCompletionReport(ctx, "送りました！"), true);
-  assertEquals(replies[0].text.includes("コドモンの入力がそろっていません"), true);
-});
-
 Deno.test("complete: an already-finished task says so", async () => {
   const { ctx, replies } = fakeContext({ tasks: [], defs: [], rpcError: "TASK_TERMINAL" });
-  await completeTaskAndReply(ctx, "t-x", "夕食", "op");
-  assertEquals(replies[0].text, "「夕食」はすでに完了（またはスキップ）になっています。");
+  await completeTaskAndReply(ctx, "t-x", { title: "夕食", code: null, operationId: "op" });
+  assertEquals(replies[0].text, "「夕食」はすでに完了になっています。");
 });
 
-Deno.test("handler: nothing open and a bare やった says so instead of inventing a task", async () => {
-  const { ctx, replies } = fakeContext({ tasks: [], defs: [] });
-  assertEquals(await tryHandleCompletionReport(ctx, "やった"), true);
-  assertEquals(replies[0].text.startsWith("今日の未完了の作業は見つかりませんでした。"), true);
+Deno.test("handler: nothing open and a bare やった says so, with a link addressed to the sender", async () => {
+  Deno.env.set("APP_BASE_URL", "https://example.test/");
+  try {
+    const { ctx, replies } = fakeContext({ tasks: [], defs: [] });
+    assertEquals(await tryHandleCompletionReport(ctx, "やった"), true);
+    assertEquals(replies[0].text, "今日の未完了の作業は見つかりませんでした。\nhttps://example.test/today?for=u1");
+  } finally {
+    Deno.env.delete("APP_BASE_URL");
+  }
 });

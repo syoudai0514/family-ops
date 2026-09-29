@@ -1558,7 +1558,11 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
   if (fields.action === "complete_task" && fields.task_id) {
     const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
     const completionActor = fields.completion_actor === "partner" ? "partner" : "self";
-    await completeTaskAndReply(completionContext(client, item, actor), fields.task_id, null, operationId, completionActor, fields.complete_remaining === "true");
+    await completeTaskAndReply(completionContext(client, item, actor), fields.task_id, {
+      operationId,
+      completionActor,
+      completeRemainingSubtasks: fields.complete_remaining === "true",
+    });
     return;
   }
 
