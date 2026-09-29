@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { refreshCurrentPwa } from '../app/pwaFreshness';
 
 interface Props {
   children: ReactNode;
@@ -34,7 +35,7 @@ export class AppErrorBoundary extends Component<Props, State> {
   }
 
   private reload = () => {
-    window.location.reload();
+    void refreshCurrentPwa();
   };
 
   render() {

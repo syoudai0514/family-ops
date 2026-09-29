@@ -50,7 +50,7 @@ export type LineMultiIntentPendingCandidate = {
   duplicate_decision: "existing" | "update" | "separate" | null;
   status: "draft" | "cancelled";
   missing_fields: string[];
-  action_type: "task_create_once" | "shopping_item_add" | "request_create" | "handover_create" | "actual_record";
+  action_type: "task_create_once" | "shopping_item_add" | "request_create" | "assignment_change_request" | "handover_create" | "actual_record";
   payload: Record<string, unknown>;
 };
 

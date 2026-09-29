@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   installPwaFreshnessCheck,
+  refreshCurrentPwa,
   type PwaFreshnessEnvironment,
+  type PwaReloadEnvironment,
 } from './pwaFreshness';
 
 class FakeTarget {
@@ -122,5 +124,58 @@ describe('installPwaFreshnessCheck', () => {
     windowTarget.dispatch('focus');
 
     expect(cleanup).toBeTypeOf('function');
+  });
+});
+
+
+describe('refreshCurrentPwa', () => {
+  function reloadEnvironment(updateImpl: () => Promise<unknown>): {
+    environment: PwaReloadEnvironment;
+    update: ReturnType<typeof vi.fn>;
+    reload: ReturnType<typeof vi.fn>;
+  } {
+    const update = vi.fn(updateImpl);
+    const reload = vi.fn();
+    return {
+      environment: {
+        serviceWorker: {
+          getRegistration: vi.fn().mockResolvedValue({ update }),
+        },
+        reload,
+        setTimer: (callback, ms) => setTimeout(callback, ms),
+        clearTimer: (timer) => clearTimeout(timer),
+      },
+      update,
+      reload,
+    };
+  }
+
+  it('checks for a fresh worker before reloading', async () => {
+    const { environment, update, reload } = reloadEnvironment(() => Promise.resolve());
+
+    await refreshCurrentPwa(environment, 50);
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('still reloads when the worker update check fails', async () => {
+    const { environment, reload } = reloadEnvironment(() => Promise.reject(new Error('offline')));
+
+    await refreshCurrentPwa(environment, 50);
+
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a hung worker update block manual recovery', async () => {
+    vi.useFakeTimers();
+    const { environment, reload } = reloadEnvironment(() => new Promise(() => undefined));
+    const pending = refreshCurrentPwa(environment, 1_000);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await pending;
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

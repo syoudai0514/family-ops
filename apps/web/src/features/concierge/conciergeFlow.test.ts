@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeConciergeProposal, withActualScheduledDate, type ConciergeCandidate } from './conciergeFlow';
-import { commitConciergeCandidate, conciergeRequestDueAt } from './conciergeCommit';
+import { conciergeDraftStorageKey, normalizeConciergeProposal, withActualScheduledDate, type ConciergeCandidate } from './conciergeFlow';
+import { commitConciergeCandidate } from './conciergeCommit';
 
 const member = (userId: string, role: 'papa' | 'mama') => ({
   household_id: '00000000-0000-4000-8000-000000000001', user_id: userId,
@@ -10,6 +10,8 @@ const member = (userId: string, role: 'papa' | 'mama') => ({
 function candidate(overrides: Partial<ConciergeCandidate> & Pick<ConciergeCandidate, 'candidateId' | 'kind' | 'title'>): ConciergeCandidate {
   return {
     operationId: `00000000-0000-4000-8000-${overrides.candidateId.padEnd(12, '0').slice(0, 12)}`,
+    candidateRevision: 1,
+    messageReviewedRevision: overrides.kind === 'request' ? 1 : null,
     sourceText: overrides.title,
     sourceSpan: null,
     confidence: null,
@@ -21,11 +23,20 @@ function candidate(overrides: Partial<ConciergeCandidate> & Pick<ConciergeCandid
   };
 }
 
-const context = (invoke: (name: string, body: object) => Promise<unknown>) => ({
-  members: [], me: null, partner: null, timeZone: 'Asia/Tokyo', invoke,
-});
+const context = (invoke: (name: string, body: object) => Promise<unknown>) => {
+  const me = member('00000000-0000-4000-8000-000000000099', 'papa');
+  return { members: [me], me, partner: null, timeZone: 'Asia/Tokyo', invoke };
+};
 
 describe('Concierge canonical flow', () => {
+  it('scopes drafts to the signed-in household member and has no unscoped fallback key', () => {
+    expect(conciergeDraftStorageKey({ householdId: 'hh-1', userId: 'user-1' }))
+      .toBe('family-ops:concierge-draft:hh-1:user-1');
+    expect(conciergeDraftStorageKey({ householdId: 'hh-1', userId: 'user-2' }))
+      .not.toBe(conciergeDraftStorageKey({ householdId: 'hh-1', userId: 'user-1' }));
+    expect(conciergeDraftStorageKey({ householdId: null, userId: 'user-1' })).toBeNull();
+  });
+
   it('normalizes shared semantic metadata and stable operation identity before rendering', () => {
     const proposal = normalizeConciergeProposal({
       read_only_intent: null, clarification: null,
@@ -80,7 +91,7 @@ describe('Concierge canonical flow', () => {
     expect(calls).toEqual([{ name: 'create-task', body: {
       operation_id: '00000000-0000-4000-8000-000000000123', title: '水着を準備',
       scheduled_date: '2026-09-08', due_local_time: null, planned_assignee_user_id: null,
-      completion_mode: 'whole', calendar_visibility: 'hidden',
+      completion_mode: 'whole', calendar_visibility: 'hidden', subtasks: null,
     } }]);
   });
 
@@ -177,7 +188,6 @@ describe('Concierge canonical flow', () => {
       kind: 'request', title: 'お迎え', sourceText: '金曜のお迎えママお願い / 訂正: あ、やっぱ土曜',
       intent: { targetRole: 'mama', scheduledDate: '2026-09-12', dueLocalTime: null, sharedMessage: '土曜のお迎えをお願いできますか？' },
     });
-    expect(conciergeRequestDueAt(request)).toBe('2026-09-12T14:59:00.000Z');
     const result = await commitConciergeCandidate(request, {
       members: [papa, mama], me: papa, partner: mama, timeZone: 'Asia/Tokyo',
       invoke: async (name, body) => { calls.push({ name, body: body as Record<string, unknown> }); return {}; },

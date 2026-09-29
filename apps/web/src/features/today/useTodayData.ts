@@ -9,6 +9,8 @@ import type {
   TaskSubtaskInstance,
 } from '../../lib/types';
 import { tokyoLocalDate } from './todayClock';
+import { withTimeout } from '../../lib/withTimeout';
+import type { CodmonReadiness } from './codmonReadiness';
 
 export interface TaskExecutionTarget {
   id: string;
@@ -159,6 +161,7 @@ interface DailyBriefPayload {
   reconciliation?: DailyBriefReconciliation;
   tomorrow_impact?: DailyBriefTomorrowImpact;
   morning_summary?: DailyBriefMorningSummaryPayload;
+  codmon?: CodmonReadiness;
 }
 
 export interface TodayTaskGroups {
@@ -178,6 +181,7 @@ interface TodaySnapshot {
   waitingRefsByTaskId: Map<string, DailyBriefWaitingRef>;
   carryoverTasks: TodayTaskInstance[];
   alreadyHandledTasks: TodayTaskInstance[];
+  completedTodayTasks: TodayTaskInstance[];
   subtasksByTaskId: Map<string, TaskSubtaskInstance[]>;
   executionTargetsByTaskId: Map<string, TaskExecutionTarget>;
   incomingRequests: RequestRow[];
@@ -189,6 +193,7 @@ interface TodaySnapshot {
   reconciliation: DailyBriefReconciliation;
   tomorrowImpact: DailyBriefTomorrowImpact;
   morningSummary: DailyBriefMorningSummary;
+  codmon: CodmonReadiness | null;
 }
 
 export interface TodayData extends TodaySnapshot {
@@ -224,6 +229,7 @@ function emptySnapshot(): TodaySnapshot {
     waitingRefsByTaskId: new Map(),
     carryoverTasks: [],
     alreadyHandledTasks: [],
+    completedTodayTasks: [],
     subtasksByTaskId: new Map(),
     executionTargetsByTaskId: new Map(),
     incomingRequests: [],
@@ -235,6 +241,7 @@ function emptySnapshot(): TodaySnapshot {
     reconciliation: EMPTY_RECONCILIATION,
     tomorrowImpact: EMPTY_TOMORROW,
     morningSummary: EMPTY_MORNING_SUMMARY,
+    codmon: null,
   };
 }
 
@@ -293,9 +300,14 @@ export function useTodayData(householdId: string | null, userId: string | null):
     setError(null);
 
     try {
-      const { data: briefData, error: briefError } = await supabase.rpc('get_my_daily_brief', {
-        p_local_date: tokyoLocalDate(new Date()),
-      });
+      const localDate = tokyoLocalDate(new Date());
+      const { data: briefData, error: briefError } = await withTimeout(
+        supabase.rpc('get_my_daily_brief', {
+          p_local_date: localDate,
+        }),
+        12_000,
+        '今日の情報の読み込みに時間がかかっています。',
+      );
       if (briefError) throw briefError;
       const brief = (briefData ?? {}) as DailyBriefPayload;
 
@@ -322,10 +334,17 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const handoverIds = unique(handoverRefs.map((item) => item.handover_id));
       const shoppingIds = unique((brief.shopping ?? []).map((item) => item.shopping_item_id));
 
-      const [taskRes, requestRes, handoverRes, shoppingRes] = await Promise.all([
+      const [taskRes, completedRes, requestRes, handoverRes, shoppingRes] = await withTimeout(Promise.all([
         allTaskIds.length
           ? supabase.from('task_instances').select('*').in('id', allTaskIds)
           : Promise.resolve({ data: [] as TodayTaskInstance[], error: null }),
+        supabase
+          .from('task_instances')
+          .select('*')
+          .eq('household_id', householdId)
+          .eq('scheduled_date', localDate)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false }),
         requestIds.length
           ? supabase.from('requests').select('*').in('id', requestIds)
           : Promise.resolve({ data: [] as RequestRow[], error: null }),
@@ -335,20 +354,39 @@ export function useTodayData(householdId: string | null, userId: string | null):
         shoppingIds.length
           ? supabase.from('shopping_items').select('*').in('id', shoppingIds)
           : Promise.resolve({ data: [] as ShoppingItem[], error: null }),
-      ]);
+      ]), 12_000, '今日の詳細情報の読み込みに時間がかかっています。');
 
-      for (const result of [taskRes, requestRes, handoverRes, shoppingRes]) {
+      for (const result of [taskRes, completedRes, requestRes, handoverRes, shoppingRes]) {
         if (result.error) throw result.error;
       }
 
-      const rawTaskRows = (taskRes.data ?? []) as TodayTaskInstance[];
+      const completedCandidateRows = ((completedRes.data ?? []) as TodayTaskInstance[])
+        .filter((task) =>
+          task.status === 'completed'
+          && task.scheduled_date === localDate
+          && (
+            task.assignment_mode === 'anyone'
+            || task.planned_assignee_id === userId
+            || task.actual_completed_by_id === userId
+          ),
+        );
+      const rawTaskById = new Map<string, TodayTaskInstance>();
+      for (const task of [...((taskRes.data ?? []) as TodayTaskInstance[]), ...completedCandidateRows]) {
+        rawTaskById.set(task.id, task);
+      }
+      const rawTaskRows = [...rawTaskById.values()];
+      const completedCandidateIds = completedCandidateRows.map((task) => task.id);
       const claimantActorRefIds = unique(rawTaskRows.map((task) => task.active_claimant_actor_ref_id ?? undefined));
       const claimantRefRes = claimantActorRefIds.length
-        ? await supabase
-            .from('domain_actor_refs')
-            .select('id,real_user_id')
-            .eq('household_id', householdId)
-            .in('id', claimantActorRefIds)
+        ? await withTimeout(
+            supabase
+              .from('domain_actor_refs')
+              .select('id,real_user_id')
+              .eq('household_id', householdId)
+              .in('id', claimantActorRefIds),
+            12_000,
+            '担当状況の読み込みに時間がかかっています。',
+          )
         : { data: [] as Array<{ id: string; real_user_id: string | null }>, error: null };
       if (claimantRefRes.error) throw claimantRefRes.error;
       const claimantUserByActorRef = new Map<string, string>();
@@ -364,17 +402,18 @@ export function useTodayData(householdId: string | null, userId: string | null):
       const taskById = new Map<string, TodayTaskInstance>(
         taskRows.map((task) => [task.id, task] as const),
       );
-      const visibleTasks = allTaskIds.map((id) => taskById.get(id)).filter((task): task is TodayTaskInstance => Boolean(task));
+      const visibleTaskIds = unique([...allTaskIds, ...completedCandidateIds]);
+      const visibleTasks = visibleTaskIds.map((id) => taskById.get(id)).filter((task): task is TodayTaskInstance => Boolean(task));
       const subtaskTaskIds = visibleTasks.filter((task) => task.completion_mode === 'subtasks').map((task) => task.id);
 
-      const [subtaskRes, targetRes] = await Promise.all([
+      const [subtaskRes, targetRes] = await withTimeout(Promise.all([
         subtaskTaskIds.length
           ? supabase.from('task_subtask_instances').select('*').in('task_instance_id', subtaskTaskIds).order('sort_order', { ascending: true })
           : Promise.resolve({ data: [] as TaskSubtaskInstance[], error: null }),
         visibleTasks.length
           ? supabase.from('task_execution_targets').select('*').eq('household_id', householdId).in('task_instance_id', visibleTasks.map((task) => task.id))
           : Promise.resolve({ data: [] as TaskExecutionTarget[], error: null }),
-      ]);
+      ]), 12_000, 'チェック項目の読み込みに時間がかかっています。');
       if (subtaskRes.error) throw subtaskRes.error;
       if (targetRes.error) throw targetRes.error;
 
@@ -384,6 +423,16 @@ export function useTodayData(householdId: string | null, userId: string | null):
         current.push(row);
         groupedSubtasks.set(row.task_instance_id, current);
       }
+      const completedTodayIds = completedCandidateRows
+        .filter((task) =>
+          task.planned_assignee_id === userId
+          || task.actual_completed_by_id === userId
+          || (
+            task.assignment_mode === 'anyone'
+            && (groupedSubtasks.get(task.id) ?? []).some((item) => item.completed_by === userId)
+          ),
+        )
+        .map((task) => task.id);
       const targetMap = new Map<string, TaskExecutionTarget>();
       for (const row of targetRes.data ?? []) targetMap.set(row.task_instance_id, row as TaskExecutionTarget);
       const hydrate = (ids: string[]) => ids
@@ -421,6 +470,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
         waitingRefsByTaskId: new Map(waitingRefs.map((item) => [item.task_id, item])),
         carryoverTasks: hydrate(carryoverIds),
         alreadyHandledTasks: hydrate(handledIds),
+        completedTodayTasks: hydrate(completedTodayIds),
         subtasksByTaskId: groupedSubtasks,
         executionTargetsByTaskId: targetMap,
         incomingRequests: orderedRows(requestIds, requestRows),
@@ -435,6 +485,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
           completedCount: brief.morning_summary?.completed_count ?? 0,
           totalCount: brief.morning_summary?.total_count ?? 0,
         },
+        codmon: brief.codmon ?? null,
       };
 
       if (sequence !== requestSequence.current) return;

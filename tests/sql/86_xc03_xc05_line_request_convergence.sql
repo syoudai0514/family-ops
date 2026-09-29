@@ -10,6 +10,8 @@ declare
   req uuid; attempt uuid; task_id uuid;
   original_due timestamptz; changed_due timestamptz:=now()+interval '5 days 3 hours';
   request_revision bigint; before_task_revision bigint;
+  requester_brief jsonb; recipient_brief jsonb;
+  requester_text text; recipient_text text;
 begin
   insert into auth.users(id) values(u),(v);
   hh:=(public.server_tx_create_household(u,gen_random_uuid(),'XC convergence','Owner')->>'household_id')::uuid;
@@ -17,6 +19,71 @@ begin
   perform private.backfill_canonical_foundation_v1();
   select id into ar from public.domain_actor_refs where household_id=hh and real_user_id=u;
   select id into br from public.domain_actor_refs where household_id=hh and real_user_id=v;
+
+  -- Recipient-side checking is a canonical intent signal, not assignment truth.
+  -- Requester gets one useful status update; recipient gets one follow-up only
+  -- if explicit final confirmation is still missing after 10 minutes.
+  insert into public.task_instances(
+    household_id,origin,title,category,routine_phase,scheduled_date,planned_assignee_id,
+    completion_mode,status,source,created_by,assignment_mode,assignment_source,
+    planned_assignee_actor_ref_id,due_at
+  ) values(
+    hh,'manual','Checking follow-up pickup','pickup','evening',current_date,u,
+    'whole','todo','xc_test',u,'person','manual',ar,now()+interval '2 days'
+  ) returning id into task_id;
+  c:=public.server_tx_create_assignment_change_request(
+    u,gen_random_uuid(),task_id,v,'確認フォロー','once'
+  );
+  req:=(c->>'request_id')::uuid;
+  attempt:=(c->>'attempt_id')::uuid;
+  r:=public.server_tx_transition_request_v2(
+    v,gen_random_uuid(),req,attempt,'checking',null,1,1,'line'
+  );
+  if r->>'state'<>'checking' then
+    raise exception 'FAIL checking transition did not persist';
+  end if;
+  if (select count(*) from public.user_notifications
+      where household_id=hh and recipient_user_id=u
+        and type='request.checking' and title='引き受ける意向あり')<>1 then
+    raise exception 'FAIL requester did not receive one checking-status notification';
+  end if;
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '11 minutes',100);
+  perform public.server_tx_dispatch_request_checking_reminders_v1(now()+interval '12 minutes',100);
+
+  if (select count(*) from public.user_notifications
+      where household_id=hh and recipient_user_id=v
+        and type='request.checking' and title='最終確認が残っています')<>1 then
+    raise exception 'FAIL checking follow-up reminder missing or duplicated';
+  end if;
+  if (select planned_assignee_id from public.task_instances where id=task_id)<>u then
+    raise exception 'FAIL checking/reminder changed assignment before final confirmation';
+  end if;
+
+  -- Scheduled Daily Brief must keep this unresolved handoff visible even
+  -- though the pickup already has a current assignee. This is the exact gap
+  -- that assignment_needed-only enrichment could not represent.
+  requester_brief:=public.server_read_daily_brief(u,current_date);
+  recipient_brief:=public.server_read_daily_brief(v,current_date);
+  if not exists (
+    select 1 from jsonb_array_elements(coalesce(requester_brief->'waiting_checks','[]'::jsonb)) x
+    where x->>'request_id'=req::text
+      and x->>'title' like '%引き受ける意向%'
+  ) then
+    raise exception 'FAIL requester Daily Brief omitted checking assignment request';
+  end if;
+  if not exists (
+    select 1 from jsonb_array_elements(coalesce(recipient_brief->'urgent_actions','[]'::jsonb)) x
+    where x->>'request_id'=req::text
+      and x->>'title' like '%最終確認待ち（確定（引受））%'
+  ) then
+    raise exception 'FAIL recipient Daily Brief omitted explicit final-confirm request';
+  end if;
+  requester_text:=private.fn_render_daily_brief_text_v3(requester_brief,'morning');
+  recipient_text:=private.fn_render_daily_brief_text_v3(recipient_brief,'evening');
+  if position('引き受ける意向' in requester_text)=0
+     or position('最終確認待ち（確定（引受））' in recipient_text)=0 then
+    raise exception 'FAIL scheduled Daily Brief renderer dropped unresolved request status';
+  end if;
 
   -- XC-05: free consultation prose never mutates work truth.  A saved,
   -- whitelisted material_patch is a distinct explicit structure.

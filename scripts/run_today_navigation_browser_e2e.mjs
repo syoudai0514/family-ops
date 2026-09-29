@@ -37,7 +37,7 @@ const task = {
   actual_completed_by_id: null, completed_at: null, attention_state: 'active', waiting_note: null,
   next_check_at: null, revision: 1, task_definitions: null,
 };
-const state = { initialBriefDelayMs: 800, requests: [] };
+const state = { initialBriefDelayMs: 800, requests: [], browserEvents: [], networkEvents: [] };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -141,7 +141,7 @@ function dailyBrief() {
       is_all_day: false, starts_at: `${TODAY}T06:00:00Z`, ends_at: `${TODAY}T06:30:00Z`,
       all_day_start: null, all_day_end_exclusive: null,
     }],
-    partner_summary: { open_assigned: 0, waiting: 0, completed_today: 0, critical_items: [] },
+    partner_summary: { open_assigned: 2, waiting: 0, completed_today: 4, critical_items: [{ task_id: 'partner-critical', title: 'お迎え' }] },
     reconciliation: { sessions: [], remaining_count: 0, actionable: false },
     tomorrow_impact: {
       local_date: TOMORROW, task_count: 1, schedule_count: 0, carryover_count: 0, impact_count: 1,
@@ -153,7 +153,7 @@ function dailyBrief() {
 
 async function fulfillRequest(client, { requestId, request }) {
   const url = new URL(request.url);
-  state.requests.push({ method: request.method, pathname: url.pathname });
+  state.requests.push({ method: request.method, url: request.url });
   if (request.method === 'OPTIONS') {
     await client.send('Fetch.fulfillRequest', { requestId, ...noContentResponse() });
     return;
@@ -173,7 +173,9 @@ async function fulfillRequest(client, { requestId, request }) {
     if (state.initialBriefDelayMs) await sleep(state.initialBriefDelayMs);
     response = jsonResponse(dailyBrief());
   } else if (pathname === '/rest/v1/task_instances') {
-    response = jsonResponse([task]);
+    response = url.searchParams.getAll('status').some((value) => value === 'eq.completed')
+      ? jsonResponse([])
+      : jsonResponse([task]);
   } else if (pathname === '/rest/v1/task_subtask_instances' || pathname === '/rest/v1/task_execution_targets') {
     response = jsonResponse([]);
   } else if (pathname === '/rest/v1/requests' || pathname === '/rest/v1/handovers' || pathname === '/rest/v1/shopping_items') {
@@ -295,6 +297,21 @@ async function main() {
     client.on('Fetch.requestPaused', (params) => fulfillRequest(client, params));
     await client.send('Page.enable');
     await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    client.on('Network.responseReceived', ({ response }) => {
+      if (response?.status >= 400) state.networkEvents.push({ kind: 'http', status: response.status, url: response.url });
+    });
+    client.on('Network.loadingFailed', ({ errorText, blockedReason, type }) => {
+      state.networkEvents.push({ kind: 'loading-failed', errorText, blockedReason: blockedReason ?? null, type: type ?? null });
+    });
+    client.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
+      state.browserEvents.push({ kind: 'exception', text: exceptionDetails?.exception?.description ?? exceptionDetails?.text ?? 'unknown exception' });
+    });
+    client.on('Runtime.consoleAPICalled', ({ type, args }) => {
+      if (type === 'error' || type === 'warning') {
+        state.browserEvents.push({ kind: `console-${type}`, text: (args ?? []).map((arg) => arg.value ?? arg.description ?? '').join(' ') });
+      }
+    });
     await client.send('Fetch.enable', { patterns: [{ urlPattern: `${MOCK_SUPABASE_URL}/*`, requestStage: 'Request' }] });
     await client.send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 3, mobile: true });
 
@@ -319,11 +336,18 @@ async function main() {
     scenarios.push({ id: 'CF03-loading', assertion: 'Loading is visible and Empty is not rendered during the unresolved canonical read' });
 
     await waitForText(client, task.title, 12_000);
-    for (const text of ['要対応 0', '残り 1', '待ち 0', '明日影響 1', '明日の着替え準備']) await waitForText(client, text);
+    for (const text of ['明日の着替え準備', 'お迎え', '担当している残り 2件']) await waitForText(client, text);
+    for (const removedKpi of ['要対応 0', '残り 1', '待ち 0', '明日影響 1', '完了 4']) {
+      assert.equal(
+        await evaluate(client, `document.body.innerText.includes(${JSON.stringify(removedKpi)})`),
+        false,
+        `removed dashboard/scorekeeping text must stay absent: ${removedKpi}`,
+      );
+    }
     assert.equal(await evaluate(client, 'document.title'), 'おうちノート');
     scenarios.push({
       id: 'CF02-CF04-CF16-ready',
-      assertion: 'Real mobile Chrome renders one DailyBrief-backed Today flow, four first-flow keys, tomorrow impact, and おうちノート identity',
+      assertion: 'Real mobile Chrome renders actionable Today content without the removed KPI dashboard or partner completion scoreboard, while preserving tomorrow impact and おうちノート identity',
       screenshot: await screenshot(client, 'today-ready.png'),
     });
 
@@ -333,20 +357,15 @@ async function main() {
       const button = [...document.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === '追加する');
       if (!button) return false; button.click(); return true;
     })()`), true);
-    await waitForText(client, '追加するもの');
-    assert.equal(await evaluate(client, `(() => {
-      const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.includes('おうちコンシェルジュ'));
-      if (!button) return false; button.click(); return true;
-    })()`), true);
     await waitForPath(client, '/concierge');
-    await waitForText(client, 'おうちコンシェルジュ');
+    await waitForText(client, '思いついたことを、そのまま書いてください');
 
     assert.equal(await evaluate(client, `(() => {
       const textarea = document.querySelector('textarea'); if (!textarea) return false;
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(textarea, '金曜のお迎えをお願いしたい');
       textarea.dispatchEvent(new Event('input', { bubbles: true })); return true;
     })()`), true);
-    await waitFor(() => evaluate(client, `sessionStorage.getItem('family-ops:concierge-draft') === '金曜のお迎えをお願いしたい'`), { label: 'Concierge draft persistence' });
+    await waitFor(() => evaluate(client, `sessionStorage.getItem('family-ops:concierge-draft:household-lane-d:user-lane-d') === '金曜のお迎えをお願いしたい'`), { label: 'Concierge draft persistence' });
 
     assert.equal(await evaluate(client, `(() => {
       const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.includes('戻る'));
@@ -360,9 +379,8 @@ async function main() {
       const button = [...document.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === '追加する');
       button?.click();
     })()`);
-    await waitForText(client, '追加するもの');
-    await evaluate(client, `([...document.querySelectorAll('button')].find((item) => item.textContent?.includes('おうちコンシェルジュ')))?.click()`);
     await waitForPath(client, '/concierge');
+    await waitForText(client, '思いついたことを、そのまま書いてください');
     await waitFor(() => evaluate(client, `document.querySelector('textarea')?.value === '金曜のお迎えをお願いしたい'`), { label: 'draft reopened' });
     await evaluate(client, 'history.back()');
     await waitForPath(client, '/today');
@@ -380,6 +398,19 @@ async function main() {
     };
     await writeFile(path.join(ARTIFACT_DIR, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
     console.log(`[today-browser] PASS ${scenarios.length} scenarios on ${browserVersion.product}`);
+  } catch (error) {
+    const diagnostic = {
+      error: error instanceof Error ? error.stack ?? error.message : String(error),
+      url: client ? await evaluate(client, 'window.location.href').catch(() => null) : null,
+      bodyText: client ? await evaluate(client, 'document.body?.innerText ?? ""').catch(() => null) : null,
+      requests: state.requests,
+      browserEvents: state.browserEvents,
+      networkEvents: state.networkEvents,
+      authenticatedAppModule: await fetch('http://127.0.0.1:4173/src/app/AuthenticatedApp.tsx').then(async (response) => ({ status: response.status, body: (await response.text()).slice(0, 16_000) })).catch((moduleError) => ({ error: String(moduleError) })),
+    };
+    await writeFile(path.join(ARTIFACT_DIR, 'failure-diagnostic.json'), `${JSON.stringify(diagnostic, null, 2)}\n`);
+    console.error(`[today-browser] FAILURE DIAGNOSTIC ${JSON.stringify(diagnostic)}`);
+    throw error;
   } finally {
     client?.close();
     await stopChild(chrome?.child);

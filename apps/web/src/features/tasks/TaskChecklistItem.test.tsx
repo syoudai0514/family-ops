@@ -9,6 +9,12 @@ vi.mock('../../lib/apiClient', async () => {
   return { ...actual, callEdgeFunction: (...args: unknown[]) => callEdgeFunction(...args) };
 });
 vi.mock('../../lib/id', () => ({ newOperationId: () => '69000000-0000-4000-8000-000000000001' }));
+vi.mock('../../app/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'user-1' } }),
+}));
+vi.mock('../../app/HouseholdContext', () => ({
+  useHousehold: () => ({ household: { id: 'household-1' } }),
+}));
 
 function makeTask(status: 'todo' | 'completed'): TaskInstance {
   return {
@@ -77,7 +83,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledTimes(1));
     expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       task_id: 'task-1',
       completion_actor: 'self',
       complete_remaining_subtasks: false,
@@ -96,7 +102,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '回す' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       subtask_instance_id: 'st-1',
       completed: true,
       completion_actor: 'self',
@@ -126,7 +132,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     expect(screen.getByText('回す')).toBeInTheDocument();
   });
 
-  it('requires an explicit claim before executing a 誰でもOK task', async () => {
+  it('lets an unclaimed 誰でもOK task record an actual directly while keeping claim optional', async () => {
     const members = [
       { household_id: 'household-1', user_id: 'user-1', member_role: 'adult', family_role: 'papa', profile: null },
       { household_id: 'household-1', user_id: 'user-2', member_role: 'adult', family_role: 'mama', profile: null },
@@ -142,14 +148,45 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     );
 
     expect(screen.getByText('誰でもOK')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: '自分がやる' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '自分がやる' }));
-    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('change-task-assignment', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+    fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
+      operation_id: expect.any(String),
       task_id: 'anyone-1',
-      claim_action: 'claim',
-      expected_revision: 4,
+      completion_actor: 'self',
+      complete_remaining_subtasks: false,
+    }));
+  });
+
+  it('lets an unclaimed 誰でもOK checklist record a subtask directly', async () => {
+    const task = {
+      ...makeSubtaskTask(),
+      assignment_mode: 'anyone',
+      active_claimant_actor_ref_id: null,
+      active_claimant_user_id: null,
+      revision: 5,
+    } as TaskInstance;
+
+    render(
+      <TaskChecklistItem
+        {...props}
+        currentUserId="user-1"
+        task={task}
+        subtasks={laundrySubtasks}
+      />,
+    );
+
+    const checkbox = screen.getByRole('checkbox', { name: '回す' });
+    expect(checkbox).not.toBeDisabled();
+    fireEvent.click(checkbox);
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', {
+      operation_id: expect.any(String),
+      subtask_instance_id: 'st-1',
+      completed: true,
+      completion_actor: 'self',
     }));
   });
 
@@ -172,10 +209,53 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(screen.getByRole('button', { name: '手放す' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('change-task-assignment', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       task_id: 'anyone-1',
       claim_action: 'release',
       expected_revision: 4,
+    }));
+  });
+
+  it('reopens an accidentally completed whole task from the completed surface', async () => {
+    const completedTask = { ...makeTask('completed'), revision: 7 } as TaskInstance;
+    render(<TaskChecklistItem {...props} task={completedTask} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '未完了に戻す' }));
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
+      operation_id: expect.any(String),
+      task_id: 'task-1',
+      action: 'reopen',
+      expected_revision: 7,
+    }));
+  });
+
+  it('allows a completed checklist subtask to be unchecked and reopened', async () => {
+    const completedTask = {
+      ...makeSubtaskTask(),
+      status: 'completed',
+      completed_at: '2026-09-05T12:00:00+09:00',
+      revision: 9,
+    } as TaskInstance;
+    const completedSubtasks = laundrySubtasks.map((item) => ({
+      ...item,
+      is_completed: true,
+      completed_by: 'user-1',
+      completed_at: '2026-09-05T12:00:00+09:00',
+    }));
+
+    render(<TaskChecklistItem {...props} task={completedTask} subtasks={completedSubtasks} />);
+    fireEvent.click(screen.getByRole('button', { name: '修正する' }));
+
+    const checkbox = screen.getByRole('checkbox', { name: '回す' });
+    expect(checkbox).not.toBeDisabled();
+    fireEvent.click(checkbox);
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', {
+      operation_id: expect.any(String),
+      subtask_instance_id: 'st-1',
+      completed: false,
+      completion_actor: 'self',
     }));
   });
 
@@ -189,7 +269,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     fireEvent.click(screen.getByRole('button', { name: '証跡を保存' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('add-task-completion-evidence', {
-      operation_id: '69000000-0000-4000-8000-000000000001',
+      operation_id: expect.any(String),
       task_id: 'task-1',
       note: '提出完了・受付済み',
       image: undefined,

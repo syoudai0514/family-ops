@@ -319,8 +319,9 @@ declare
 begin
   -- Pickup automation is intentionally disabled on Japanese non-workdays.
   -- This scenario exercises a same-day reassignment and therefore cannot use
-  -- a simulated weekday; skip deterministically when CI runs on a weekend.
-  if extract(isodow from v_today) > 5 then
+  -- a simulated weekday; skip deterministically on a weekend or seeded Japanese holiday.
+  if extract(isodow from v_today) > 5
+     or exists (select 1 from private.jp_holidays h where h.local_date = v_today) then
     raise notice 'Skipping workday-only reassignment scenario on non-workday %', v_today;
     return;
   end if;
@@ -405,17 +406,35 @@ declare
   v_hh_id uuid;
   v_a uuid := '16000000-0000-0000-0000-000000000005';
   v_b uuid := '16000000-0000-0000-0000-000000000006';
-  -- One week after scenario 4's date: same weekday (so it is a workday iff
-  -- today is — already confirmed true for this fixture's real run date) but
-  -- with no pickup task_instance of its own, unlike scenario 4's date which
-  -- now has one (reassigned to B).
-  v_date date := (now() at time zone 'Asia/Tokyo')::date + 7;
-  v_time timestamptz := ((v_date::text || ' 20:00:00')::timestamp at time zone 'Asia/Tokyo');
+  -- Scenario 4 creates this household against real Tokyo "today" because
+  -- reassign-task-once is intentionally same-day scoped. Reuse that fixture
+  -- only when today itself is a Japanese workday, then choose the first
+  -- simulated workday at least a week later that is neither weekend nor a
+  -- seeded Japanese holiday. This keeps the scenario deterministic across
+  -- CI calendar dates (for example 2026-09-21 is a Monday but a holiday).
+  v_today date := (now() at time zone 'Asia/Tokyo')::date;
+  v_date date;
+  v_time timestamptz;
 begin
-  if extract(isodow from v_date) > 5 then
-    raise notice 'Skipping workday-only unassigned pickup scenario on non-workday %', v_date;
+  if extract(isodow from v_today) > 5
+     or exists (select 1 from private.jp_holidays h where h.local_date = v_today) then
+    raise notice 'Skipping workday-only unassigned pickup scenario because source fixture date % is a non-workday', v_today;
     return;
   end if;
+
+  select d::date into v_date
+  from generate_series(v_today + 7, v_today + 21, interval '1 day') as candidate(d)
+  where extract(isodow from d::date) between 1 and 5
+    and not exists (
+      select 1 from private.jp_holidays h where h.local_date = d::date
+    )
+  order by d
+  limit 1;
+
+  if v_date is null then
+    raise exception 'FAIL unassigned-pickup fixture: no Japanese workday found in 15-day search window';
+  end if;
+  v_time := ((v_date::text || ' 20:00:00')::timestamp at time zone 'Asia/Tokyo');
   select household_id into v_hh_id from public.household_members where user_id = v_a;
   perform public.server_tx_dispatch_routine_automation(v_time, 2000);
   perform public.server_tx_dispatch_routine_automation(v_time, 2000); -- retry

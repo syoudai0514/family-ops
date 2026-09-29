@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Modal } from '../../components/Modal';
-import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
+import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { todayIsoDate } from '../../lib/date';
 import { useHousehold } from '../../app/HouseholdContext';
 import type { CompletionMode, RoutinePhase, TaskInstance } from '../../lib/types';
@@ -34,6 +34,7 @@ export function TaskFormModal({
   onSaved,
 }: TaskFormModalProps) {
   const { members } = useHousehold();
+  const runCommand = useCommandAttempt();
   const { categories } = useTaskCategories();
   const draft = useMemo(() => mode === 'create' ? readTaskFormDraft() : null, [mode]);
   const [title, setTitle] = useState(task?.title ?? initialTitle ?? draft?.title ?? '');
@@ -67,7 +68,6 @@ export function TaskFormModal({
   const [subtasks, setSubtasks] = useState<SubtaskDraft[]>(draft?.subtasks?.length ? draft.subtasks : [{ title: '', required: true }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [operationId] = useState(() => newOperationId());
 
   const isCalendarEvent = calendarVisibility === 'special';
   const modalTitle =
@@ -134,7 +134,10 @@ export function TaskFormModal({
           setSubmitting(false);
           return;
         }
-        await callEdgeFunction(EDGE_FUNCTIONS.createTask, {
+        await runCommand(
+          'task-form:create',
+          EDGE_FUNCTIONS.createTask,
+          (operationId) => ({
           operation_id: operationId,
           title: title.trim(),
           category,
@@ -147,10 +150,14 @@ export function TaskFormModal({
           completion_mode: completionMode,
           routine_phase: routinePhase || undefined,
           subtasks: completionMode === 'subtasks' ? cleanSubtasks : undefined,
-        });
+        }),
+        );
         clearTaskFormDraft();
       } else if (task) {
-        await callEdgeFunction(EDGE_FUNCTIONS.editTask, {
+        await runCommand(
+          `task-form:edit:${task.id}:r${task.revision ?? 1}`,
+          EDGE_FUNCTIONS.editTask,
+          (operationId) => ({
           operation_id: operationId,
           task_id: task.id,
           title: title.trim(),
@@ -161,7 +168,8 @@ export function TaskFormModal({
           category,
           calendar_visibility: calendarVisibility,
           planned_assignee_user_id: assigneeId || null,
-        });
+        }),
+        );
       }
       onSaved();
     } catch (err) {

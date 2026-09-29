@@ -4,12 +4,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from './AuthContext';
 import type { Household, HouseholdMember, Profile } from '../lib/types';
+import { withTimeout } from '../lib/withTimeout';
 
 export type HouseholdMemberWithProfile = HouseholdMember & { profile: Profile | null };
 
@@ -59,9 +61,15 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [household, setHousehold] = useState<Household | null>(null);
   const [members, setMembers] = useState<HouseholdMemberWithProfile[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const hasSuccessfulLoad = useRef(false);
+  const loadedUserId = useRef<string | null>(null);
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     if (!user) {
+      hasSuccessfulLoad.current = false;
+      loadedUserId.current = null;
       setLoadError(null);
       setPhase('no-household');
       setHousehold(null);
@@ -69,38 +77,56 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setPhase('loading');
+    if (loadedUserId.current !== null && loadedUserId.current !== user.id) {
+      hasSuccessfulLoad.current = false;
+      loadedUserId.current = null;
+      setHousehold(null);
+      setMembers([]);
+    }
+
+    if (!hasSuccessfulLoad.current) setPhase('loading');
     setLoadError(null);
 
     try {
-      const { data: myMembership, error: myMembershipError } = await supabase
-        .from('household_members')
-        .select('household_id, user_id, member_role, family_role, joined_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const { data: myMembership, error: myMembershipError } = await withTimeout(
+        supabase
+          .from('household_members')
+          .select('household_id, user_id, member_role, family_role, joined_at')
+          .eq('user_id', user.id)
+          .maybeSingle(),
+        12_000,
+        '家庭情報の読み込みに時間がかかっています。',
+      );
 
       if (myMembershipError) throw myMembershipError;
       if (!myMembership) {
+        if (sequence !== loadSequence.current) return;
         setHousehold(null);
         setMembers([]);
+        loadedUserId.current = user.id;
+        hasSuccessfulLoad.current = true;
         setPhase('no-household');
         return;
       }
 
       const householdId = myMembership.household_id;
-      const [householdResult, membersResult] = await Promise.all([
-        supabase
-          .from('households')
-          .select(
-            'id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at, morning_preparation_setup_completed_at, connections_setup_completed_at, notification_preferences_setup_completed_at, onboarding_preview_completed_at',
-          )
-          .eq('id', householdId)
-          .maybeSingle(),
-        supabase
-          .from('household_members')
-          .select('household_id, user_id, member_role, family_role, joined_at')
-          .eq('household_id', householdId),
-      ]);
+      const [householdResult, membersResult] = await withTimeout(
+        Promise.all([
+          supabase
+            .from('households')
+            .select(
+              'id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at, morning_preparation_setup_completed_at, connections_setup_completed_at, notification_preferences_setup_completed_at, onboarding_preview_completed_at',
+            )
+            .eq('id', householdId)
+            .maybeSingle(),
+          supabase
+            .from('household_members')
+            .select('household_id, user_id, member_role, family_role, joined_at')
+            .eq('household_id', householdId),
+        ]),
+        12_000,
+        '家庭情報の読み込みに時間がかかっています。',
+      );
       if (householdResult.error) throw householdResult.error;
       if (membersResult.error) throw membersResult.error;
       if (!householdResult.data) throw new Error('家庭情報が見つかりません。');
@@ -108,7 +134,11 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       const memberList = membersResult.data ?? [];
       const userIds = memberList.map((m) => m.user_id);
       const profileResult = userIds.length
-        ? await supabase.from('profiles').select('user_id, display_name').in('user_id', userIds)
+        ? await withTimeout(
+            supabase.from('profiles').select('user_id, display_name').in('user_id', userIds),
+            12_000,
+            '家族情報の読み込みに時間がかかっています。',
+          )
         : { data: [] as Profile[], error: null };
       if (profileResult.error) throw profileResult.error;
 
@@ -118,12 +148,16 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         profile: profilesByUserId.get(m.user_id) ?? null,
       }));
 
+      if (sequence !== loadSequence.current) return;
       setHousehold(householdResult.data);
       setMembers(membersWithProfiles);
+      loadedUserId.current = user.id;
+      hasSuccessfulLoad.current = true;
       setPhase(phaseForHousehold(householdResult.data, membersWithProfiles.length));
     } catch (err) {
+      if (sequence !== loadSequence.current) return;
       setLoadError(err instanceof Error ? err.message : '家庭情報を読み込めませんでした。');
-      setPhase('error');
+      if (!hasSuccessfulLoad.current) setPhase('error');
     }
   }, [user]);
 

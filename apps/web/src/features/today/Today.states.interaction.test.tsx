@@ -42,6 +42,7 @@ function todayData(overrides: Partial<TodayData> = {}): TodayData {
     waitingRefsByTaskId: new Map(),
     carryoverTasks: [],
     alreadyHandledTasks: [],
+    completedTodayTasks: [],
     subtasksByTaskId: new Map(),
     executionTargetsByTaskId: new Map(),
     incomingRequests: [],
@@ -61,6 +62,7 @@ function todayData(overrides: Partial<TodayData> = {}): TodayData {
       carryovers: [],
     },
     morningSummary: { completedCount: 0, totalCount: 0 },
+    codmon: null,
     refresh,
     ...overrides,
   };

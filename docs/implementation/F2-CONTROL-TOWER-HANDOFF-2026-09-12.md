@@ -260,6 +260,101 @@ Required remediation:
 
 After merge/deploy, freeze a new exact HEAD and rerun Android Today before any claim mutation. Expected: weekend role-derived items display `誰でもOK` and expose `自分がやる`; they must not display `未定`.
 
+## 7.5 2026-09-13 Android PWA loading/recovery finding
+
+Product Owner reported a second real-use Android PWA problem while rerunning the stale-shell scenario: the PWA can sometimes stop part-way through loading, leave a partially rendered/unresponsive screen, and make bottom-tab navigation unusable until the process is force-closed. Product Owner also requested both pull-to-refresh and an explicit update button.
+
+Fresh CURRENT review found genuine recovery gaps:
+- `AuthContext` waited on `getSession()` without a rejection/timeout recovery state;
+- initial `HouseholdContext` reads and Today reads had no finite client timeout;
+- `HouseholdContext.refresh()` always returned the whole household gate to `loading`, which can unmount the app shell/navigation during a slow refresh even when a valid household snapshot already exists;
+- generic `LoadingScreen` had no delayed recovery control;
+- AppShell had no explicit reload action and no in-app pull-to-refresh gesture.
+
+Remediation candidate:
+- 12s timeout guards for auth, household, and Today read groups;
+- auth/initial household failures converge to explicit recovery instead of an infinite spinner;
+- once household data has loaded successfully, subsequent household refresh keeps the existing shell/nav mounted and ignores stale earlier responses by sequence;
+- all long-running loading screens expose `再読み込み` after 8s;
+- header exposes explicit `更新`;
+- mobile top-of-page deliberate downward pull triggers reload while short/horizontal/interactive-target gestures do not;
+- current URL/session/server state are preserved by normal page reload semantics.
+
+This is a separate genuine PWA resilience defect from the PR #105 stale-shell issue. Affected loading-hang behavior is not accepted until targeted tests + full CI + physical Android rerun pass.
+
+## 7.6 2026-09-14 emergency durable-state recovery after interrupted F2 chat
+
+The previous Physical F2 chat was interrupted. Any local or uncommitted work from that chat is deliberately treated as lost unless it exists in durable GitHub state. No local working tree, prior-chat memory, or imagined patch was used as CURRENT truth.
+
+Fresh recovery readback on 2026-09-14 established:
+
+- durable PR #106 head: `588d939168dd56246945f7b09c159766e2e332b5`;
+- PR #106 was already merged before this recovery resumed;
+- PR #106 merge commit: `2efc6f22b8a733d529d089562d94d3f1f517816f`;
+- PR #107 then corrected a holiday-sensitive **test fixture only**; production behavior was unchanged;
+- recovery-anchor CURRENT main after PR #107: `498a1aab7ca82a2999d79a1500858bbcb30e70a0`;
+- exact-main CI #1227: SUCCESS across DB, Edge Functions, web lint/typecheck/test/build + browser authoring E2E, and real Supabase CLI integration;
+- Operational Safety #322: SUCCESS;
+- Vercel production: READY on exact SHA `498a1aab7ca82a2999d79a1500858bbcb30e70a0`.
+
+PR #106 merge-main CI #1224 failed only because `tests/sql/22_routine_line_automation.sql` treated Monday-Friday as sufficient for a Japanese workday and landed its +7-day fixture on 2026-09-21 (敬老の日). Production correctly suppressed the workday-only dispatch. PR #107 made the fixture consult `private.jp_holidays`; current-main CI #1227 is green.
+
+Independent recovery review on CURRENT main rechecked the canonical Requirements/design against implementation and tests. The PR #106 recovery behavior is present on main and no duplicate reimplementation was performed:
+
+- auth, household, and Today reads have finite client-side timeout recovery;
+- an already-loaded household shell/navigation remains mounted during refresh;
+- stale overlapping household/Today loads are sequence-guarded;
+- long generic loading exposes a delayed `再読み込み` action;
+- the app header exposes explicit `更新`;
+- top-of-page pull-to-refresh is guarded against short/horizontal/scrolled/interactive-target gestures;
+- service-worker update checks have a finite timeout and manual recovery reloads even when the update check hangs/fails;
+- top-level render errors expose recovery instead of a blank app;
+- Today preserves the last good snapshot as stale when a later refresh fails.
+
+The recovery-anchor SHA above is **not** the final Physical F2 frozen SHA because this documentation update itself must merge first. After this documentation PR merges:
+
+1. fresh-read the new CURRENT `main` exact SHA;
+2. verify required CI / Operational Safety;
+3. verify Vercel production is READY on that exact SHA;
+4. freeze that post-merge SHA as the new F2 exact HEAD;
+5. then rerun Android PWA evidence. Do not reuse pre-merge screenshots as final PASS evidence.
+
+Required Android rerun, on the same frozen production SHA:
+
+1. resume an installed PWA that previously held an older shell and verify it converges to CURRENT without cache deletion/reinstall;
+2. verify loading never remains a permanent spinner;
+3. if loading is prolonged, verify the delayed `再読み込み` recovery action appears and works;
+4. verify the header `更新` action works;
+5. verify top-of-page pull-to-refresh works while short/horizontal/scrolled/interactive gestures do not accidentally refresh;
+6. verify auth/session remains signed in after recovery reload;
+7. verify bottom navigation remains operable through normal refresh/recovery;
+8. verify a partial/stale/failing UI can recover without force-close when the browser event loop remains responsive.
+
+Physical status at this recovery point: **PENDING USER DEVICE EVIDENCE**. Do not mark §7.4/§7.5 PASS until the above is captured on the final post-documentation exact production SHA.
+
+## 7.7 2026-09-16 newly discovered Codmon daily-submission requirement
+
+Physical real-use review exposed a material nursery-operation gap that was not covered by Q89-Q106 image/notice intake: the household must complete and submit the Codmon daily contact book by **09:15 JST**, and this is easy to forget.
+
+Product Owner supplied real Codmon screenshots and the household responsibility rules. This is now canonicalized as Requirements §19.18 / Q113 and `docs/design/current/12_CODMON_DAILY_SUBMISSION.md`.
+
+Required daily semantics:
+- Masaki pickup person/time (+ pool availability when the Codmon form presents that field) -> today's pickup owner;
+- Shino yesterday dinner/condition -> yesterday's responsible evening owner;
+- Shino breakfast -> today's morning/dropoff owner;
+- Shino pickup -> today's pickup owner;
+- final Codmon send -> today's morning/dropoff owner, only after all four input acknowledgements are complete;
+- 09:15 hard deadline, with one targeted 09:00 remaining-work reminder;
+- Saturdays/Sundays/Japanese holidays suppressed;
+- unresolved previous-day ownership fails closed to unassigned rather than guessing;
+- Family Ops does not duplicate the Codmon form values or claim provider submission automatically. The final task is the human acknowledgement that Codmon was actually sent.
+
+Implementation candidate PR #111 adds a dedicated `previous_evening_assignee` strategy, workday-only Codmon materialization, DB-level final-send readiness guard, quota-aware reminder dispatch, household-specific seed, and regression `92_codmon_daily_submission.sql`.
+
+Because this requirement changes the production DB/runtime and creates new daily tasks, all prior F2 exact-HEAD evidence becomes pre-Q113 evidence. After PR #111 is approved/merged and the migration is applied, freeze a new exact production HEAD and physically verify the five Codmon tasks, assignments, 09:15 visibility, early-send rejection, final-send success, and 09:00 reminder behavior.
+
+Physical status: **PENDING POST-MERGE / POST-MIGRATION EVIDENCE**.
+
 ## 8. Remaining F2 work after pickup scenario
 
 Continue from the current CF14 matrix, not from memory.
@@ -274,6 +369,7 @@ High-value remaining classes include:
 - Android PWA where required;
 - shopping Q107-Q109;
 - Nursery Q89-Q106 actual image path;
+- Codmon Q113 daily input / 09:15 final submission / 09:00 reminder;
 - Google Q110-Q112 actual controlled provider;
 - LINE/PWA concurrency;
 - scheduler -> actual LINE delivery;

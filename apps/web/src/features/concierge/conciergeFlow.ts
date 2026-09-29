@@ -14,9 +14,24 @@ export type ConciergeDuplicateMatch = {
   };
 };
 
+export type ConciergeResolvedAction =
+  | {
+      type: 'assignment_change_request';
+      taskId: string;
+      taskRevision: number;
+      recipientUserId: string;
+      scope: 'once' | 'this_week';
+      scheduledDate: string;
+      dueAt: string | null;
+      currentAssigneeId: string | null;
+    }
+  | { type: 'needs_clarification'; field: string; question: string };
+
 export type ConciergeCandidate = {
   candidateId: string;
   operationId: string;
+  candidateRevision: number;
+  messageReviewedRevision: number | null;
   kind: ConciergeCandidateKind;
   title: string;
   sourceText: string;
@@ -33,7 +48,11 @@ export type ConciergeCandidate = {
     targetUserId?: string | null;
     targetRole?: string | null;
     sharedMessage?: string | null;
+    subtasks?: string[];
+    context?: string | null;
+    calendarVisibility?: 'special' | 'hidden';
   } | null;
+  resolvedAction?: ConciergeResolvedAction | null;
 };
 
 type RawLineIntent = {
@@ -41,6 +60,9 @@ type RawLineIntent = {
   dueLocalTime?: string | null;
   targetRole?: string | null;
   sharedMessage?: string | null;
+  subtasks?: string[];
+  context?: string | null;
+  calendarVisibility?: 'special' | 'hidden';
 };
 
 type RawConciergeCandidate = {
@@ -55,6 +77,7 @@ type RawConciergeCandidate = {
   ambiguousFields?: string[];
   missingFields: string[];
   duplicateMatch?: ConciergeDuplicateMatch | null;
+  resolvedAction?: ConciergeResolvedAction | null;
 };
 
 type RawConciergeProposal = {
@@ -79,18 +102,43 @@ export type ConciergeRouteState = {
   actualOnly?: boolean;
 };
 
-const STORAGE_KEY = 'family-ops:concierge-draft';
+const LEGACY_STORAGE_KEY = 'family-ops:concierge-draft';
 
-export function saveConciergeDraft(value: string) {
-  try { sessionStorage.setItem(STORAGE_KEY, value); } catch { /* storage unavailable */ }
+export type ConciergeDraftScope = {
+  householdId?: string | null;
+  userId?: string | null;
+};
+
+export function conciergeDraftStorageKey(scope: ConciergeDraftScope): string | null {
+  if (!scope.householdId || !scope.userId) return null;
+  return `family-ops:concierge-draft:${scope.householdId}:${scope.userId}`;
 }
 
-export function loadConciergeDraft(): string {
-  try { return sessionStorage.getItem(STORAGE_KEY) ?? ''; } catch { return ''; }
+function clearLegacyConciergeDraft() {
+  try { sessionStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* storage unavailable */ }
 }
 
-export function clearConciergeDraft() {
-  try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* storage unavailable */ }
+export function saveConciergeDraft(scope: ConciergeDraftScope, value: string) {
+  const key = conciergeDraftStorageKey(scope);
+  clearLegacyConciergeDraft();
+  if (!key) return;
+  try { sessionStorage.setItem(key, value); } catch { /* storage unavailable */ }
+}
+
+export function loadConciergeDraft(scope: ConciergeDraftScope): string {
+  const key = conciergeDraftStorageKey(scope);
+  // Never adopt the old unscoped value: it may have been written by another
+  // signed-in household member on the same browser session.
+  clearLegacyConciergeDraft();
+  if (!key) return '';
+  try { return sessionStorage.getItem(key) ?? ''; } catch { return ''; }
+}
+
+export function clearConciergeDraft(scope: ConciergeDraftScope) {
+  const key = conciergeDraftStorageKey(scope);
+  clearLegacyConciergeDraft();
+  if (!key) return;
+  try { sessionStorage.removeItem(key); } catch { /* storage unavailable */ }
 }
 
 export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText: string): ConciergeProposal {
@@ -104,6 +152,8 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
       return [{
         candidateId: candidate.candidateId,
         operationId: candidate.operationId,
+        candidateRevision: 1,
+        messageReviewedRevision: candidate.kind === 'request' && candidate.intent?.sharedMessage?.trim() ? 1 : null,
         kind: candidate.kind,
         title: candidate.title,
         sourceText: candidate.sourceText?.trim() || sourceText,
@@ -120,7 +170,11 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
           targetUserId: null,
           targetRole: candidate.intent.targetRole ?? null,
           sharedMessage: candidate.intent.sharedMessage ?? null,
+          subtasks: candidate.intent.subtasks ?? [],
+          context: candidate.intent.context ?? null,
+          calendarVisibility: candidate.intent.calendarVisibility ?? 'hidden',
         } : null,
+        resolvedAction: candidate.resolvedAction ?? null,
       } satisfies ConciergeCandidate];
     }),
   };
@@ -129,6 +183,8 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
 export function withActualScheduledDate(candidates: ConciergeCandidate[], scheduledDate: string): ConciergeCandidate[] {
   return candidates.map((candidate) => candidate.kind !== 'actual' ? candidate : {
     ...candidate,
+    candidateRevision: (candidate.candidateRevision ?? 1) + 1,
+    messageReviewedRevision: candidate.messageReviewedRevision,
     intent: { ...(candidate.intent ?? {}), scheduledDate },
   });
 }
@@ -136,6 +192,27 @@ export function withActualScheduledDate(candidates: ConciergeCandidate[], schedu
 export async function proposeConciergeCandidates(text: string): Promise<ConciergeProposal> {
   const raw = await callEdgeFunction<RawConciergeProposal>(EDGE_FUNCTIONS.proposeConciergeCandidates, { text });
   return normalizeConciergeProposal(raw, text);
+}
+
+export async function resolveEditedConciergeCandidate(candidate: ConciergeCandidate): Promise<ConciergeCandidate> {
+  const raw = await callEdgeFunction<RawConciergeProposal>(EDGE_FUNCTIONS.proposeConciergeCandidates, {
+    candidate_override: {
+      candidateId: candidate.candidateId,
+      operationId: candidate.operationId,
+      kind: candidate.kind,
+      title: candidate.title,
+      sourceText: candidate.sourceText,
+      missingFields: candidate.missingFields,
+      intent: candidate.intent,
+    },
+  });
+  const resolved = normalizeConciergeProposal(raw, candidate.sourceText).candidates[0];
+  if (!resolved) throw new Error('変更後の内容を確認できませんでした。元の候補を残しています。');
+  return {
+    ...resolved,
+    candidateRevision: candidate.candidateRevision ?? 1,
+    messageReviewedRevision: candidate.messageReviewedRevision ?? null,
+  };
 }
 
 export function readOnlyDestination(intent: NonNullable<ConciergeProposal['read_only_intent']>): string {

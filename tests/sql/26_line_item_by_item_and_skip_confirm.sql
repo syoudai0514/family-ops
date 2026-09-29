@@ -138,7 +138,8 @@ declare
 begin
   -- This stale-session scenario requires pickup automation, which is not
   -- scheduled on non-workdays. Avoid a date-dependent false failure in CI.
-  if extract(isodow from v_today) > 5 then
+  if extract(isodow from v_today) > 5
+     or exists (select 1 from private.jp_holidays h where h.local_date = v_today) then
     raise notice 'Skipping workday-only stale-session scenario on non-workday %', v_today;
     return;
   end if;

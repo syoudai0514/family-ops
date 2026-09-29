@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { todayIsoDate } from '../../lib/date';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import type { Handover, HandoverPeriod } from '../../lib/types';
@@ -210,6 +211,7 @@ function HandoverRow({ handover, isRead, onChanged }: { handover: Handover; isRe
 }
 
 function ComposeHandoverForm({ onCreated }: { onCreated: () => void }) {
+  const runCommand = useCommandAttempt();
   const [text, setText] = useState('');
   const [period, setPeriod] = useState<HandoverPeriod>('day');
   const [categoriesInput, setCategoriesInput] = useState('');
@@ -228,15 +230,19 @@ function ComposeHandoverForm({ onCreated }: { onCreated: () => void }) {
         .split(',')
         .map((c) => c.trim())
         .filter((c) => c.length > 0);
-      await callEdgeFunction(EDGE_FUNCTIONS.createHandover, {
-        operation_id: newOperationId(),
+      await runCommand(
+        'handover:create',
+        EDGE_FUNCTIONS.createHandover,
+        (operationId) => ({
+        operation_id: operationId,
         shared_text: text.trim(),
         period,
         categories,
         occurred_on: occurredOn,
         ack_policy: important ? 'required' : 'none',
         valid_until: validUntil ? new Date(validUntil).toISOString() : undefined,
-      });
+      }),
+      );
       onCreated();
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '作成に失敗しました。');

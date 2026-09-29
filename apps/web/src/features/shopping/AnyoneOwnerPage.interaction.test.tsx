@@ -9,6 +9,9 @@ import { supabase } from '../../lib/supabaseClient';
 vi.mock('../../app/HouseholdContext', () => ({
   useHousehold: () => ({ household: { id: 'household-1' } }),
 }));
+vi.mock('../../app/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'user-1' } }),
+}));
 
 vi.mock('../../lib/supabaseClient', () => ({
   supabase: { rpc: vi.fn() },

@@ -9,6 +9,12 @@ vi.mock('../../lib/apiClient', async () => {
   return { ...actual, callEdgeFunction: (...args: unknown[]) => callEdgeFunction(...args) };
 });
 vi.mock('../../lib/id', () => ({ newOperationId: () => '00000000-0000-4000-8000-000000000001' }));
+vi.mock('../../app/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'user-1' } }),
+}));
+vi.mock('../../app/HouseholdContext', () => ({
+  useHousehold: () => ({ household: { id: 'household-1' } }),
+}));
 
 const REVIEW = {
   intake_id: 'intake-1',

@@ -74,6 +74,7 @@ Provider mutation ownership must remain singular; orphan evidence is not a writa
 11. `10_BACKUP_RECOVERY.md` — ADR 0014 accepted right-sized household recovery contract on CURRENT main
 12. `10_LINE_PWA_RESPONSIBILITY_MATRIX.md` — CF-09 M01-M26 classifications Product Owner approved; integration candidate, not Release GO
 13. `11_APPROVED_FINAL_UX_CANONICALIZATION.md` — exact approved UX snapshot/provenance/Q mapping registry; §4.2にphysical-F2 approved clarifications; subordinate to Baseline
+14. `12_CODMON_DAILY_SUBMISSION.md` — Q113毎朝9:15コドモン入力・担当解決・最終送信gate・09:00 reminder
 
 Review instruction/history documents remain audit-only and are not CURRENT requirements/design authorities.
 

@@ -26,6 +26,33 @@ Transaction order:
 
 No provider network call inside DB transaction.
 
+### 1.1 Client bounded wait and uncertain mutation recovery
+
+PWA commands use finite client deadlines. The client does not unconditionally retry a
+mutation merely because the HTTP response was slow or lost.
+
+- authentication/payload validation failure before dispatch is `not_sent`;
+- deterministic business/CAS rejection is `rejected` and requires current-state
+  review when appropriate;
+- once a mutation may have been dispatched, timeout/network failure/5xx or an
+  unreadable success response is treated conservatively as `unknown`;
+- `unknown` must never be rendered as “not sent” or “failed”; the user is told
+  that the result could not be confirmed;
+- recovery reuses the exact endpoint, payload and `operation_id` for the same
+  logical command. A new UUID must not be generated on rerender/retry;
+- the same operation ID with a different payload is an idempotency conflict, not
+  a request to reinterpret the old operation;
+- no automatic replay occurs after the 24-hour client resume window. The user
+  must confirm current authoritative state before starting a new command.
+
+Prepared/unknown command attempts are stored only in user+household-scoped
+session storage. Success/rejected attempts are removed. Stored recovery payloads
+must not contain JWT/API keys, provider secrets, image binary, or private raw
+natural-language source text. Draft storage follows the same user/household
+scope; an old unscoped draft is never silently adopted by another signed-in
+user.
+
+
 ## 2. Task operational state
 
 Current task status remains intentionally small:

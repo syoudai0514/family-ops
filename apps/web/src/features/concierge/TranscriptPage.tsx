@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useHousehold } from '../../app/HouseholdContext';
 import { FamilyOpsApiError } from '../../lib/apiClient';
 import { proposeConciergeCandidates, saveConciergeDraft, type ConciergeRouteState } from './conciergeFlow';
 import './concierge.css';
@@ -7,6 +8,7 @@ import './concierge.css';
 export function TranscriptPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { household, me } = useHousehold();
   const state = (location.state ?? {}) as ConciergeRouteState;
   const [text, setText] = useState(state.draft ?? '');
   const [busy, setBusy] = useState(false);
@@ -15,7 +17,7 @@ export function TranscriptPage() {
   async function organize() {
     const value = text.trim();
     if (!value) return setError('文字起こしを確認してください。');
-    saveConciergeDraft(value);
+    saveConciergeDraft({ householdId: household?.id ?? null, userId: me?.user_id ?? null }, value);
     setBusy(true);
     setError(null);
     try {

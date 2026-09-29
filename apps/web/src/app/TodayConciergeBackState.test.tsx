@@ -6,6 +6,12 @@ import { QuickAdd } from '../features/tasks/QuickAdd';
 import { ConciergePage } from '../features/concierge/ConciergePage';
 
 vi.mock('../features/tasks/TaskFormModal', () => ({ TaskFormModal: () => null }));
+vi.mock('./HouseholdContext', () => ({
+  useHousehold: () => ({
+    household: { id: 'household-1' },
+    me: { user_id: 'user-1' },
+  }),
+}));
 
 function TodayHarness() {
   return (
@@ -49,13 +55,12 @@ describe('CF-13 Today -> Concierge -> Back state', () => {
 
     window.scrollY = 460;
     fireEvent.click(screen.getByRole('button', { name: '追加する' }));
-    fireEvent.click(screen.getByRole('button', { name: /おうちコンシェルジュ/ }));
-    expect(await screen.findByRole('heading', { name: 'おうちコンシェルジュ' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '追加' })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole('textbox', { name: '何でも書いてください' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: '思いついたことを、そのまま書いてください' }), {
       target: { value: '金曜のお迎えをお願いしたい' },
     });
-    expect(sessionStorage.getItem('family-ops:concierge-draft')).toBe('金曜のお迎えをお願いしたい');
+    expect(sessionStorage.getItem('family-ops:concierge-draft:household-1:user-1')).toBe('金曜のお迎えをお願いしたい');
 
     window.scrollY = 20;
     fireEvent.click(screen.getByRole('button', { name: /戻る/ }));
@@ -63,7 +68,6 @@ describe('CF-13 Today -> Concierge -> Back state', () => {
     await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 460, left: 0, behavior: 'auto' }));
 
     fireEvent.click(screen.getByRole('button', { name: '追加する' }));
-    fireEvent.click(screen.getByRole('button', { name: /おうちコンシェルジュ/ }));
-    expect(await screen.findByRole('textbox', { name: '何でも書いてください' })).toHaveValue('金曜のお迎えをお願いしたい');
+    expect(await screen.findByRole('textbox', { name: '思いついたことを、そのまま書いてください' })).toHaveValue('金曜のお迎えをお願いしたい');
   });
 });

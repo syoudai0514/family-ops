@@ -64,23 +64,26 @@ Every item includes stable `action_target` for LINE postback/PWA deep link.
 
 ### Morning
 
+PWA Todayはdashboardではなく、今この人が何をすればよいかを最短で示す。受動的な情報を自分の実作業より上へ固定しない。
+
 1. 🔴 まず確認
-2. ⏳ 待ちの確認日（該当時のみ）
-3. ⚠️ いつもと違うこと
-4. ℹ️ 引き継ぎ・共有
-5. ✅ もう済んでいること（burden reducing only）
-6. 🌅 朝にやること
-7. 🌙 夜にやること
-8. 💡 余力があれば
-9. partner summary
+2. ⚠️ いつもと違うこと
+3. carried / reconciliation input（該当時のみ）
+4. 🌅 今朝の自分の作業
+5. ℹ️ 引き継ぎ・共有
+6. ⏳ 待ちの確認日（該当時のみ）
+7. 🌙 このあと今日やること
+8. ✅ もう済んでいること（burden reducing only）
+9. schedule
+10. partner summary
 
 ### Daytime `今日`
 
-- urgent/current schedule first
-- due waiting check when applicable
-- current-time tasks
+- urgent/current exception first
+- current-time own tasks / reconciliation
+- active info and due waiting checks
 - upcoming today tasks
-- active info
+- already-handled burden reduction and schedule
 - partner critical state
 
 ### Evening
@@ -112,7 +115,7 @@ Do not solve noise by hiding all own tasks behind PWA.
 
 Default partner display:
 
-- summary counts
+- open-assigned count only as quiet supporting metadata when useful
 - transport
 - medical/critical household responsibilities
 - today-only changed assignment
@@ -120,7 +123,7 @@ Default partner display:
 
 `[相手の分も見る]` expands.
 
-The fact that partner completed normal own work is accessible in detail/history but not pushed as scorekeeping.
+Do not headline `completed_today` or otherwise turn the default partner card into a scoreboard. The fact that partner completed normal own work is accessible in detail/history but not pushed as scorekeeping. If partner work materially reduces the current user's expected work, surface that effect through `already_handled` instead.
 
 ## 6. Morning schedule
 
@@ -271,6 +274,16 @@ Rules:
 - installed PWA shell freshness is part of Today correctness: on initial load and when a suspended PWA returns to the foreground/focus/pageshow/online, the current service-worker registration checks for an update; duplicate resume events are debounced.
 - a newly activated worker may reload/navigate the current PWA window to the same URL, preserving Supabase auth/local state. Service-worker scripts are served with no-cache/no-store headers so an update check cannot be satisfied by a stale worker script.
 - failure to check for an update must not block Today; the current shell remains usable and the next resume/focus retries.
+- PWA recovery is always reachable: the app header exposes a reload control, and top-of-page downward pull supports pull-to-refresh. The gesture activates only from scroll-top, requires a deliberate vertical threshold, ignores interactive/modal targets, and debounces accidental horizontal/short pulls.
+- auth/household/Today reads have finite client-side timeouts. A timeout never leaves a permanent spinner: initial-gate failures become a retry/reload state, while a household refresh after a successful load keeps the existing app shell/nav mounted instead of replacing it with a blocking loader.
+- after Today has a successful snapshot, a later refresh/read failure keeps that snapshot visible as stale and explains that the last confirmed content is being shown; it must not replace known content with a false empty state.
+- mutation timeout/network uncertainty after dispatch is shown as result-unknown, not “failed/not sent”. Retrying the same logical action reuses the exact confirmed payload and `operation_id`; changing recipient/body/target requires resolving the previous outcome first.
+- local recovery state and Concierge drafts are scoped by signed-in user + household. Legacy unscoped Concierge text is not silently adopted after an account/household switch.
+- generic full-screen loading surfaces reveal a manual reload action if loading exceeds the recovery threshold. Reloading preserves Supabase auth/session/local state.
+- PWA Today does not add a separate KPI/dashboard row for `要対応 / 残り / 待ち / 明日影響`; the actionable sections themselves carry those states and counts.
+- morning/daytime rendering may place current own work above passive handover/info while preserving urgent actions and exceptions first.
+- the default partner card must not headline ordinary completion counts; show household-critical items first and any open count only as quiet metadata.
+- Shopping leads with open states (`wanted / assigned / ordered`). Terminal history (`purchased / arrived / cancelled`) is collapsed behind an explicit “終わったもの” disclosure so an empty open list is immediately understandable.
 
 ## 11. Deep links
 
@@ -397,7 +410,7 @@ This includes routine household work and continuing child-care routines such as 
 - live transport, when present, still wins;
 - `誰でもOK` stays visible to both adults; unclaimed shows `誰でもOK`, claimed shows the current `パパ対応中 / ママ対応中` state;
 - it is excluded from `担当未定 / まず確認`;
-- execution requires `自分がやる` claim first;
+- `自分がやる` is optional pre-coordination, not an execution prerequisite. An unclaimed `誰でもOK` task can be checked/completed directly and the actual performer is recorded; if another adult already holds the claim, direct execution stays blocked until takeover;
 - LINE Today exposes a contextual `誰でもOKを確認` entry whenever same-day anyone work exists, so claim/release stays discoverable in the daily channel;
 - claimant can release; the other adult can explicitly take over;
 - takeover does not mutate on the first LINE tap: the current claimant is fresh-read and shown before the explicit confirm tap;
@@ -408,6 +421,8 @@ This includes routine household work and continuing child-care routines such as 
 Task display:
 
 `牛乳を買う  誰でもOK [自分がやる]`
+
+The user may also complete/check the item directly without pressing `自分がやる` first. `自分がやる` means “I will handle this”, not “the UI is unlocked”.
 
 After claim:
 
@@ -424,6 +439,16 @@ other adult secondary detail only:
 Takeover confirmation must show current claimant to avoid accidental steal.
 
 No push “パパが担当しました” for normal claim; state is visible on Today/shopping.
+
+## 15.1 Completion correction
+
+Today keeps same-day completed work in a quiet, collapsible `完了済み` section so an accidental tap is recoverable without turning the home screen into a scorecard.
+
+- whole task: `未完了に戻す` performs a revision-checked canonical mutation;
+- checklist task: expand the completed item and uncheck the mistaken subtask; the parent atomically returns to `in_progress`;
+- correction never hard-deletes completion history. The previous actual participant is retained as removed history and a `completion_reverted` event is written;
+- completed partner work is not promoted into this personal correction surface merely to score the partner. The section contains tasks relevant to the current user or household-open `誰でもOK` work.
+
 
 ## 16. Completion notification policy
 

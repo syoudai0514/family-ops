@@ -11,6 +11,7 @@ export const EDGE_FUNCTIONS = {
   commitConciergeDuplicate: 'commit-concierge-duplicate',
   cancelTask: 'cancel-task',
   completeTask: 'complete-task',
+  reopenTask: 'complete-task',
   recordUnplannedActual: 'record-unplanned-actual',
   addTaskCompletionEvidence: 'add-task-completion-evidence',
   setTaskWaiting: 'set-task-waiting',

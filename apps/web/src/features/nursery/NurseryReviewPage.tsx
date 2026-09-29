@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 
 type JsonObject = Record<string, unknown>;
 
@@ -204,6 +204,7 @@ function ReviewItemEditor({ item, draft, onChange }: { item: NurseryReviewItem; 
 }
 
 export function NurseryReviewPage() {
+  const runCommand = useCommandAttempt();
   const { intakeId } = useParams<{ intakeId?: string }>();
   const navigate = useNavigate();
   const [pending, setPending] = useState<PendingReview[]>([]);
@@ -260,10 +261,14 @@ export function NurseryReviewPage() {
     if (hasDraftJsonError) { setError('詳細編集のエラーを直してください。'); return; }
     setBusy(true); setError(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.confirmNurseryReview, {
-        operation_id: newOperationId(), intake_id: review.intake_id, expected_revision: review.revision,
-        selected_items: review.items.filter((item) => drafts[item.id]?.selected).map((item) => ({ review_item_id: item.id, confirmed_value: drafts[item.id].value })),
-      });
+      await runCommand(
+        `nursery:${review.intake_id}:confirm:r${review.revision}`,
+        EDGE_FUNCTIONS.confirmNurseryReview,
+        (operationId) => ({
+          operation_id: operationId, intake_id: review.intake_id, expected_revision: review.revision,
+          selected_items: review.items.filter((item) => drafts[item.id]?.selected).map((item) => ({ review_item_id: item.id, confirmed_value: drafts[item.id].value })),
+        }),
+      );
       setDone(true);
     } catch (err) { setError(errorMessage(err)); }
     finally { setBusy(false); }
