@@ -116,6 +116,10 @@ describe('Today first-flow priority contract', () => {
     expect(remainingHeading.compareDocumentPosition(tomorrowSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  // Requirements §3 forbids 勝率/ポイント/ランキング, and design 04 §5 / §16.2 keep a
+  // partner's ordinary completions in detail/history rather than pushing them as
+  // scorekeeping. The card used to headline `残り N件・完了 N件` at <h2> size, which
+  // on a live household morning read "残り 11件・完了 0件".
   it('keeps same-day completed work in a quiet collapsed correction section', () => {
     const completed = { ...task('done-1', '燃えるゴミのゴミ出し'), status: 'completed', completed_at: '2026-09-09T07:30:00+09:00' };
     mockToday.mockReturnValue(data({ completedTodayTasks: [completed] }));
@@ -131,10 +135,6 @@ describe('Today first-flow priority contract', () => {
     expect(section).toHaveTextContent('押し間違えた場合はここから未完了に戻せます');
   });
 
-  // Requirements §3 forbids 勝率/ポイント/ランキング, and design 04 §5 / §16.2 keep a
-  // partner's ordinary completions in detail/history rather than pushing them as
-  // scorekeeping. The card used to headline `残り N件・完了 N件` at <h2> size, which
-  // on a live household morning read "残り 11件・完了 0件".
   it('shows the partner state without scoring their day', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
 
