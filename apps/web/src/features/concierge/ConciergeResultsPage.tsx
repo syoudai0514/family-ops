@@ -101,8 +101,8 @@ export function ConciergeResultsPage() {
   if (state.readOnlyIntent) {
     return <div className="app-shell concierge-page">
       <button type="button" className="text-button concierge-back" onClick={() => navigate(-1)}>‹ 戻る</button>
-      <div className="eyebrow">確認</div><h1>登録する内容はありません</h1>
-      <section className="card"><b>これは照会として扱います</b><p className="page-lead">「{state.draft}」から業務オブジェクトは作りません。</p><button type="button" onClick={() => navigate(readOnlyDestination(state.readOnlyIntent!))}>内容を見る</button></section>
+      <div className="eyebrow">質問として受け取りました</div><h1>登録や送信はしていません</h1>
+      <section className="card"><b>「{state.draft}」</b><p className="page-lead">答えは下のボタンから確認できます。</p><button type="button" onClick={() => navigate(readOnlyDestination(state.readOnlyIntent!))}>内容を見る</button></section>
     </div>;
   }
 

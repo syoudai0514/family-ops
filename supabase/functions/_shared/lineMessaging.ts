@@ -102,6 +102,18 @@ function buildLineMessages(
 }
 
 /** {APP_BASE_URL}/checkin/{session_id} -- 06_LINE_INTEGRATION.md #8 "No bearer credential in URL". */
+// Footer for scheduled briefs and the Codmon reminder. These were sent as bare
+// text from the daily_brief_v2 cutover (2026-09-04) on, so nothing in them led
+// to the screen where the listed work is completed. Returns '' when
+// APP_BASE_URL is unset rather than printing a broken relative path.
+export function buildTodayLinkFooter(type: string): string {
+  const base = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
+  if (!base) return '';
+  if (type === 'daily_brief.v2') return `▶ 完了・詳細はここから\n${base}/today`;
+  if (type === 'codmon.deadline') return `▶ 入力状況を開く\n${base}/today`;
+  return '';
+}
+
 export function buildCheckinLink(sessionId: string): string {
   const base = Deno.env.get('APP_BASE_URL') ?? '';
   return `${base}/checkin/${sessionId}`;

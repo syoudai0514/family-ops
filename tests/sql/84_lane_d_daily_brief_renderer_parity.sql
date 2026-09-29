@@ -52,7 +52,10 @@ begin
      or position('余力があれば' in v_morning) = 0
      or position('余裕タスク' in v_morning) = 0
      or position('相手の今日' in v_morning) = 0
-     or position('残り 2件・待ち 1件・完了 1件' in v_morning) = 0
+     -- Owner decision (2026-09-29): LINE no longer scores the partner's day,
+     -- matching the PWA (aee0115). The item that affects the reader stays.
+     or position('相手の迎え' in v_morning) = 0
+     or position('件・待ち 1件・完了' in v_morning) > 0
      or position('まとめ入力' in v_morning) = 0
      or position('明日の準備・変更' in v_morning) = 0
      or position('明日の水筒を準備' in v_morning) = 0 then

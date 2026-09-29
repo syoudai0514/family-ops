@@ -481,18 +481,20 @@ begin
   notification_result:=public.server_tx_dispatch_codmon_reminders_v1(
     ((reminder_day::text||' 09:00')::timestamp at time zone 'Asia/Tokyo')
   );
-  if coalesce((notification_result->>'notifications')::int,0)<>2 then
-    raise exception 'FAIL codmon: expected two targeted reminder intents, got %',
+  -- Owner decision 2026-09-29: the 09:00 reminder goes to the day's pickup
+  -- assignee only (u2 here), and because it is the only reminder it must list
+  -- every pending input with its owner -- including u1's breakfast input.
+  if coalesce((notification_result->>'notifications')::int,0)<>1 then
+    raise exception 'FAIL codmon: expected one reminder to the pickup assignee, got %',
       notification_result;
   end if;
 
-  if not exists(
+  if exists(
     select 1 from public.user_notifications
-    where household_id=hh and recipient_user_id=u1
-      and type='codmon.deadline'
-      and body like '%詩乃：コドモン入力（朝食）%'
+    where household_id=hh and recipient_user_id=u1 and type='codmon.deadline'
+      and payload->>'local_date'=reminder_day::text
   ) then
-    raise exception 'FAIL codmon: morning owner reminder missing breakfast input';
+    raise exception 'FAIL codmon: non-pickup adult must not receive the reminder';
   end if;
 
   if not exists(
@@ -501,8 +503,9 @@ begin
       and type='codmon.deadline'
       and body like '%将生：コドモン入力%'
       and body like '%詩乃：コドモン入力（迎え）%'
+      and body like '%詩乃：コドモン入力（朝食）%'
   ) then
-    raise exception 'FAIL codmon: pickup owner reminder missing assigned inputs';
+    raise exception 'FAIL codmon: pickup reminder must list every pending input, incl. the other adult''s';
   end if;
 
   perform public.server_tx_dispatch_codmon_reminders_v1(
@@ -512,7 +515,7 @@ begin
   from public.user_notifications
   where household_id=hh and type='codmon.deadline'
     and payload->>'local_date'=reminder_day::text;
-  if n<>2 then
+  if n<>1 then
     raise exception 'FAIL codmon: reminder dedup failed (% rows)',n;
   end if;
 end;
