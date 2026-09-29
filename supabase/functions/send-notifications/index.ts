@@ -32,7 +32,7 @@
 import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts';
 import { withServiceHandler, jsonResponse } from '../_shared/handler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { buildCheckinLink } from '../_shared/lineMessaging.ts';
+import { buildCheckinLink, buildTodayLinkFooter } from '../_shared/lineMessaging.ts';
 import { buildRoutineQuickReply } from './routineQuickReply.ts';
 import {
   buildAssignmentRequestFlex,
@@ -184,9 +184,12 @@ function buildBundledText(
           return block;
         })
       : [`Family Ops: ${type}`];
-  const text = blocks.filter((b) => b.length > 0).join('\n\n');
-  const truncated =
-    text.length <= LINE_TEXT_MAX_CHARS ? text : text.slice(0, LINE_TEXT_MAX_CHARS - 1) + '…';
+  const footer = buildTodayLinkFooter(type);
+  const body = blocks.filter((b) => b.length > 0).join('\n\n');
+  // The footer is reserved space: a long brief is cut before the link, never the link itself.
+  const room = LINE_TEXT_MAX_CHARS - (footer ? footer.length + 2 : 0);
+  const clipped = body.length <= room ? body : body.slice(0, room - 1) + '…';
+  const truncated = footer ? `${clipped}\n\n${footer}` : clipped;
   return { text: truncated, sessionIds: Array.from(seenSessionIds) };
 }
 

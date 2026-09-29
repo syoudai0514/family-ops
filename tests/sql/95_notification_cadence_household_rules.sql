@@ -47,6 +47,33 @@ begin
     end if;
   end loop;
 
+  -- LINE brief filter: a handover is not echoed back to its own author, and
+  -- stale (>24h, no ack needed) handovers drop out of scheduled briefs.
+  insert into public.handovers(household_id, author_id, shared_text, period, occurred_on, created_at)
+  values (v_hh, v_owner, '自分で書いた共有', 'day', date '2026-10-04', timestamptz '2026-10-04 08:00:00+09');
+  if jsonb_array_length(private.fn_daily_brief_for_line_v1(
+       jsonb_build_object('active_infos', jsonb_build_array(jsonb_build_object(
+         'handover_id', (select id from public.handovers where household_id = v_hh limit 1)))),
+       v_owner, timestamptz '2026-10-04 09:00:00+09', 'morning')->'active_infos') <> 0 then
+    raise exception 'FAIL cadence: own handover echoed back to its author';
+  end if;
+
+  -- Evening: stale Codmon inputs and the partner's past items are not re-listed.
+  v_slots := private.fn_daily_brief_for_line_v1(jsonb_build_object(
+      'own_task_groups', jsonb_build_object('morning', jsonb_build_array(
+        jsonb_build_object('title','詩乃：コドモン入力（朝食）','category','nursery','due_at','2026-09-29T00:15:00+00:00'),
+        jsonb_build_object('title','朝の片付け','category','cleaning','due_at','2026-09-29T00:15:00+00:00'))),
+      'partner_summary', jsonb_build_object('critical_items', jsonb_build_array(
+        jsonb_build_object('title','朝ごはん','due_at','2026-09-28T22:00:00+00:00'),
+        jsonb_build_object('title','夜の薬','due_at','2026-09-29T12:30:00+00:00')))),
+    v_owner, timestamptz '2026-09-29 20:30:00+09', 'evening');
+  if v_slots->'own_task_groups'->'morning' @> '[{"category":"nursery"}]'
+     or not (v_slots->'own_task_groups'->'morning' @> '[{"title":"朝の片付け"}]')
+     or v_slots->'partner_summary'->'critical_items' @> '[{"title":"朝ごはん"}]'
+     or not (v_slots->'partner_summary'->'critical_items' @> '[{"title":"夜の薬"}]') then
+    raise exception 'FAIL cadence: evening LINE filter wrong: %', v_slots;
+  end if;
+
   -- Weekly preview renders a day with transport for next week.
   insert into public.task_instances(household_id, origin, title, category, routine_phase,
     scheduled_date, calendar_visibility, status, source, created_by, completion_mode, assignment_mode)
@@ -77,6 +104,10 @@ begin
     where household_id = v_hh and type = 'daily_brief.v2'
       and payload->>'schedule_kind' = 'evening_brief') then
     raise exception 'FAIL cadence: Sunday evening brief dispatched';
+  end if;
+  -- No partner scoreboard in LINE (it was "残り 9件・待ち 0件・完了 0件" live).
+  if v_notif.body ~ '件・待ち [0-9]+件・完了' then
+    raise exception 'FAIL cadence: LINE brief still scores the partner: %', v_notif.body;
   end if;
   if length(v_notif.body) > 5000 then
     raise exception 'FAIL cadence: brief exceeds LINE 5000-char limit';
