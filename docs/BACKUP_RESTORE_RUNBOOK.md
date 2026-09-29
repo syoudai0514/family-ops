@@ -30,10 +30,27 @@ freshness and restore selection MUST include the exact owner `user_id`, app_id
 and slot_id. Never prune/delete by app/slot without owner scope.
 
 `app_saves`/`app_save_backups` RLS remains enabled and user-scoped. The backup
-script preflights the single trusted app-save-hub owner, RLS and namespace owner
-before writing. This is operational namespace isolation inside one personal
+script preflights the trusted app-save-hub owner (earliest-created auth user), RLS
+and namespace owner before writing. Other people may hold accounts for other
+apps in the same project; "exactly one auth user" is required only while the
+Family Ops namespace is empty (first run or a lost owner), and once it holds
+rows they must all belong to the owner. This is operational namespace isolation inside one personal
 save service, not a claim of adversarial tenant isolation between the owner's
 own apps.
+
+### Upload size (chunked)
+
+The snapshot (~2 MB of JSON and growing with `task_instances`) no longer travels
+as one Management API query -- a single ~2.9 MB request returned HTTP 413 on
+2026-09-29. `create_household_snapshot.sh` uploads it in ~400 KB base64 chunks as
+staging rows in the Family Ops namespace (same owner and app_id, slot
+`household-durable-v1-stage-NNN`), then ONE statement assembles them server-side,
+stores the generation exactly as before, and deletes the staging rows. A partial
+set of chunks is never stored, leftovers are cleared at the start of the next run
+and on exit, and only the stage slots are ever deleted by those steps.
+
+Retention keeps exactly `MAX_BACKUPS` generations: the prune runs against the rows
+that existed before the new insert, so it keeps `MAX_BACKUPS - 1` of them.
 
 ## 3. Recoverable data
 

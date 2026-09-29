@@ -64,6 +64,46 @@ grep -Fq "where user_id='\${OWNER_USER_ID}'::uuid and app_id='\${APP_ID}' and sl
 grep -Fq "b.user_id='\${OWNER_USER_ID}'::uuid" "$SNAPSHOT" || fail "retention prune is not owner-scoped"
 grep -Fq 'relrowsecurity' "$SNAPSHOT" || fail "app-save-hub RLS preflight missing"
 grep -Fq 'foreign_namespace_rows' "$SNAPSHOT" || fail "namespace owner conflict guard missing"
+grep -Fq 'foreign_namespace_rows == 0' "$SNAPSHOT" || fail "foreign namespace rows must stay forbidden"
+grep -Fq 'namespace_rows' "$SNAPSHOT" || fail "namespace-aware owner rule missing"
+
+# The snapshot is uploaded in chunks (a single ~2.9 MB query returned HTTP 413 on
+# 2026-09-29). Staging rows hold household data, so every statement that touches
+# them must be owner/app scoped and stage-slot only, the assembly must require
+# every chunk, and the real slot must never be deleted by the staging steps.
+grep -Fq 'split -b "$CHUNK_CHARS"' "$SNAPSHOT" || fail "chunked upload missing"
+grep -Fq 'chunks = ${CHUNK_COUNT}' "$SNAPSHOT" || fail "assembly does not require every chunk"
+grep -Fq 'staging_removed' "$SNAPSHOT" || fail "staging rows are not removed after storing"
+stage_lines=0
+while IFS= read -r line; do
+  stage_lines=$((stage_lines + 1))
+  case "$line" in *"app_id='\${APP_ID}'"*) ;; *) fail "stage statement is not app_id scoped: $line" ;; esac
+  case "$line" in *"OWNER_USER_ID}'::uuid"*) ;; *) fail "stage statement is not owner scoped: $line" ;; esac
+done < <(grep -E "STAGE_PREFIX\}%'|-stage-%'" "$SNAPSHOT")
+[ "$stage_lines" -ge 4 ] || fail "expected owner/app-scoped staging cleanup at start, in assembly, on exit and in the trap (found $stage_lines)"
+grep -Fq 'offset ${PRUNE_OFFSET}' "$SNAPSHOT" || fail "retention prune must keep MAX_BACKUPS-1 before the insert"
+grep -Fq 'PRUNE_OFFSET=$((MAX_BACKUPS - 1))' "$SNAPSHOT" || fail "prune offset is not derived from MAX_BACKUPS-1"
+
+# Behaviour of the target preflight predicate, extracted from the script itself.
+# Other people may hold accounts for other apps in app-save-hub (friends using
+# mana-evo), so several auth users are fine once the Family Ops namespace holds
+# rows -- but never while it is empty (household data must not land under
+# whichever account happens to be oldest), and never with foreign namespace rows.
+if command -v jq >/dev/null 2>&1; then
+  PREFLIGHT_JQ="$(sed -n "/^jq -e '\$/,/^' \"\\\$TARGET_PREFLIGHT\"/p" "$SNAPSHOT" | sed '1d;$d')"
+  [ -n "$PREFLIGHT_JQ" ] || fail "could not extract the preflight predicate"
+  preflight_case() { # name expected(0=pass,1=fail) auth_users namespace_rows foreign_rows
+    local doc
+    doc="[{\"auth_user_count\":$3,\"owner_user_id\":\"u\",\"app_saves_exists\":true,\"app_save_backups_exists\":true,\"app_saves_rls\":true,\"app_save_backups_rls\":true,\"app_saves_contract\":true,\"app_save_backups_contract\":true,\"app_saves_user_policies\":true,\"app_save_backups_user_policies\":true,\"namespace_rows\":$4,\"foreign_namespace_rows\":$5}]"
+    if printf '%s' "$doc" | jq -e "$PREFLIGHT_JQ" >/dev/null 2>&1; then got=0; else got=1; fi
+    [ "$got" = "$2" ] || fail "preflight case '$1': expected exit $2, got $got"
+  }
+  preflight_case "single user, empty namespace (first run)" 0 1 0 0
+  preflight_case "several users, namespace already owned" 0 3 21 0
+  preflight_case "several users, empty namespace (owner lost)" 1 2 0 0
+  preflight_case "several users, foreign rows in namespace" 1 3 21 1
+  preflight_case "no auth user" 1 0 0 0
+fi
 
 # Allowlist is explicit durable public-domain truth only.
 mapfile -t RECOVERY_TABLES < <(sed -E 's/[[:space:]]+#.*$//' "$TABLES" | sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d')
