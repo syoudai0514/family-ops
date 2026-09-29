@@ -45,74 +45,55 @@ Webテスト             60ファイル / 178テスト
 
 ブランチ: `claude/family-ops-ux-review-em3wns`（`main` から4コミット先行、push済み）
 
-## 最優先タスク: 本番の定例通知が壊れています
+## 訂正済み: 本番の通知障害は原因が確定しています（2026-09-29）
 
-**症状（ユーザー報告）**: 「朝9:00しか来なくなった。夜も来ない。」
+> **この節の旧版は誤りでした。** 旧版は「09:00は土日祝専用の時刻だから、システムが毎日を
+> 休日扱いしている」「LINE無料枠の枯渇」などを仮説にしていましたが、本番DBの読み取り診断で
+> **どれも該当しないと確認されています。** 旧ルーチン通知（07:00/16:00/20:00系）は
+> 2026-09-04 から `daily_brief_v2` ゲートで抑止されており、現行の配信系統は別物です。
 
-### 分かっていること
+**症状**: 「朝9:00しか来なくなった。夜も来ない。」
 
-`server_tx_create_household` が投入する既定スケジュール:
+**原因（本番DBとリポジトリ main の両方で確認済み）**:
+`20260916090000_codmon_daily_submission` が `private.fn_line_preference_column_for_type()` を
+全文書き直した際、直前の版にあった5種類を落としました。
 
-| kind | 時刻 | 適用日 |
-|---|---|---|
-| daily_assignment | 07:00 | 平日 |
-| dropoff_checklist | 07:00 | 平日 |
-| dropoff_checkin | 08:30 | 平日 |
-| pickup_checklist | 16:00 | 平日 |
-| nonpickup_evening_checklist | 20:00 | 平日 |
-| pickup_checkin | 20:30 | 平日 |
-| nonpickup_evening_checkin | 22:00 | 平日 |
-| **nonworkday_morning_digest** | **09:00** | **土日祝のみ** |
-| nonworkday_checkin | 20:00 | 土日祝のみ |
-
-**09:00 は「土日祝」の時刻です。平日は 07:00。**
-つまり平日にも 09:00 だけが来ているなら、システムが**毎日を休日として扱っている**可能性があります。
-
-判定は `private.fn_is_nonworkday(date)` = `土日 OR private.jp_holidays に行がある`。
-`dispatch-routine-automation` が毎分走り、`household_routine_schedules` から
-`enabled AND local_time = 現在時刻` の行を、休日フラグで絞って発火させます。
-
-### 診断手順（この順に、本番Supabaseへ read-only で）
-
-Supabase MCP（`mcp__Supabase__execute_sql`）が使えます。プロジェクト ref は `dnlqxjpjpkxnfgculzip`。
-**まず読むだけ。書き込みはユーザーの承認を取ってから。**
-
-```sql
--- ① スケジュール行が生きているか（一番ありそう）
-select schedule_kind, local_time, enabled, schedule_version
-from public.household_routine_schedules order by local_time;
-
--- ② 祝日テーブルが汚染されていないか（毎日が祝日になっていないか）
-select count(*), min(local_date), max(local_date) from private.jp_holidays;
-select local_date from private.jp_holidays
-where local_date between current_date - 14 and current_date + 14 order by local_date;
-
--- ③ LINE無料枠を使い切っていないか（今は月末。soft_budget=180 / hard cap=200）
-select * from private.line_quota_state;
-
--- ④ タスクが生成されているか（夜の通知は「未完了が0件なら送らない」仕様）
-select scheduled_date, count(*) from public.task_instances
-where scheduled_date >= current_date - 7 group by 1 order by 1;
-
--- ⑤ cron が実際に動いているか
-select jobname, schedule, active from cron.job order by jobname;
-select jobname, status, start_time from cron.job_run_details
-order by start_time desc limit 20;
+```
+daily_brief.v2             → daily_assignment_line   ← 朝夜のブリーフ
+request.followup_requested → request_line
+request.followup_declined  → request_line
+shopping.handled_neutral   → shopping_minor_line
+shopping.reopened_neutral  → shopping_minor_line
 ```
 
-### 有力な仮説（①〜④に対応）
+`private.fn_enqueue_line_notification()` はこの関数が NULL を返すと**何も起こさず return** します。
+アプリ内通知は作られ、エラーも出ず、LINEの送信キュー（`notification_outbox`）にだけ入りません。
+9/16 06:30 の朝ブリーフが最後で、同日夜以降は 0 件でした。09:00 に届いていたのは、
+新しい本体が唯一マッピングしていた `codmon.deadline`（コドモン期限リマインド）です。
+**09:00 は土日祝の時刻ではなく、毎日届くコドモンの時刻でした。**
 
-- **① スケジュール行が無効化された** — 平日kindが `enabled=false` になっていれば、平日は何も来ず、
-  土日だけ 09:00 が来る。ユーザーが「9:00しか来ない」と感じる説明として最も素直
-- **② `private.jp_holidays` の汚染** — 後述のとおり `sync-jp-holidays` は cron 未登録なので、
-  もし手動で一度走らせて CSV のパースを誤っていれば、全日が祝日として入り得ます
-- **③ 月間200通の枠切れ** — 今日は月末。`soft_budget=180` を超えると `reminder` 優先度の送信が
-  先に止まります。**PWAにWeb Pushが無いので、枠が尽きると本当に何も届きません**
-- **④ 夜は仕様どおりの抑止** — `17_ROUTINE_LINE_AUTOMATION.md` #6-7 に
-  「20:00時点で0件なら通知なし」「22:00 check-inは未完了がある時だけ送る」とあります。
-  `materialize-recurring` が止まっていればタスクが0件になり、夜は正しく沈黙します
+切り分けの結果（本番の読み取り診断）:
 
-**①〜⑤を確認するまで、修正を始めないでください。** 仮説のまま直すと別の壊し方をします。
+| 仮説 | 結果 |
+|---|---|
+| 平日スケジュール行の無効化 | 該当せず（9行とも enabled。そもそも旧系統は抑止中で通知に使われない） |
+| `jp_holidays` の汚染 | 該当せず（逆に **0件で空**） |
+| LINE無料枠の枯渇 | 該当せず（9月は 73 / 200 通、`failed` も 0 件） |
+| 夜の抑止（タスク0件） | 該当せず（毎日 9〜23 件生成、夜ブリーフも毎日発火） |
+
+**修正**: `supabase/migrations/20260929140000_restore_line_preference_mappings.sql`
+（5種類を復元し `codmon.deadline` を維持）＋ `tests/sql/94_line_preference_mapping_regression.sql`。
+ローカルの一時PostgreSQL 16で、**全214マイグレーション適用 → テストが修正前は
+`daily_brief.v2 maps to NULL` で落ち、修正後は通る**ことと、隣接するSQLテスト5本が通ることを
+確認済みです。**本番への適用は未実施です。** 適用にはユーザーの承認が必要です。
+適用後は次の夜 20:30 から自動復活します（ブリーフは約8時間で失効するので過去分の再送は不要）。
+
+**再発防止**: この事故は `create or replace` で関数の全文を書き直す方式が原因です。マッピングを
+足すときは必ず既存の行を全部残し、94 番のテストに種類を追加してください。
+
+**別件（今回の障害の原因ではない）**: `private.jp_holidays` が空です。祝日を同期する
+`sync-jp-holidays` が cron に無いことが理由と考えられます（次節）。9/21〜9/23 が平日扱いで、
+朝ブリーフが 06:30 に飛んでいました。
 
 ## 確定している別のバグ: 5つのworkerがcronに登録されていません
 
@@ -174,18 +155,18 @@ web 60ファイル / 178テスト green、lint exit 0、typecheck clean。**DB�
 | **B** | conciergeが4画面（results と confirm がほぼ同じリストを2回）。インライン1画面へ | 表示層のみ |
 | **C** | 家事の結果7択 / 買い物6状態。**DBとSQLテストに深く埋まっている**（`not_needed_this_occurrence` は11ファイル）。正本を先に直すこと | DB |
 | **D** | 初期設定8ステップのゲート（送迎14セルグリッド含む）。ステップ表示も `2/8` と `4/7` で不整合 | 中 |
-| **E** | **LINE無料枠200通と定例通知の構造的衝突。** 平日最大8通/日で月165〜210通。`soft_budget=180`に定例だけで到達。枠が尽きるとin-appフォールバックだが**PWAにWeb Pushが無い**ので何も届かない。`08:30 / 20:30 / 22:00` を既定オフにするだけでも効く | 設定変更 |
+| **E** | ~~LINE無料枠と定例通知の衝突~~ **旧系統の話で、現状は該当しません。** 旧ルーチン通知は 9/4 から抑止中。現行のブリーフは朝夜×2人で月100〜120通前後（推定）で200通に収まる見込み。ただし通知復旧後に実使用量を確認すること。PWAにWeb Pushが無い点は事実 | 監視 |
 | **F** | LINEリッチメニューが未公開（richmenu APIの呼び出しがリポジトリに存在しない）。ユーザーは「メニュー」と打つ必要がある | 小 |
 | **G** | 設定11項目のうち本当の設定は4つ。`Google予定の変更確認` は未処理の作業キューなのでTodayへ | 中 |
-
-**今回の通知障害は E と地続きです。** 診断で③（枠切れ）が当たっていたら、Eは「将来のリスク」ではなく
-「今起きている障害」なので、最優先で対処してください。
 
 ## 最初にやってほしいこと
 
 1. 上の3ファイルを読む
-2. 診断クエリ①〜⑤を**read-onlyで**実行し、結果をユーザーに報告する
-3. **原因が確定してから**、修正案を出して承認を取る
+2. **通知障害の修正マイグレーション**（`20260929140000_restore_line_preference_mappings.sql`）の
+   内容をユーザーに見せ、**本番へ適用してよいか承認を取る。** 適用は承認後のみ。
+   適用後は、次の夜 20:30 に朝夜のブリーフが LINE に届くことを、`private.notification_outbox` に
+   `type='daily_brief.v2'` の新しい行が入ったかで確認する（読み取りのみ）
+3. `sync-jp-holidays` などの cron 未登録 5 本の扱いを、ユーザーと相談する
 4. 本番のcron・DBを書き換える操作は、必ず事前にユーザーの承認を取る
 
 ユーザーは日本語で対話します。技術レビューではなく、
