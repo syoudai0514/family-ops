@@ -43,7 +43,16 @@ if [ ! -s "$TABLES_FILE" ]; then
 fi
 
 WORKDIR="$(mktemp -d)"
-cleanup() { rm -rf "$WORKDIR"; }
+STAGED_OWNER_USER_ID=""
+cleanup() {
+  # Staged chunks hold household data: never leave them behind after a failed
+  # run. Best effort -- the next run also clears them before staging.
+  if [ -n "$STAGED_OWNER_USER_ID" ]; then
+    printf '%s\n' "delete from public.app_saves where user_id='${STAGED_OWNER_USER_ID}'::uuid and app_id='${APP_ID}' and slot_id like '${SLOT_ID}-stage-%';" > "$WORKDIR/stage-trap.sql" 2>/dev/null \
+      && api_query_file "$TARGET_PROJECT_REF" "$WORKDIR/stage-trap.sql" "$WORKDIR/stage-trap.json" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$WORKDIR"
+}
 trap cleanup EXIT
 
 api_query_file() {
@@ -220,14 +229,54 @@ OWNER_USER_ID="$(jq -er '.[0].owner_user_id' "$TARGET_PREFLIGHT")"
 
 SNAPSHOT_B64="$WORKDIR/snapshot.b64"
 base64 -w0 "$SNAPSHOT" > "$SNAPSHOT_B64"
+
+# The whole snapshot used to travel as ONE query. It is now ~2 MB of JSON
+# (~2.9 MB base64, growing daily with task_instances) and the Management API
+# answers HTTP 413 (payload too large) -- the daily backup died on 2026-09-29.
+# Upload it in chunks instead: each chunk is a small staging row in the Family
+# Ops namespace (same owner and app_id, slot "<slot>-stage-NNN"), and ONE final
+# statement assembles them server-side, stores the snapshot exactly as before,
+# and deletes the staging rows. Only the staging slots are ever touched here;
+# the real slot and every other app's rows are never read or deleted by the
+# staging steps.
+STAGE_PREFIX="${SLOT_ID}-stage-"
+PRUNE_OFFSET=$((MAX_BACKUPS - 1))
+CHUNK_CHARS=400000
+STAGED_OWNER_USER_ID="$OWNER_USER_ID"
+
+api_query "$TARGET_PROJECT_REF" \
+  "delete from public.app_saves where user_id='${OWNER_USER_ID}'::uuid and app_id='${APP_ID}' and slot_id like '${STAGE_PREFIX}%';" \
+  "$WORKDIR/stage-clean.json"
+
+split -b "$CHUNK_CHARS" -d -a 3 "$SNAPSHOT_B64" "$WORKDIR/chunk-"
+CHUNK_COUNT=0
+for chunk in "$WORKDIR"/chunk-*; do
+  idx="${chunk##*-}"
+  {
+    printf "insert into public.app_saves (user_id, app_id, slot_id, revision, schema_version, payload, updated_at) values ('%s'::uuid, '%s', '%s%s', 1, %s, jsonb_build_object('c', '" \
+      "$OWNER_USER_ID" "$APP_ID" "$STAGE_PREFIX" "$idx" "$SCHEMA_VERSION"
+    cat "$chunk"
+    printf "'), now()) on conflict (user_id, app_id, slot_id) do update set payload = excluded.payload, updated_at = excluded.updated_at returning slot_id;\n"
+  } > "$WORKDIR/stage.sql"
+  api_query_file "$TARGET_PROJECT_REF" "$WORKDIR/stage.sql" "$WORKDIR/stage-response.json"
+  jq -e 'length == 1' "$WORKDIR/stage-response.json" >/dev/null || {
+    echo "ERROR: app-save-hub did not confirm staged snapshot chunk ${idx}" >&2
+    exit 1
+  }
+  CHUNK_COUNT=$((CHUNK_COUNT + 1))
+done
+[ "$CHUNK_COUNT" -ge 1 ] || { echo "ERROR: snapshot produced no chunks" >&2; exit 1; }
+
 TARGET_SQL="$WORKDIR/store.sql"
 cat > "$TARGET_SQL" <<SQL
-with payload as (
-  select convert_from(decode('
-SQL
-cat "$SNAPSHOT_B64" >> "$TARGET_SQL"
-cat >> "$TARGET_SQL" <<SQL
-', 'base64'), 'UTF8')::jsonb as value
+with staged as (
+  select convert_from(decode(string_agg(s.payload->>'c', '' order by s.slot_id), 'base64'), 'UTF8')::jsonb as value,
+         count(*) as chunks
+  from public.app_saves s
+  where s.user_id='${OWNER_USER_ID}'::uuid and s.app_id='${APP_ID}' and s.slot_id like '${STAGE_PREFIX}%'
+), payload as (
+  -- Every chunk must be present: a partial snapshot is never stored.
+  select value from staged where chunks = ${CHUNK_COUNT}
 ), next_revision as (
   select coalesce(max(revision), 0) + 1 as revision
   from public.app_save_backups
@@ -251,6 +300,10 @@ cat >> "$TARGET_SQL" <<SQL
         payload = excluded.payload,
         updated_at = excluded.updated_at
   returning revision, updated_at
+), staging_removed as (
+  delete from public.app_saves
+  where user_id='${OWNER_USER_ID}'::uuid and app_id='${APP_ID}' and slot_id like '${STAGE_PREFIX}%'
+  returning slot_id
 ), pruned as (
   delete from public.app_save_backups b
   where b.user_id='${OWNER_USER_ID}'::uuid
@@ -261,7 +314,11 @@ cat >> "$TARGET_SQL" <<SQL
       where user_id='${OWNER_USER_ID}'::uuid
         and app_id='${APP_ID}' and slot_id='${SLOT_ID}'
       order by created_at desc, revision desc
-      offset ${MAX_BACKUPS}
+      -- This runs against the rows that existed BEFORE the insert above, so keep
+      -- one fewer: the new generation makes the total exactly MAX_BACKUPS.
+      -- (Keeping MAX_BACKUPS here left MAX_BACKUPS+1 and tripped the retention
+      -- check below on the 31st run.)
+      offset ${PRUNE_OFFSET}
     )
   returning id
 )

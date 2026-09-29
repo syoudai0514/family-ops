@@ -38,6 +38,20 @@ rows they must all belong to the owner. This is operational namespace isolation 
 save service, not a claim of adversarial tenant isolation between the owner's
 own apps.
 
+### Upload size (chunked)
+
+The snapshot (~2 MB of JSON and growing with `task_instances`) no longer travels
+as one Management API query -- a single ~2.9 MB request returned HTTP 413 on
+2026-09-29. `create_household_snapshot.sh` uploads it in ~400 KB base64 chunks as
+staging rows in the Family Ops namespace (same owner and app_id, slot
+`household-durable-v1-stage-NNN`), then ONE statement assembles them server-side,
+stores the generation exactly as before, and deletes the staging rows. A partial
+set of chunks is never stored, leftovers are cleared at the start of the next run
+and on exit, and only the stage slots are ever deleted by those steps.
+
+Retention keeps exactly `MAX_BACKUPS` generations: the prune runs against the rows
+that existed before the new insert, so it keeps `MAX_BACKUPS - 1` of them.
+
 ## 3. Recoverable data
 
 Exact allowlist: `scripts/family_ops_recovery_tables.txt`.

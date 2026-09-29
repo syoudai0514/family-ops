@@ -67,6 +67,23 @@ grep -Fq 'foreign_namespace_rows' "$SNAPSHOT" || fail "namespace owner conflict 
 grep -Fq 'foreign_namespace_rows == 0' "$SNAPSHOT" || fail "foreign namespace rows must stay forbidden"
 grep -Fq 'namespace_rows' "$SNAPSHOT" || fail "namespace-aware owner rule missing"
 
+# The snapshot is uploaded in chunks (a single ~2.9 MB query returned HTTP 413 on
+# 2026-09-29). Staging rows hold household data, so every statement that touches
+# them must be owner/app scoped and stage-slot only, the assembly must require
+# every chunk, and the real slot must never be deleted by the staging steps.
+grep -Fq 'split -b "$CHUNK_CHARS"' "$SNAPSHOT" || fail "chunked upload missing"
+grep -Fq 'chunks = ${CHUNK_COUNT}' "$SNAPSHOT" || fail "assembly does not require every chunk"
+grep -Fq 'staging_removed' "$SNAPSHOT" || fail "staging rows are not removed after storing"
+stage_lines=0
+while IFS= read -r line; do
+  stage_lines=$((stage_lines + 1))
+  case "$line" in *"app_id='\${APP_ID}'"*) ;; *) fail "stage statement is not app_id scoped: $line" ;; esac
+  case "$line" in *"OWNER_USER_ID}'::uuid"*) ;; *) fail "stage statement is not owner scoped: $line" ;; esac
+done < <(grep -E "STAGE_PREFIX\}%'|-stage-%'" "$SNAPSHOT")
+[ "$stage_lines" -ge 4 ] || fail "expected owner/app-scoped staging cleanup at start, in assembly, on exit and in the trap (found $stage_lines)"
+grep -Fq 'offset ${PRUNE_OFFSET}' "$SNAPSHOT" || fail "retention prune must keep MAX_BACKUPS-1 before the insert"
+grep -Fq 'PRUNE_OFFSET=$((MAX_BACKUPS - 1))' "$SNAPSHOT" || fail "prune offset is not derived from MAX_BACKUPS-1"
+
 # Behaviour of the target preflight predicate, extracted from the script itself.
 # Other people may hold accounts for other apps in app-save-hub (friends using
 # mana-evo), so several auth users are fine once the Family Ops namespace holds
