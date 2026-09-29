@@ -69,7 +69,7 @@ export function buildCodmonCompletionPrerequisite(
     // never locked behind four checkboxes (LINE works the same way).
     return {
       state: readiness.state,
-      message: '9:15まで。コドモンで送信したら押してください。まだチェックのない入力も、まとめて完了になります。',
+      message: '9:15まで。コドモンで送信したら押してください。まだチェックのない入力も、あなたが入力したものとしてまとめて完了になります。',
       detailLabels: remaining,
       blocking: false,
       actionLabel: 'コドモンで送信した',

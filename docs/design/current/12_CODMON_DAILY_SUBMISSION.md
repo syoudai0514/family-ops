@@ -55,7 +55,8 @@ Codmon providerへの自動送信・画面自動操作はこのscopeに含めな
 
 人が「コドモンで送信した」と申告する経路（LINEの完了報告、PWAの `コドモンで送信した`）は、`codmon_submit` を直接completeせず `public.server_tx_acknowledge_codmon_submission_v1` を使う。
 
-1. readinessが `waiting_inputs` なら、未完了（todo / in_progress）でpresentな各inputを、canonical `server_tx_complete_task` で完了にする。実施者はそのinputのplanned assignee（未割当なら申告者）。
+1. readinessが `waiting_inputs` なら、未完了（todo / in_progress）でpresentな各inputを、canonical `server_tx_complete_task` で完了にする。実施者は**申告者**。ただし `p_partner_input_codes` に含まれるinput（申告者が「やってあった」と述べたもの）は、もう一方の大人（`completion_actor='partner'`）の実施とする。
+   - LINEは `lineCompletionReport.parseCodmonSentReport` で、`朝食/朝ごはん`→詩乃朝食、`夕飯/様子/昨日`→詩乃前日、`迎え/プール`→迎え（将生/詩乃の名前で絞る、無ければ両方）、`全部`→4件、を「やってあった/入力してあった/やってくれてた/済み」等と併記された場合に読み取る。読み取れない記述は推測せず返信で伝える。
 2. 続けて `codmon_submit` を申告者の実施として完了にする。上記の不変条件はここで満たされる。
 3. 1と2は同一トランザクション。inputごとの操作IDは申告の操作IDから決定的に導出し、再送でもreplayになる。
 4. `data_incomplete`（欠落・重複）はinputを閉じず、guardが `CODMON_INPUTS_INCOMPLETE` を返す。

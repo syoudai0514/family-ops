@@ -13,9 +13,10 @@
 --    server_tx_acknowledge_codmon_submission_v1 closes the still-open inputs
 --    and then the submit task in ONE transaction, each through the canonical
 --    server_tx_complete_task (same events, receipts and performer rules as a
---    normal completion). An input is recorded as done by its planned assignee
---    (the sender vouches that everything was entered); an unassigned input is
---    recorded as done by the sender.
+--    normal completion). Unticked inputs are recorded as done by the SENDER
+--    (owner decision 2026-09-30), except the ones the sender says were already
+--    done ("朝食はやってあった"): those are recorded as done by the other adult
+--    (p_partner_input_codes).
 --
 -- 2. Any adult in the household can end (clear) a handover -- Requirements
 --    §8.2 "クリアするまで" (owner decision 2026-09-30: not only the author).
@@ -29,7 +30,8 @@ create or replace function public.server_tx_acknowledge_codmon_submission_v1(
   p_actor_id uuid,
   p_operation_id uuid,
   p_submit_task_id uuid,
-  p_source text default 'pwa'
+  p_source text default 'pwa',
+  p_partner_input_codes text[] default null
 ) returns jsonb
 language plpgsql
 security invoker
@@ -42,8 +44,10 @@ declare
   v_readiness jsonb;
   v_input jsonb;
   v_input_task uuid;
-  v_assignee uuid;
+  v_has_partner boolean;
+  v_by_partner boolean;
   v_closed integer := 0;
+  v_closed_by_partner integer := 0;
   v_result jsonb;
 begin
   if p_actor_id is null or p_operation_id is null or p_submit_task_id is null then
@@ -64,6 +68,11 @@ begin
   where td.household_id = v_household_id and td.id = v_task.task_definition_id;
   if v_code is distinct from 'codmon_submit' then raise exception 'INVALID_INPUT'; end if;
 
+  select exists (
+    select 1 from public.household_members m
+    where m.household_id = v_household_id and m.user_id <> p_actor_id and m.member_role = 'adult'
+  ) into v_has_partner;
+
   v_readiness := private.fn_codmon_readiness_v1(v_household_id, v_task.scheduled_date, null);
   -- Missing or duplicated input rows cannot be closed safely; the guard on
   -- codmon_submit reports it below as CODMON_INPUTS_INCOMPLETE.
@@ -75,18 +84,19 @@ begin
         or coalesce(v_input->>'status', '') not in ('todo', 'in_progress')
         or nullif(v_input->>'task_id', '') is null;
       v_input_task := (v_input->>'task_id')::uuid;
-      v_assignee := nullif(v_input->>'assignee_user_id', '')::uuid;
+      v_by_partner := v_has_partner and (v_input->>'code') = any(coalesce(p_partner_input_codes, '{}'::text[]));
       -- One derived operation id per input keeps a retried acknowledgement
       -- idempotent: the canonical receipt replays instead of re-completing.
       perform public.server_tx_complete_task(
         p_actor_id,
         md5('codmon-submitted|' || p_operation_id::text || '|' || v_input_task::text)::uuid,
         v_input_task,
-        case when v_assignee is null or v_assignee = p_actor_id then 'self' else 'partner' end,
+        case when v_by_partner then 'partner' else 'self' end,
         true,
         coalesce(p_source, 'pwa')
       );
       v_closed := v_closed + 1;
+      if v_by_partner then v_closed_by_partner := v_closed_by_partner + 1; end if;
     end loop;
   end if;
 
@@ -94,12 +104,13 @@ begin
     p_actor_id, p_operation_id, p_submit_task_id, 'self', true, coalesce(p_source, 'pwa'));
 
   return coalesce(v_result, '{}'::jsonb)
-    || jsonb_build_object('task_id', p_submit_task_id, 'inputs_closed', v_closed);
+    || jsonb_build_object('task_id', p_submit_task_id, 'inputs_closed', v_closed,
+         'inputs_closed_by_partner', v_closed_by_partner);
 end;
 $$;
-revoke all on function public.server_tx_acknowledge_codmon_submission_v1(uuid, uuid, uuid, text)
+revoke all on function public.server_tx_acknowledge_codmon_submission_v1(uuid, uuid, uuid, text, text[])
   from public, anon, authenticated;
-grant execute on function public.server_tx_acknowledge_codmon_submission_v1(uuid, uuid, uuid, text)
+grant execute on function public.server_tx_acknowledge_codmon_submission_v1(uuid, uuid, uuid, text, text[])
   to service_role;
 
 create or replace function public.server_tx_end_handover(

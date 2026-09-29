@@ -95,7 +95,9 @@ begin
   end;
 
   -- One acknowledgement closes every open input and the submit task.
-  result:=public.server_tx_acknowledge_codmon_submission_v1(u1,op,submit_task,'line');
+  -- papa sends; "朝食と昨日の様子はやってあった" names two inputs as mama's.
+  result:=public.server_tx_acknowledge_codmon_submission_v1(u1,op,submit_task,'line',
+    array['codmon_shino_breakfast_input','codmon_shino_previous_input']);
   if (result->>'inputs_closed')::int<>4 then
     raise exception 'FAIL 96: expected 4 inputs closed, got %',result;
   end if;
@@ -106,19 +108,29 @@ begin
   select count(*) into n from public.task_instances where id=submit_task and status='completed';
   if n<>1 then raise exception 'FAIL 96: submit task not completed'; end if;
 
-  -- Inputs are recorded as done by their planned assignee.
+  -- Owner decision: unticked inputs are done by the SENDER, except the ones the
+  -- sender said were already done -- those are the other adult's. This is
+  -- deliberately not the planned assignee: the pickup inputs are mama's by
+  -- plan, but papa sent without mentioning them, so they are papa's.
+  if (result->>'inputs_closed_by_partner')::int<>2 then
+    raise exception 'FAIL 96: expected 2 inputs attributed to the partner, got %',result;
+  end if;
   select count(*) into n
   from jsonb_array_elements(readiness->'inputs') i
   join public.task_instances t on t.id=(i->>'task_id')::uuid
-  where t.status='completed' and t.actual_completed_by_id is not distinct from nullif(i->>'assignee_user_id','')::uuid;
-  if n<>4 then raise exception 'FAIL 96: inputs not attributed to their assignees (% of 4)',n; end if;
+  where t.status='completed'
+    and t.actual_completed_by_id = case
+      when i->>'code' in ('codmon_shino_breakfast_input','codmon_shino_previous_input') then u2
+      else u1 end;
+  if n<>4 then raise exception 'FAIL 96: inputs not attributed sender/partner as reported (% of 4)',n; end if;
   select count(*) into n from public.task_instances t
   where t.id=submit_task and t.actual_completed_by_id=u1;
   if n<>1 then raise exception 'FAIL 96: submit not attributed to the sender'; end if;
 
   -- A retried acknowledgement (same operation id) replays; nothing is redone.
   select count(*) into n from public.task_events e where e.task_instance_id=submit_task;
-  replay:=public.server_tx_acknowledge_codmon_submission_v1(u1,op,submit_task,'line');
+  replay:=public.server_tx_acknowledge_codmon_submission_v1(u1,op,submit_task,'line',
+    array['codmon_shino_breakfast_input','codmon_shino_previous_input']);
   if (select count(*) from public.task_events e where e.task_instance_id=submit_task)<>n then
     raise exception 'FAIL 96: replay produced new submit events';
   end if;

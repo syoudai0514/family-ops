@@ -57,6 +57,65 @@ export function parseCompletionReport(text: string): CompletionReport | null {
   return { kind: "hint", hint };
 }
 
+// --- Codmon "sent" reports -------------------------------------------------
+
+export const CODMON_INPUT_LABELS: Record<string, string> = {
+  codmon_masaki_pickup_input: "将生：迎え",
+  codmon_shino_previous_input: "詩乃：昨日の夕飯・様子",
+  codmon_shino_breakfast_input: "詩乃：朝食",
+  codmon_shino_pickup_input: "詩乃：迎え",
+};
+const ALL_CODMON_INPUTS = Object.keys(CODMON_INPUT_LABELS);
+
+export type CodmonSentReport = {
+  /** Inputs the sender says the other adult had already done. */
+  partnerCodes: string[];
+  /** Extra remarks we could not map to an input; reported back, never guessed. */
+  unreadNotes: string[];
+};
+
+const SENT_VERB = /(送りました|送った|送信しました|送信した|送信済み|送信完了)/u;
+const ALREADY_DONE = /(やって(あった|ある|あります|くれてた|くれていた|くれた|もらった)|入力(して)?(あった|ある|あります|済み|してくれてた|してくれた)|(は|も)済み|済んで(た|いた))/u;
+
+function codmonCodesIn(clause: string): string[] {
+  if (/(全部|全て|すべて|ぜんぶ)/u.test(clause)) return [...ALL_CODMON_INPUTS];
+  const masaki = /将生/u.test(clause);
+  const shino = /詩乃/u.test(clause);
+  const codes = new Set<string>();
+  if (/朝(食|ごはん|ご飯)/u.test(clause)) codes.add("codmon_shino_breakfast_input");
+  if (/(夕飯|夕食|晩(ごはん|ご飯)|様子|昨日)/u.test(clause)) codes.add("codmon_shino_previous_input");
+  if (/(迎え|プール)/u.test(clause)) {
+    if (masaki || !shino) codes.add("codmon_masaki_pickup_input");
+    if (shino || !masaki) codes.add("codmon_shino_pickup_input");
+  }
+  if (codes.size === 0 && masaki && !shino) codes.add("codmon_masaki_pickup_input");
+  return [...codes];
+}
+
+/**
+ * "コドモン送りました" (optionally with "朝食はやってあった" etc.). Owner decision
+ * 2026-09-30: whoever reports the send did every unticked input, except the
+ * ones they say were already done -- those were the other adult's.
+ */
+export function parseCodmonSentReport(text: string): CodmonSentReport | null {
+  const t = text.normalize("NFKC").trim();
+  if (t.length === 0 || t.length > 120 || /[?？]/u.test(t) || !/コドモン/u.test(t)) return null;
+  const clauses = t.split(/[。、,\n!！]+|(?:ので|から|けど|けれど)/u).map((c) => c.trim()).filter(Boolean);
+  if (!clauses.some((c) => SENT_VERB.test(c))) return null;
+  const partner = new Set<string>();
+  const unreadNotes: string[] = [];
+  for (const clause of clauses) {
+    if (SENT_VERB.test(clause)) continue;
+    const codes = ALREADY_DONE.test(clause) ? codmonCodesIn(clause) : [];
+    if (codes.length === 0) {
+      unreadNotes.push(clause);
+      continue;
+    }
+    for (const code of codes) partner.add(code);
+  }
+  return { partnerCodes: ALL_CODMON_INPUTS.filter((code) => partner.has(code)), unreadNotes };
+}
+
 /** Tasks that plausibly are what the sender just finished, best first. */
 export function rankCompletionCandidates(
   tasks: OpenTask[],
@@ -171,6 +230,9 @@ export async function completeTaskAndReply(
     code?: string | null;
     completionActor?: "self" | "partner";
     completeRemainingSubtasks?: boolean;
+    /** Codmon only: inputs the sender said the other adult had already done. */
+    partnerInputCodes?: string[];
+    unreadNotes?: string[];
   },
 ): Promise<void> {
   const code = options.code !== undefined ? options.code : await taskCode(ctx, taskId);
@@ -181,6 +243,7 @@ export async function completeTaskAndReply(
       p_operation_id: options.operationId,
       p_submit_task_id: taskId,
       p_source: "line",
+      p_partner_input_codes: options.partnerInputCodes?.length ? options.partnerInputCodes : null,
     })
     : await ctx.client.rpc("server_tx_complete_task", {
       p_actor_id: ctx.actorId,
@@ -215,13 +278,29 @@ export async function completeTaskAndReply(
     quick.push(quickPostback("取り消す", `action=reopen_task&task_id=${taskId}&revision=${revision}`));
   }
   quick.push(TODAY_QUICK_REPLY);
-  const closed = codmon ? Number((data as { inputs_closed?: number } | null)?.inputs_closed ?? 0) : 0;
-  await ctx.reply(
-    codmon
-      ? `✓ コドモン送信を完了にしました。${closed > 0 ? `\nチェックされていなかった入力${closed}件も、まとめて完了にしました。` : ""}`
-      : `✓ ${name}を完了にしました。`,
-    quick,
-  );
+  if (!codmon) {
+    await ctx.reply(`✓ ${name}を完了にしました。`, quick);
+    return;
+  }
+  const result = data as { inputs_closed?: number; inputs_closed_by_partner?: number } | null;
+  const closed = Number(result?.inputs_closed ?? 0);
+  const byPartner = Number(result?.inputs_closed_by_partner ?? 0);
+  const lines = ["✓ コドモン送信を完了にしました。"];
+  if (closed > 0) {
+    const partnerLabels = (options.partnerInputCodes ?? []).map((code) => CODMON_INPUT_LABELS[code]).filter(Boolean);
+    if (byPartner > 0) {
+      const who = partnerLabels.length > 0 ? `${partnerLabels.join("・")}は` : `うち${byPartner}件は`;
+      const rest = closed - byPartner > 0 ? "相手、残りはあなたの実施として記録しています。" : "相手の実施として記録しています。";
+      lines.push(`チェックされていなかった入力${closed}件も完了にしました。${who}${rest}`);
+    } else {
+      lines.push(`チェックされていなかった入力${closed}件も、あなたの実施として完了にしました。`);
+    }
+  }
+  const notes = (options.unreadNotes ?? []).filter((note) => note.length > 0);
+  if (notes.length > 0 && closed > 0) {
+    lines.push(`「${clip(notes.join("、"), 40)}」はどの入力か分からなかったため、あなたの実施にしています。`);
+  }
+  await ctx.reply(lines.join("\n"), quick);
 }
 
 export async function reopenTaskAndReply(ctx: CompletionContext, taskId: string, revision: number, operationId: string): Promise<void> {
@@ -253,6 +332,24 @@ function chooseReply(candidates: OpenTask[]): { text: string; quick: LineQuickRe
 
 /** Returns true when the message was handled here (so it is not decomposed into drafts). */
 export async function tryHandleCompletionReport(ctx: CompletionContext, text: string): Promise<boolean> {
+  const codmonReport = parseCodmonSentReport(text);
+  if (codmonReport) {
+    const submit = (await loadOpenTasks(ctx)).find((task) => task.code === "codmon_submit");
+    if (!submit) {
+      const link = todayUrl(ctx.actorId);
+      await ctx.reply(`今日の未完了のコドモン送信は見つかりませんでした（すでに完了している可能性があります）。${link ? `\n${link}` : ""}`, [TODAY_QUICK_REPLY]);
+      return true;
+    }
+    await completeTaskAndReply(ctx, submit.id, {
+      title: submit.title,
+      code: submit.code,
+      operationId: await ctx.operationId("line-complete-report", ctx.eventId, submit.id),
+      partnerInputCodes: codmonReport.partnerCodes,
+      unreadNotes: codmonReport.unreadNotes,
+    });
+    return true;
+  }
+
   const report = parseCompletionReport(text);
   if (!report) return false;
 
