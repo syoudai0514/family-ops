@@ -109,6 +109,12 @@ import {
   tryHandleLineMustCompleteText,
 } from "./lineMustComplete.ts";
 import {
+  completeTaskAndReply,
+  reopenTaskAndReply,
+  tryHandleCompletionReport,
+  type CompletionContext,
+} from "./lineCompletionReport.ts";
+import {
   appendTodayDetailLinks,
   todayContextQuickReplies,
 } from "./lineTodayUx.ts";
@@ -1344,6 +1350,22 @@ async function beginClarificationForKind(
   });
 }
 
+function completionContext(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+): CompletionContext {
+  return {
+    client,
+    actorId: actor.user_id,
+    householdId: actor.household_id,
+    eventId: item.provider_event_id,
+    today: jstIsoDateOffset(0),
+    operationId: deterministicOperationId,
+    reply: (text, quickReplies) => sendConfirmation(client, item, actor, text, quickReplies),
+  };
+}
+
 async function handlePostback(
   client: SupabaseClient,
   item: WebhookInboxItem,
@@ -1526,18 +1548,13 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
   if (fields.action === "complete_task" && fields.task_id) {
     const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
     const completionActor = fields.completion_actor === "partner" ? "partner" : "self";
-    const { error } = await client.rpc("server_tx_complete_task", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_task_id: fields.task_id,
-      p_completion_actor: completionActor,
-      p_complete_remaining_subtasks: fields.complete_remaining === "true",
-    });
-    if (error) {
-      console.error("process-line-inbox: complete_task postback failed", error.message);
-      return;
-    }
-    await sendConfirmation(client, item, actor, "✓ 完了にしました");
+    await completeTaskAndReply(completionContext(client, item, actor), fields.task_id, null, operationId, completionActor, fields.complete_remaining === "true");
+    return;
+  }
+
+  if (fields.action === "reopen_task" && fields.task_id && /^\d+$/.test(fields.revision ?? "")) {
+    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
+    await reopenTaskAndReply(completionContext(client, item, actor), fields.task_id, Number(fields.revision), operationId);
     return;
   }
 
@@ -1914,6 +1931,9 @@ async function handleText(
     reply: (replyText, quickReplies) => sendConfirmation(client, item, actor, replyText, quickReplies),
   }, text)) return;
   if (await tryHandleReadOnlyText(client, item, actor, text)) return;
+  // A short "done" report is matched to one of the sender's open tasks for today
+  // instead of becoming an unmatched actual-record draft.
+  if (await tryHandleCompletionReport(completionContext(client, item, actor), text)) return;
   if (await tryHandlePendingReferent(client, item, actor, text)) return;
   if (await tryApplyLineTextEdit(client, item, actor, text)) return;
 
