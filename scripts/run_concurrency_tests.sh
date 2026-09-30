@@ -102,7 +102,7 @@ echo "== concurrency: LINE quota atomic reservation races (LQA01/LQA02) =="
 QUOTA_OWNER=$(uuidgen)
 psql_svc "insert into auth.users (id) values ('$QUOTA_OWNER');" >/dev/null
 QHH=$(psql_svc "select (public.server_tx_create_household('$QUOTA_OWNER', gen_random_uuid(), 'Quota Race HH', 'Owner')->>'household_id');")
-MONTH=$(psql_svc "select date_trunc('month', now())::date;")
+MONTH=$(psql_svc "select date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;")
 # Other test files (e.g. tests/sql/05_line_quota_reservation.sql) may have
 # left active/ambiguous reservations for this same real-world billing month;
 # clear them so this race starts from a known, isolated quota state.

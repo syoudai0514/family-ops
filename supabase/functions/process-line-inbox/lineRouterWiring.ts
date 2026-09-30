@@ -2,7 +2,7 @@
 // turns it later reads back. Every read is best effort: a failed read gives an emptier
 // snapshot, never an exception (the message still gets answered).
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Snapshot, SnapshotShopping, SnapshotTask, Turn } from "./lineUnderstand.ts";
+import type { Daypart, Snapshot, SnapshotDraft, SnapshotShopping, SnapshotTask, SnapshotTransport, Turn } from "./lineUnderstand.ts";
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -35,6 +35,37 @@ function jstTime(iso: unknown): string | null {
 }
 
 const ROLE_LABEL: Record<string, string> = { papa: "パパ", mama: "ママ" };
+
+function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+const DRAFT_KIND: Record<string, string> = { request_create: "request", shopping_item_add: "shopping", task_create_once: "task" };
+
+/** The waiting draft with its fields, so an edit can keep what is already there. */
+export function describePendingDraft(
+  pending: { action_type?: string; normalized_payload?: Record<string, unknown> } | null,
+  actorId: string,
+): SnapshotDraft | null {
+  if (!pending) return null;
+  const p = pending.normalized_payload ?? {};
+  const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const kind = p.explicit_kind === "event" || p.calendar_visibility === "special"
+    ? "event"
+    : DRAFT_KIND[pending.action_type ?? ""] ?? pending.action_type ?? "unknown";
+  const whoId = s(p.recipient_user_id) ?? s(p.planned_assignee_user_id) ?? s(p.assignee_user_id);
+  const daypart = (["morning", "noon", "evening", "night"] as const).find((d) => d === p.daypart) ?? null;
+  return {
+    kind,
+    title: s(p.title) ?? "（題名なし）",
+    date: s(p.scheduled_date),
+    time: s(p.due_local_time),
+    daypart: daypart as Daypart | null,
+    who: whoId ? (whoId === actorId ? "me" : "partner") : null,
+  };
+}
 
 /** Best-effort: the conversation must never fail because a turn could not be stored. */
 export async function logLineTurn(
@@ -92,7 +123,8 @@ export async function loadSnapshot(
 ): Promise<Snapshot> {
   const { actorId, householdId, today } = opts;
 
-  const [turns, members, taskRows, shopRows, children, notes] = await Promise.all([
+  const tomorrow = addDays(today, 1);
+  const [turns, members, taskRows, shopRows, children, notes, transportRows] = await Promise.all([
     safe<Turn[]>([], async () => {
       const { data } = await client.rpc("server_read_line_turns", { p_actor_id: actorId, p_limit: 12 });
       return (Array.isArray(data) ? data : [])
@@ -148,6 +180,26 @@ export async function loadSnapshot(
         .limit(10);
       return (data ?? []).map((row: Record<string, unknown>) => String(row.shared_text ?? "").slice(0, 120)).filter(Boolean);
     }),
+    // Today's and tomorrow's dropoff / pickup: "朝担当の人" means tomorrow's dropoff person.
+    safe<Array<Record<string, unknown>>>([], async () => {
+      const { data: defs } = await client
+        .from("task_definitions")
+        .select("id,code")
+        .eq("household_id", householdId)
+        .in("code", ["dropoff", "pickup"]);
+      const codeById = new Map((defs ?? []).map((row: Record<string, unknown>) => [String(row.id), String(row.code)]));
+      if (!codeById.size) return [];
+      const { data } = await client
+        .from("task_instances")
+        .select("scheduled_date,planned_assignee_id,due_at,task_definition_id,updated_at")
+        .eq("household_id", householdId)
+        .in("task_definition_id", [...codeById.keys()])
+        .in("scheduled_date", [today, tomorrow])
+        .is("test_context_id", null)
+        .neq("status", "cancelled")
+        .order("updated_at", { ascending: true });
+      return (data ?? []).map((row: Record<string, unknown>) => ({ ...row, code: codeById.get(String(row.task_definition_id)) }));
+    }),
   ]);
 
   const codes = await safe(new Map<string, string>(), async () => {
@@ -179,16 +231,26 @@ export async function loadSnapshot(
     revision: Number(row.revision ?? 1),
   }));
 
-  const draftTitle = typeof opts.pending?.normalized_payload?.title === "string" ? String(opts.pending.normalized_payload.title) : "";
+  const transport: SnapshotTransport[] = [today, tomorrow].map((date) => {
+    const slot = (code: string) => {
+      // Latest row wins (rows are oldest first), as in the calendar's transport title.
+      const row = transportRows.filter((r) => r.scheduled_date === date && r.code === code).at(-1);
+      if (!row) return null;
+      const who = !row.planned_assignee_id ? null : row.planned_assignee_id === actorId ? "me" as const : "partner" as const;
+      return { who, time: jstTime(row.due_at) };
+    };
+    return { date, dropoff: slot("dropoff"), pickup: slot("pickup") };
+  });
   return {
     now: jstClock(),
     me: labels.get(actorId) ?? "家族",
     partner: partner ? labels.get(partner.user_id) ?? "相手" : "相手",
     children,
     turns,
-    pendingDraft: opts.pending ? { kind: opts.pending.action_type ?? "unknown", title: draftTitle || "（題名なし）" } : null,
+    pendingDraft: describePendingDraft(opts.pending, actorId),
     tasks,
     shopping,
     sharedNotes: notes,
+    transport,
   };
 }

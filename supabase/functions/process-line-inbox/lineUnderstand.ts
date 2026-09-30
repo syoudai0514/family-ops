@@ -20,6 +20,7 @@
 // unavailable or returns something unusable, the caller falls back to the old handlers.
 import { callGemini } from "../_shared/gemini.ts";
 import { claimsMutationWasPerformed } from "./lineAssistantConversation.ts";
+import { daypartToLocalTime } from "./lineIntent.ts";
 import type { ShoppingWho } from "./lineShoppingList.ts";
 
 export interface Turn {
@@ -45,6 +46,25 @@ export interface SnapshotShopping {
   revision: number;
 }
 
+export type Daypart = "morning" | "noon" | "evening" | "night";
+
+/** The draft waiting for confirmation, as the model sees it (so an edit can keep what is there). */
+export interface SnapshotDraft {
+  kind: string;
+  title: string;
+  date?: string | null;
+  time?: string | null;
+  daypart?: Daypart | null;
+  who?: "me" | "partner" | null;
+}
+
+/** Who takes the children to / picks them up from nursery, today and tomorrow. */
+export interface SnapshotTransport {
+  date: string;
+  dropoff: { who: "me" | "partner" | null; time: string | null } | null;
+  pickup: { who: "me" | "partner" | null; time: string | null } | null;
+}
+
 export interface Snapshot {
   now: { date: string; time: string; weekday: string };
   me: string;
@@ -52,10 +72,28 @@ export interface Snapshot {
   children: Array<{ name: string; school: string; className: string | null }>;
   /** Oldest first, NOT including the message being understood. */
   turns: Turn[];
-  pendingDraft: { kind: string; title: string } | null;
+  pendingDraft: SnapshotDraft | null;
   tasks: SnapshotTask[];
   shopping: SnapshotShopping[];
   sharedNotes: string[];
+  transport?: SnapshotTransport[];
+}
+
+/**
+ * What to register, filled in by the model from the whole conversation. Live 2026-09-30
+ * 23:17: the model understood "明日、将生の保育園に下着2こ … 朝担当の人で" correctly, but
+ * only a sentence was handed on, and a second parse of that sentence dropped the child,
+ * the count, the morning and the person. The fields now go into the draft as they are.
+ */
+export interface DraftSpec {
+  kind: "task" | "event" | "request" | "shopping";
+  title: string;
+  date: string | null; // YYYY-MM-DD
+  time: string | null; // HH:MM
+  daypart: Daypart | null;
+  who: "me" | "partner" | null;
+  /** For a request: what the partner reads. */
+  message: string | null;
 }
 
 export type Action =
@@ -63,8 +101,8 @@ export type Action =
   | { type: "show_schedule"; range: "today" | "tomorrow" | "week" }
   | { type: "mark_bought"; refs: string[] }
   | { type: "complete_task"; ref: string; by: "self" | "partner" }
-  | { type: "create"; text: string }
-  | { type: "edit_draft"; text: string }
+  | { type: "create"; text: string; draft?: DraftSpec }
+  | { type: "edit_draft"; text: string; draft?: DraftSpec }
   | { type: "cancel_draft" }
   | { type: "legacy" };
 
@@ -88,8 +126,17 @@ function clip(value: string, max: number): string {
 const WHO_LABEL = (snapshot: Snapshot, who: string | null) =>
   who === "me" ? snapshot.me : who === "partner" ? snapshot.partner : who === "anyone" ? "誰でも" : "未定";
 
+function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function buildUnderstandPrompt(snapshot: Snapshot, message: string): string {
-  const turns = snapshot.turns.slice(-TURNS_SENT).map((turn) =>
+  const today = snapshot.now.date;
+  const tomorrow = addDays(today, 1);
+  const turns =snapshot.turns.slice(-TURNS_SENT).map((turn) =>
     `${turn.role === "user" ? `${snapshot.me}` : "おうちノート"}: ${clip(turn.text, TURN_MAX_CHARS)}`
   );
   const facts = {
@@ -97,8 +144,22 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     話している人: snapshot.me,
     相手: snapshot.partner,
     子ども: snapshot.children.map((c) => `${c.name}（${c.school}${c.className ? `・${c.className}` : ""}）`),
-    確認待ちの下書き: snapshot.pendingDraft,
-    今日のタスク: snapshot.tasks.slice(0, 50).map((t) => ({
+    確認待ちの下書き: snapshot.pendingDraft
+      ? {
+        種類: snapshot.pendingDraft.kind,
+        題名: snapshot.pendingDraft.title,
+        日付: snapshot.pendingDraft.date ?? null,
+        時刻: snapshot.pendingDraft.time ?? null,
+        時間帯: snapshot.pendingDraft.daypart ?? null,
+        担当: snapshot.pendingDraft.who === undefined ? null : WHO_LABEL(snapshot, snapshot.pendingDraft.who),
+      }
+      : null,
+    送迎: (snapshot.transport ?? []).map((d) => ({
+      日付: d.date,
+      送り: d.dropoff ? `${WHO_LABEL(snapshot, d.dropoff.who)}${d.dropoff.time ? ` ${d.dropoff.time}` : ""}` : "なし",
+      お迎え: d.pickup ? `${WHO_LABEL(snapshot, d.pickup.who)}${d.pickup.time ? ` ${d.pickup.time}` : ""}` : "なし",
+    })),
+    今日のタスク:snapshot.tasks.slice(0, 50).map((t) => ({
       ref: t.ref,
       タスク: t.title,
       担当: WHO_LABEL(snapshot, t.who),
@@ -132,8 +193,19 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- {"type":"show_schedule","range":"today|tomorrow|week"} 予定の一覧を見せる。',
     '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。',
     '- {"type":"complete_task","ref":"t3","by":"self|partner"} 今日のタスクを「やった」にする。by = 実際にやった人（相手がやってくれたなら partner）。',
-    '- {"type":"create","text":"…"} 予定・タスク・買い物・お願い・共有を新しく登録したい。text は会話の文脈を補い、「それ」「さっきの」を具体的にした一文（例:「明日の朝、ゴミ出しをママにお願い」）。',
-    '- {"type":"edit_draft","text":"…"} 確認待ちの下書きの中身を直したい（例:「時間は7時」「担当はママ」）。',
+    '- {"type":"create","text":"…","draft":{…}} 予定・タスク・買い物・お願い・共有を新しく登録したい。text は会話の文脈を補い、「それ」「さっきの」を具体的にした一文（例:「明日の朝、ゴミ出しをママにお願い」）。',
+    '- {"type":"edit_draft","text":"…","draft":{…}} 確認待ちの下書きの中身を直したい（例:「時間は7時」「担当はママ」「将生のね」）。',
+    "",
+    "## draft（create と edit_draft に必ず付ける。登録される中身そのもの）",
+    '{"kind":"task|event|request|shopping","title":"…","date":"YYYY-MM-DD","time":"HH:MM"|null,"daypart":"morning|noon|evening|night"|null,"who":"me|partner"|null,"message":"…"|null}',
+    "- title: 何をするかが一目で分かる短い一文。言われた具体的な情報（子どもの名前・数・持ち物・場所）は落とさない（例:「将生の保育園に下着を2枚持っていく」）。「〜しないと」「入れといて」などの言い回しは入れない。買い物は品物名だけ（例:「牛乳」）。",
+    "- date: 日付。「明日」なら『いま』の翌日。言われていなければ今日。",
+    "- time: 言われた時刻だけ（「7時」→ 07:00）。言われていなければ null。時刻を作らない。",
+    "- daypart: 「朝」「昼」「夕方」「夜」と言われたら morning / noon / evening / night。「朝担当の人」のように朝のことだと分かるときも morning。",
+    "- who: それをする人。me = 話している人、partner = 相手。「朝担当の人」「送りの人」「お迎えの人」は『送迎』のその日の担当で決める。保育園に持っていく物のように送りのときに要ることは、言われていなくてもその日の送り担当。それ以外で言われていなければ null（話している人）。「入れといて」「登録して」「メモして」はおうちノートへの登録の頼みで、相手へのお願いではない（それだけで partner にしない）。",
+    "- kind: task = やること、event = カレンダーに載せる予定（通院・行事など）、request = 相手にお願いして通知する、shopping = 買い物リスト。やるのが相手（who=partner）なら request。",
+    "- message: request のとき相手に届く一文（例:「明日の朝、将生の保育園に下着を2枚持っていってもらえる？」）。それ以外は null。",
+    "- edit_draft の draft は、確認待ちの下書きに今回の修正を反映した『全体』。直していない項目（子どもの名前・日付など）は下書きのまま残す。",
     '- {"type":"cancel_draft"} 確認待ちの下書きを取り消したい（「やっぱりなし」「さっきのやめて」）。下書きがあるときだけ。',
     '- {"type":"legacy"} 上のどれにも当てはまらない操作（担当の交代、お迎えの交代の相談など）。従来の処理に任せる。',
     "- 質問への答え・相談・雑談・聞き返しは actions を空にして reply だけ。",
@@ -151,7 +223,10 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- 「洗濯終わった、あと牛乳も買ってきた」→ {"understanding":"洗濯をやった・牛乳を買った","reply":"おつかれさま！","actions":[{"type":"complete_task","ref":"t4","by":"self"},{"type":"mark_bought","refs":["s2"]}],"confidence":"high"}',
     '- 「ママが洗濯やってくれてた」→ {"understanding":"相手が洗濯をやった","reply":"了解！","actions":[{"type":"complete_task","ref":"t4","by":"partner"}],"confidence":"high"}',
     '- 「今日お迎え誰だっけ？」（お迎えの担当がママ）→ {"understanding":"今日のお迎え担当を知りたい","reply":"今日のお迎えはママだよ（18:20）。","actions":[],"confidence":"high"}',
-    '- 「牛乳買っといて」→ {"understanding":"牛乳を買い物に追加したい","reply":"了解！","actions":[{"type":"create","text":"牛乳を買う"}],"confidence":"high"}',
+    `- 「牛乳買っといて」→ {"understanding":"牛乳を買い物に追加したい","reply":"了解！","actions":[{"type":"create","text":"牛乳を買う","draft":{"kind":"shopping","title":"牛乳","date":"${today}","time":null,"daypart":null,"who":null,"message":null}}],"confidence":"high"}`,
+    `- 「明日、詩乃の保育園に着替え持っていかないと。入れといて」（送迎: 明日の送りはママ）→ {"understanding":"明日の朝、詩乃の着替えを保育園に持っていく。送りのママがやる","reply":"了解！","actions":[{"type":"create","text":"明日の朝、詩乃の保育園に着替えを持っていくのをママにお願い","draft":{"kind":"request","title":"詩乃の保育園に着替えを持っていく","date":"${tomorrow}","time":null,"daypart":"morning","who":"partner","message":"明日の朝、詩乃の保育園に着替えを持っていってもらえる？"}}],"confidence":"high"}`,
+    `- 「明日、将生の保育園に帽子持っていかないと。入れといて」（送迎: 明日の送りはパパ＝話している人）→ {"understanding":"明日の朝、将生の帽子を保育園に持っていく。送りは自分なので自分のタスク","reply":"了解！","actions":[{"type":"create","text":"明日の朝、将生の保育園に帽子を持っていく","draft":{"kind":"task","title":"将生の保育園に帽子を持っていく","date":"${tomorrow}","time":null,"daypart":"morning","who":"me","message":null}}],"confidence":"high"}`,
+    `- 確認待ちの下書き（お願い・ママ・明日の朝）「保育園に下着を持っていく」→「将生のね。2枚だよ」→ {"understanding":"下書きに将生の・2枚を足す","reply":"了解！","actions":[{"type":"edit_draft","text":"将生の保育園に下着を2枚持っていく","draft":{"kind":"request","title":"将生の保育園に下着を2枚持っていく","date":"${tomorrow}","time":null,"daypart":"morning","who":"partner","message":"明日の朝、将生の保育園に下着を2枚持っていってもらえる？"}}],"confidence":"high"}`,
     '- 「今週ずっと俺がお迎えなんだけど、妻にどう言えば角立たない？」→ {"understanding":"お迎えが続いて負担。ママに代わってほしいが、角を立てずに頼みたい","reply":"こんな感じはどうかな？「今週お迎えずっと続いてて、ちょっとバテ気味で…。金曜だけ代わってもらえると助かるんだけど、どうかな？無理なら言ってね」（送ってはいないよ）","actions":[],"confidence":"high"}',
     '- 「金曜のお迎え代わってほしいってママに頼みたい」→ {"understanding":"金曜のお迎えをママに代わってほしいと依頼したい","reply":"了解！","actions":[{"type":"create","text":"金曜のお迎えをママに代わってほしい"}],"confidence":"high"}',
     '- 「コドモン送りました。朝食はやってあった」（t1=コドモン送信、t2=詩乃：朝食の入力）→ {"understanding":"コドモン送信済み。朝食の入力は相手が済ませていた","reply":"おつかれさま！","actions":[{"type":"complete_task","ref":"t1","by":"self"},{"type":"complete_task","ref":"t2","by":"partner"}],"confidence":"high"}',
@@ -175,6 +250,38 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+const DAYPARTS: readonly Daypart[] = ["morning", "noon", "evening", "night"];
+
+function isoDateOrNull(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value ? value : null;
+}
+
+function localTimeOrNull(value: unknown): string | null {
+  const m = typeof value === "string" ? value.trim().match(/^(\d{1,2}):(\d{2})$/) : null;
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+  return `${m[1].padStart(2, "0")}:${m[2]}`;
+}
+
+/** A draft the code can use as it is, or undefined (then the sentence takes the old path). */
+export function parseDraft(raw: unknown): DraftSpec | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const d = raw as Record<string, unknown>;
+  const kind = (["task", "event", "request", "shopping"] as const).find((k) => k === d.kind);
+  const title = str(d.title)?.replace(/\s+/g, " ");
+  if (!kind || !title || title.length > 80) return undefined;
+  return {
+    kind,
+    title,
+    date: isoDateOrNull(d.date),
+    time: localTimeOrNull(d.time),
+    daypart: DAYPARTS.find((p) => p === d.daypart) ?? null,
+    who: d.who === "me" || d.who === "partner" ? d.who : null,
+    message: str(d.message)?.slice(0, 200) ?? null,
+  };
+}
+
 function parseAction(raw: unknown): Action | null {
   if (!raw || typeof raw !== "object") return null;
   const a = raw as Record<string, unknown>;
@@ -194,7 +301,9 @@ function parseAction(raw: unknown): Action | null {
     case "create":
     case "edit_draft": {
       const text = str(a.text);
-      return text ? { type: a.type, text: text.slice(0, 500) } : null;
+      if (!text) return null;
+      const draft = parseDraft(a.draft);
+      return draft ? { type: a.type, text: text.slice(0, 500), draft } : { type: a.type, text: text.slice(0, 500) };
     }
     case "cancel_draft":
       return { type: "cancel_draft" };
@@ -359,12 +468,19 @@ export interface PlanEffects {
 
 export type PlanOutcome =
   | { done: true }
-  | { done: false; continueWith: { text: string; mode: "create" | "edit" | "legacy" }; pendingReply: string };
+  | { done: false; continueWith: HandOff; pendingReply: string };
+
+export interface HandOff {
+  text: string;
+  mode: "create" | "edit" | "legacy";
+  /** The model's filled-in draft (create/edit); used as it is instead of re-parsing `text`. */
+  draft?: DraftSpec;
+}
 
 export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffects, original: string): Promise<PlanOutcome> {
   const parts: ReplyPart[] = [];
   let schedule: "today" | "tomorrow" | "week" | null = null;
-  let handOff: { text: string; mode: "create" | "edit" | "legacy" } | null = null;
+  let handOff: HandOff | null = null;
 
   // Completing the Codmon submit closes every open input in the same transaction
   // (server_tx_acknowledge_codmon_submission_v1). Inputs the model also lists are folded
@@ -405,10 +521,10 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
         schedule ??= action.range;
         break;
       case "create":
-        handOff ??= { text: action.text, mode: "create" };
+        handOff ??= action.draft ? { text: action.text, mode: "create", draft: action.draft } : { text: action.text, mode: "create" };
         break;
       case "edit_draft":
-        handOff ??= { text: action.text, mode: "edit" };
+        handOff ??= action.draft ? { text: action.text, mode: "edit", draft: action.draft } : { text: action.text, mode: "edit" };
         break;
       case "legacy":
         handOff ??= { text: original, mode: "legacy" };
@@ -430,6 +546,74 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
   }
   if (combined) await effects.send(combined, quick);
   return { done: true };
+}
+
+// ---------------------------------------------------------------------------
+// The model's draft -> the pending action the confirmation card shows. Pure. The same
+// payload shapes the old path builds (task_create_once / request_create /
+// shopping_item_add), so confirming, editing and executing are unchanged.
+// ---------------------------------------------------------------------------
+
+export interface DraftContext {
+  actorId: string;
+  partnerId: string | null;
+  /** "パパ" / "ママ" for the card's 相手 line; anything else shows as パートナー. */
+  partnerLabel: string;
+  today: string;
+}
+
+const DRAFT_OWNED_KEYS = [
+  "line_edit_mode", "clarification_stage", "clarification_kind", "recipient_user_id",
+  "planned_assignee_user_id", "assignee_user_id", "target_label", "explicit_kind", "shared_message",
+];
+
+/**
+ * `base` is the draft being edited (its other fields are kept), or {} for a new one.
+ * Null when it cannot be built (a request with no partner in the household): the caller
+ * then takes the old path, which explains how to invite the partner.
+ */
+export function draftToPending(
+  spec: DraftSpec,
+  ctx: DraftContext,
+  base: Record<string, unknown> = {},
+): { actionType: "task_create_once" | "request_create" | "shopping_item_add"; payload: Record<string, unknown> } | null {
+  const payload: Record<string, unknown> = { ...base };
+  for (const key of DRAFT_OWNED_KEYS) delete payload[key];
+  payload.title = spec.title;
+  payload.scheduled_date = spec.date ?? (typeof base.scheduled_date === "string" ? base.scheduled_date : ctx.today);
+  // A daypart becomes the usual time for it (朝 = 08:00), as the 朝/夜 buttons do: the
+  // task itself only stores a time.
+  payload.due_local_time = spec.time ?? daypartToLocalTime(spec.daypart);
+  payload.daypart = spec.daypart;
+  const partnerLabel = ctx.partnerLabel === "パパ" || ctx.partnerLabel === "ママ" ? ctx.partnerLabel : null;
+  const whoId = spec.who === "partner" ? ctx.partnerId : spec.who === "me" ? ctx.actorId : null;
+
+  if (spec.kind === "shopping") {
+    payload.purchase_method = typeof base.purchase_method === "string" ? base.purchase_method : "store";
+    payload.assignee_user_id = whoId;
+    return { actionType: "shopping_item_add", payload };
+  }
+  if (spec.who === "partner" && spec.kind !== "event") {
+    if (!ctx.partnerId) return null;
+    payload.recipient_user_id = ctx.partnerId;
+    if (partnerLabel) payload.target_label = partnerLabel;
+    payload.shared_message = spec.message ?? `${spec.title}をお願いできますか？`;
+    return { actionType: "request_create", payload };
+  }
+  if (spec.who === "partner" && !ctx.partnerId) return null;
+  payload.category = typeof base.category === "string" ? base.category : "todo";
+  payload.routine_phase = typeof base.routine_phase === "string" ? base.routine_phase : "anytime";
+  payload.subtasks = Array.isArray(base.subtasks) ? base.subtasks : [];
+  payload.context = typeof base.context === "string" ? base.context : null;
+  payload.planned_assignee_user_id = whoId ?? ctx.actorId;
+  payload.target_label = spec.who === "partner" && partnerLabel ? partnerLabel : "自分";
+  if (spec.kind === "event") {
+    payload.explicit_kind = "event";
+    payload.calendar_visibility = "special";
+  } else {
+    payload.calendar_visibility = "hidden";
+  }
+  return { actionType: "task_create_once", payload };
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +649,7 @@ function evalSnapshot(input: Record<string, unknown>): Snapshot {
       return { ref: `s${i + 1}`, id: `s${i + 1}`, title: String(r.title ?? ""), who: r.who === "me" ? "me" : r.who === "partner" ? "partner" : null, revision: 1 };
     }),
     sharedNotes: Array.isArray(input.sharedNotes) ? input.sharedNotes.map(String) : [],
+    transport: Array.isArray(input.transport) ? input.transport as SnapshotTransport[] : [],
   };
 }
 

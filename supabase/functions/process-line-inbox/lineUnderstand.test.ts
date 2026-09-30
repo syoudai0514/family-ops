@@ -1,9 +1,11 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   buildUnderstandPrompt,
+  draftToPending,
   evaluateUnderstanding,
   guardPlan,
   makeGeminiProvider,
+  parseDraft,
   parsePlan,
   type Plan,
   type PlanEffects,
@@ -12,7 +14,7 @@ import {
   understandLineText,
 } from "./lineUnderstand.ts";
 import { isFixedShortcutText } from "./lineConversation.ts";
-import { jstClock } from "./lineRouterWiring.ts";
+import { describePendingDraft, jstClock } from "./lineRouterWiring.ts";
 import { buildShoppingListReply } from "./lineShoppingList.ts";
 
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
@@ -255,4 +257,94 @@ Deno.test("evaluation: at most 5 cases per request", async () => {
   const cases = Array.from({ length: 9 }, (_, i) => ({ id: i, message: "x" }));
   const res = await evaluateUnderstanding(cases, () => { n++; return Promise.resolve('{"reply":"ok","actions":[]}'); });
   assertEquals([res.results.length, n], [5, 5]);
+});
+
+// Live 2026-09-30 23:17-23:18: "明日、将生の保育園に下着2こ持っていかないと。入れといて" then
+// "将生のね。あと朝だから朝担当の人でよろしくね". The model understood both, but only a
+// sentence was handed on and a second parse dropped the child, the count, the morning and
+// the person. The model's filled-in draft now goes into the card as it is.
+Deno.test("draft: parsed strictly; bad values become empty, never guessed", () => {
+  assertEquals(parseDraft({ kind: "request", title: " 将生の保育園に下着を2枚持っていく ", date: "2026-10-01", time: "7:05", daypart: "morning", who: "partner", message: "よろしく" }), {
+    kind: "request", title: "将生の保育園に下着を2枚持っていく", date: "2026-10-01", time: "07:05", daypart: "morning", who: "partner", message: "よろしく",
+  });
+  assertEquals(parseDraft({ kind: "task", title: "x", date: "2026-02-30", time: "25:00", daypart: "dawn", who: "grandma" }), {
+    kind: "task", title: "x", date: null, time: null, daypart: null, who: null, message: null,
+  });
+  for (const bad of [null, "x", [], { kind: "share", title: "x" }, { kind: "task" }, { kind: "task", title: "あ".repeat(81) }]) {
+    assertEquals(parseDraft(bad), undefined, JSON.stringify(bad));
+  }
+  const plan = parsePlan('{"reply":"了解！","actions":[{"type":"create","text":"t","draft":{"kind":"task","title":"ゴミ出し","date":"2026-10-01"}}],"confidence":"high"}');
+  assertEquals(plan?.actions[0], { type: "create", text: "t", draft: { kind: "task", title: "ゴミ出し", date: "2026-10-01", time: null, daypart: null, who: null, message: null } });
+  // An unusable draft does not reject the plan: the sentence takes the old path.
+  assertEquals(parsePlan('{"reply":"了解！","actions":[{"type":"create","text":"t","draft":{"kind":"?"}}],"confidence":"high"}')?.actions[0], { type: "create", text: "t" });
+});
+
+const ctx = { actorId: "papa-id", partnerId: "mama-id", partnerLabel: "ママ", today: "2026-09-30" };
+
+Deno.test("draft -> card: the live case is a request to the dropoff person, with the child, the count and 朝", () => {
+  const built = draftToPending({
+    kind: "request", title: "将生の保育園に下着を2枚持っていく", date: "2026-10-01", time: null, daypart: "morning", who: "partner",
+    message: "明日の朝、将生の保育園に下着を2枚持っていってもらえる？",
+  }, ctx);
+  assertEquals(built, {
+    actionType: "request_create",
+    payload: {
+      title: "将生の保育園に下着を2枚持っていく", scheduled_date: "2026-10-01", due_local_time: "08:00", daypart: "morning",
+      recipient_user_id: "mama-id", target_label: "ママ", shared_message: "明日の朝、将生の保育園に下着を2枚持っていってもらえる？",
+    },
+  });
+});
+
+Deno.test("draft -> card: own task, event, shopping; no partner -> old path", () => {
+  const own = draftToPending({ kind: "task", title: "ゴミ出し", date: null, time: "07:00", daypart: null, who: null, message: null }, ctx);
+  assertEquals(own?.actionType, "task_create_once");
+  assertEquals([own?.payload.planned_assignee_user_id, own?.payload.scheduled_date, own?.payload.due_local_time, own?.payload.calendar_visibility, own?.payload.target_label],
+    ["papa-id", "2026-09-30", "07:00", "hidden", "自分"]);
+  const event = draftToPending({ kind: "event", title: "皮膚科", date: "2026-10-03", time: "10:00", daypart: null, who: "partner", message: null }, ctx);
+  assertEquals([event?.actionType, event?.payload.explicit_kind, event?.payload.calendar_visibility, event?.payload.planned_assignee_user_id],
+    ["task_create_once", "event", "special", "mama-id"]);
+  const shop = draftToPending({ kind: "shopping", title: "牛乳", date: null, time: null, daypart: null, who: "me", message: null }, ctx);
+  assertEquals([shop?.actionType, shop?.payload.assignee_user_id, shop?.payload.purchase_method], ["shopping_item_add", "papa-id", "store"]);
+  assertEquals(draftToPending({ kind: "request", title: "x", date: null, time: null, daypart: null, who: "partner", message: null }, { ...ctx, partnerId: null }), null);
+});
+
+Deno.test("draft -> card: an edit replaces what the model filled in and keeps the rest", () => {
+  const base = {
+    title: "保育園に下着を持っていく", scheduled_date: "2026-10-01", due_local_time: null, recipient_user_id: "mama-id",
+    shared_message: "保育園に下着を持っていくをお願いできますか？", raw_text: "明日、…", line_edit_mode: true,
+  };
+  const edited = draftToPending({ kind: "task", title: "将生の保育園に下着を2枚持っていく", date: null, time: null, daypart: "morning", who: "me", message: null }, ctx, base);
+  assertEquals(edited?.actionType, "task_create_once");
+  const p = edited!.payload;
+  assertEquals([p.title, p.scheduled_date, p.due_local_time, p.planned_assignee_user_id, p.raw_text], ["将生の保育園に下着を2枚持っていく", "2026-10-01", "08:00", "papa-id", "明日、…"]);
+  // The old addressee, message and edit flag do not linger.
+  assertEquals([p.recipient_user_id, p.shared_message, p.line_edit_mode], [undefined, undefined, undefined]);
+});
+
+Deno.test("prompt: tomorrow's dropoff person and the draft's fields reach the model", () => {
+  const p = buildUnderstandPrompt(snap({
+    transport: [
+      { date: "2026-09-30", dropoff: { who: "me", time: "07:30" }, pickup: { who: "partner", time: "18:20" } },
+      { date: "2026-10-01", dropoff: { who: "partner", time: "07:30" }, pickup: null },
+    ],
+    pendingDraft: { kind: "request", title: "保育園に下着を持っていく", date: "2026-10-01", time: null, daypart: null, who: "partner" },
+  }), "将生のね。あと朝だから朝担当の人でよろしくね");
+  for (const needle of [
+    '"日付":"2026-10-01","送り":"ママ 07:30","お迎え":"なし"', '"送り":"パパ 07:30","お迎え":"ママ 18:20"',
+    '"題名":"保育園に下着を持っていく","日付":"2026-10-01"', '"担当":"ママ"', '"date":"2026-10-01"',
+  ]) assertEquals(p.includes(needle), true, needle);
+});
+
+Deno.test("snapshot: the waiting draft is described with its fields", () => {
+  assertEquals(describePendingDraft({ action_type: "request_create", normalized_payload: { title: "下着", scheduled_date: "2026-10-01", recipient_user_id: "mama-id", daypart: "morning", due_local_time: "08:00" } }, "papa-id"),
+    { kind: "request", title: "下着", date: "2026-10-01", time: "08:00", daypart: "morning", who: "partner" });
+  assertEquals(describePendingDraft({ action_type: "task_create_once", normalized_payload: { title: "皮膚科", calendar_visibility: "special", planned_assignee_user_id: "papa-id" } }, "papa-id")?.kind, "event");
+  assertEquals(describePendingDraft(null, "papa-id"), null);
+});
+
+Deno.test("run: the draft rides along with the hand-off", async () => {
+  const draft = { kind: "task" as const, title: "ゴミ出し", date: null, time: null, daypart: null, who: null, message: null };
+  const out = await runPlan({ understanding: "", reply: "了解！", confidence: "high", actions: [{ type: "edit_draft", text: "ゴミ出し", draft }] },
+    snap({ pendingDraft: { kind: "task", title: "ごみ" } }), fakeEffects().effects, "ゴミ出しね");
+  assertEquals(out, { done: false, continueWith: { text: "ゴミ出し", mode: "edit", draft }, pendingReply: "" });
 });
