@@ -185,9 +185,9 @@ begin
   returning id into v_google_conn_id;
 
   insert into public.calendar_connections
-    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required)
+    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required, is_family_write_target)
   values
-    (gen_random_uuid(), v_hh_id, 'google', 'family-27hh1@group.calendar.google.com', v_google_conn_id, true, now(), false)
+    (gen_random_uuid(), v_hh_id, 'google', 'family-27hh1@group.calendar.google.com', v_google_conn_id, true, now(), false, true)
   returning id into v_cal_conn_id;
 
   select id into v_dropoff_def from public.task_definitions where household_id = v_hh_id and code = 'dropoff';
@@ -250,9 +250,9 @@ begin
      array['https://www.googleapis.com/auth/calendar.events'], 'active')
   returning id into v_google_conn_id;
   insert into public.calendar_connections
-    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required)
+    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required, is_family_write_target)
   values
-    (gen_random_uuid(), v_other_hh_id, 'google', 'family-27other@group.calendar.google.com', v_google_conn_id, true, now(), false)
+    (gen_random_uuid(), v_other_hh_id, 'google', 'family-27other@group.calendar.google.com', v_google_conn_id, true, now(), false, true)
   returning id into v_other_cal_conn_id;
   insert into public.calendar_event_occurrences
     (household_id, calendar_connection_id, occurrence_key, google_event_id, title,
@@ -378,9 +378,9 @@ begin
      array['https://www.googleapis.com/auth/calendar.events'], 'active')
   returning id into v_google_conn_id;
   insert into public.calendar_connections
-    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required)
+    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required, is_family_write_target)
   values
-    (gen_random_uuid(), v_hh_id, 'google', 'family-27reauth@group.calendar.google.com', v_google_conn_id, true, now(), true)
+    (gen_random_uuid(), v_hh_id, 'google', 'family-27reauth@group.calendar.google.com', v_google_conn_id, true, now(), true, true)
   returning id into v_cal_conn_id;
 
   v_result := public.server_tx_get_today_schedule('27000000-0000-0000-0000-000000000005'::uuid);
