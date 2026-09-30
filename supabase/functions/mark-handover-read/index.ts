@@ -16,6 +16,19 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   }
 
   const serviceClient = createServiceRoleClient();
+
+  // action "end": clear the note for the whole household (any adult;
+  // Requirements §8.2 / §29.2). Carried by this function rather than a new
+  // one because the project is at its plan's Edge Function limit.
+  if (body["action"] === "end") {
+    const ended = await callServerTx<{ ok: true; handover_id: string; status: string }>(
+      serviceClient,
+      "server_tx_end_handover",
+      { p_actor_id: actorId, p_operation_id: operationId, p_handover_id: handoverId },
+    );
+    return jsonResponse(ended);
+  }
+
   const result = await callServerTx<{ ok: true }>(
     serviceClient,
     "server_tx_mark_handover_read",

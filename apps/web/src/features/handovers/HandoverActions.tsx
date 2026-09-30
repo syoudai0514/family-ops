@@ -34,8 +34,10 @@ export function HandoverActions({
     try {
       await runCommand(
         `handover:${handover.id}:${kind}`,
-        kind === 'read' ? EDGE_FUNCTIONS.markHandoverRead : EDGE_FUNCTIONS.endHandover,
-        (operationId) => ({ operation_id: operationId, handover_id: handover.id }),
+        EDGE_FUNCTIONS.markHandoverRead,
+        (operationId) => (kind === 'read'
+          ? { operation_id: operationId, handover_id: handover.id }
+          : { operation_id: operationId, handover_id: handover.id, action: 'end' }),
       );
       setConfirmingEnd(false);
       onChanged();
