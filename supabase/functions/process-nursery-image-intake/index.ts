@@ -3,7 +3,7 @@
 // authenticated human-confirm endpoint.
 import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts';
 import { jsonResponse, withServiceHandler } from '../_shared/handler.ts';
-import { assertPrivacySafeStructuredValue, isSafeExternalUrl, mayGroupNurseryPages, requiredClarificationFields, type NurseryAnalysis } from '../_shared/nurseryImage.ts';
+import { assertPrivacySafeStructuredValue, buildNurseryResultMessage, isSafeExternalUrl, keepValidReviewItems, mayGroupNurseryPages, requiredClarificationFields, type NurseryAnalysis, type NurseryResultKind } from '../_shared/nurseryImage.ts';
 
 type Claimed = {
   id: string; provider_event_id: string; line_message_id: string; household_id: string;
@@ -55,8 +55,9 @@ async function analyzeImage(bytes: Uint8Array, contentType: string, contexts: Co
   if (typeof text !== 'string') throw new Error('GEMINI_EMPTY_RESPONSE');
   const parsed = JSON.parse(text) as ModelResult;
   if (!['ordinary_photo','nursery_notice','needs_clarification'].includes(parsed.triage)) throw new Error('NURSERY_TRIAGE_INVALID');
-  if (!Array.isArray(parsed.review_items) || parsed.review_items.length > 64) throw new Error('NURSERY_REVIEW_ITEMS_INVALID');
-  for (const [index, item] of parsed.review_items.entries()) {
+  if (!Array.isArray(parsed.review_items)) throw new Error('NURSERY_REVIEW_ITEMS_INVALID');
+  // A malformed item is dropped, not fatal: the rest of the notice is still worth reviewing.
+  const { kept, dropped } = keepValidReviewItems(parsed.review_items.slice(0, 64), (item, index) => {
     if (!REVIEW_ITEM_KINDS.has(item.item_kind)) throw new Error('NURSERY_REVIEW_ITEM_INVALID');
     if (!Number.isInteger(item.source_page) || item.source_page < 1 || item.source_page > 32) throw new Error('NURSERY_SOURCE_PAGE_INVALID');
     if (!['source_explicit','ai_inference'].includes(item.origin) || !['high','medium','low'].includes(item.confidence_band)) throw new Error('NURSERY_REVIEW_ITEM_INVALID');
@@ -72,9 +73,35 @@ async function analyzeImage(bytes: Uint8Array, contentType: string, contexts: Co
       if (url && !isSafeExternalUrl(url)) throw new Error('NURSERY_UNSAFE_URL');
       if ((!url && !destination) || (url && destination)) throw new Error('NURSERY_EXECUTION_TARGET_INVALID');
     }
-  }
+  });
+  if (dropped.length > 0) console.warn('process-nursery-image-intake: dropped invalid review items', { codes: dropped });
+  parsed.review_items = kept;
   parsed.ambiguous_fields = requiredClarificationFields(parsed);
   return parsed;
+}
+
+// Tells the sender what happened to their photo. Best effort: a failed
+// notification must never fail or re-run the intake itself.
+async function notifySender(
+  client: ReturnType<typeof createServiceRoleClient>,
+  item: Claimed,
+  kind: NurseryResultKind,
+  itemCount: number,
+  hasContexts: boolean,
+): Promise<void> {
+  try {
+    const base = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
+    const { error } = await client.rpc('server_tx_enqueue_immediate_line_push', {
+      p_household_id: item.household_id,
+      p_recipient_user_id: item.actor_id,
+      p_text: buildNurseryResultMessage({ kind, itemCount, hasContexts, link: base ? `${base}/nursery/reviews/${item.id}` : '' }),
+      p_dedup_key: `nursery-intake:${item.id}:${kind}`,
+      p_rich_message: null,
+    });
+    if (error) console.warn('process-nursery-image-intake: sender notice not queued', { message: error.message });
+  } catch (err) {
+    console.warn('process-nursery-image-intake: sender notice failed', { message: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 Deno.serve(withServiceHandler(async (req: Request) => {
@@ -113,6 +140,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       const { data: finished, error: recordError } = await client.rpc('server_tx_record_nursery_line_analysis',{p_intake_id:item.id,p_expected_revision:currentRevision,p_child_school_context_id:analysis.child_school_context_id,p_context_confidence:analysis.context_confidence,p_ambiguity_fields:analysis.ambiguous_fields,p_source_facts:[],p_ai_candidates:[],p_review_items:analysis.review_items,p_status:status});
       if (recordError) throw recordError;
       currentRevision = Number(finished.revision);
+      await notifySender(client, item, status === 'needs_clarification' ? 'needs_clarification' : 'review_ready', analysis.review_items.length, (contexts ?? []).length > 0);
 
       if (previous.found && previous.intake_id && previous.received_at && mayGroupNurseryPages({
         sameDocumentAsPrevious:analysis.same_document_as_previous,
@@ -131,6 +159,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       try {
         await client.rpc('server_tx_finish_nursery_image_review',{p_intake_id:item.id,p_expected_revision:currentRevision,p_status:'failed',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:false});
       } catch { /* already-terminal/stale rows remain auditable; processing rows use the latest known revision */ }
+      await notifySender(client, item, 'failed', 0, true);
     }
   }
   return jsonResponse({claimed:claimed.length,processed});

@@ -42,3 +42,30 @@ Deno.test('Q102 recurrence must be bounded', () => {
   assertEquals(validateBoundedRecurrence({ effective_from: '2026-09-01', effective_to: '2027-08-31' }), true);
   assertEquals(validateBoundedRecurrence({ effective_from: '2026-09-01', effective_to: '2028-09-01' }), false);
 });
+
+import { buildNurseryResultMessage, keepValidReviewItems } from './nurseryImage.ts';
+
+Deno.test('a failed photo tells the sender to retry or type it', () => {
+  const text = buildNurseryResultMessage({ kind: 'failed', itemCount: 0, hasContexts: true, link: 'https://x/r' });
+  if (!text.includes('撮り直して') || text.includes('https://x/r')) throw new Error(text);
+});
+
+Deno.test('a read photo reports the count, the missing school setup and the review link', () => {
+  const ready = buildNurseryResultMessage({ kind: 'review_ready', itemCount: 3, hasContexts: true, link: 'https://x/r' });
+  if (ready !== '📷 保育園のお知らせを読み取りました（候補3件）。\n内容を確認して登録してください。\nhttps://x/r') throw new Error(ready);
+  const noContext = buildNurseryResultMessage({ kind: 'needs_clarification', itemCount: 3, hasContexts: false, link: '' });
+  if (!noContext.includes('まだ登録されていない')) throw new Error(noContext);
+  const clarify = buildNurseryResultMessage({ kind: 'needs_clarification', itemCount: 2, hasContexts: true, link: '' });
+  if (!clarify.includes('どの子・どのクラス')) throw new Error(clarify);
+  const empty = buildNurseryResultMessage({ kind: 'review_ready', itemCount: 0, hasContexts: true, link: '' });
+  if (!empty.includes('見つかりませんでした')) throw new Error(empty);
+});
+
+Deno.test('one malformed review item no longer discards the others', () => {
+  const { kept, dropped } = keepValidReviewItems([1, 2, 3, 4], (n) => {
+    if (n === 2) throw new Error('NURSERY_SOURCE_PAGE_INVALID');
+    if (n === 4) throw new TypeError("Cannot read properties of null");
+  });
+  if (JSON.stringify(kept) !== '[1,3]') throw new Error(JSON.stringify(kept));
+  if (JSON.stringify(dropped) !== '["NURSERY_SOURCE_PAGE_INVALID","NURSERY_REVIEW_ITEM_INVALID"]') throw new Error(JSON.stringify(dropped));
+});
