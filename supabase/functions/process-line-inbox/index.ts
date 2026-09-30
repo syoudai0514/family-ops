@@ -117,7 +117,7 @@ import {
   type CompletionContext,
 } from "./lineCompletionReport.ts";
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
-import { evaluateUnderstanding, makeGeminiProvider, runPlan, understandLineText } from "./lineUnderstand.ts";
+import { type DraftSpec, draftToPending, evaluateUnderstanding, makeGeminiProvider, runPlan, understandLineText } from "./lineUnderstand.ts";
 import { loadSnapshot, logLineTurn, reserveAiCall, understandEnabled } from "./lineRouterWiring.ts";
 import {
   purchaseAllAndReply,
@@ -1253,7 +1253,11 @@ function scheduleLabel(payload: Record<string, unknown>): string {
   const daypart = typeof payload.daypart === "string" ? payload.daypart : null;
   const localTime = typeof payload.due_local_time === "string" ? payload.due_local_time : null;
   const dateLabel = date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : "今日";
-  const part = localTime ?? (daypart ? daypartLabel(daypart as "morning" | "noon" | "evening" | "night") : "時刻なし");
+  const partLabel = daypart ? daypartLabel(daypart as "morning" | "noon" | "evening" | "night") : null;
+  // "朝（08:00）": the time stored for 朝 is the usual one, so the card says which it came from.
+  const part = localTime && partLabel && localTime === daypartToLocalTime(daypart as "morning" | "noon" | "evening" | "night")
+    ? `${partLabel}（${localTime}）`
+    : localTime ?? partLabel ?? "時刻なし";
   return `${dateLabel} ${part}`;
 }
 
@@ -2062,6 +2066,13 @@ async function handleText(
       }, text);
       if (outcome.done) return;
       if (outcome.pendingReply) await sendConfirmation(client, item, actor, outcome.pendingReply);
+      if (outcome.continueWith.draft && await applyUnderstoodDraft(client, item, actor, {
+        mode: outcome.continueWith.mode,
+        draft: outcome.continueWith.draft,
+        pending: pendingDraft,
+        partnerLabel: snapshot.partner,
+        rawText: text,
+      })) return;
       text = outcome.continueWith.text;
       routedCreate = outcome.continueWith.mode === "create";
     } else if (understood.raw !== null) {
@@ -2206,6 +2217,64 @@ async function handleText(
       dedupKey: `line-clarify-kind:${item.provider_event_id}`,
     });
   }
+}
+
+const DRAFT_EDITABLE_TYPES = new Set(["task_create_once", "request_create", "shopping_item_add", "needs_pwa_review"]);
+
+/**
+ * The model filled in the draft (title with the child's name and the count, date,
+ * morning/evening, who does it) from the whole conversation: it goes into the card as it
+ * is. Before, only a sentence was handed on, and a second parse of it lost those details
+ * (live 2026-09-30 23:17-23:18). False = could not be used; the caller takes the old path.
+ */
+async function applyUnderstoodDraft(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  opts: {
+    mode: "create" | "edit" | "legacy";
+    draft: DraftSpec;
+    pending: EditablePendingAction | null;
+    partnerLabel: string;
+    rawText: string;
+  },
+): Promise<boolean> {
+  const ctx = {
+    actorId: actor.user_id,
+    partnerId: await partnerUserId(client, actor),
+    partnerLabel: opts.partnerLabel,
+    today: jstIsoDateOffset(0),
+  };
+  if (opts.mode === "edit") {
+    const pending = opts.pending;
+    if (!pending || !DRAFT_EDITABLE_TYPES.has(pending.action_type)) return false;
+    const built = draftToPending(opts.draft, ctx, pending.normalized_payload);
+    if (!built) return false;
+    const updated = await updateEditablePending(client, actor, pending.id, built.actionType, built.payload);
+    if (!updated) return false;
+    await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
+    return true;
+  }
+  if (opts.mode !== "create") return false;
+  const built = draftToPending(opts.draft, ctx);
+  if (!built) return false;
+  const payload = { ...built.payload, raw_text: opts.rawText };
+  const { data, error } = await client.rpc("server_tx_create_pending_action", {
+    p_actor_id: actor.user_id,
+    p_household_id: actor.household_id,
+    p_operation_id: await deterministicOperationId("line-understand-draft", item.provider_event_id),
+    p_source: "line",
+    p_action_type: built.actionType,
+    p_normalized_payload: payload,
+    p_ttl_minutes: PENDING_ACTION_TTL_MINUTES,
+  });
+  const pendingActionId = (data as { pending_action_id?: string } | null)?.pending_action_id;
+  if (error || !pendingActionId) {
+    console.error("process-line-inbox: understood draft not stored", error?.message);
+    return false;
+  }
+  await sendPendingActionPreview(client, item, actor, pendingActionId, built.actionType, payload);
+  return true;
 }
 
 async function processItem(client: SupabaseClient, item: WebhookInboxItem): Promise<void> {
