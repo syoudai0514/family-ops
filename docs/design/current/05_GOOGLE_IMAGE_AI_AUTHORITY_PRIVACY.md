@@ -115,6 +115,14 @@ v6 statement that shared Google calendar is the family schedule source of truth 
 
 ADR 0013 explicitly records this architecture evolution.
 
+## 4.1 Googleカレンダーの家庭共有境界
+
+- 家庭の予定として件名・場所・説明まで表示するのは、設定で選択した1つの家族カレンダーだけとする。
+- それ以外のGoogleカレンダーは重複確認に利用しても、予定詳細を月・週・Today・LINE・家庭向けreadへ出さない。
+- ブラウザから直接読めるGoogle予定データも、選択した家族カレンダーに限定する。
+- サーバー側のToday・Week・DailyBrief等も同じ条件で予定詳細を返す。重複判定は非選択カレンダーを利用してよい。
+- 家族カレンダー未選択時に、先頭のGoogleカレンダーを暗黙に共有対象へしない。
+
 ## 5. Family Event ↔ Google link modes
 
 ### 5.1 `family_ops_owned`
