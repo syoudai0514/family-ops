@@ -280,28 +280,41 @@ export function understandModel(): string {
     Deno.env.get("GEMINI_MODEL_REWRITE") ?? "";
 }
 
-// One retry for the transient failures seen against the live model (an empty answer or
-// a 429/5xx now and then; 1 in 10 in the first production evaluation). Not for 4xx:
-// a bad key or model name does not get better by asking again.
+// One retry for a transient failure (an empty answer or a 5xx; 1 in 10 in the first
+// production evaluation). Never on 429: the free tier's limit is per minute (15 RPM for
+// Gemini 3.1 Flash Lite), so asking again seconds later only spends another request.
+// Every call -- the retry included -- first asks the shared budget (server_tx_reserve_ai_call);
+// when it says no, the message simply takes the old path.
 function isTransient(code: string): boolean {
-  return code === "GEMINI_EMPTY_RESPONSE" || /^GEMINI_HTTP_(?:429|5\d\d)$/.test(code) || /fetch|network|timed out|connection/i.test(code);
+  return code === "GEMINI_EMPTY_RESPONSE" || /^GEMINI_HTTP_5\d\d$/.test(code) || /fetch|network|timed out|connection/i.test(code);
 }
 
-async function geminiProvider(prompt: string): Promise<string | null> {
-  const model = understandModel();
-  if (!model) return null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      return await callGemini(prompt, model);
-    } catch (error) {
-      const code = error instanceof Error ? error.message : "unknown";
-      console.warn("process-line-inbox: understand unavailable", { code, attempt });
-      if (attempt === 2 || !isTransient(code)) return null;
-      await new Promise((resolve) => setTimeout(resolve, 700));
+export type ReserveAiCall = () => Promise<boolean>;
+
+export function makeGeminiProvider(reserve: ReserveAiCall): UnderstandProvider {
+  return async (prompt: string) => {
+    const model = understandModel();
+    if (!model) return null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      if (!(await reserve())) {
+        console.warn("process-line-inbox: AI budget for this minute is used up; using the fallback", { attempt });
+        return null;
+      }
+      try {
+        return await callGemini(prompt, model);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "unknown";
+        console.warn("process-line-inbox: understand unavailable", { code, attempt });
+        if (attempt === 2 || !isTransient(code)) return null;
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
     }
-  }
-  return null;
+    return null;
+  };
 }
+
+/** Without a budget (tests, tools): never call the model. */
+const noModel: UnderstandProvider = () => Promise.resolve(null);
 
 export interface UnderstandResult {
   raw: string | null;
@@ -312,7 +325,7 @@ export interface UnderstandResult {
 export async function understandLineText(
   snapshot: Snapshot,
   message: string,
-  provider: UnderstandProvider = geminiProvider,
+  provider: UnderstandProvider = noModel,
 ): Promise<UnderstandResult> {
   const raw = await provider(buildUnderstandPrompt(snapshot, message));
   const parsed = raw ? parsePlan(raw) : null;
@@ -455,8 +468,9 @@ function evalSnapshot(input: Record<string, unknown>): Snapshot {
   };
 }
 
-export async function evaluateUnderstanding(cases: unknown, provider: UnderstandProvider = geminiProvider) {
-  const list = Array.isArray(cases) ? cases.slice(0, 20) : [];
+// At most 5 cases per request: evaluation must never eat the family's per-minute budget.
+export async function evaluateUnderstanding(cases: unknown, provider: UnderstandProvider = noModel) {
+  const list = Array.isArray(cases) ? cases.slice(0, 5) : [];
   const results = [];
   for (const c of list) {
     const r = (c ?? {}) as Record<string, unknown>;
