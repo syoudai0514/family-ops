@@ -16,7 +16,7 @@ export function calendarRowLabel(row: Pick<Connection, 'active' | 'reauth_requir
   if (!row.active) return '（停止中）';
   if (row.reauth_required) return '（再認証が必要）';
   if (row.is_family_write_target) return '（家族カレンダー・ここに書き込みます）';
-  return '（読み取りのみ）';
+  return '（非公開・重複確認のみ）';
 }
 
 function oauthCallbackNotice(targetSelected: boolean) {
@@ -46,7 +46,7 @@ export function CalendarIntegrationSettings({ returnTo = '/settings' }: { return
   // healthy. Offering the same re-sync action in both places means following
   // the week view's advice to "check the connection" is no longer a dead end.
   const freshness=useCalendarFreshness({enabled:Boolean(household),auto:false});
-  return <section className="card"><h2>Google Calendar</h2><p className="empty-hint">個人予定は読み取り・重複確認に使います。送迎と特別対応は、ここで選んだ家族カレンダーだけへ書き込みます。</p><p className="empty-hint">読み取り対象の中から、家族の予定を書き込むカレンダーを一つ選べます。変更すると、前のカレンダーに書き込んだ予定を消してから新しいカレンダーへ入れ直します。</p>
+  return <section className="card"><h2>Google Calendar</h2><p className="empty-hint">個人予定は重複確認だけに使い、予定名や内容は家庭の予定一覧・LINEには表示しません。送迎と特別対応は、ここで選んだ家族カレンダーだけへ書き込みます。</p><p className="empty-hint">読み取り対象の中から、家族の予定を書き込むカレンダーを一つ選べます。変更すると、前のカレンダーに書き込んだ予定を消してから新しいカレンダーへ入れ直します。</p>
     {callbackNotice&&<p role="status">{callbackNotice}</p>}
     {rows.length===0?<p>Google Calendar: 未接続です。</p>:<><p role="status">Google Calendar ✓ 接続済み</p>{canSelect&&!targetSelected&&<p role="status">家族予定を書き込むカレンダーを選んでください</p>}<ul className="task-list">{rows.map(row=><li key={row.id}><label><input type="radio" name="family-calendar" checked={row.is_family_write_target} disabled={!row.active||row.reauth_required} onChange={async()=>{setError(null);try{await callEdgeFunction(EDGE_FUNCTIONS.setFamilyCalendarTarget,{operation_id:newOperationId(),calendar_connection_id:row.id}); await load();}catch(e){setError(e instanceof Error?e.message:'書込み先を変更できませんでした。');}}} />{row.display_name??row.external_calendar_id} {calendarRowLabel(row)}</label></li>)}</ul></>}
     {rows.length>0&&<div className="calendar-sync-row">

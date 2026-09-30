@@ -37,15 +37,19 @@ export function usePlanningData(householdId: string | null, start: string, end: 
           .order('scheduled_date'),
         supabase
           .from('calendar_event_occurrences')
-          .select('*, calendar_connections(display_name,external_calendar_id)')
+          .select('*, calendar_connections!inner(display_name,external_calendar_id,is_family_write_target,active)')
           .eq('household_id', householdId)
+          .eq('calendar_connections.active', true)
+          .eq('calendar_connections.is_family_write_target', true)
           .gte('starts_at', rangeStart)
           .lt('starts_at', rangeEndExclusive)
           .order('starts_at'),
         supabase
           .from('calendar_event_occurrences')
-          .select('*, calendar_connections(display_name,external_calendar_id)')
+          .select('*, calendar_connections!inner(display_name,external_calendar_id,is_family_write_target,active)')
           .eq('household_id', householdId)
+          .eq('calendar_connections.active', true)
+          .eq('calendar_connections.is_family_write_target', true)
           // all_day_end_exclusive is an exclusive local date. This is the
           // standard interval-overlap predicate, so events that began before
           // the visible range still appear on every covered day.

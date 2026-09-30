@@ -16,8 +16,8 @@ describe('calendar row label', () => {
     expect(calendarRowLabel(row({ is_family_write_target: true }))).toBe('（家族カレンダー・ここに書き込みます）');
   });
 
-  it('distinguishes a read-only connection from the write target', () => {
-    expect(calendarRowLabel(row())).toBe('（読み取りのみ）');
+  it('distinguishes a private conflict-only connection from the write target', () => {
+    expect(calendarRowLabel(row())).toBe('（非公開・重複確認のみ）');
     expect(calendarRowLabel(row())).not.toBe(calendarRowLabel(row({ is_family_write_target: true })));
   });
 
