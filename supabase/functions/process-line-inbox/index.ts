@@ -2037,14 +2037,16 @@ async function handleText(
           }
           return drain();
         },
-        completeTask: async (task, by) => {
+        completeTask: async (task, by, modelPartnerCodes) => {
+          // Codmon: the model's reading of "Xはやってあった" plus the phrase parser's, merged.
           const codmon = task.code === "codmon_submit" ? parseCodmonSentReport(text) : null;
+          const partnerCodes = [...new Set([...(modelPartnerCodes ?? []), ...(codmon?.partnerCodes ?? [])])];
           await completeTaskAndReply(collectingCompletion, task.id, {
             operationId: await deterministicOperationId("line-understand", item.provider_event_id, task.id),
             title: task.title,
             code: task.code,
             completionActor: by,
-            partnerInputCodes: codmon?.partnerCodes,
+            partnerInputCodes: partnerCodes.length ? partnerCodes : undefined,
             unreadNotes: codmon?.unreadNotes,
           });
           return drain();

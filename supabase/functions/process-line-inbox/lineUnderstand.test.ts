@@ -86,7 +86,7 @@ function fakeEffects() {
   const effects: PlanEffects = {
     showShopping: (who) => { log.push(`list:${who}`); return Promise.resolve([{ text: `LIST(${who})` }]); },
     markBought: (items) => { log.push(`bought:${items.map((i) => i.id).join(",")}`); return Promise.resolve([{ text: "✓ 買った", quick: ["undo-buy"] }]); },
-    completeTask: (task, by) => { log.push(`done:${task.id}:${by}`); return Promise.resolve([{ text: `✓ ${task.title}`, quick: ["undo-task"] }]); },
+    completeTask: (task, by, codes) => { log.push(`done:${task.id}:${by}${codes?.length ? `:${codes.join("+")}` : ""}`); return Promise.resolve([{ text: `✓ ${task.title}`, quick: ["undo-task"] }]); },
     cancelDraft: () => { log.push("cancel"); return Promise.resolve([{ text: "✓ 取り消し" }]); },
     showSchedule: (range, lead) => { log.push(`schedule:${range}:${lead}`); return Promise.resolve(); },
     send: (text, quick) => { log.push(`SEND:${text}|${JSON.stringify(quick ?? null)}`); return Promise.resolve(); },
@@ -185,4 +185,26 @@ Deno.test("shopping list: filters by who", () => {
   assertEquals(buildShoppingListReply(rows, { actorId: "papa", roles, who: "partner" }), "ママが買うもの（1件）\n・ウイスキー");
   assertEquals(buildShoppingListReply(rows, { actorId: "papa", roles, who: "unassigned" }), "担当が決まっていない買い物（1件）\n・Tシャツ");
   assertEquals(buildShoppingListReply([], { actorId: "papa", roles, who: "me" }), "あなたが買うもの（担当なしを含む）は、いまありません。");
+});
+
+// Production evaluation 2026-09-30: for "コドモン送りました。朝食はやってあった" the real
+// model completed the submit AND the breakfast input separately; the second would fail
+// as already done (the submit closes all inputs). It is folded into the submit instead.
+Deno.test("run: Codmon inputs the model lists are folded into the submit as partner codes", async () => {
+  const s = snap({ tasks: [
+    { ref: "t1", id: "uuid-submit", title: "コドモン送信", who: "me", due: "09:15", status: "todo", code: "codmon_submit" },
+    { ref: "t2", id: "uuid-bf", title: "詩乃：コドモン入力（朝食）", who: "partner", due: null, status: "todo", code: "codmon_shino_breakfast_input" },
+    { ref: "t3", id: "uuid-prev", title: "詩乃：コドモン入力（昨日の夕飯）", who: "me", due: null, status: "todo", code: "codmon_shino_previous_input" },
+  ] });
+  const { log, effects } = fakeEffects();
+  await runPlan({ understanding: "", reply: "おつかれさま！", confidence: "high", actions: [
+    { type: "complete_task", ref: "t1", by: "self" },
+    { type: "complete_task", ref: "t2", by: "partner" },
+    { type: "complete_task", ref: "t3", by: "self" },
+  ] }, s, effects, "コドモン送りました。朝食はやってあった");
+  assertEquals(log, ["done:uuid-submit:self:codmon_shino_breakfast_input", 'SEND:おつかれさま！\n\n✓ コドモン送信|["undo-task"]']);
+  // Without the submit, an input is completed on its own as usual.
+  const b = fakeEffects();
+  await runPlan({ understanding: "", reply: "", confidence: "high", actions: [{ type: "complete_task", ref: "t2", by: "partner" }] }, s, b.effects, "朝食の入力はママがやった");
+  assertEquals(b.log[0], "done:uuid-bf:partner");
 });

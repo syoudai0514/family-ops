@@ -123,6 +123,8 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     "- 頼まれていない登録・送信・変更はしない。登録・お願い・共有を新しくしたいと言っているときだけ create。",
     "- 対象がはっきりしないときは推測せず、1つだけ聞き返す（actions は空、reply に質問）。分かっていることは聞き直さない。",
     "- 1通に複数の用件があれば、actions を複数並べてよい（最大4つ）。",
+    "- 相談（伝え方・頼み方など）は、ユーザーの立場と目的をまず正しくつかむ（例:「今週ずっと俺がお迎え」＝ユーザーが負担を抱えている側。相手に代わってほしい／分かってほしい）。そのうえで「状況 → お願い → 相手を気づかう一言」の順の文案を1つ示す。立場を逆にしない。文案は送らない。",
+    "- コドモンの送信（コドモン送信のタスク）を完了にすると、まだの入力も自動でまとめて完了になる。相手が済ませていた入力（「朝食はやってあった」など）は、その入力のタスクを by=partner で並べる。",
     "",
     "## actions（refは『家庭の状況』にあるものだけ）",
     '- {"type":"show_shopping","who":"me|partner|unassigned|any"} 買い物リストを見せる。me = 話している人が買うもの（担当なしを含む）。',
@@ -149,7 +151,8 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- 「ママが洗濯やってくれてた」→ {"understanding":"相手が洗濯をやった","reply":"了解！","actions":[{"type":"complete_task","ref":"t4","by":"partner"}],"confidence":"high"}',
     '- 「今日お迎え誰だっけ？」（お迎えの担当がママ）→ {"understanding":"今日のお迎え担当を知りたい","reply":"今日のお迎えはママだよ（18:20）。","actions":[],"confidence":"high"}',
     '- 「牛乳買っといて」→ {"understanding":"牛乳を買い物に追加したい","reply":"了解！","actions":[{"type":"create","text":"牛乳を買う"}],"confidence":"high"}',
-    '- 「妻にどう言えば角立たない？」→ {"understanding":"伝え方の相談","reply":"…（文案を示す。送らない）","actions":[],"confidence":"high"}',
+    '- 「今週ずっと俺がお迎えなんだけど、妻にどう言えば角立たない？」→ {"understanding":"お迎えが続いて負担。ママに代わってほしいが、角を立てずに頼みたい","reply":"こんな感じはどうかな？「今週お迎えずっと続いてて、ちょっとバテ気味で…。金曜だけ代わってもらえると助かるんだけど、どうかな？無理なら言ってね」（送ってはいないよ）","actions":[],"confidence":"high"}',
+    '- 「コドモン送りました。朝食はやってあった」（t1=コドモン送信、t2=詩乃：朝食の入力）→ {"understanding":"コドモン送信済み。朝食の入力は相手が済ませていた","reply":"おつかれさま！","actions":[{"type":"complete_task","ref":"t1","by":"self"},{"type":"complete_task","ref":"t2","by":"partner"}],"confidence":"high"}',
     '- 「やった」（該当しそうなタスクが複数）→ {"understanding":"どれをやったか不明","reply":"どれをやったのかな？「洗濯」「送り」みたいに教えてね。","actions":[],"confidence":"medium"}',
     "",
     "## 出力（JSONのみ）",
@@ -275,15 +278,27 @@ export function understandModel(): string {
     Deno.env.get("GEMINI_MODEL_REWRITE") ?? "";
 }
 
+// One retry for the transient failures seen against the live model (an empty answer or
+// a 429/5xx now and then; 1 in 10 in the first production evaluation). Not for 4xx:
+// a bad key or model name does not get better by asking again.
+function isTransient(code: string): boolean {
+  return code === "GEMINI_EMPTY_RESPONSE" || /^GEMINI_HTTP_(?:429|5\d\d)$/.test(code) || /fetch|network|timed out|connection/i.test(code);
+}
+
 async function geminiProvider(prompt: string): Promise<string | null> {
   const model = understandModel();
   if (!model) return null;
-  try {
-    return await callGemini(prompt, model);
-  } catch (error) {
-    console.warn("process-line-inbox: understand unavailable", { code: error instanceof Error ? error.message : "unknown" });
-    return null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      return await callGemini(prompt, model);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "unknown";
+      console.warn("process-line-inbox: understand unavailable", { code, attempt });
+      if (attempt === 2 || !isTransient(code)) return null;
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    }
   }
+  return null;
 }
 
 export interface UnderstandResult {
@@ -318,7 +333,8 @@ export interface PlanEffects {
   /** Each returns the text it would have replied with (collected, not sent). */
   showShopping(who: ShoppingWho): Promise<ReplyPart[]>;
   markBought(items: SnapshotShopping[]): Promise<ReplyPart[]>;
-  completeTask(task: SnapshotTask, by: "self" | "partner"): Promise<ReplyPart[]>;
+  /** For the Codmon submit task, `partnerInputCodes` lists the inputs the other adult did. */
+  completeTask(task: SnapshotTask, by: "self" | "partner", partnerInputCodes?: string[]): Promise<ReplyPart[]>;
   cancelDraft(): Promise<ReplyPart[]>;
   /** These send their own message (a Flex card or the schedule view); `lead` goes in front. */
   showSchedule(range: "today" | "tomorrow" | "week", lead: string): Promise<void>;
@@ -335,7 +351,24 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
   let schedule: "today" | "tomorrow" | "week" | null = null;
   let handOff: { text: string; mode: "create" | "edit" | "legacy" } | null = null;
 
-  for (const action of plan.actions) {
+  // Completing the Codmon submit closes every open input in the same transaction
+  // (server_tx_acknowledge_codmon_submission_v1). Inputs the model also lists are folded
+  // into that one call -- the ones done "by partner" become its partner codes -- instead of
+  // being completed separately and then reported as "already done".
+  const submit = plan.actions.find((a) =>
+    a.type === "complete_task" && snapshot.tasks.find((t) => t.ref === a.ref)?.code === "codmon_submit"
+  );
+  const isCodmonInput = (ref: string) => /^codmon_.+_input$/.test(snapshot.tasks.find((t) => t.ref === ref)?.code ?? "");
+  const partnerInputCodes = submit
+    ? plan.actions
+      .filter((a): a is Extract<Action, { type: "complete_task" }> => a.type === "complete_task" && a.by === "partner" && isCodmonInput(a.ref))
+      .map((a) => snapshot.tasks.find((t) => t.ref === a.ref)!.code!)
+    : [];
+  const actions = submit
+    ? plan.actions.filter((a) => !(a.type === "complete_task" && isCodmonInput(a.ref)))
+    : plan.actions;
+
+  for (const action of actions) {
     switch (action.type) {
       case "show_shopping":
         parts.push(...await effects.showShopping(action.who));
@@ -345,7 +378,9 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
         break;
       case "complete_task": {
         const task = snapshot.tasks.find((t) => t.ref === action.ref);
-        if (task) parts.push(...await effects.completeTask(task, action.by));
+        if (task) {
+          parts.push(...await effects.completeTask(task, action.by, task.code === "codmon_submit" ? partnerInputCodes : undefined));
+        }
         break;
       }
       case "cancel_draft":
