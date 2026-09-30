@@ -51,9 +51,9 @@ begin
   returning id into v_google_conn_id;
 
   insert into public.calendar_connections
-    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required)
+    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required, is_family_write_target)
   values
-    (gen_random_uuid(), v_hh_id, 'google', 'family-hh1@group.calendar.google.com', v_google_conn_id, true, now(), false)
+    (gen_random_uuid(), v_hh_id, 'google', 'family-hh1@group.calendar.google.com', v_google_conn_id, true, now(), false, true)
   returning id into v_cal_conn_id;
 
   -- Single-day timed occurrence on Tue 2026-08-25.
@@ -312,9 +312,9 @@ begin
   returning id into v_google_conn_id;
 
   insert into public.calendar_connections
-    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required)
+    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required, is_family_write_target)
   values
-    (gen_random_uuid(), v_hh_id, 'google', 'family-hh2@group.calendar.google.com', v_google_conn_id, true, now(), false)
+    (gen_random_uuid(), v_hh_id, 'google', 'family-hh2@group.calendar.google.com', v_google_conn_id, true, now(), false, true)
   returning id into v_cal_conn_id;
 
   select id into v_dropoff_def from public.task_definitions where household_id = v_hh_id and code = 'dropoff';
@@ -630,9 +630,9 @@ begin
   returning id into v_google_conn_id;
 
   insert into public.calendar_connections
-    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required)
+    (id, household_id, provider, external_calendar_id, google_connection_id, active, last_incremental_sync_at, reauth_required, is_family_write_target)
   values
-    (gen_random_uuid(), v_hh3_id, 'google', 'family-hh3@group.calendar.google.com', v_google_conn_id, true, now(), false)
+    (gen_random_uuid(), v_hh3_id, 'google', 'family-hh3@group.calendar.google.com', v_google_conn_id, true, now(), false, true)
   returning id into v_cal_conn_id;
 
   select id into v_dropoff_def from public.task_definitions where household_id = v_hh3_id and code = 'dropoff';
