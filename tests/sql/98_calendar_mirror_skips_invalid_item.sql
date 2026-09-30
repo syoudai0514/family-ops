@@ -1,7 +1,8 @@
--- Live 2026-09-30: one special task with a time but no end time sat first in the Google
+-- Live 2026-09-30: one special task that could not be mirrored sat first in the Google
 -- Calendar outbox, and the claim raised on it every minute -- nothing behind it was ever
--- mirrored. The invalid row is now parked (failed + reason + backoff) and the claim
--- returns the next valid row.
+-- mirrored. An invalid row is now parked (failed + reason + backoff) and the claim
+-- returns the next valid row. A time without an end time is no longer invalid: it is
+-- mirrored all day with the time in the title (owner decision, option A).
 \set ON_ERROR_STOP on
 
 begin;
@@ -39,12 +40,12 @@ begin
   values (v_hh_id, 'special_98', '特別', 'todo', 'anytime', 'whole', 'special', v_owner)
   returning id into v_special;
 
-  -- The live shape: a time, no end time.
+  -- Invalid: the end is before the start.
   insert into public.task_instances
     (household_id, task_definition_id, origin, title, category, routine_phase, scheduled_date, due_at,
-     completion_mode, status, source, created_by)
+     calendar_ends_at, completion_mode, status, source, created_by)
   values (v_hh_id, v_special, 'manual', '食育の準備', 'todo', 'anytime', date '2026-10-07',
-          timestamptz '2026-10-07 08:00+09', 'whole', 'todo', 'test', v_owner)
+          timestamptz '2026-10-07 08:00+09', timestamptz '2026-10-07 07:00+09', 'whole', 'todo', 'test', v_owner)
   returning id into v_bad;
   -- A valid one behind it.
   insert into public.task_instances
@@ -69,7 +70,7 @@ begin
 
   select sync_state, last_error, lease_token, next_attempt_at into v_row
   from private.family_ops_calendar_mirrors where household_id = v_hh_id and projection_key = 'special:' || v_bad::text;
-  if v_row.sync_state <> 'failed' or v_row.last_error <> 'CALENDAR_EVENT_END_REQUIRED'
+  if v_row.sync_state <> 'failed' or v_row.last_error <> 'INVALID_INPUT'
      or v_row.lease_token is not null or v_row.next_attempt_at <= now() then
     raise exception 'FAIL mirror-skip: the invalid row must be parked with its reason and a backoff, got %', row_to_json(v_row);
   end if;
@@ -82,13 +83,30 @@ begin
     raise exception 'FAIL mirror-skip: a parked row must wait for its backoff, got %', v_claim;
   end if;
 
-  -- Once it is valid again, it goes through.
-  update public.task_instances set calendar_ends_at = timestamptz '2026-10-07 08:30+09' where id = v_bad;
+  -- The live shape -- a time, no end time -- goes through as an all-day event with the
+  -- time in the title. No end time is invented.
+  update public.task_instances set calendar_ends_at = null where id = v_bad;
   update private.family_ops_calendar_mirrors set next_attempt_at = now() - interval '1 second'
   where household_id = v_hh_id and projection_key = 'special:' || v_bad::text;
   v_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-98-c', 120);
-  if v_claim->>'projection_key' <> 'special:' || v_bad::text or v_claim #>> '{event,end,dateTime}' is null then
-    raise exception 'FAIL mirror-skip: a fixed row must be mirrored with its real end time, got %', v_claim;
+  if v_claim->>'projection_key' <> 'special:' || v_bad::text
+     or v_claim #>> '{event,summary}' <> '8:00 食育の準備'
+     or v_claim #>> '{event,start,date}' <> '2026-10-07'
+     or v_claim #>> '{event,end,date}' <> '2026-10-08'
+     or v_claim #>> '{event,start,dateTime}' is not null
+     or v_claim #>> '{event,transparency}' <> 'transparent' then
+    raise exception 'FAIL mirror-skip: a time without an end must be all day with the time in the title, got %', v_claim;
+  end if;
+  perform public.server_tx_complete_family_ops_calendar_mirror(
+    v_hh_id, 'special:' || v_bad::text, (v_claim->>'lease_token')::uuid, v_claim->>'deterministic_event_id', 'etag-98c', false);
+
+  -- With a real end time it is a timed event, as before.
+  update public.task_instances set calendar_ends_at = timestamptz '2026-10-07 08:30+09', due_at = timestamptz '2026-10-07 08:00+09' where id = v_bad;
+  update private.family_ops_calendar_mirrors set next_attempt_at = now() - interval '1 second'
+  where household_id = v_hh_id and projection_key = 'special:' || v_bad::text;
+  v_claim := public.server_tx_claim_family_ops_calendar_mirror('sql-98-d', 120);
+  if v_claim #>> '{event,summary}' <> '食育の準備' or v_claim #>> '{event,end,dateTime}' is null then
+    raise exception 'FAIL mirror-skip: a task with an end time stays a timed event, got %', v_claim;
   end if;
 end $$;
 
