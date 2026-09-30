@@ -116,6 +116,12 @@ import {
 } from "./lineCompletionReport.ts";
 import { tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
 import {
+  purchaseAllAndReply,
+  purchaseShoppingItemByIdAndReply,
+  reopenShoppingItemAndReply,
+  tryHandleShoppingPurchaseReport,
+} from "./lineShoppingPurchase.ts";
+import {
   appendTodayDetailLinks,
   todayContextQuickReplies,
 } from "./lineTodayUx.ts";
@@ -1567,6 +1573,23 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     return;
   }
 
+  if (fields.action === "shopping_purchase" && fields.item_id) {
+    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
+    await purchaseShoppingItemByIdAndReply(completionContext(client, item, actor), fields.item_id, operationId);
+    return;
+  }
+
+  if (fields.action === "shopping_purchase_all" && fields.ids) {
+    await purchaseAllAndReply(completionContext(client, item, actor), fields.ids.split(",").filter(Boolean).slice(0, 6));
+    return;
+  }
+
+  if (fields.action === "shopping_reopen" && fields.item_id && /^\d+$/.test(fields.revision ?? "")) {
+    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
+    await reopenShoppingItemAndReply(completionContext(client, item, actor), fields.item_id, Number(fields.revision), operationId);
+    return;
+  }
+
   if (fields.action === "reopen_task" && fields.task_id && /^\d+$/.test(fields.revision ?? "")) {
     const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
     await reopenTaskAndReply(completionContext(client, item, actor), fields.task_id, Number(fields.revision), operationId);
@@ -1953,6 +1976,8 @@ async function handleText(
     householdId: actor.household_id,
     reply: (replyText) => sendConfirmation(client, item, actor, replyText),
   }, text)) return;
+  // "買ったよ" marks the matching shopping-list item bought instead of drafting a new task.
+  if (await tryHandleShoppingPurchaseReport(completionContext(client, item, actor), text)) return;
   // A short "done" report is matched to one of the sender's open tasks for today
   // instead of becoming an unmatched actual-record draft.
   if (await tryHandleCompletionReport(completionContext(client, item, actor), text)) return;
