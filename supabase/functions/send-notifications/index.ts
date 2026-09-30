@@ -167,6 +167,7 @@ async function enrichRequestOutcomeItems(
 function buildBundledText(
   payload: ClaimedNotification['payload'],
   type: string,
+  recipientUserId?: string | null,
 ): { text: string; sessionIds: string[] } {
   const items = payload?.items ?? [];
   const seenSessionIds = new Set<string>();
@@ -184,7 +185,7 @@ function buildBundledText(
           return block;
         })
       : [`Family Ops: ${type}`];
-  const footer = buildTodayLinkFooter(type);
+  const footer = buildTodayLinkFooter(type, recipientUserId);
   const body = blocks.filter((b) => b.length > 0).join('\n\n');
   // The footer is reserved space: a long brief is cut before the link, never the link itself.
   const room = LINE_TEXT_MAX_CHARS - (footer ? footer.length + 2 : 0);
@@ -430,7 +431,7 @@ async function sendOne(
 
   await enrichRequestOutcomeItems(serviceClient, item.payload);
   const richMessage = buildRichRequestMessage(item.payload);
-  const { text, sessionIds } = buildBundledText(item.payload, item.type);
+  const { text, sessionIds } = buildBundledText(item.payload, item.type, item.recipient_user_id);
   const quickReply = item.type === 'routine' ? buildRoutineQuickReply(sessionIds) : undefined;
   const message: Record<string, unknown> = { type: 'text', text };
   if (quickReply && message.type === 'text')

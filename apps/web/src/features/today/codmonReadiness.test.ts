@@ -26,15 +26,23 @@ function readiness(state: CodmonReadiness['state']): CodmonReadiness {
 }
 
 describe('Codmon completion prerequisite', () => {
-  it('shows remaining input and assignee while blocking final acknowledgement', () => {
+  // Owner decision 2026-09-30: sending Codmon ends the job, even when inputs
+  // were never ticked here. The remaining inputs are still listed, and the
+  // acknowledgement closes them together with the submission.
+  it('lets the sender acknowledge while inputs remain, listing what will be closed', () => {
     const result = buildCodmonCompletionPrerequisite(readiness('waiting_inputs'), members);
-    expect(result).toMatchObject({ blocking: true, state: 'waiting_inputs' });
+    expect(result).toMatchObject({
+      blocking: false,
+      state: 'waiting_inputs',
+      actionLabel: 'コドモンで送信した',
+      completeAction: 'codmon_submitted',
+    });
     expect(result?.detailLabels).toEqual(['昨日の様子（ママ）', '迎え（パパ）']);
   });
 
-  it('only enables the existing complete command after all four inputs are ready', () => {
+  it('uses the same Codmon acknowledgement once all four inputs are ready', () => {
     const result = buildCodmonCompletionPrerequisite(readiness('ready_to_submit'), members);
-    expect(result).toMatchObject({ blocking: false, actionLabel: 'コドモンで送信した' });
+    expect(result).toMatchObject({ blocking: false, actionLabel: 'コドモンで送信した', completeAction: 'codmon_submitted' });
   });
 
   it('fails closed when the readiness projection is incomplete', () => {

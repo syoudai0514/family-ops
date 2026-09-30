@@ -57,6 +57,65 @@ export function parseCompletionReport(text: string): CompletionReport | null {
   return { kind: "hint", hint };
 }
 
+// --- Codmon "sent" reports -------------------------------------------------
+
+export const CODMON_INPUT_LABELS: Record<string, string> = {
+  codmon_masaki_pickup_input: "将生：迎え",
+  codmon_shino_previous_input: "詩乃：昨日の夕飯・様子",
+  codmon_shino_breakfast_input: "詩乃：朝食",
+  codmon_shino_pickup_input: "詩乃：迎え",
+};
+const ALL_CODMON_INPUTS = Object.keys(CODMON_INPUT_LABELS);
+
+export type CodmonSentReport = {
+  /** Inputs the sender says the other adult had already done. */
+  partnerCodes: string[];
+  /** Extra remarks we could not map to an input; reported back, never guessed. */
+  unreadNotes: string[];
+};
+
+const SENT_VERB = /(送りました|送った|送信しました|送信した|送信済み|送信完了)/u;
+const ALREADY_DONE = /(やって(あった|ある|あります|くれてた|くれていた|くれた|もらった)|入力(して)?(あった|ある|あります|済み|してくれてた|してくれた)|(は|も)済み|済んで(た|いた))/u;
+
+function codmonCodesIn(clause: string): string[] {
+  if (/(全部|全て|すべて|ぜんぶ)/u.test(clause)) return [...ALL_CODMON_INPUTS];
+  const masaki = /将生/u.test(clause);
+  const shino = /詩乃/u.test(clause);
+  const codes = new Set<string>();
+  if (/朝(食|ごはん|ご飯)/u.test(clause)) codes.add("codmon_shino_breakfast_input");
+  if (/(夕飯|夕食|晩(ごはん|ご飯)|様子|昨日)/u.test(clause)) codes.add("codmon_shino_previous_input");
+  if (/(迎え|プール)/u.test(clause)) {
+    if (masaki || !shino) codes.add("codmon_masaki_pickup_input");
+    if (shino || !masaki) codes.add("codmon_shino_pickup_input");
+  }
+  if (codes.size === 0 && masaki && !shino) codes.add("codmon_masaki_pickup_input");
+  return [...codes];
+}
+
+/**
+ * "コドモン送りました" (optionally with "朝食はやってあった" etc.). Owner decision
+ * 2026-09-30: whoever reports the send did every unticked input, except the
+ * ones they say were already done -- those were the other adult's.
+ */
+export function parseCodmonSentReport(text: string): CodmonSentReport | null {
+  const t = text.normalize("NFKC").trim();
+  if (t.length === 0 || t.length > 120 || /[?？]/u.test(t) || !/コドモン/u.test(t)) return null;
+  const clauses = t.split(/[。、,\n!！]+|(?:ので|から|けど|けれど)/u).map((c) => c.trim()).filter(Boolean);
+  if (!clauses.some((c) => SENT_VERB.test(c))) return null;
+  const partner = new Set<string>();
+  const unreadNotes: string[] = [];
+  for (const clause of clauses) {
+    if (SENT_VERB.test(clause)) continue;
+    const codes = ALREADY_DONE.test(clause) ? codmonCodesIn(clause) : [];
+    if (codes.length === 0) {
+      unreadNotes.push(clause);
+      continue;
+    }
+    for (const code of codes) partner.add(code);
+  }
+  return { partnerCodes: ALL_CODMON_INPUTS.filter((code) => partner.has(code)), unreadNotes };
+}
+
 /** Tasks that plausibly are what the sender just finished, best first. */
 export function rankCompletionCandidates(
   tasks: OpenTask[],
@@ -90,9 +149,13 @@ function quickPostback(label: string, data: string, displayText = label): LineQu
   return { type: "postback", label: clip(label, 20), data, displayText: clip(displayText, 40) };
 }
 
-function todayUrl(): string {
+// `for` names who the link was sent to, so the PWA can say so when the browser
+// LINE opens is signed in as someone else (live 2026-09-30: papa's LINE opened
+// a browser still signed in as mama, and Today showed only mama's work).
+// A member id, not a credential.
+function todayUrl(forUserId: string): string {
   const base = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
-  return base ? `${base}/today` : "";
+  return base ? `${base}/today?for=${encodeURIComponent(forUserId)}` : "";
 }
 
 const TODAY_QUICK_REPLY: LineQuickReplyAction = { type: "message", label: "今日を見る", text: "今日" };
@@ -109,15 +172,15 @@ export type CompletionContext = {
 
 async function loadOpenTasks(ctx: CompletionContext): Promise<OpenTask[]> {
   const { data: rows } = await ctx.client.from("task_instances")
-    .select("id,title,due_at,revision,task_definition_id")
+    .select("id,title,due_at,revision,task_definition_id,planned_assignee_id")
     .eq("household_id", ctx.householdId)
     .eq("scheduled_date", ctx.today)
     .is("test_context_id", null)
     .in("status", ["todo", "in_progress"])
-    .or(`planned_assignee_id.eq.${ctx.actorId},planned_assignee_id.is.null`)
-    .limit(60);
+    .limit(80);
   const tasks = (rows ?? []) as Array<{
-    id: string; title: string; due_at: string | null; revision: number; task_definition_id: string | null;
+    id: string; title: string; due_at: string | null; revision: number;
+    task_definition_id: string | null; planned_assignee_id: string | null;
   }>;
   const defIds = [...new Set(tasks.map((t) => t.task_definition_id).filter((v): v is string => Boolean(v)))];
   const codeById = new Map<string, string>();
@@ -125,48 +188,84 @@ async function loadOpenTasks(ctx: CompletionContext): Promise<OpenTask[]> {
     const { data: defs } = await ctx.client.from("task_definitions").select("id,code").in("id", defIds);
     for (const d of (defs ?? []) as Array<{ id: string; code: string }>) codeById.set(d.id, d.code);
   }
-  return tasks.map((t) => ({
-    id: t.id,
-    title: t.title,
-    code: t.task_definition_id ? codeById.get(t.task_definition_id) ?? null : null,
-    due_at: t.due_at,
-    revision: t.revision,
-  }));
+  return tasks
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      code: t.task_definition_id ? codeById.get(t.task_definition_id) ?? null : null,
+      due_at: t.due_at,
+      revision: t.revision,
+      assignee: t.planned_assignee_id,
+    }))
+    // Your own and unassigned work. Codmon submission is whoever sent it:
+    // whichever parent pressed send in Codmon can report it.
+    .filter((t) => t.assignee === ctx.actorId || t.assignee === null || t.code === "codmon_submit")
+    .map(({ assignee: _assignee, ...task }) => task);
+}
+
+async function taskCode(ctx: CompletionContext, taskId: string): Promise<string | null> {
+  const { data: task } = await ctx.client.from("task_instances").select("task_definition_id").eq("id", taskId).maybeSingle();
+  const definitionId = (task as { task_definition_id?: string | null } | null)?.task_definition_id;
+  if (!definitionId) return null;
+  const { data: definition } = await ctx.client.from("task_definitions").select("code").eq("id", definitionId).maybeSingle();
+  return (definition as { code?: string | null } | null)?.code ?? null;
 }
 
 /**
  * Completes one task for the sender and answers in plain words. Shared by the
  * one-line report path and by the `complete_task` postback so both give the
  * same feedback -- the postback used to swallow failures silently.
+ *
+ * Codmon submission (owner decision 2026-09-30): reporting that Codmon was
+ * sent ends the job. Inputs nobody ticked in the app are closed in the same
+ * transaction (server_tx_acknowledge_codmon_submission_v1) instead of refusing
+ * with "コドモンの入力がそろっていません".
  */
 export async function completeTaskAndReply(
   ctx: CompletionContext,
   taskId: string,
-  title: string | null,
-  operationId: string,
-  completionActor: "self" | "partner" = "self",
-  completeRemainingSubtasks = true,
+  options: {
+    operationId: string;
+    title?: string | null;
+    code?: string | null;
+    completionActor?: "self" | "partner";
+    completeRemainingSubtasks?: boolean;
+    /** Codmon only: inputs the sender said the other adult had already done. */
+    partnerInputCodes?: string[];
+    unreadNotes?: string[];
+  },
 ): Promise<void> {
-  const { error } = await ctx.client.rpc("server_tx_complete_task", {
-    p_actor_id: ctx.actorId,
-    p_operation_id: operationId,
-    p_task_id: taskId,
-    p_completion_actor: completionActor,
-    p_complete_remaining_subtasks: completeRemainingSubtasks,
-    p_source: "line",
-  });
-  const link = todayUrl();
-  const name = title ? `「${clip(title, 40)}」` : "この作業";
+  const code = options.code !== undefined ? options.code : await taskCode(ctx, taskId);
+  const codmon = code === "codmon_submit";
+  const { data, error } = codmon
+    ? await ctx.client.rpc("server_tx_acknowledge_codmon_submission_v1", {
+      p_actor_id: ctx.actorId,
+      p_operation_id: options.operationId,
+      p_submit_task_id: taskId,
+      p_source: "line",
+      p_partner_input_codes: options.partnerInputCodes?.length ? options.partnerInputCodes : null,
+    })
+    : await ctx.client.rpc("server_tx_complete_task", {
+      p_actor_id: ctx.actorId,
+      p_operation_id: options.operationId,
+      p_task_id: taskId,
+      p_completion_actor: options.completionActor ?? "self",
+      p_complete_remaining_subtasks: options.completeRemainingSubtasks ?? true,
+      p_source: "line",
+    });
+  const link = todayUrl(ctx.actorId);
+  const name = codmon ? "コドモン送信" : options.title ? `「${clip(options.title, 40)}」` : "この作業";
   if (error) {
     const message = error.message ?? "";
     console.warn("process-line-inbox: LINE completion failed", { message: message.slice(0, 120) });
     if (message.includes("CODMON_INPUTS_INCOMPLETE")) {
+      // Only reachable when the day's Codmon rows are missing or duplicated.
       await ctx.reply(
-        `${name}はまだ完了にできません。コドモンの入力がそろっていません。${link ? `\n残りの入力はここで確認できます\n${link}` : ""}`,
+        `コドモン送信を記録できませんでした。今日の入力の項目が正しく作られていません。${link ? `\nTodayで確認してください\n${link}` : ""}`,
         [TODAY_QUICK_REPLY],
       );
     } else if (message.includes("TASK_TERMINAL")) {
-      await ctx.reply(`${name}はすでに完了（またはスキップ）になっています。`, [TODAY_QUICK_REPLY]);
+      await ctx.reply(`${name}はすでに完了になっています。`, [TODAY_QUICK_REPLY]);
     } else {
       await ctx.reply(`${name}を完了にできませんでした。${link ? `\nTodayから操作してください\n${link}` : ""}`, [TODAY_QUICK_REPLY]);
     }
@@ -179,7 +278,29 @@ export async function completeTaskAndReply(
     quick.push(quickPostback("取り消す", `action=reopen_task&task_id=${taskId}&revision=${revision}`));
   }
   quick.push(TODAY_QUICK_REPLY);
-  await ctx.reply(`✓ ${name}を完了にしました。`, quick);
+  if (!codmon) {
+    await ctx.reply(`✓ ${name}を完了にしました。`, quick);
+    return;
+  }
+  const result = data as { inputs_closed?: number; inputs_closed_by_partner?: number } | null;
+  const closed = Number(result?.inputs_closed ?? 0);
+  const byPartner = Number(result?.inputs_closed_by_partner ?? 0);
+  const lines = ["✓ コドモン送信を完了にしました。"];
+  if (closed > 0) {
+    const partnerLabels = (options.partnerInputCodes ?? []).map((code) => CODMON_INPUT_LABELS[code]).filter(Boolean);
+    if (byPartner > 0) {
+      const who = partnerLabels.length > 0 ? `${partnerLabels.join("・")}は` : `うち${byPartner}件は`;
+      const rest = closed - byPartner > 0 ? "相手、残りはあなたの実施として記録しています。" : "相手の実施として記録しています。";
+      lines.push(`チェックされていなかった入力${closed}件も完了にしました。${who}${rest}`);
+    } else {
+      lines.push(`チェックされていなかった入力${closed}件も、あなたの実施として完了にしました。`);
+    }
+  }
+  const notes = (options.unreadNotes ?? []).filter((note) => note.length > 0);
+  if (notes.length > 0 && closed > 0) {
+    lines.push(`「${clip(notes.join("、"), 40)}」はどの入力か分からなかったため、あなたの実施にしています。`);
+  }
+  await ctx.reply(lines.join("\n"), quick);
 }
 
 export async function reopenTaskAndReply(ctx: CompletionContext, taskId: string, revision: number, operationId: string): Promise<void> {
@@ -211,6 +332,24 @@ function chooseReply(candidates: OpenTask[]): { text: string; quick: LineQuickRe
 
 /** Returns true when the message was handled here (so it is not decomposed into drafts). */
 export async function tryHandleCompletionReport(ctx: CompletionContext, text: string): Promise<boolean> {
+  const codmonReport = parseCodmonSentReport(text);
+  if (codmonReport) {
+    const submit = (await loadOpenTasks(ctx)).find((task) => task.code === "codmon_submit");
+    if (!submit) {
+      const link = todayUrl(ctx.actorId);
+      await ctx.reply(`今日の未完了のコドモン送信は見つかりませんでした（すでに完了している可能性があります）。${link ? `\n${link}` : ""}`, [TODAY_QUICK_REPLY]);
+      return true;
+    }
+    await completeTaskAndReply(ctx, submit.id, {
+      title: submit.title,
+      code: submit.code,
+      operationId: await ctx.operationId("line-complete-report", ctx.eventId, submit.id),
+      partnerInputCodes: codmonReport.partnerCodes,
+      unreadNotes: codmonReport.unreadNotes,
+    });
+    return true;
+  }
+
   const report = parseCompletionReport(text);
   if (!report) return false;
 
@@ -220,7 +359,7 @@ export async function tryHandleCompletionReport(ctx: CompletionContext, text: st
   if (report.kind === "hint" && ranked.length === 0) return false; // not one of today's tasks: let the normal flow decide
 
   if (ranked.length === 0) {
-    const link = todayUrl();
+    const link = todayUrl(ctx.actorId);
     await ctx.reply(`今日の未完了の作業は見つかりませんでした。${link ? `\n${link}` : ""}`, [TODAY_QUICK_REPLY]);
     return true;
   }
@@ -228,7 +367,11 @@ export async function tryHandleCompletionReport(ctx: CompletionContext, text: st
   // Bare "やった" says nothing about which task, so never guess: ask.
   if (ranked.length === 1 && report.kind !== "generic") {
     const task = ranked[0];
-    await completeTaskAndReply(ctx, task.id, task.title, await ctx.operationId("line-complete-report", ctx.eventId, task.id));
+    await completeTaskAndReply(ctx, task.id, {
+      title: task.title,
+      code: task.code,
+      operationId: await ctx.operationId("line-complete-report", ctx.eventId, task.id),
+    });
     return true;
   }
 

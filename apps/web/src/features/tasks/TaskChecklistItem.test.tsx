@@ -91,6 +91,34 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     expect(screen.queryByText('完了メモ（任意）')).not.toBeInTheDocument();
   });
 
+  // Owner decision 2026-09-30: "コドモンで送信した" ends the Codmon job even with
+  // inputs still unticked, through one server command (never a locked button).
+  it('sends the Codmon acknowledgement command while inputs remain', async () => {
+    render(
+      <TaskChecklistItem
+        {...props}
+        task={{ ...makeTask('todo'), title: 'コドモン送信' } as TaskInstance}
+        completionPrerequisite={{
+          state: 'waiting_inputs',
+          message: '9:15まで。',
+          detailLabels: ['詩乃：朝食（パパ）'],
+          blocking: false,
+          actionLabel: 'コドモンで送信した',
+          completeAction: 'codmon_submitted',
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'コドモンで送信した' }));
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledTimes(1));
+    expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
+      operation_id: expect.any(String),
+      task_id: 'task-1',
+      action: 'codmon_submitted',
+    });
+  });
+
   it('shows fine-grained recurring subtasks immediately and records an individual checkbox', async () => {
     render(<TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} />);
 

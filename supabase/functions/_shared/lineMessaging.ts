@@ -106,11 +106,14 @@ function buildLineMessages(
 // text from the daily_brief_v2 cutover (2026-09-04) on, so nothing in them led
 // to the screen where the listed work is completed. Returns '' when
 // APP_BASE_URL is unset rather than printing a broken relative path.
-export function buildTodayLinkFooter(type: string): string {
+// `for` names the recipient so the PWA can warn when the browser LINE opens is
+// signed in as the other parent (live 2026-09-30). A member id, not a credential.
+export function buildTodayLinkFooter(type: string, recipientUserId?: string | null): string {
   const base = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
   if (!base) return '';
-  if (type === 'daily_brief.v2') return `▶ 完了・詳細はここから\n${base}/today`;
-  if (type === 'codmon.deadline') return `▶ 入力状況を開く\n${base}/today`;
+  const url = `${base}/today${recipientUserId ? `?for=${encodeURIComponent(recipientUserId)}` : ''}`;
+  if (type === 'daily_brief.v2') return `▶ 完了・詳細はここから\n${url}`;
+  if (type === 'codmon.deadline') return `▶ 入力状況を開く\n${url}`;
   return '';
 }
 

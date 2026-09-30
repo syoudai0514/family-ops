@@ -23,6 +23,8 @@ import { formatTokyoHeading } from './todayClock';
 import { useTodayClock } from './useTodayClock';
 import type { PendingAction, RequestRow, TaskInstance } from '../../lib/types';
 import { buildCodmonCompletionPrerequisite } from './codmonReadiness';
+import { LoadingScreen } from '../../components/LoadingScreen';
+import { HandoverActions } from '../handovers/HandoverActions';
 
 const INPUT_LABELS: Record<string, string> = {
   dropoff: '朝の入力',
@@ -515,10 +517,13 @@ export function Today() {
     if (data.unreadHandovers.length === 0) return null;
     return (
       <section className="card compact-section" aria-label="引き継ぎ・共有">
-        <div className="section-heading"><div><p className="eyebrow">引き継ぎ・共有</p><h2>未読の引き継ぎ</h2></div></div>
+        <div className="section-heading"><div><p className="eyebrow">引き継ぎ・共有</p><h2>{data.unreadHandovers.every((handover) => handover.author_id === user?.id) ? 'あなたが共有中' : '未読の引き継ぎ'}</h2></div></div>
         <ul className="handover-list">
           {data.unreadHandovers.map((handover) => (
-            <li key={handover.id} className="handover-item unread"><strong>{PERIOD_LABELS[handover.period] ?? 'その他'}</strong> — {handover.shared_text}</li>
+            <li key={handover.id} className="handover-item unread">
+              <p><strong>{PERIOD_LABELS[handover.period] ?? 'その他'}</strong> — {handover.shared_text}</p>
+              <HandoverActions handover={handover} currentUserId={user?.id} isRead={false} onChanged={data.refresh} />
+            </li>
           ))}
         </ul>
       </section>
@@ -625,7 +630,9 @@ export function Today() {
   }
 
   if (data.loading) {
-    return <div className="app-shell"><p role="status">読み込み中…</p></div>;
+    // Same recovery as the app-level loader: a stuck load offers 再読み込み
+    // instead of leaving the family on a bare "読み込み中…" forever.
+    return <LoadingScreen />;
   }
 
   const morningResidual = data.taskGroups.morning;

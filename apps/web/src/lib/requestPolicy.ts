@@ -46,6 +46,7 @@ export const REQUEST_POLICY = {
   reopenShoppingItem: 'mutation',
   createHandover: 'mutation',
   markHandoverRead: 'mutation',
+  endHandover: 'mutation',
   markNotificationRead: 'mutation',
   updateNotificationPreferences: 'mutation',
   createLineLinkToken: 'mutation',

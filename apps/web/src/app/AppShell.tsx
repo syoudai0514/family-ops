@@ -27,6 +27,7 @@ import { ConciergeConfirmPage } from '../features/concierge/ConciergeConfirmPage
 import { NavigationStateManager } from './NavigationStateManager';
 import { PullToRefresh } from './PullToRefresh';
 import { refreshCurrentPwa } from './pwaFreshness';
+import { AccountChip, LinkRecipientBanner } from './AccountIdentity';
 
 const PRIMARY_NAV_ITEMS = [
   { to: '/today', label: '今日', icon: '⌂' },
@@ -78,9 +79,11 @@ export function AppShell() {
           >
             ↻ <span>更新</span>
           </button>
+          <AccountChip />
           <NavLink to="/settings" className="header-icon" aria-label="設定">⚙</NavLink>
         </div>
       </header>
+      <LinkRecipientBanner />
       <Routes>
         <Route path="/today" element={<TodayContractPage />} />
         <Route path="/week" element={<WeekView />} />
