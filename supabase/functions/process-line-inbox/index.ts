@@ -114,6 +114,7 @@ import {
   tryHandleCompletionReport,
   type CompletionContext,
 } from "./lineCompletionReport.ts";
+import { tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
 import {
   appendTodayDetailLinks,
   todayContextQuickReplies,
@@ -1945,6 +1946,13 @@ async function handleText(
     reply: (replyText, quickReplies) => sendConfirmation(client, item, actor, replyText, quickReplies),
   }, text)) return;
   if (await tryHandleReadOnlyText(client, item, actor, text)) return;
+  // "何を買えばいい？" is answered with the shopping list, not turned into a draft.
+  if (await tryHandleShoppingListQuestion({
+    client,
+    actorId: actor.user_id,
+    householdId: actor.household_id,
+    reply: (replyText) => sendConfirmation(client, item, actor, replyText),
+  }, text)) return;
   // A short "done" report is matched to one of the sender's open tasks for today
   // instead of becoming an unmatched actual-record draft.
   if (await tryHandleCompletionReport(completionContext(client, item, actor), text)) return;

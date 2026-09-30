@@ -34,6 +34,7 @@ import { withServiceHandler, jsonResponse } from '../_shared/handler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { buildCheckinLink, buildTodayLinkFooter } from '../_shared/lineMessaging.ts';
 import { buildRoutineQuickReply } from './routineQuickReply.ts';
+import { buildBriefQuickReply } from './briefQuickReply.ts';
 import {
   buildAssignmentRequestFlex,
   buildGeneralRequestFlex,
@@ -432,7 +433,11 @@ async function sendOne(
   await enrichRequestOutcomeItems(serviceClient, item.payload);
   const richMessage = buildRichRequestMessage(item.payload);
   const { text, sessionIds } = buildBundledText(item.payload, item.type, item.recipient_user_id);
-  const quickReply = item.type === 'routine' ? buildRoutineQuickReply(sessionIds) : undefined;
+  // The evening brief is titled 夜のおうちノート (fn_dispatch_daily_brief); only it offers 入力.
+  const evening = (item.payload?.items ?? []).some((entry) => entry.title === '夜のおうちノート');
+  const quickReply = item.type === 'routine'
+    ? buildRoutineQuickReply(sessionIds)
+    : buildBriefQuickReply(item.type, { evening });
   const message: Record<string, unknown> = { type: 'text', text };
   if (quickReply && message.type === 'text')
     message.quickReply = { items: quickReply.map((action) => ({ type: 'action', action })) };
