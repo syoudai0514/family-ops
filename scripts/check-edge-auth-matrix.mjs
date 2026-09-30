@@ -74,8 +74,6 @@ const GAP_FILL_FUNCTIONS = new Set([
   'resolve-google-event-review',
   // Issue #48 final UX: period-scoped weekly transport template + occurrence override.
   'transport-schedule',
-  // 2026-09-30 owner decision: any adult can end (clear) a handover (user mutation).
-  'end-handover',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

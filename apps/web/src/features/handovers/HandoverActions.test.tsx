@@ -30,7 +30,8 @@ describe('HandoverActions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'この共有を終える' }));
     fireEvent.click(screen.getByRole('button', { name: '終える' }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
-    expect(runCommand.mock.calls[0][1]).toBe('end-handover');
+    expect(runCommand.mock.calls[0][1]).toBe('mark-handover-read');
+    expect(runCommand.mock.calls[0][2]('op-2')).toEqual({ operation_id: 'op-2', handover_id: 'h1', action: 'end' });
   });
 
   it('lets the author end it, with one confirmation step', async () => {
@@ -43,7 +44,8 @@ describe('HandoverActions', () => {
     expect(runCommand).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '終える' }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
-    expect(runCommand.mock.calls[0][1]).toBe('end-handover');
+    expect(runCommand.mock.calls[0][1]).toBe('mark-handover-read');
+    expect(runCommand.mock.calls[0][2]('op-2')).toEqual({ operation_id: 'op-2', handover_id: 'h1', action: 'end' });
   });
 
   it('やめる cancels ending without a command', () => {
