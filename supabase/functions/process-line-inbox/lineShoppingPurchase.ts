@@ -161,37 +161,42 @@ export async function purchaseAllAndReply(ctx: CompletionContext, ids: string[])
   );
 }
 
-/** Returns true when the message was a purchase report and has been answered here. */
-export async function tryHandleShoppingPurchaseReport(ctx: CompletionContext, text: string): Promise<boolean> {
-  const report = parsePurchaseReport(text);
-  if (!report) return false;
+/** Answers a purchase report that is already parsed (by the phrase parser or the AI router). */
+export async function handlePurchaseReport(ctx: CompletionContext, report: PurchaseReport): Promise<void> {
   const items = await loadOpenItems(ctx);
   if (!items) {
     await ctx.reply("買い物リストを読み込めませんでした。少し待ってからもう一度送ってください。");
-    return true;
+    return;
   }
   if (items.length === 0) {
     await ctx.reply("いま買い物リストに買うものはありません。", [LIST_QUICK_REPLY]);
-    return true;
+    return;
   }
   const matched = matchShoppingItems(items, report);
   if (matched.length === 0) {
     await ctx.reply(`買い物リストに「${report.hint ?? ""}」は見当たりません。\nリストを見て、もう一度送ってください。`, [LIST_QUICK_REPLY]);
-    return true;
+    return;
   }
   if (report.all) {
     await purchaseAllAndReply(ctx, matched.map((item) => item.id));
-    return true;
+    return;
   }
   if (matched.length === 1) {
     const opId = await ctx.operationId("line-shopping", ctx.eventId, matched[0].id);
     await purchaseShoppingItemAndReply(ctx, matched[0], opId);
-    return true;
+    return;
   }
   const shown = matched.slice(0, 3);
   await ctx.reply("どれを買いましたか？", [
     ...shown.map((item) => quick(item.title, `action=shopping_purchase&item_id=${item.id}`, `買った: ${item.title}`)),
     quick("全部買った", `action=shopping_purchase_all&ids=${matched.slice(0, 6).map((item) => item.id).join(",")}`),
   ]);
+}
+
+/** Returns true when the message was a purchase report and has been answered here. */
+export async function tryHandleShoppingPurchaseReport(ctx: CompletionContext, text: string): Promise<boolean> {
+  const report = parsePurchaseReport(text);
+  if (!report) return false;
+  await handlePurchaseReport(ctx, report);
   return true;
 }

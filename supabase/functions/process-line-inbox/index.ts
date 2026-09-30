@@ -60,7 +60,7 @@ import {
   decomposeLineConversationCandidates,
   type LineMultiIntentPendingCandidate,
 } from "./lineMultiIntent.ts";
-import { replyOrEnqueuePush } from "../_shared/lineMessaging.ts";
+import { replyOrEnqueuePush as sendLineMessage } from "../_shared/lineMessaging.ts";
 import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
 import { resolveHouseholdCandidate } from "../_shared/resolveHouseholdCandidate.ts";
 import {
@@ -91,6 +91,7 @@ import {
   isLineCorrectionCue,
   lineConversationalReplacementTitle,
   lineCreationStarterKind,
+  isFixedShortcutText,
   lineLinkWelcomeText,
   lineNonMutationDisposition,
   linePendingFollowUpKind,
@@ -114,8 +115,11 @@ import {
   tryHandleCompletionReport,
   type CompletionContext,
 } from "./lineCompletionReport.ts";
-import { tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
+import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
+import { routeLineText, runRouterDecision } from "./lineContextRouter.ts";
+import { loadRouterContext, logLineTurn } from "./lineRouterWiring.ts";
 import {
+  handlePurchaseReport,
   purchaseAllAndReply,
   purchaseShoppingItemByIdAndReply,
   reopenShoppingItemAndReply,
@@ -210,6 +214,19 @@ async function tryClaimLinkToken(
     return "rejected";
   }
   return "claimed";
+}
+
+// Every reply also goes into the conversation record, so the next message can be read
+// in the light of what the bot just said (lineContextRouter.ts).
+async function replyOrEnqueuePush(
+  client: SupabaseClient,
+  args: Parameters<typeof sendLineMessage>[1],
+): Promise<Awaited<ReturnType<typeof sendLineMessage>>> {
+  const result = await sendLineMessage(client, args);
+  if (result !== "no_channel") {
+    await logLineTurn(client, args.recipientUserId, "assistant", [args.leadingText, args.text].filter(Boolean).join("\n"));
+  }
+  return result;
 }
 
 async function sendConfirmation(
@@ -1961,6 +1978,15 @@ async function handleText(
     return;
   }
   if (!actor) return;
+
+  // The conversation so far is read BEFORE this message is stored, so the router sees
+  // "what was said before" and the message itself separately (lineContextRouter.ts).
+  const pendingDraft = await getLineConversationPending(client, actor, item.source_external_user_id);
+  const routerContext = isFixedShortcutText(text)
+    ? null
+    : await loadRouterContext(client, completionContext(client, item, actor), pendingDraft);
+  await logLineTurn(client, actor.user_id, "user", text);
+
   if (await tryHandleLineMustCompleteText({
     client,
     actorId: actor.user_id,
@@ -1968,23 +1994,60 @@ async function handleText(
     eventId: item.provider_event_id,
     reply: (replyText, quickReplies) => sendConfirmation(client, item, actor, replyText, quickReplies),
   }, text)) return;
-  if (await tryHandleReadOnlyText(client, item, actor, text)) return;
-  // "何を買えばいい？" is answered with the shopping list, not turned into a draft.
-  if (await tryHandleShoppingListQuestion({
-    client,
-    actorId: actor.user_id,
-    householdId: actor.household_id,
-    reply: (replyText) => sendConfirmation(client, item, actor, replyText),
-  }, text)) return;
-  // "買ったよ" marks the matching shopping-list item bought instead of drafting a new task.
-  if (await tryHandleShoppingPurchaseReport(completionContext(client, item, actor), text)) return;
-  // A short "done" report is matched to one of the sender's open tasks for today
-  // instead of becoming an unmatched actual-record draft.
-  if (await tryHandleCompletionReport(completionContext(client, item, actor), text)) return;
-  if (await tryHandlePendingReferent(client, item, actor, text)) return;
-  if (await tryApplyLineTextEdit(client, item, actor, text)) return;
 
-  const nonMutationDisposition = lineNonMutationDisposition(text);
+  // AI first (owner instruction 2026-09-30): free text goes to the model together with
+  // the conversation, and the phrase-pattern chain below is only the fallback for when
+  // the model is unavailable or passes.
+  let routedCreate = false;
+  if (routerContext) {
+    const decision = await routeLineText(routerContext, text);
+    if (decision) {
+      const shoppingContext = {
+        client,
+        actorId: actor.user_id,
+        householdId: actor.household_id,
+        reply: (replyText: string) => sendConfirmation(client, item, actor, replyText),
+      };
+      const outcome = await runRouterDecision(decision, {
+        showShoppingList: (who) => answerShoppingList(shoppingContext, who),
+        showSchedule: (range) => sendLineSchedule(client, item, actor, range),
+        purchase: (report) => handlePurchaseReport(completionContext(client, item, actor), report),
+        done: (doneText) => tryHandleCompletionReport(completionContext(client, item, actor), doneText),
+        reply: (replyText) => sendConfirmation(client, item, actor, replyText),
+        cancelDraft: async () => {
+          if (pendingDraft) {
+            await client.rpc("server_tx_cancel_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: pendingDraft.id });
+          }
+          await sendConfirmation(client, item, actor, "✓ さきほどの入力を取り消しました。", menuQuickReplies());
+        },
+      }, text);
+      if (outcome.handled) return;
+      if (outcome.createText) {
+        text = outcome.createText;
+        routedCreate = true;
+      }
+    }
+  }
+
+  if (!routedCreate) {
+    if (await tryHandleReadOnlyText(client, item, actor, text)) return;
+    // "何を買えばいい？" is answered with the shopping list, not turned into a draft.
+    if (await tryHandleShoppingListQuestion({
+      client,
+      actorId: actor.user_id,
+      householdId: actor.household_id,
+      reply: (replyText) => sendConfirmation(client, item, actor, replyText),
+    }, text)) return;
+    // "買ったよ" marks the matching shopping-list item bought instead of drafting a new task.
+    if (await tryHandleShoppingPurchaseReport(completionContext(client, item, actor), text)) return;
+    // A short "done" report is matched to one of the sender's open tasks for today
+    // instead of becoming an unmatched actual-record draft.
+    if (await tryHandleCompletionReport(completionContext(client, item, actor), text)) return;
+    if (await tryHandlePendingReferent(client, item, actor, text)) return;
+    if (await tryApplyLineTextEdit(client, item, actor, text)) return;
+  }
+
+  const nonMutationDisposition = routedCreate ? null : lineNonMutationDisposition(text);
   if (nonMutationDisposition) {
     const reply = nonMutationDisposition === "ambiguous"
       ? ambiguousAddresseeReply()

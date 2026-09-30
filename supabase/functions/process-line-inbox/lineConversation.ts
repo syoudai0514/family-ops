@@ -266,6 +266,16 @@ export function readOnlyLineIntent(text: string): LineReadOnlyIntent | null {
   return null;
 }
 
+/**
+ * The fixed entries (rich-menu words and the "追加したい" starters). They stay
+ * deterministic and never go through the AI router (Requirements §28.3).
+ */
+export function isFixedShortcutText(text: string): boolean {
+  const value = normalized(text).replace(/[。.!！?？]+$/g, "");
+  if (/^(?:今日|明日|今週|入力|今日の入力|朝の入力|夜の入力|追加|追加したい|登録|共有|共有したい|引き継ぎ|その他|管理|設定|メニュー|ヘルプ|使い方)$/u.test(value)) return true;
+  return lineCreationStarterKind(text) !== null;
+}
+
 export function lineCreationStarterKind(text: string): LineCreationKind | null {
   const value = normalized(text).replace(/[。.!！?？]+$/g, "");
   const prefix = "(?:(?:パパ|ママ|父|母|お父さん|お母さん|嫁さん|奥さん|妻)に)?(?:(?:今日|明日|明後日)(?:の)?(?:朝|昼|夕方|夜)?(?:の|に)?)?";

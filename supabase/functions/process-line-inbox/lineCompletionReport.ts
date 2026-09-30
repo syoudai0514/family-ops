@@ -170,7 +170,7 @@ export type CompletionContext = {
   reply: (text: string, quickReplies?: LineQuickReplyAction[]) => Promise<void>;
 };
 
-async function loadOpenTasks(ctx: CompletionContext): Promise<OpenTask[]> {
+export async function loadOpenTasks(ctx: CompletionContext): Promise<OpenTask[]> {
   const { data: rows } = await ctx.client.from("task_instances")
     .select("id,title,due_at,revision,task_definition_id,planned_assignee_id")
     .eq("household_id", ctx.householdId)
