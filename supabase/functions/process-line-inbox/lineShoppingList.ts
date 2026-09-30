@@ -26,6 +26,12 @@ export interface ShoppingQuestion {
   unassignedOnly: boolean;
 }
 
+/**
+ * Whose items to show. `me` = mine plus the ones nobody has taken ("俺が買うべきもの"),
+ * `partner` = the other adult's, `unassigned` = nobody's, `any` = everything open.
+ */
+export type ShoppingWho = "me" | "partner" | "unassigned" | "any";
+
 const MAX_LINES = 15;
 
 function normalized(text: string): string {
@@ -58,25 +64,44 @@ function appUrl(path: string): string {
 
 export function buildShoppingListReply(
   rows: ShoppingRow[],
-  opts: { actorId: string; roles: Map<string, string>; unassignedOnly: boolean; link?: string },
+  opts: {
+    actorId: string;
+    roles: Map<string, string>;
+    unassignedOnly?: boolean;
+    who?: ShoppingWho;
+    link?: string;
+  },
 ): string {
+  const who: ShoppingWho = opts.who ?? (opts.unassignedOnly ? "unassigned" : "any");
   const open = rows.filter((row) => row.status === "wanted" || row.status === "assigned");
   const waiting = rows.filter((row) => row.status === "ordered").length;
-  const shown = opts.unassignedOnly ? open.filter((row) => !row.assignee_id) : open;
-  const head = opts.unassignedOnly ? "担当が決まっていない買い物" : "買い物リスト";
+  const shown = open.filter((row) => {
+    if (who === "me") return !row.assignee_id || row.assignee_id === opts.actorId;
+    if (who === "partner") return Boolean(row.assignee_id) && row.assignee_id !== opts.actorId;
+    if (who === "unassigned") return !row.assignee_id;
+    return true;
+  });
+  const partnerLabel = [...opts.roles.entries()].find(([id]) => id !== opts.actorId)?.[1] ?? "相手";
+  const head = who === "me"
+    ? "あなたが買うもの（担当なしを含む）"
+    : who === "partner"
+    ? `${partnerLabel}が買うもの`
+    : who === "unassigned"
+    ? "担当が決まっていない買い物"
+    : "買い物リスト";
 
   const lines: string[] = [];
   if (shown.length === 0) {
-    lines.push(opts.unassignedOnly ? `${head}は、いまありません。` : "いま買うものはありません。");
+    lines.push(who === "any" ? "いま買うものはありません。" : `${head}は、いまありません。`);
   } else {
     lines.push(`${head}（${shown.length}件）`);
     for (const row of shown.slice(0, MAX_LINES)) {
-      const who = !row.assignee_id ? "" : row.assignee_id === opts.actorId ? "（あなた）" : `（${opts.roles.get(row.assignee_id) ?? "相手"}）`;
-      lines.push(`・${row.title}${who}`);
+      const mark = !row.assignee_id ? "" : row.assignee_id === opts.actorId ? "（あなた）" : `（${opts.roles.get(row.assignee_id) ?? "相手"}）`;
+      lines.push(`・${row.title}${who === "me" || who === "partner" ? "" : mark}`);
     }
     if (shown.length > MAX_LINES) lines.push(`ほか ${shown.length - MAX_LINES}件`);
   }
-  if (waiting > 0 && !opts.unassignedOnly) lines.push("", `注文済みで届くのを待っているもの ${waiting}件`);
+  if (waiting > 0 && who === "any") lines.push("", `注文済みで届くのを待っているもの ${waiting}件`);
   if (opts.link) lines.push("", `▶ 買い物の画面: ${opts.link}`);
   return lines.join("\n");
 }
@@ -110,21 +135,21 @@ async function loadRoles(ctx: ShoppingListContext): Promise<Map<string, string>>
   return roles;
 }
 
+/** Reads the list and answers it. Shared by the phrase parser and the AI router. */
+export async function answerShoppingList(ctx: ShoppingListContext, who: ShoppingWho): Promise<void> {
+  const rows = await loadShoppingRows(ctx);
+  if (!rows) {
+    await ctx.reply("買い物リストを読み込めませんでした。少し待ってからもう一度送ってください。");
+    return;
+  }
+  const roles = await loadRoles(ctx);
+  await ctx.reply(buildShoppingListReply(rows, { actorId: ctx.actorId, roles, who, link: appUrl("/shopping") }));
+}
+
 /** Returns true when the message was a shopping-list question and has been answered. */
 export async function tryHandleShoppingListQuestion(ctx: ShoppingListContext, text: string): Promise<boolean> {
   const question = parseShoppingQuestion(text);
   if (!question) return false;
-  const rows = await loadShoppingRows(ctx);
-  if (!rows) {
-    await ctx.reply("買い物リストを読み込めませんでした。少し待ってからもう一度送ってください。");
-    return true;
-  }
-  const roles = await loadRoles(ctx);
-  await ctx.reply(buildShoppingListReply(rows, {
-    actorId: ctx.actorId,
-    roles,
-    unassignedOnly: question.unassignedOnly,
-    link: appUrl("/shopping"),
-  }));
+  await answerShoppingList(ctx, question.unassignedOnly ? "unassigned" : "any");
   return true;
 }
