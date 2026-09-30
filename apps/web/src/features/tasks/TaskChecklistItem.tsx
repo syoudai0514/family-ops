@@ -94,7 +94,12 @@ export function TaskChecklistItem({
 }: TaskChecklistItemProps) {
   const completed = task.status === 'completed';
   const editable = task.origin === 'manual' && !completed;
-  const defaultExpanded = task.completion_mode === 'subtasks' && !completed;
+  const subtaskTotal = subtasks.length;
+  const subtaskDone = subtasks.filter((item) => item.is_completed).length;
+  // The whole checklist is one tap ("全部やった"), so the individual boxes stay
+  // folded until someone has started ticking them (owner request 2026-09-30).
+  const defaultExpanded =
+    task.completion_mode === 'subtasks' && !completed && subtaskDone > 0 && subtaskDone < subtaskTotal;
   const [expanded, setExpanded] = useState(() => storedExpanded(expandedStorageKey, defaultExpanded));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -365,6 +370,19 @@ export function TaskChecklistItem({
             disabled={busy || !canExecute || completionPrerequisite.blocking}
           >
             {completionPrerequisite.actionLabel}
+          </button>
+        )}
+
+        {task.completion_mode === 'subtasks' && !completed && !optionalOnlyChecklist && subtasks.length > 0 &&
+          !completionPrerequisite?.actionLabel && (
+          <button
+            type="button"
+            className="task-inline-finish"
+            onClick={handleComplete}
+            disabled={busy || !canExecute || Boolean(completionPrerequisite?.blocking)}
+            aria-label={`${task.title}を全部やったことにする`}
+          >
+            全部やった
           </button>
         )}
 
