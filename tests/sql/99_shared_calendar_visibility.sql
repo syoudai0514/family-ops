@@ -69,4 +69,15 @@ begin
 end;
 $$;
 reset role;
+set role authenticated;
+set request.jwt.claim.sub = 'a3000000-0000-0000-0000-000000000001';
+do $
+begin
+  if exists(select 1 from public.calendar_event_occurrences where title='OTHER99') then
+    raise exception 'FAIL calendar occurrence policy';
+  end if;
+end;
+$;
+reset role;
+reset request.jwt.claim.sub;
 select '99_shared_calendar_visibility: PASS' as result;
