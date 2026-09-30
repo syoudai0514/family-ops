@@ -63,6 +63,16 @@ export async function understandEnabled(client: SupabaseClient): Promise<boolean
   }
 }
 
+/** Asks the shared per-minute Gemini budget for one call. Any failure reads as "no". */
+export async function reserveAiCall(client: SupabaseClient): Promise<boolean> {
+  try {
+    const { data, error } = await client.rpc("server_tx_reserve_ai_call");
+    return !error && data === true;
+  } catch {
+    return false;
+  }
+}
+
 async function safe<T>(fallback: T, read: () => Promise<T>): Promise<T> {
   try {
     return await read();

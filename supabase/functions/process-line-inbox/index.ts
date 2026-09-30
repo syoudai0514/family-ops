@@ -117,8 +117,8 @@ import {
   type CompletionContext,
 } from "./lineCompletionReport.ts";
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
-import { evaluateUnderstanding, runPlan, understandLineText } from "./lineUnderstand.ts";
-import { loadSnapshot, logLineTurn, understandEnabled } from "./lineRouterWiring.ts";
+import { evaluateUnderstanding, makeGeminiProvider, runPlan, understandLineText } from "./lineUnderstand.ts";
+import { loadSnapshot, logLineTurn, reserveAiCall, understandEnabled } from "./lineRouterWiring.ts";
 import {
   purchaseAllAndReply,
   purchaseShoppingItemAndReply,
@@ -2008,7 +2008,7 @@ async function handleText(
   // operation the model hands back).
   let routedCreate = false;
   if (snapshot) {
-    const understood = await understandLineText(snapshot, text);
+    const understood = await understandLineText(snapshot, text, makeGeminiProvider(() => reserveAiCall(client)));
     if (understood.plan) {
       const plan = understood.plan;
       console.info("process-line-inbox: understood", {
@@ -2224,7 +2224,8 @@ Deno.serve(
     // change (the development environment has no Gemini key).
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     if (body.mode === "understand_eval") {
-      return jsonResponse(await evaluateUnderstanding(body.cases));
+      const evalClient = createServiceRoleClient();
+      return jsonResponse(await evaluateUnderstanding(body.cases, makeGeminiProvider(() => reserveAiCall(evalClient))));
     }
     const client = createServiceRoleClient();
     const { data: batchData, error: claimError } = await client.rpc("server_tx_claim_webhook_inbox_batch", {

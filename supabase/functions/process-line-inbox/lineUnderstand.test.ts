@@ -3,6 +3,7 @@ import {
   buildUnderstandPrompt,
   evaluateUnderstanding,
   guardPlan,
+  makeGeminiProvider,
   parsePlan,
   type Plan,
   type PlanEffects,
@@ -207,4 +208,51 @@ Deno.test("run: Codmon inputs the model lists are folded into the submit as part
   const b = fakeEffects();
   await runPlan({ understanding: "", reply: "", confidence: "high", actions: [{ type: "complete_task", ref: "t2", by: "partner" }] }, s, b.effects, "朝食の入力はママがやった");
   assertEquals(b.log[0], "done:uuid-bf:partner");
+});
+
+Deno.test("budget: no call when the minute is used up; no retry on 429; one retry on a 5xx", async () => {
+  const env = Deno.env.get("GEMINI_MODEL_LINE_UNDERSTAND");
+  Deno.env.set("GEMINI_MODEL_LINE_UNDERSTAND", "test-model");
+  const realFetch = globalThis.fetch;
+  const realKey = Deno.env.get("GEMINI_API_KEY");
+  Deno.env.set("GEMINI_API_KEY", "k");
+  try {
+    let calls = 0;
+    const answers: number[] = [];
+    globalThis.fetch = (() => {
+      calls++;
+      const status = answers.shift() ?? 200;
+      return Promise.resolve(new Response(
+        status === 200 ? JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"reply":"ok","actions":[]}' }] } }] }) : "{}",
+        { status },
+      ));
+    }) as typeof fetch;
+
+    // Budget says no -> the model is not called at all.
+    assertEquals(await makeGeminiProvider(() => Promise.resolve(false))("p"), null);
+    assertEquals(calls, 0);
+
+    // 429 -> no second request in the same minute.
+    answers.push(429);
+    assertEquals(await makeGeminiProvider(() => Promise.resolve(true))("p"), null);
+    assertEquals(calls, 1);
+
+    // 503 then 200 -> one retry, and the retry asked the budget too.
+    calls = 0;
+    let asked = 0;
+    answers.push(503, 200);
+    assertEquals(await makeGeminiProvider(() => { asked++; return Promise.resolve(true); })("p"), '{"reply":"ok","actions":[]}');
+    assertEquals([calls, asked], [2, 2]);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (env === undefined) Deno.env.delete("GEMINI_MODEL_LINE_UNDERSTAND"); else Deno.env.set("GEMINI_MODEL_LINE_UNDERSTAND", env);
+    if (realKey === undefined) Deno.env.delete("GEMINI_API_KEY"); else Deno.env.set("GEMINI_API_KEY", realKey);
+  }
+});
+
+Deno.test("evaluation: at most 5 cases per request", async () => {
+  let n = 0;
+  const cases = Array.from({ length: 9 }, (_, i) => ({ id: i, message: "x" }));
+  const res = await evaluateUnderstanding(cases, () => { n++; return Promise.resolve('{"reply":"ok","actions":[]}'); });
+  assertEquals([res.results.length, n], [5, 5]);
 });
