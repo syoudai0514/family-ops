@@ -2,6 +2,8 @@
 -- 200 independent of provider plan. docs/design/v6/03_DOMAIN_AND_DATA_MODEL.md #16;
 -- fixtures/LINE_QUOTA_ATOMIC_CASES.json (sequential logic; see
 -- scripts/run_concurrency_tests.sh for the true-parallel LQA01/LQA02 races)
+-- The billing month is the JST month (as in server_tx_reserve_line_quota): seeding the
+-- UTC month failed every month-end between 15:00 and 24:00 UTC (live CI 2026-09-30).
 \set ON_ERROR_STOP on
 
 insert into auth.users (id) values ('c0000000-0000-0000-0000-000000000001');
@@ -22,7 +24,7 @@ begin
 
   -- LQA03: provider_limit=5000 must not raise the effective hard limit above 200
   insert into private.line_quota_state (billing_month, provider_limit, provider_consumed)
-  values (date_trunc('month', now())::date, 5000, 0)
+  values (date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date, 5000, 0)
   on conflict (billing_month) do update set provider_limit = excluded.provider_limit, provider_consumed = excluded.provider_consumed;
 
   insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key, priority)
@@ -53,7 +55,7 @@ begin
   -- LQA04: effective_usage formula = max(provider_consumed, local_counted_success) + active_reserved
   update private.line_quota_state
   set provider_consumed = 195, local_counted_success = 180
-  where billing_month = date_trunc('month', now())::date;
+  where billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;
 
   insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key, priority)
   values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000001', 'line', 'test', '{}'::jsonb, 'dedup-2', 'normal')
@@ -88,7 +90,7 @@ $$;
 do $$
 declare
   v_reservation_id uuid;
-  v_billing_month date := date_trunc('month', now())::date;
+  v_billing_month date := date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;
 begin
   select id into v_reservation_id
   from private.line_quota_reservations
@@ -115,7 +117,7 @@ $$;
 do $$
 declare
   v_reservation_id uuid;
-  v_billing_month date := date_trunc('month', now())::date;
+  v_billing_month date := date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;
   v_before int;
   v_after int;
 begin
@@ -162,12 +164,12 @@ begin
   update private.notification_outbox
   set quota_reservation_id = null
   where quota_reservation_id in (
-    select id from private.line_quota_reservations where billing_month = date_trunc('month', now())::date
+    select id from private.line_quota_reservations where billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date
   );
-  delete from private.line_quota_reservations where billing_month = date_trunc('month', now())::date;
+  delete from private.line_quota_reservations where billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;
   update private.line_quota_state
   set provider_consumed = 0, local_counted_success = 0
-  where billing_month = date_trunc('month', now())::date;
+  where billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;
 
   insert into private.notification_outbox (id, household_id, recipient_user_id, channel, type, payload, dedup_key)
   values (gen_random_uuid(), v_hh_id, 'c0000000-0000-0000-0000-000000000002', 'line', 'test', '{}'::jsonb, 'idem-1')
@@ -187,14 +189,14 @@ begin
   v_reservation_id := (v_r1->>'reservation_id')::uuid;
 
   select local_counted_success into v_before
-  from private.line_quota_state where billing_month = date_trunc('month', now())::date;
+  from private.line_quota_state where billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;
 
   -- double-commit must not double-increment local_counted_success
   perform public.server_tx_commit_line_quota_reservation(v_reservation_id);
   perform public.server_tx_commit_line_quota_reservation(v_reservation_id);
 
   select local_counted_success into v_after
-  from private.line_quota_state where billing_month = date_trunc('month', now())::date;
+  from private.line_quota_state where billing_month = date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;
   if v_after <> v_before + 1 then
     raise exception 'FAIL quota-idempotency: double-commit must only increment local_counted_success once (before=%, after=%)', v_before, v_after;
   end if;
@@ -242,7 +244,7 @@ do $$
 declare
   v_hh jsonb;
   v_hh_id uuid;
-  v_month date := date_trunc('month', now())::date;
+  v_month date := date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date;
   v_out_reminder uuid;
   v_out_normal uuid;
   v_r jsonb;
