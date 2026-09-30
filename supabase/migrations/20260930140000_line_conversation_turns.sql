@@ -87,3 +87,26 @@ as $$
 $$;
 revoke all on function public.server_read_line_turns(uuid, integer, interval) from public, anon, authenticated;
 grant execute on function public.server_read_line_turns(uuid, integer, interval) to service_role;
+
+-- On/off switch for "AI understands first" (lineUnderstand.ts). Off until the prompt has
+-- been checked against the real model in production (the evaluation endpoint in
+-- process-line-inbox); then switched on with one UPDATE, and off again the same way if
+-- it ever misbehaves -- no redeploy either way.
+create table if not exists private.line_ai_settings (
+  id boolean primary key default true check (id),
+  understand_enabled boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+insert into private.line_ai_settings(id) values (true) on conflict (id) do nothing;
+
+create or replace function public.server_read_line_understand_enabled()
+returns boolean
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select coalesce((select s.understand_enabled from private.line_ai_settings s where s.id), false);
+$$;
+revoke all on function public.server_read_line_understand_enabled() from public, anon, authenticated;
+grant execute on function public.server_read_line_understand_enabled() to service_role;

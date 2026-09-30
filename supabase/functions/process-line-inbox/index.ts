@@ -111,16 +111,17 @@ import {
 } from "./lineMustComplete.ts";
 import {
   completeTaskAndReply,
+  parseCodmonSentReport,
   reopenTaskAndReply,
   tryHandleCompletionReport,
   type CompletionContext,
 } from "./lineCompletionReport.ts";
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
-import { routeLineText, runRouterDecision } from "./lineContextRouter.ts";
-import { loadRouterContext, logLineTurn } from "./lineRouterWiring.ts";
+import { evaluateUnderstanding, runPlan, understandLineText } from "./lineUnderstand.ts";
+import { loadSnapshot, logLineTurn, understandEnabled } from "./lineRouterWiring.ts";
 import {
-  handlePurchaseReport,
   purchaseAllAndReply,
+  purchaseShoppingItemAndReply,
   purchaseShoppingItemByIdAndReply,
   reopenShoppingItemAndReply,
   tryHandleShoppingPurchaseReport,
@@ -1979,14 +1980,20 @@ async function handleText(
   }
   if (!actor) return;
 
-  // The conversation so far is read BEFORE this message is stored, so the router sees
-  // "what was said before" and the message itself separately (lineContextRouter.ts).
+  // The conversation so far is read BEFORE this message is stored, so the model sees
+  // "what was said before" and the new message separately (lineUnderstand.ts).
   const pendingDraft = await getLineConversationPending(client, actor, item.source_external_user_id);
-  const routerContext = isFixedShortcutText(text)
+  const snapshot = isFixedShortcutText(text) || !(await understandEnabled(client))
     ? null
-    : await loadRouterContext(client, completionContext(client, item, actor), pendingDraft);
+    : await loadSnapshot(client, {
+      actorId: actor.user_id,
+      householdId: actor.household_id,
+      today: jstIsoDateOffset(0),
+      pending: pendingDraft,
+    });
   await logLineTurn(client, actor.user_id, "user", text);
 
+  // Fixed menu commands (入力, 待ち, 買い物担当, 相談メモ：…) are buttons, not language.
   if (await tryHandleLineMustCompleteText({
     client,
     actorId: actor.user_id,
@@ -1995,37 +2002,68 @@ async function handleText(
     reply: (replyText, quickReplies) => sendConfirmation(client, item, actor, replyText, quickReplies),
   }, text)) return;
 
-  // AI first (owner instruction 2026-09-30): free text goes to the model together with
-  // the conversation, and the phrase-pattern chain below is only the fallback for when
-  // the model is unavailable or passes.
+  // Owner instruction 2026-09-30: the AI decides FIRST what the message means and what
+  // to do, with the conversation and the household in front of it. The phrase-pattern
+  // chain further down is only the fallback (model unavailable, unusable answer, or an
+  // operation the model hands back).
   let routedCreate = false;
-  if (routerContext) {
-    const decision = await routeLineText(routerContext, text);
-    if (decision) {
-      const shoppingContext = {
-        client,
-        actorId: actor.user_id,
-        householdId: actor.household_id,
-        reply: (replyText: string) => sendConfirmation(client, item, actor, replyText),
+  if (snapshot) {
+    const understood = await understandLineText(snapshot, text);
+    if (understood.plan) {
+      const plan = understood.plan;
+      console.info("process-line-inbox: understood", {
+        understanding: plan.understanding.slice(0, 120),
+        actions: plan.actions.map((a) => a.type),
+        confidence: plan.confidence,
+      });
+      const collected: Array<{ text: string; quick?: LineQuickReplyAction[] }> = [];
+      const collect = (replyText: string, quick?: LineQuickReplyAction[]) => {
+        collected.push({ text: replyText, quick });
+        return Promise.resolve();
       };
-      const outcome = await runRouterDecision(decision, {
-        showShoppingList: (who) => answerShoppingList(shoppingContext, who),
-        showSchedule: (range) => sendLineSchedule(client, item, actor, range),
-        purchase: (report) => handlePurchaseReport(completionContext(client, item, actor), report),
-        done: (doneText) => tryHandleCompletionReport(completionContext(client, item, actor), doneText),
-        reply: (replyText) => sendConfirmation(client, item, actor, replyText),
+      const drain = () => collected.splice(0, collected.length);
+      const collectingCompletion: CompletionContext = { ...completionContext(client, item, actor), reply: collect };
+      const outcome = await runPlan(plan, snapshot, {
+        showShopping: async (who) => {
+          await answerShoppingList({ client, actorId: actor.user_id, householdId: actor.household_id, reply: (t) => collect(t) }, who);
+          return drain();
+        },
+        markBought: async (items) => {
+          if (items.length === 1) {
+            const opId = await deterministicOperationId("line-understand", item.provider_event_id, items[0].id);
+            await purchaseShoppingItemAndReply(collectingCompletion, items[0], opId);
+          } else {
+            await purchaseAllAndReply(collectingCompletion, items.map((i) => i.id));
+          }
+          return drain();
+        },
+        completeTask: async (task, by) => {
+          const codmon = task.code === "codmon_submit" ? parseCodmonSentReport(text) : null;
+          await completeTaskAndReply(collectingCompletion, task.id, {
+            operationId: await deterministicOperationId("line-understand", item.provider_event_id, task.id),
+            title: task.title,
+            code: task.code,
+            completionActor: by,
+            partnerInputCodes: codmon?.partnerCodes,
+            unreadNotes: codmon?.unreadNotes,
+          });
+          return drain();
+        },
         cancelDraft: async () => {
           if (pendingDraft) {
             await client.rpc("server_tx_cancel_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: pendingDraft.id });
           }
-          await sendConfirmation(client, item, actor, "✓ さきほどの入力を取り消しました。", menuQuickReplies());
+          return [{ text: `✓ さきほどの入力（${pendingTitle(pendingDraft!)}）を取り消しました。`, quick: menuQuickReplies() }];
         },
+        showSchedule: (range, lead) => sendLineSchedule(client, item, actor, range, lead || undefined),
+        send: (replyText, quick) => sendConfirmation(client, item, actor, replyText, quick as LineQuickReplyAction[] | undefined),
       }, text);
-      if (outcome.handled) return;
-      if (outcome.createText) {
-        text = outcome.createText;
-        routedCreate = true;
-      }
+      if (outcome.done) return;
+      if (outcome.pendingReply) await sendConfirmation(client, item, actor, outcome.pendingReply);
+      text = outcome.continueWith.text;
+      routedCreate = outcome.continueWith.mode === "create";
+    } else if (understood.raw !== null) {
+      console.warn("process-line-inbox: understanding unusable, using the fallback handlers");
     }
   }
 
@@ -2179,6 +2217,13 @@ async function processItem(client: SupabaseClient, item: WebhookInboxItem): Prom
 Deno.serve(
   withServiceHandler(async (req) => {
     requireWorkerToken(req);
+    // Evaluation of the understanding step against the real model: no database, no LINE.
+    // Worker-token only. Lets the prompt be checked with real Gemini before and after a
+    // change (the development environment has no Gemini key).
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    if (body.mode === "understand_eval") {
+      return jsonResponse(await evaluateUnderstanding(body.cases));
+    }
     const client = createServiceRoleClient();
     const { data: batchData, error: claimError } = await client.rpc("server_tx_claim_webhook_inbox_batch", {
       p_worker_id: WORKER_ID,

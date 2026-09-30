@@ -56,6 +56,11 @@ begin
     raise exception 'the newest turn must be kept';
   end if;
 
+  -- The AI-first switch starts off and is flipped with one update.
+  if public.server_read_line_understand_enabled() then raise exception 'AI-first must start switched off'; end if;
+  update private.line_ai_settings set understand_enabled=true, updated_at=now();
+  if not public.server_read_line_understand_enabled() then raise exception 'switch did not turn on'; end if;
+
   -- Validation.
   begin perform public.server_tx_log_line_turn(u1,'bot','x'); raise exception 'bad role accepted';
   exception when others then if sqlerrm<>'INVALID_INPUT' then raise; end if; end;
