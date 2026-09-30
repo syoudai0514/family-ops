@@ -140,6 +140,27 @@ already surface as the `AI_UNAVAILABLE` error message
 becomes frequent, check the Gemini API quota/billing dashboard for the
 configured `GEMINI_API_KEY`'s project.
 
+### 6.0 本番に登録されている定期実行（2026-09-30 時点）
+
+`select jobname, schedule from cron.job;` で確認できる。合言葉（`X-Family-Ops-Worker-Token`）は各ジョブのコマンド内にあり、ここには書かない。
+2026-09-30 までは下の上6つだけが登録されており、Google連携・祝日同期・保持期限の掃除は動いていなかった（Google連携は1件つながっているのに監視チャンネル0件、定期同期なし）。同日、下の5つを追加した。
+
+| ジョブ名 | 実行する関数 | 間隔 |
+|---|---|---|
+| family-ops-line-inbox-v1 | process-line-inbox | 毎分 |
+| family-ops-pending-actions-v1 | process-pending-actions | 毎分 |
+| family-ops-routine-dispatch-v1 | dispatch-routine-automation | 毎分 |
+| family-ops-line-delivery-v1 | send-notifications | 毎分 |
+| family-ops-calendar-outbox-v1 | process-family-ops-calendar-outbox | 毎分 |
+| family-ops-materialize-recurring-v1 | materialize-recurring | 毎日 00:10 JST |
+| family-ops-google-sync-v1 | process-google-sync | 毎分 |
+| family-ops-google-periodic-v1 | enqueue-periodic-google-sync | 30分ごと |
+| family-ops-google-watch-v1 | renew-google-watch | 30分ごと（§9） |
+| family-ops-jp-holidays-v1 | sync-jp-holidays | 毎週日曜 03:00 JST |
+| family-ops-cleanup-v1 | cleanup-expired-private-data | 毎日 03:30 JST |
+
+合言葉をmigrationに書けないため、これらは `cron.schedule` で直接登録している（同名で呼び直せば上書きされる）。合言葉を替えるときは、この11本すべてを同時に更新する（§6）。
+
 ## 6. Cron worker token rotation
 
 `CRON_WORKER_TOKEN` (`X-Family-Ops-Worker-Token`, constant-time-compared in

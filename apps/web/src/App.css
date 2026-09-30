@@ -782,6 +782,15 @@ button:disabled {
   justify-self: start;
 }
 
+/* The menu button sits at the left of the row, so the panel opens rightwards
+   and never wider than the screen (it used to open leftwards off-screen). */
+.task-checklist-main > .task-overflow > div {
+  left: 0;
+  right: auto;
+  width: max-content;
+  max-width: min(20rem, calc(100vw - 2rem));
+}
+
 .subtask-checklist {
   margin-top: 0.65rem;
 }

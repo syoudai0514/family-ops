@@ -119,10 +119,33 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     });
   });
 
-  it('shows fine-grained recurring subtasks immediately and records an individual checkbox', async () => {
+  it('finishes a whole checklist with one tap, without opening the individual boxes', async () => {
+    render(<TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} />);
+
+    // Folded by default: nothing to tick one by one.
+    expect(screen.queryByRole('checkbox', { name: '回す' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '洗濯を全部やったことにする' }));
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
+      operation_id: expect.any(String),
+      task_id: 'laundry-1',
+      completion_actor: 'self',
+      complete_remaining_subtasks: true,
+    }));
+  });
+
+  it('keeps the individual boxes open once someone has started ticking them', () => {
+    const partly = laundrySubtasks.map((item, index) => (index === 0 ? { ...item, is_completed: true } : item));
+    render(<TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={partly} />);
+    expect(screen.getByRole('checkbox', { name: '干す/乾燥' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '洗濯を全部やったことにする' })).toBeInTheDocument();
+  });
+
+  it('shows fine-grained recurring subtasks on request and records an individual checkbox', async () => {
     render(<TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} />);
 
     expect(screen.getByText('洗濯')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
     expect(screen.getByText('回す')).toBeInTheDocument();
     expect(screen.getByText('干す/乾燥')).toBeInTheDocument();
     expect(screen.getByText('畳む')).toBeInTheDocument();
@@ -143,6 +166,9 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       <TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={laundrySubtasks} expandedStorageKey={storageKey} />,
     );
 
+    expect(screen.queryByText('回す')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
+    expect(sessionStorage.getItem(storageKey)).toBe('1');
     fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を閉じる' }));
     expect(sessionStorage.getItem(storageKey)).toBe('0');
     expect(screen.queryByText('回す')).not.toBeInTheDocument();
@@ -206,6 +232,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
     const checkbox = screen.getByRole('checkbox', { name: '回す' });
     expect(checkbox).not.toBeDisabled();
     fireEvent.click(checkbox);
