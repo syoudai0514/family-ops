@@ -274,3 +274,31 @@ Deno.test("handler: nothing open and a bare やった says so, with a link addre
     Deno.env.delete("APP_BASE_URL");
   }
 });
+
+// Live 2026-10-02 11:22: "コドモンも終わっているよ" closed ママ's open input
+// ("詩乃：昨日の夕飯・様子") as the sender's own work. An open input assigned to the
+// other adult is now recorded as theirs.
+Deno.test("complete: open inputs assigned to the other adult are credited to them", async () => {
+  const inputs = [
+    { id: "t-i1", title: "詩乃：コドモン入力（昨日の夕飯・様子）", task_definition_id: "d-i1", planned_assignee_id: "u2", status: "todo" },
+    { id: "t-i2", title: "詩乃：コドモン入力（朝食）", task_definition_id: "d-i2", planned_assignee_id: "u1", status: "todo" },
+    { id: "t-i3", title: "将生：コドモン入力（迎え）", task_definition_id: "d-i3", planned_assignee_id: "u2", status: "completed" },
+  ];
+  const inputDefs = [
+    ...defs,
+    { id: "d-i1", code: "codmon_shino_previous_input" },
+    { id: "d-i2", code: "codmon_shino_breakfast_input" },
+    { id: "d-i3", code: "codmon_masaki_pickup_input" },
+  ];
+  const { ctx, calls, replies } = fakeContext({
+    tasks: [...rows, ...inputs],
+    defs: inputDefs,
+    rpcData: { inputs_closed: 2, inputs_closed_by_partner: 1 },
+  });
+  await completeTaskAndReply(ctx, "t-c", { operationId: "op", code: "codmon_submit" });
+  assertEquals(calls[0].args.p_partner_input_codes, ["codmon_shino_previous_input"]);
+  assertEquals(
+    replies[0].text,
+    "✓ コドモン送信を完了にしました。\nチェックされていなかった入力2件も完了にしました。詩乃：昨日の夕飯・様子は相手、残りはあなたの実施として記録しています。",
+  );
+});

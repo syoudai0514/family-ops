@@ -104,7 +104,7 @@ Deno.test("run: several results go out as ONE reply (one free LINE reply per mes
     actions: [{ type: "complete_task", ref: "t2", by: "self" }, { type: "mark_bought", refs: ["s2"] }],
   }, snap(), effects, "洗濯終わった、牛乳も買った");
   assertEquals(out, { done: true });
-  assertEquals(log, ["done:uuid-t2:self", "bought:uuid-s2", 'SEND:おつかれさま！\n\n✓ 洗濯\n\n✓ 買った|["undo-buy"]']);
+  assertEquals(log, ["done:uuid-t2:self", "bought:uuid-s2", 'SEND:おつかれさま！\n\n✓ 洗濯\n✓ 買った|["undo-buy"]']);
 });
 
 Deno.test("run: the list follows the model's own lead line; a partner's chore is recorded as theirs", async () => {
@@ -347,4 +347,58 @@ Deno.test("run: the draft rides along with the hand-off", async () => {
   const out = await runPlan({ understanding: "", reply: "了解！", confidence: "high", actions: [{ type: "edit_draft", text: "ゴミ出し", draft }] },
     snap({ pendingDraft: { kind: "task", title: "ごみ" } }), fakeEffects().effects, "ゴミ出しね");
   assertEquals(out, { done: false, continueWith: { text: "ゴミ出し", mode: "edit", draft }, pendingReply: "" });
+});
+
+// Live 2026-10-02 11:20-11:22: "朝の仕事は全部やりました！" -- the model listed 9 morning
+// tasks, 4 were completed (the old cap of 4 actions), and it took three messages. Then
+// the Codmon submit stayed open without a word.
+const morning = (over: Partial<Snapshot> = {}) => snap({
+  tasks: [
+    { ref: "t1", id: "id-1", title: "送り", who: "me", due: "07:30", status: "todo", code: "dropoff" },
+    { ref: "t2", id: "id-2", title: "朝ごはん", who: "me", due: null, status: "todo", code: null },
+    { ref: "t3", id: "id-3", title: "子供の着替え準備", who: "me", due: null, status: "todo", code: null },
+    { ref: "t4", id: "id-4", title: "詩乃の薬", who: "anyone", due: null, status: "todo", code: null },
+    { ref: "t5", id: "id-5", title: "詩乃：コドモン入力（朝食）", who: "me", due: null, status: "todo", code: "codmon_shino_breakfast_input" },
+    { ref: "t6", id: "id-6", title: "詩乃：コドモン入力（昨日の夕飯・様子）", who: "partner", due: null, status: "todo", code: "codmon_shino_previous_input" },
+    { ref: "t7", id: "id-7", title: "コドモン送信", who: null, due: "09:15", status: "todo", code: "codmon_submit" },
+    { ref: "t8", id: "id-8", title: "洗濯", who: "me", due: null, status: "done", code: null },
+  ],
+  ...over,
+});
+
+Deno.test("bulk: complete_tasks completes every listed task in one message, past the 4-action cap", async () => {
+  const plan = parsePlan('{"reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":["t1","t2","t3","t4","t5","t8","t1"],"by":"self"}],"confidence":"high"}')!;
+  const guarded = guardPlan(plan, morning())!;
+  // Duplicates and the already-done task are dropped.
+  assertEquals(guarded.actions.map((a) => (a as { ref: string }).ref), ["t1", "t2", "t3", "t4", "t5"]);
+  const { log, effects } = fakeEffects();
+  await runPlan(guarded, morning(), effects, "朝の仕事は全部やりました！");
+  assertEquals(log.filter((l) => l.startsWith("done:")).length, 5);
+  // One reply; the completion lines are stacked; the Codmon submit is asked about, one tap closes it.
+  const sent = log.at(-1)!;
+  assertEquals(sent.startsWith("SEND:おつかれさま！\n\n✓ 送り\n✓ 朝ごはん\n✓ 子供の着替え準備\n✓ 詩乃の薬\n✓ 詩乃：コドモン入力（朝食）\n\nコドモンは送信まで済んだ？（ママの「詩乃：コドモン入力（昨日の夕飯・様子）」がまだ未完了です）"), true, sent);
+  assertEquals(sent.includes('"data":"action=complete_task&task_id=id-7"'), true);
+});
+
+Deno.test("bulk: the Codmon submit is held while the partner's input is open; an explicit report closes it", async () => {
+  const bulk = guardPlan(parsePlan('{"reply":"おつかれさま！コドモンは送信まで済んだ？","actions":[{"type":"complete_tasks","refs":["t1","t7"],"by":"self"}],"confidence":"high"}')!, morning())!;
+  const a = fakeEffects();
+  await runPlan(bulk, morning(), a.effects, "朝の全部やった");
+  assertEquals(a.log.includes("done:id-7:self"), false);
+  // The model already asked in its own words: no second question, only the button.
+  assertEquals(a.log.at(-1)!.split("コドモンは送信まで済んだ？").length, 2);
+  assertEquals(a.log.at(-1)!.includes("action=complete_task&task_id=id-7"), true);
+
+  const explicit = guardPlan(parsePlan('{"reply":"了解！","actions":[{"type":"complete_task","ref":"t7","by":"self"}],"confidence":"high"}')!, morning())!;
+  const b = fakeEffects();
+  await runPlan(explicit, morning(), b.effects, "コドモンも終わっているよ！");
+  assertEquals(b.log[0], "done:id-7:self");
+  assertEquals(b.log.at(-1)!.includes("送信まで済んだ"), false);
+
+  // Bulk with nothing of the partner's open: the submit is closed with the rest.
+  const allMine = morning({ tasks: morning().tasks.filter((t) => t.ref !== "t6") });
+  const c = fakeEffects();
+  await runPlan(guardPlan(parsePlan('{"reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":["t1","t7"],"by":"self"}],"confidence":"high"}')!, allMine)!, allMine, c.effects, "朝の全部やった");
+  assertEquals(c.log.includes("done:id-7:self"), true);
+  assertEquals(c.log.at(-1)!.includes("送信まで済んだ"), false);
 });
