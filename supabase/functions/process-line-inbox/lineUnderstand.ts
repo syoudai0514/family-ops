@@ -104,6 +104,8 @@ export type Action =
   | { type: "mark_bought"; refs: string[] }
   /** `bulk`: one of several tasks reported together ("朝の全部やった"). */
   | { type: "complete_task"; ref: string; by: "self" | "partner"; bulk?: true }
+  /** "朝の全部やった": every open task of that time of day, picked by the code (guardPlan). */
+  | { type: "complete_all"; phase: "morning" | "evening" | "today"; by: "self" | "partner" }
   | { type: "create"; text: string; draft?: DraftSpec }
   | { type: "edit_draft"; text: string; draft?: DraftSpec }
   | { type: "cancel_draft" }
@@ -193,8 +195,10 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     "- 頼まれていない登録・送信・変更はしない。登録・お願い・共有を新しくしたいと言っているときだけ create。",
     "- 対象がはっきりしないときは推測せず、1つだけ聞き返す（actions は空、reply に質問）。分かっていることは聞き直さない。",
     "- 1通に複数の用件があれば、actions を複数並べてよい（最大4つ）。タスクをまとめて「やった」にするときは complete_tasks 1つに全部の ref を入れる（4つの上限とは別に、30件まで）。",
-    "- 「朝の全部やった」「全部終わった」は、該当する時間帯の未完了タスクのうち、話している人・誰でも・未定のものを全部（相手の担当は、相手がやったと言われたときだけ）。",
-    "- ただしコドモン送信は、まとめての報告では完了にしない（相手の入力が済んでいないと送れないため）。コドモン送信が未完了で残るときは、reply の最後で「コドモンは送信まで済んだ？」と聞く。「コドモン送った」とはっきり言われたときだけ complete_task にする。",
+    "- 「朝の全部やった」「夜のは全部終わった」「今日のは全部やった」は、complete_tasks の all にその時間帯（morning / evening / today）を入れる。対象のタスクはアプリが拾う（その時間帯の未完了のうち、相手の担当以外。by=partner なら相手の担当も）。refs を並べなくてよい。",
+    "- 「全部やったよ？」「まだ残ってない？」のように、完了の報告を繰り返されたら聞き返さない。残っている分を完了にする。",
+    "- コドモン送信は、相手の入力が済んでいないと送れない。まとめての報告ではアプリが確かめて、必要なら「コドモンは送信まで済んだ？」と聞く（reply で聞いてもよい）。",
+    "- 「コドモン送った」「コドモンも終わってる」とはっきり言われたら、コドモン送信を complete_task にし、reply は短い相づちだけ。相手の入力のことは聞かない（相手担当の入力は、アプリが相手の実施として記録する）。",
     "- 相手と中身がはっきりした依頼（「ママに〜お願いしたい」「〜を代わってほしいって頼みたい」「〜してって伝えて」）は create（確認カードが出て、送る前に確かめられる）。『どう言えば』『言い方』『どう頼めば』と文面を相談しているときだけ相談として答える。",
     "- 相談（伝え方・頼み方など）は、ユーザーの立場と目的をまず正しくつかむ（例:「今週ずっと俺がお迎え」＝ユーザーが負担を抱えている側。相手に代わってほしい／分かってほしい）。そのうえで「状況 → お願い → 相手を気づかう一言」の順の文案を1つ示す。立場を逆にしない。文案は送らない。",
     "- コドモンの送信（コドモン送信のタスク）を完了にすると、まだの入力も自動でまとめて完了になる。相手が済ませていた入力（「朝食はやってあった」など）は、その入力のタスクを by=partner で並べる。",
@@ -204,7 +208,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- {"type":"show_schedule","range":"today|tomorrow|week"} 予定の一覧を見せる。',
     '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。',
     '- {"type":"complete_task","ref":"t3","by":"self|partner"} 今日のタスクを「やった」にする。by = 実際にやった人（相手がやってくれたなら partner）。',
-    '- {"type":"complete_tasks","refs":["t1","t2","t5"],"by":"self|partner"} 複数のタスクをまとめて「やった」にする（「朝の全部やった」など）。',
+    '- {"type":"complete_tasks","refs":["t1","t2","t5"],"all":null,"by":"self|partner"} 複数のタスクをまとめて「やった」にする。時間帯ごと全部なら {"type":"complete_tasks","refs":[],"all":"morning|evening|today","by":"self"}。',
     '- {"type":"create","text":"…","draft":{…}} 予定・タスク・買い物・お願い・共有を新しく登録したい。text は会話の文脈を補い、「それ」「さっきの」を具体的にした一文（例:「明日の朝、ゴミ出しをママにお願い」）。',
     '- {"type":"edit_draft","text":"…","draft":{…}} 確認待ちの下書きの中身を直したい（例:「時間は7時」「担当はママ」「将生のね」）。',
     "",
@@ -233,7 +237,9 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- 「いや、買うべきもの教えてよ」→ {"understanding":"自分が買うべきものを知りたい（言い直し）","reply":"ごめんね、パパが買うものはこれだよ👇","actions":[{"type":"show_shopping","who":"me"}],"confidence":"high"}',
     '- 「Tシャツ買った！」（s1 が Tシャツ）→ {"understanding":"s1を買った","reply":"ありがとう！","actions":[{"type":"mark_bought","refs":["s1"]}],"confidence":"high"}',
     '- 「洗濯終わった、あと牛乳も買ってきた」→ {"understanding":"洗濯をやった・牛乳を買った","reply":"おつかれさま！","actions":[{"type":"complete_task","ref":"t4","by":"self"},{"type":"mark_bought","refs":["s2"]}],"confidence":"high"}',
-    '- 「朝の全部やったよ」（朝の未完了: t1=送り・t2=朝ごはん・t3=詩乃：朝食の入力・t4=コドモン送信、t5=将生：迎えの入力（ママ担当））→ {"understanding":"自分の朝のタスクを全部やった。コドモン送信は確認する","reply":"おつかれさま！コドモンは送信まで済んだ？","actions":[{"type":"complete_tasks","refs":["t1","t2","t3"],"by":"self"}],"confidence":"high"}',
+    '- 「朝の全部やったよ」→ {"understanding":"朝のタスクを全部やった","reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":[],"all":"morning","by":"self"}],"confidence":"high"}',
+    '- 「洗濯と掃除と食器洗いやった」（t4=洗濯・t6=掃除・t7=食器洗い）→ {"understanding":"3つやった","reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":["t4","t6","t7"],"all":null,"by":"self"}],"confidence":"high"}',
+    '- 直前のおうちノート「コドモンは送信まで済んだ？」→「コドモンも終わってるよ」（t9=コドモン送信）→ {"understanding":"コドモン送信済み","reply":"了解！","actions":[{"type":"complete_task","ref":"t9","by":"self"}],"confidence":"high"}',
     '- 「ママが洗濯やってくれてた」→ {"understanding":"相手が洗濯をやった","reply":"了解！","actions":[{"type":"complete_task","ref":"t4","by":"partner"}],"confidence":"high"}',
     '- 「今日お迎え誰だっけ？」（お迎えの担当がママ）→ {"understanding":"今日のお迎え担当を知りたい","reply":"今日のお迎えはママだよ（18:20）。","actions":[],"confidence":"high"}',
     `- 「牛乳買っといて」→ {"understanding":"牛乳を買い物に追加したい","reply":"了解！","actions":[{"type":"create","text":"牛乳を買う","draft":{"kind":"shopping","title":"牛乳","date":"${today}","time":null,"daypart":null,"who":null,"message":null}}],"confidence":"high"}`,
@@ -314,8 +320,10 @@ function parseAction(raw: unknown): Action | Action[] | null {
     case "complete_tasks": {
       const refs = Array.isArray(a.refs) ? [...new Set(a.refs.filter((r): r is string => typeof r === "string"))] : [];
       const by = a.by === "partner" ? "partner" : "self";
-      if (!refs.length) return null;
-      return refs.slice(0, MAX_BULK_TASKS).map((ref) => ({ type: "complete_task", ref, by, bulk: true }));
+      const phase = (["morning", "evening", "today"] as const).find((p) => p === a.all);
+      if (!refs.length && !phase) return null;
+      const listed: Action[] = refs.slice(0, MAX_BULK_TASKS).map((ref) => ({ type: "complete_task", ref, by, bulk: true }));
+      return phase ? [...listed, { type: "complete_all", phase, by }] : listed;
     }
     case "create":
     case "edit_draft": {
@@ -367,11 +375,22 @@ const RECORDING = new Set<Action["type"]>(["mark_bought", "complete_task", "crea
  *  - a record on a hunch (low confidence) becomes the question in `reply`, if any;
  *  - cancel/edit need a draft.
  */
+/** "朝の全部やった": the open tasks of that time of day; the partner's only when by=partner. */
+function expandCompleteAll(action: Extract<Action, { type: "complete_all" }>, snapshot: Snapshot): Action[] {
+  const inPhase = (phase: string | null | undefined) =>
+    action.phase === "today" || phase === action.phase || (action.phase === "evening" && phase === "night");
+  return snapshot.tasks
+    .filter((t) => t.status === "todo" && inPhase(t.phase) && (action.by === "partner" || t.who !== "partner"))
+    .slice(0, MAX_BULK_TASKS)
+    .map((t) => ({ type: "complete_task" as const, ref: t.ref, by: action.by, bulk: true as const }));
+}
+
 export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
   const taskRefs = new Set(snapshot.tasks.map((t) => t.ref));
   const shopRefs = new Set(snapshot.shopping.map((s) => s.ref));
   const actions: Action[] = [];
-  for (const action of plan.actions) {
+  const requested = plan.actions.flatMap((a) => a.type === "complete_all" ? expandCompleteAll(a, snapshot) : [a]);
+  for (const action of requested) {
     if (action.type === "mark_bought") {
       const refs = [...new Set(action.refs.filter((r) => shopRefs.has(r)))];
       if (refs.length) actions.push({ ...action, refs });
@@ -387,6 +406,10 @@ export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
     }
     if ((action.type === "cancel_draft" || action.type === "edit_draft") && !snapshot.pendingDraft) continue;
     actions.push(action);
+  }
+  // "全部やった" when everything is already done: just the reply (if it claims nothing).
+  if (actions.length === 0 && plan.actions.every((a) => a.type === "complete_all" || (a.type === "complete_task" && a.bulk))) {
+    return plan.reply && !claimsMutationWasPerformed(plan.reply) ? { ...plan, actions: [] } : null;
   }
   // Something was asked for but nothing valid is left: do not pretend.
   if (plan.actions.length > 0 && actions.length === 0) return null;

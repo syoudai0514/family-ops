@@ -354,14 +354,14 @@ Deno.test("run: the draft rides along with the hand-off", async () => {
 // the Codmon submit stayed open without a word.
 const morning = (over: Partial<Snapshot> = {}) => snap({
   tasks: [
-    { ref: "t1", id: "id-1", title: "送り", who: "me", due: "07:30", status: "todo", code: "dropoff" },
-    { ref: "t2", id: "id-2", title: "朝ごはん", who: "me", due: null, status: "todo", code: null },
-    { ref: "t3", id: "id-3", title: "子供の着替え準備", who: "me", due: null, status: "todo", code: null },
-    { ref: "t4", id: "id-4", title: "詩乃の薬", who: "anyone", due: null, status: "todo", code: null },
-    { ref: "t5", id: "id-5", title: "詩乃：コドモン入力（朝食）", who: "me", due: null, status: "todo", code: "codmon_shino_breakfast_input" },
-    { ref: "t6", id: "id-6", title: "詩乃：コドモン入力（昨日の夕飯・様子）", who: "partner", due: null, status: "todo", code: "codmon_shino_previous_input" },
-    { ref: "t7", id: "id-7", title: "コドモン送信", who: null, due: "09:15", status: "todo", code: "codmon_submit" },
-    { ref: "t8", id: "id-8", title: "洗濯", who: "me", due: null, status: "done", code: null },
+    { ref: "t1", id: "id-1", title: "送り", who: "me", due: "07:30", status: "todo", code: "dropoff", phase: "morning" },
+    { ref: "t2", id: "id-2", title: "朝ごはん", who: "me", due: null, status: "todo", code: null, phase: "morning" },
+    { ref: "t3", id: "id-3", title: "子供の着替え準備", who: "me", due: null, status: "todo", code: null, phase: "morning" },
+    { ref: "t4", id: "id-4", title: "詩乃の薬", who: "anyone", due: null, status: "todo", code: null, phase: "morning" },
+    { ref: "t5", id: "id-5", title: "詩乃：コドモン入力（朝食）", who: "me", due: null, status: "todo", code: "codmon_shino_breakfast_input", phase: "morning" },
+    { ref: "t6", id: "id-6", title: "詩乃：コドモン入力（昨日の夕飯・様子）", who: "partner", due: null, status: "todo", code: "codmon_shino_previous_input", phase: "morning" },
+    { ref: "t7", id: "id-7", title: "コドモン送信", who: null, due: "09:15", status: "todo", code: "codmon_submit", phase: "morning" },
+    { ref: "t8", id: "id-8", title: "洗濯", who: "me", due: null, status: "done", code: null, phase: "evening" },
   ],
   ...over,
 });
@@ -401,4 +401,22 @@ Deno.test("bulk: the Codmon submit is held while the partner's input is open; an
   await runPlan(guardPlan(parsePlan('{"reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":["t1","t7"],"by":"self"}],"confidence":"high"}')!, allMine)!, allMine, c.effects, "朝の全部やった");
   assertEquals(c.log.includes("done:id-7:self"), true);
   assertEquals(c.log.at(-1)!.includes("送信まで済んだ"), false);
+});
+
+Deno.test("bulk: 「朝の全部」 is picked by the code -- unassigned included, the partner's left, Codmon asked", async () => {
+  const s = morning({ tasks: [...morning().tasks, { ref: "t9", id: "id-9", title: "お風呂", who: "me", due: "20:00", status: "todo", code: null, phase: "evening" }] });
+  const plan = parsePlan('{"reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":[],"all":"morning","by":"self"}],"confidence":"high"}')!;
+  const guarded = guardPlan(plan, s)!;
+  // t6 is ママ's input, t8 is done, t9 is evening; t7 (Codmon submit) goes to the hold check.
+  assertEquals(guarded.actions.map((a) => (a as { ref: string }).ref), ["t1", "t2", "t3", "t4", "t5", "t7"]);
+  const { log, effects } = fakeEffects();
+  await runPlan(guarded, s, effects, "朝の仕事は全部やりました！");
+  assertEquals(log.includes("done:id-7:self"), false);
+  assertEquals(log.at(-1)!.includes("コドモンは送信まで済んだ？"), true);
+  // Everything already done: the reply alone, nothing recorded, no fallback.
+  const allDone = morning({ tasks: morning().tasks.map((t) => ({ ...t, status: "done" as const })) });
+  assertEquals(guardPlan(plan, allDone)?.actions, []);
+  // ママがやってくれた: by=partner takes the partner's too.
+  const byPartner = guardPlan(parsePlan('{"reply":"ありがとう！","actions":[{"type":"complete_tasks","refs":[],"all":"morning","by":"partner"}],"confidence":"high"}')!, s)!;
+  assertEquals(byPartner.actions.some((a) => (a as { ref: string }).ref === "t6"), true);
 });
