@@ -36,6 +36,8 @@ export interface SnapshotTask {
   due: string | null; // "07:05" (JST) or null
   status: "todo" | "done";
   code: string | null;
+  /** routine_phase: "morning" | "evening" | "anytime" ... ("朝の全部やった"). */
+  phase?: string | null;
 }
 
 export interface SnapshotShopping {
@@ -100,7 +102,10 @@ export type Action =
   | { type: "show_shopping"; who: ShoppingWho }
   | { type: "show_schedule"; range: "today" | "tomorrow" | "week" }
   | { type: "mark_bought"; refs: string[] }
-  | { type: "complete_task"; ref: string; by: "self" | "partner" }
+  /** `bulk`: one of several tasks reported together ("朝の全部やった"). */
+  | { type: "complete_task"; ref: string; by: "self" | "partner"; bulk?: true }
+  /** "朝の全部やった": every open task of that time of day, picked by the code (guardPlan). */
+  | { type: "complete_all"; phase: "morning" | "evening" | "today"; by: "self" | "partner" }
   | { type: "create"; text: string; draft?: DraftSpec }
   | { type: "edit_draft"; text: string; draft?: DraftSpec }
   | { type: "cancel_draft" }
@@ -117,6 +122,9 @@ const REPLY_MAX = 500;
 const TURNS_SENT = 12;
 const TURN_MAX_CHARS = 300;
 const MAX_ACTIONS = 4;
+// "朝の全部やった" lists every task in one complete_tasks action; it is not held to
+// MAX_ACTIONS (live 2026-10-02 11:20: 9 morning tasks, 4 completed per message).
+const MAX_BULK_TASKS = 30;
 
 function clip(value: string, max: number): string {
   const flat = value.replace(/\s+/g, " ").trim();
@@ -132,6 +140,8 @@ function addDays(isoDate: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+
+const PHASE_LABEL: Record<string, string> = { morning: "朝", noon: "昼", evening: "夜", night: "夜", anytime: "いつでも" };
 
 export function buildUnderstandPrompt(snapshot: Snapshot, message: string): string {
   const today = snapshot.now.date;
@@ -164,6 +174,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
       タスク: t.title,
       担当: WHO_LABEL(snapshot, t.who),
       時刻: t.due,
+      ...(t.phase ? { 時間帯: PHASE_LABEL[t.phase] ?? t.phase } : {}),
       状態: t.status === "done" ? "完了" : "未完了",
     })),
     買い物リスト_未購入: snapshot.shopping.slice(0, 30).map((s) => ({
@@ -183,7 +194,11 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     "- 聞かれたことには、下の『家庭の状況』だけを使って答える。そこに無いことは作らない（分からなければ、分からないと言うか、予定の表示をすすめる）。",
     "- 頼まれていない登録・送信・変更はしない。登録・お願い・共有を新しくしたいと言っているときだけ create。",
     "- 対象がはっきりしないときは推測せず、1つだけ聞き返す（actions は空、reply に質問）。分かっていることは聞き直さない。",
-    "- 1通に複数の用件があれば、actions を複数並べてよい（最大4つ）。",
+    "- 1通に複数の用件があれば、actions を複数並べてよい（最大4つ）。タスクをまとめて「やった」にするときは complete_tasks 1つに全部の ref を入れる（4つの上限とは別に、30件まで）。",
+    "- 「朝の全部やった」「夜のは全部終わった」「今日のは全部やった」は、complete_tasks の all にその時間帯（morning / evening / today）を入れる。対象のタスクはアプリが拾う（その時間帯の未完了のうち、相手の担当以外。by=partner なら相手の担当も）。refs を並べなくてよい。",
+    "- 「全部やったよ？」「まだ残ってない？」のように、完了の報告を繰り返されたら聞き返さない。残っている分を完了にする。",
+    "- コドモン送信は、相手の入力が済んでいないと送れない。まとめての報告ではアプリが確かめて、必要なら「コドモンは送信まで済んだ？」と聞く（reply で聞いてもよい）。",
+    "- 「コドモン送った」「コドモンも終わってる」とはっきり言われたら、コドモン送信を complete_task にし、reply は短い相づちだけ。相手の入力のことは聞かない（相手担当の入力は、アプリが相手の実施として記録する）。",
     "- 相手と中身がはっきりした依頼（「ママに〜お願いしたい」「〜を代わってほしいって頼みたい」「〜してって伝えて」）は create（確認カードが出て、送る前に確かめられる）。『どう言えば』『言い方』『どう頼めば』と文面を相談しているときだけ相談として答える。",
     "- 相談（伝え方・頼み方など）は、ユーザーの立場と目的をまず正しくつかむ（例:「今週ずっと俺がお迎え」＝ユーザーが負担を抱えている側。相手に代わってほしい／分かってほしい）。そのうえで「状況 → お願い → 相手を気づかう一言」の順の文案を1つ示す。立場を逆にしない。文案は送らない。",
     "- コドモンの送信（コドモン送信のタスク）を完了にすると、まだの入力も自動でまとめて完了になる。相手が済ませていた入力（「朝食はやってあった」など）は、その入力のタスクを by=partner で並べる。",
@@ -193,6 +208,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- {"type":"show_schedule","range":"today|tomorrow|week"} 予定の一覧を見せる。',
     '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。',
     '- {"type":"complete_task","ref":"t3","by":"self|partner"} 今日のタスクを「やった」にする。by = 実際にやった人（相手がやってくれたなら partner）。',
+    '- {"type":"complete_tasks","refs":["t1","t2","t5"],"all":null,"by":"self|partner"} 複数のタスクをまとめて「やった」にする。時間帯ごと全部なら {"type":"complete_tasks","refs":[],"all":"morning|evening|today","by":"self"}。',
     '- {"type":"create","text":"…","draft":{…}} 予定・タスク・買い物・お願い・共有を新しく登録したい。text は会話の文脈を補い、「それ」「さっきの」を具体的にした一文（例:「明日の朝、ゴミ出しをママにお願い」）。',
     '- {"type":"edit_draft","text":"…","draft":{…}} 確認待ちの下書きの中身を直したい（例:「時間は7時」「担当はママ」「将生のね」）。',
     "",
@@ -221,6 +237,9 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- 「いや、買うべきもの教えてよ」→ {"understanding":"自分が買うべきものを知りたい（言い直し）","reply":"ごめんね、パパが買うものはこれだよ👇","actions":[{"type":"show_shopping","who":"me"}],"confidence":"high"}',
     '- 「Tシャツ買った！」（s1 が Tシャツ）→ {"understanding":"s1を買った","reply":"ありがとう！","actions":[{"type":"mark_bought","refs":["s1"]}],"confidence":"high"}',
     '- 「洗濯終わった、あと牛乳も買ってきた」→ {"understanding":"洗濯をやった・牛乳を買った","reply":"おつかれさま！","actions":[{"type":"complete_task","ref":"t4","by":"self"},{"type":"mark_bought","refs":["s2"]}],"confidence":"high"}',
+    '- 「朝の全部やったよ」→ {"understanding":"朝のタスクを全部やった","reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":[],"all":"morning","by":"self"}],"confidence":"high"}',
+    '- 「洗濯と掃除と食器洗いやった」（t4=洗濯・t6=掃除・t7=食器洗い）→ {"understanding":"3つやった","reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":["t4","t6","t7"],"all":null,"by":"self"}],"confidence":"high"}',
+    '- 直前のおうちノート「コドモンは送信まで済んだ？」→「コドモンも終わってるよ」（t9=コドモン送信）→ {"understanding":"コドモン送信済み","reply":"了解！","actions":[{"type":"complete_task","ref":"t9","by":"self"}],"confidence":"high"}',
     '- 「ママが洗濯やってくれてた」→ {"understanding":"相手が洗濯をやった","reply":"了解！","actions":[{"type":"complete_task","ref":"t4","by":"partner"}],"confidence":"high"}',
     '- 「今日お迎え誰だっけ？」（お迎えの担当がママ）→ {"understanding":"今日のお迎え担当を知りたい","reply":"今日のお迎えはママだよ（18:20）。","actions":[],"confidence":"high"}',
     `- 「牛乳買っといて」→ {"understanding":"牛乳を買い物に追加したい","reply":"了解！","actions":[{"type":"create","text":"牛乳を買う","draft":{"kind":"shopping","title":"牛乳","date":"${today}","time":null,"daypart":null,"who":null,"message":null}}],"confidence":"high"}`,
@@ -282,7 +301,7 @@ export function parseDraft(raw: unknown): DraftSpec | undefined {
   };
 }
 
-function parseAction(raw: unknown): Action | null {
+function parseAction(raw: unknown): Action | Action[] | null {
   if (!raw || typeof raw !== "object") return null;
   const a = raw as Record<string, unknown>;
   switch (a.type) {
@@ -297,6 +316,14 @@ function parseAction(raw: unknown): Action | null {
     case "complete_task": {
       const ref = str(a.ref);
       return ref ? { type: "complete_task", ref, by: a.by === "partner" ? "partner" : "self" } : null;
+    }
+    case "complete_tasks": {
+      const refs = Array.isArray(a.refs) ? [...new Set(a.refs.filter((r): r is string => typeof r === "string"))] : [];
+      const by = a.by === "partner" ? "partner" : "self";
+      const phase = (["morning", "evening", "today"] as const).find((p) => p === a.all);
+      if (!refs.length && !phase) return null;
+      const listed: Action[] = refs.slice(0, MAX_BULK_TASKS).map((ref) => ({ type: "complete_task", ref, by, bulk: true }));
+      return phase ? [...listed, { type: "complete_all", phase, by }] : listed;
     }
     case "create":
     case "edit_draft": {
@@ -326,13 +353,15 @@ export function parsePlan(raw: string): Plan | null {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const p = parsed as Record<string, unknown>;
   const reply = str(p.reply);
-  const actions = Array.isArray(p.actions) ? p.actions.map(parseAction) : [];
-  if (actions.some((action) => action === null)) return null; // an unknown action: do not guess
-  if (!reply && actions.length === 0) return null;
+  const parsedActions = Array.isArray(p.actions) ? p.actions.map(parseAction) : [];
+  if (parsedActions.some((action) => action === null)) return null; // an unknown action: do not guess
+  if (!reply && parsedActions.length === 0) return null;
+  // At most MAX_ACTIONS requests; a complete_tasks request expands to its tasks.
+  const actions = (parsedActions as Array<Action | Action[]>).slice(0, MAX_ACTIONS).flat();
   return {
     understanding: str(p.understanding)?.slice(0, 200) ?? "",
     reply: (reply ?? "").slice(0, REPLY_MAX),
-    actions: (actions as Action[]).slice(0, MAX_ACTIONS),
+    actions,
     confidence: p.confidence === "high" || p.confidence === "medium" ? p.confidence : "low",
   };
 }
@@ -346,22 +375,41 @@ const RECORDING = new Set<Action["type"]>(["mark_bought", "complete_task", "crea
  *  - a record on a hunch (low confidence) becomes the question in `reply`, if any;
  *  - cancel/edit need a draft.
  */
+/** "朝の全部やった": the open tasks of that time of day; the partner's only when by=partner. */
+function expandCompleteAll(action: Extract<Action, { type: "complete_all" }>, snapshot: Snapshot): Action[] {
+  const inPhase = (phase: string | null | undefined) =>
+    action.phase === "today" || phase === action.phase || (action.phase === "evening" && phase === "night");
+  return snapshot.tasks
+    .filter((t) => t.status === "todo" && inPhase(t.phase) && (action.by === "partner" || t.who !== "partner"))
+    .slice(0, MAX_BULK_TASKS)
+    .map((t) => ({ type: "complete_task" as const, ref: t.ref, by: action.by, bulk: true as const }));
+}
+
 export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
   const taskRefs = new Set(snapshot.tasks.map((t) => t.ref));
   const shopRefs = new Set(snapshot.shopping.map((s) => s.ref));
   const actions: Action[] = [];
-  for (const action of plan.actions) {
+  const requested = plan.actions.flatMap((a) => a.type === "complete_all" ? expandCompleteAll(a, snapshot) : [a]);
+  for (const action of requested) {
     if (action.type === "mark_bought") {
       const refs = [...new Set(action.refs.filter((r) => shopRefs.has(r)))];
       if (refs.length) actions.push({ ...action, refs });
       continue;
     }
     if (action.type === "complete_task") {
-      if (taskRefs.has(action.ref)) actions.push(action);
+      if (!taskRefs.has(action.ref)) continue;
+      // In a bulk report, a task that is already done is not reported again.
+      if (action.bulk && snapshot.tasks.find((t) => t.ref === action.ref)?.status === "done") continue;
+      if (actions.some((a) => a.type === "complete_task" && a.ref === action.ref)) continue;
+      actions.push(action);
       continue;
     }
     if ((action.type === "cancel_draft" || action.type === "edit_draft") && !snapshot.pendingDraft) continue;
     actions.push(action);
+  }
+  // "全部やった" when everything is already done: just the reply (if it claims nothing).
+  if (actions.length === 0 && plan.actions.every((a) => a.type === "complete_all" || (a.type === "complete_task" && a.bulk))) {
+    return plan.reply && !claimsMutationWasPerformed(plan.reply) ? { ...plan, actions: [] } : null;
   }
   // Something was asked for but nothing valid is left: do not pretend.
   if (plan.actions.length > 0 && actions.length === 0) return null;
@@ -495,7 +543,17 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
       .filter((a): a is Extract<Action, { type: "complete_task" }> => a.type === "complete_task" && a.by === "partner" && isCodmonInput(a.ref))
       .map((a) => snapshot.tasks.find((t) => t.ref === a.ref)!.code!)
     : [];
-  const actions = submit
+  // Owner 2026-10-02: in a bulk report ("朝の全部やった") the Codmon submit is not closed
+  // while the partner's own inputs are still open -- it cannot have been sent yet, or the
+  // sender does not know. It is asked about instead, with a one-tap "送信した".
+  const coveredByPlan = new Set(plan.actions.filter((a) => a.type === "complete_task").map((a) => (a as { ref: string }).ref));
+  const partnerOpenInputs = snapshot.tasks.filter((t) =>
+    t.status === "todo" && t.who === "partner" && /^codmon_.+_input$/.test(t.code ?? "") && !coveredByPlan.has(t.ref)
+  );
+  const holdSubmit = Boolean(submit && (submit as { bulk?: true }).bulk && partnerOpenInputs.length > 0);
+  const actions = holdSubmit
+    ? plan.actions.filter((a) => a !== submit)
+    : submit
     ? plan.actions.filter((a) => !(a.type === "complete_task" && isCodmonInput(a.ref)))
     : plan.actions;
 
@@ -532,7 +590,29 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
     }
   }
 
-  const combined = [plan.reply, ...parts.map((p) => p.text)].filter((t) => t && t.trim()).join("\n\n");
+  // After a bulk report, an open Codmon submit is never left silent: ask, one tap closes it.
+  const openSubmit = snapshot.tasks.find((t) => t.code === "codmon_submit" && t.status === "todo");
+  const submitDone = !holdSubmit && submit !== undefined;
+  if (openSubmit && !submitDone && actions.some((a) => a.type === "complete_task" && a.bulk)) {
+    const waiting = partnerOpenInputs.map((t) => `「${t.title}」`).join("");
+    const question = `コドモンは送信まで済んだ？${waiting ? `（${snapshot.partner}の${waiting}がまだ未完了です）` : ""}`;
+    parts.push({
+      // The model may already have asked in its own words; then only the button is added.
+      text: plan.reply.includes("コドモン") ? "" : question,
+      quick: [{ type: "postback", label: "送信した", data: `action=complete_task&task_id=${openSubmit.id}`, displayText: "コドモン送信した" }],
+    });
+  }
+
+  // Completion lines ("✓ …") one under another, not a paragraph each.
+  let combined = plan.reply.trim();
+  let lastWasCheck = false;
+  for (const part of parts) {
+    const text = part.text.trim();
+    if (!text) continue;
+    const isCheck = text.startsWith("✓") && !text.includes("\n");
+    combined = combined ? `${combined}${isCheck && lastWasCheck ? "\n" : "\n\n"}${text}` : text;
+    lastWasCheck = isCheck;
+  }
   const quick = [...parts].reverse().find((p) => p.quick?.length)?.quick;
 
   if (schedule) {
@@ -642,6 +722,7 @@ function evalSnapshot(input: Record<string, unknown>): Snapshot {
         due: typeof r.due === "string" ? r.due : null,
         status: r.status === "done" ? "done" : "todo",
         code: typeof r.code === "string" ? r.code : null,
+        phase: typeof r.phase === "string" ? r.phase : null,
       };
     }),
     shopping: shopping.map((x, i) => {

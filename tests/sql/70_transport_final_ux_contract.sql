@@ -22,6 +22,11 @@ declare
   days_a jsonb; days_b jsonb; days_b_update jsonb; r_a jsonb; r_b jsonb; r_b_update jsonb; r_override jsonb;
   template_a uuid; template_b uuid; protected_task uuid; override_task uuid;
   before_day jsonb; after_day jsonb; failed boolean;
+  -- The dates below were written for September 2026. A template may only be (re)saved
+  -- from today on (TRANSPORT_TEMPLATE_PAST_UPDATE), so once 2026-10-01 passed the test
+  -- failed (CI 2026-10-02). Every date is moved forward by whole weeks (weekdays kept)
+  -- so the "future" ones stay at least a week ahead of today.
+  sh integer := 7 * ceil(greatest(0, (now() at time zone 'Asia/Tokyo')::date - date '2026-09-24') / 7.0)::integer;
 begin
   insert into auth.users(id) values(u1),(u2),(u3);
   insert into public.profiles(user_id,display_name) values
@@ -79,7 +84,7 @@ begin
     ) order by d) from generate_series(1,7) d
   );
   r_a := public.server_tx_save_transport_template(
-    u1,op_template_a,'2026-09-01',days_a
+    u1,op_template_a,(date '2026-09-01' + sh),days_a
   );
   template_a := (r_a->>'template_id')::uuid;
   if (r_a->>'valid_to') is not null then raise exception 'FAIL first template must be open-ended'; end if;
@@ -92,7 +97,7 @@ begin
   select ti.id into protected_task
   from public.task_instances ti
   join public.task_definitions td on td.household_id=ti.household_id and td.id=ti.task_definition_id
-  where ti.household_id=h1 and td.code='dropoff' and ti.scheduled_date='2026-10-05';
+  where ti.household_id=h1 and td.code='dropoff' and ti.scheduled_date=(date '2026-10-05' + sh);
   if protected_task is null then raise exception 'FAIL template did not materialize protected fixture occurrence'; end if;
   update public.task_instances
     set planned_assignee_id=u2,
@@ -112,11 +117,11 @@ begin
     ) order by d) from generate_series(1,7) d
   );
   r_b := public.server_tx_save_transport_template(
-    u1,op_template_b,'2026-10-01',days_b
+    u1,op_template_b,(date '2026-10-01' + sh),days_b
   );
   template_b := (r_b->>'template_id')::uuid;
 
-  if (select valid_to from public.transport_weekly_templates where id=template_a) <> date '2026-09-30' then
+  if (select valid_to from public.transport_weekly_templates where id=template_a) <> (date '2026-09-30' + sh) then
     raise exception 'FAIL next template did not auto-close previous on prior day';
   end if;
   if (select valid_to from public.transport_weekly_templates where id=template_b) is not null then
@@ -152,7 +157,7 @@ begin
     ) order by d) from generate_series(1,7) d
   );
   r_b_update := public.server_tx_save_transport_template_v2(
-    u1,op_template_b_update,'2026-10-01',days_b_update
+    u1,op_template_b_update,(date '2026-10-01' + sh),days_b_update
   );
 
   if (r_b_update->>'template_id')::uuid <> template_b then
@@ -200,14 +205,14 @@ begin
   where d.template_id=template_b and d.weekday=2;
 
   r_override := public.server_tx_set_transport_occurrence_override(
-    u1,op_override,'2026-10-06',
+    u1,op_override,(date '2026-10-06' + sh),
     true,u1,false,null,'この日だけ送り交代'
   );
   if (r_override->>'override_id') is null then raise exception 'FAIL override id'; end if;
   select ti.id into override_task
   from public.task_instances ti
   join public.task_definitions td on td.household_id=ti.household_id and td.id=ti.task_definition_id
-  where ti.household_id=h1 and td.code='dropoff' and ti.scheduled_date='2026-10-06';
+  where ti.household_id=h1 and td.code='dropoff' and ti.scheduled_date=(date '2026-10-06' + sh);
   if not exists(
     select 1 from public.task_instances
     where id=override_task and planned_assignee_id=u1 and assignment_source='occurrence_override'
@@ -226,9 +231,9 @@ begin
   ) then raise exception 'FAIL override masquerades as protected one-off agreement'; end if;
 
   perform public.server_tx_delete_transport_occurrence_override(
-    u1,op_delete_override,'2026-10-06'
+    u1,op_delete_override,(date '2026-10-06' + sh)
   );
-  if exists(select 1 from public.transport_occurrence_overrides where household_id=h1 and occurrence_date='2026-10-06') then
+  if exists(select 1 from public.transport_occurrence_overrides where household_id=h1 and occurrence_date=(date '2026-10-06' + sh)) then
     raise exception 'FAIL override row not deleted';
   end if;
   if not exists(
@@ -239,7 +244,7 @@ begin
 
   -- Same operation replay must not manufacture another template.
   if public.server_tx_save_transport_template(
-      u1,op_template_b,'2026-10-01',days_b
+      u1,op_template_b,(date '2026-10-01' + sh),days_b
     ) is distinct from r_b then
     raise exception 'FAIL template idempotent replay';
   end if;
@@ -250,7 +255,7 @@ begin
   failed:=false;
   begin
     perform public.server_tx_save_transport_template(
-      u1,op_cross_household,'2026-11-01',
+      u1,op_cross_household,(date '2026-11-01' + sh),
       jsonb_set(days_b,'{0,dropoff_user_id}',to_jsonb(u3::text))
     );
   exception when others then failed:=position('CROSS_HOUSEHOLD_RESOURCE' in sqlerrm)>0; end;

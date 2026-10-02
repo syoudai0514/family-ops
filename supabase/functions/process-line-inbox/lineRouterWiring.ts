@@ -138,7 +138,7 @@ export async function loadSnapshot(
     safe<Array<Record<string, unknown>>>([], async () => {
       const { data } = await client
         .from("task_instances")
-        .select("id,title,status,planned_assignee_id,assignment_mode,due_at,task_definition_id")
+        .select("id,title,status,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase")
         .eq("household_id", householdId)
         .eq("scheduled_date", today)
         .is("test_context_id", null)
@@ -222,6 +222,7 @@ export async function loadSnapshot(
     due: jstTime(row.due_at),
     status: row.status === "completed" ? "done" : "todo",
     code: typeof row.task_definition_id === "string" ? codes.get(row.task_definition_id) ?? null : null,
+    phase: typeof row.routine_phase === "string" ? row.routine_phase : null,
   }));
   const shopping: SnapshotShopping[] = shopRows.map((row, index) => ({
     ref: `s${index + 1}`,

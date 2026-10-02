@@ -212,6 +212,46 @@ async function taskCode(ctx: CompletionContext, taskId: string): Promise<string 
 }
 
 /**
+ * The Codmon inputs still open on the submit's day that the OTHER adult is assigned to.
+ * Live 2026-10-02 11:22: "コドモンも終わっているよ" closed ママ's open input as the
+ * sender's own work. Once Codmon is sent, the assigned adult did their input.
+ * Best effort: a failed read just means nothing is credited to the partner.
+ */
+async function partnerAssignedOpenInputCodes(ctx: CompletionContext, submitTaskId: string): Promise<string[]> {
+  try {
+    const { data: submit } = await ctx.client.from("task_instances").select("scheduled_date").eq("id", submitTaskId).maybeSingle();
+    const date = (submit as { scheduled_date?: string } | null)?.scheduled_date ?? ctx.today;
+    const { data: defs } = await ctx.client
+      .from("task_definitions")
+      .select("id,code")
+      .eq("household_id", ctx.householdId)
+      .in("code", ALL_CODMON_INPUTS);
+    const codeById = new Map(
+      ((defs ?? []) as Array<{ id: string; code: string }>)
+        .filter((d) => ALL_CODMON_INPUTS.includes(d.code))
+        .map((d) => [d.id, d.code]),
+    );
+    if (!codeById.size) return [];
+    const { data: rows } = await ctx.client
+      .from("task_instances")
+      .select("task_definition_id,planned_assignee_id,status,scheduled_date")
+      .eq("household_id", ctx.householdId)
+      .eq("scheduled_date", date)
+      .in("task_definition_id", [...codeById.keys()])
+      .in("status", ["todo", "in_progress"])
+      .is("test_context_id", null);
+    return [...new Set(
+      ((rows ?? []) as Array<{ task_definition_id: string; planned_assignee_id: string | null; status: string }>)
+        .filter((r) => codeById.has(r.task_definition_id) && (r.status === "todo" || r.status === "in_progress"))
+        .filter((r) => r.planned_assignee_id && r.planned_assignee_id !== ctx.actorId)
+        .map((r) => codeById.get(r.task_definition_id)!),
+    )];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Completes one task for the sender and answers in plain words. Shared by the
  * one-line report path and by the `complete_task` postback so both give the
  * same feedback -- the postback used to swallow failures silently.
@@ -237,13 +277,16 @@ export async function completeTaskAndReply(
 ): Promise<void> {
   const code = options.code !== undefined ? options.code : await taskCode(ctx, taskId);
   const codmon = code === "codmon_submit";
+  const partnerInputCodes = codmon
+    ? [...new Set([...(options.partnerInputCodes ?? []), ...await partnerAssignedOpenInputCodes(ctx, taskId)])]
+    : [];
   const { data, error } = codmon
     ? await ctx.client.rpc("server_tx_acknowledge_codmon_submission_v1", {
       p_actor_id: ctx.actorId,
       p_operation_id: options.operationId,
       p_submit_task_id: taskId,
       p_source: "line",
-      p_partner_input_codes: options.partnerInputCodes?.length ? options.partnerInputCodes : null,
+      p_partner_input_codes: partnerInputCodes.length ? partnerInputCodes : null,
     })
     : await ctx.client.rpc("server_tx_complete_task", {
       p_actor_id: ctx.actorId,
@@ -287,7 +330,7 @@ export async function completeTaskAndReply(
   const byPartner = Number(result?.inputs_closed_by_partner ?? 0);
   const lines = ["✓ コドモン送信を完了にしました。"];
   if (closed > 0) {
-    const partnerLabels = (options.partnerInputCodes ?? []).map((code) => CODMON_INPUT_LABELS[code]).filter(Boolean);
+    const partnerLabels = partnerInputCodes.map((code) => CODMON_INPUT_LABELS[code]).filter(Boolean);
     if (byPartner > 0) {
       const who = partnerLabels.length > 0 ? `${partnerLabels.join("・")}は` : `うち${byPartner}件は`;
       const rest = closed - byPartner > 0 ? "相手、残りはあなたの実施として記録しています。" : "相手の実施として記録しています。";
