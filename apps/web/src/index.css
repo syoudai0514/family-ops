@@ -13,11 +13,18 @@
   box-sizing: border-box;
 }
 
+/* overflow-x: clip, not hidden. hidden turns every one of these into a scroll
+   container (overflow-y computes to auto): the sticky header then sticks to a box
+   that never scrolls, and iPhone Safari composites the whole tall page as one
+   scrolling layer, which it fails to paint -- the Today list "cut off" with a blank
+   page below (2026-09-30, again 2026-10-02). hidden stays as the fallback for
+   browsers without clip (Safari < 16). */
 html,
 body,
 #root {
   max-width: 100%;
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 body {
