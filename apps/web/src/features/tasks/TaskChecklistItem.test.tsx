@@ -148,9 +148,13 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
   it('keeps the individual boxes open once someone has started ticking them', () => {
     const partly = laundrySubtasks.map((item, index) => (index === 0 ? { ...item, is_completed: true } : item));
-    render(<TaskChecklistItem {...props} task={makeSubtaskTask()} subtasks={partly} />);
+    render(<TaskChecklistItem {...props} hasPartner task={makeSubtaskTask()} subtasks={partly} />);
     expect(screen.getByRole('checkbox', { name: '干す/乾燥' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '洗濯を全部やったことにする' })).toBeInTheDocument();
+    // "全部やった" and "相手がやった" sit side by side in one compact row under the title.
+    const row = screen.getByRole('button', { name: '洗濯を全部やったことにする' }).closest('.task-actions');
+    expect(row).not.toBeNull();
+    expect(row!.contains(screen.getByRole('button', { name: '相手がやった' }))).toBe(true);
   });
 
   it('shows fine-grained recurring subtasks on request and records an individual checkbox', async () => {
@@ -215,7 +219,8 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
     expect(screen.getByText('誰でもOK')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: '自分がやる' })).toBeInTheDocument();
+    // Optional and rarely used: in the ••• menu, not in the card's action row (owner 2026-10-04).
+    expect(screen.getByRole('button', { name: '自分がやる' }).closest('details.task-overflow')).not.toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬を完了にする' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {

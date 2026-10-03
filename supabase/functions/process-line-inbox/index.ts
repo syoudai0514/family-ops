@@ -117,8 +117,8 @@ import {
   type CompletionContext,
 } from "./lineCompletionReport.ts";
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
-import { type DraftSpec, draftToPending, evaluateUnderstanding, makeGeminiProvider, runPlan, understandLineText } from "./lineUnderstand.ts";
-import { loadSnapshot, logLineTurn, reserveAiCall, understandEnabled } from "./lineRouterWiring.ts";
+import { type DraftSpec, draftToPending, evaluateUnderstanding, makeGeminiProvider, resolveUnderstandModel, runPlan, understandLineText } from "./lineUnderstand.ts";
+import { loadSnapshot, logLineTurn, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
 import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
 import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import {
@@ -2019,8 +2019,11 @@ async function handleText(
   // operation the model hands back).
   let routedCreate = false;
   if (snapshot) {
-    const understood = await understandLineText(snapshot, text, makeGeminiProvider(() => reserveAiCall(client)));
+    // A dated bulk report ("昨日のは全部やった") is handled before the model is asked, so
+    // it does not spend one of the per-minute AI calls on an answer that is never used.
     if (await tryHandleDayCompletion(completionContext(client, item, actor), text)) return;
+    const modelSetting = await understandModelSetting(client);
+    const understood = await understandLineText(snapshot, text, makeGeminiProvider(() => reserveAiCall(client), modelSetting));
     if (understood.plan) {
       const plan = understood.plan;
       console.info("process-line-inbox: understood", {
@@ -2312,7 +2315,13 @@ Deno.serve(
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     if (body.mode === "understand_eval") {
       const evalClient = createServiceRoleClient();
-      return jsonResponse(await evaluateUnderstanding(body.cases, makeGeminiProvider(() => reserveAiCall(evalClient))));
+      // `model` compares a candidate before it is switched on; default = the live setting.
+      const setting = typeof body.model === "string" ? body.model : await understandModelSetting(evalClient);
+      return jsonResponse(await evaluateUnderstanding(
+        body.cases,
+        makeGeminiProvider(() => reserveAiCall(evalClient), setting),
+        resolveUnderstandModel(setting),
+      ));
     }
     const client = createServiceRoleClient();
     const { data: batchData, error: claimError } = await client.rpc("server_tx_claim_webhook_inbox_batch", {
