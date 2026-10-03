@@ -1,6 +1,6 @@
 // verify_jwt=true (see supabase/config.toml + EDGE_FUNCTION_AUTH_MATRIX.md).
 // docs/design/v6/18_MUTATION_CONTRACT_MATRIX.md #1 "edit-task". Restricted
-// server-side to origin='manual' tasks and status in (todo, in_progress).
+// Schedule sharing also uses this authenticated adapter and its scoped RPC.
 import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { withUserMutationHandler, jsonResponse } from "../_shared/handler.ts";
 import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.ts";
@@ -17,6 +17,21 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   }
 
   const serviceClient = createServiceRoleClient();
+  if (body["sharing_action"] !== undefined) {
+    const action = body["sharing_action"];
+    if (typeof action !== "string" || !["register_attachment", "delete_attachment", "add_comment"].includes(action)) {
+      throw new FamilyOpsError("INVALID_INPUT", "Invalid schedule sharing action", 400);
+    }
+    const result = await callServerTx<{ object_path?: string }>(serviceClient, "server_tx_mutate_schedule_sharing", {
+      p_actor_id: actorId, p_operation_id: operationId, p_task_id: taskId,
+      p_action: action, p_payload: body,
+    });
+    if (action === "delete_attachment" && result.object_path) {
+      const { error } = await serviceClient.storage.from("schedule-attachments").remove([result.object_path]);
+      if (error) throw new FamilyOpsError("INTERNAL_ERROR", "添付の削除を再試行してください。", 500);
+    }
+    return jsonResponse(result);
+  }
   if (body["scheduler_details"] !== undefined) {
     const result = await callServerTx<{ task_id: string }>(serviceClient, "server_tx_save_scheduled_task", {
       p_actor_id: actorId, p_operation_id: operationId, p_task_id: taskId,

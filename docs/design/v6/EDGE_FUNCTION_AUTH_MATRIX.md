@@ -14,7 +14,6 @@
 - join-household
 - create-task
 - edit-task
-- mutate-schedule-sharing
 - cancel-task
 - complete-task
 - set-subtask-completion

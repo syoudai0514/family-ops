@@ -277,10 +277,10 @@ function ScheduleFilesAndComments({ task }: { task: PlanningTask }) {
     try {
       await runCommand(
         `schedule:${task.id}:delete:${file.id}`,
-        EDGE_FUNCTIONS.mutateScheduleSharing,
+        EDGE_FUNCTIONS.editTask,
         (operationId) => ({
           operation_id: operationId,
-          action: 'delete_attachment',
+          sharing_action: 'delete_attachment',
           task_id: task.id,
           attachment_id: file.id,
         }),
@@ -300,10 +300,10 @@ function ScheduleFilesAndComments({ task }: { task: PlanningTask }) {
     try {
       await runCommand(
         `schedule:${task.id}:comment`,
-        EDGE_FUNCTIONS.mutateScheduleSharing,
+        EDGE_FUNCTIONS.editTask,
         (operationId) => ({
           operation_id: operationId,
-          action: 'add_comment',
+          sharing_action: 'add_comment',
           task_id: task.id,
           body: body.trim(),
         }),

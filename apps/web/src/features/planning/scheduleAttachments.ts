@@ -22,9 +22,9 @@ export async function uploadScheduleAttachment(householdId: string, taskId: stri
     if (error && !/already exists|duplicate/i.test(error.message)) throw error;
     upload.uploaded = true;
   }
-  await callEdgeFunction(EDGE_FUNCTIONS.mutateScheduleSharing, {
+  await callEdgeFunction(EDGE_FUNCTIONS.editTask, {
     operation_id: upload.operationId,
-    action: 'register_attachment',
+    sharing_action: 'register_attachment',
     task_id: taskId,
     file_name: file.name,
     object_path: upload.path,

@@ -262,9 +262,9 @@ OBJECT_PATH="$HH_A/$SCHEDULE_ID/$OP_ATTACHMENT"
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/storage/v1/object/schedule-attachments/$OBJECT_PATH" \
   -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: text/plain" --data-binary 'Nursery notice')
 [ "$code" = "200" ] || fail "same-household attachment upload failed: $code"
-code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/mutate-schedule-sharing" \
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/edit-task" \
   -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: application/json" \
-  -d "{\"operation_id\":\"$OP_ATTACHMENT\",\"action\":\"register_attachment\",\"task_id\":\"$SCHEDULE_ID\",\"file_name\":\"notice.txt\",\"object_path\":\"$OBJECT_PATH\",\"mime_type\":\"text/plain\",\"size_bytes\":14}")
+  -d "{\"operation_id\":\"$OP_ATTACHMENT\",\"sharing_action\":\"register_attachment\",\"task_id\":\"$SCHEDULE_ID\",\"file_name\":\"notice.txt\",\"object_path\":\"$OBJECT_PATH\",\"mime_type\":\"text/plain\",\"size_bytes\":14}")
 [ "$code" = "200" ] || fail "attachment metadata write failed: $code"
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/storage/v1/object/schedule-attachments/$HH_A/$SCHEDULE_ID/other.txt" \
   -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" -H "Content-Type: text/plain" --data-binary 'Blocked')
@@ -280,13 +280,29 @@ CONTENT=$(curl -fsS "$API_URL/storage/v1$SIGNED_PATH")
 code=$(curl -sS -o /dev/null -w '%{http_code}' "$API_URL/storage/v1/object/public/schedule-attachments/$OBJECT_PATH")
 [ "$code" != "200" ] || fail "private attachment was accessible as a public file"
 OP_COMMENT=$(python3 -c 'import uuid; print(uuid.uuid4())')
-code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/mutate-schedule-sharing" \
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/edit-task" \
   -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: application/json" \
-  -d "{\"operation_id\":\"$OP_COMMENT\",\"action\":\"add_comment\",\"task_id\":\"$SCHEDULE_ID\",\"body\":\"Bring the bottle\"}")
+  -d "{\"operation_id\":\"$OP_COMMENT\",\"sharing_action\":\"add_comment\",\"task_id\":\"$SCHEDULE_ID\",\"body\":\"Bring the bottle\"}")
 [ "$code" = "200" ] || fail "schedule comment write failed: $code"
 CROSS_COMMENTS=$(curl -fsS "$API_URL/rest/v1/schedule_comments?task_id=eq.$SCHEDULE_ID" \
   -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')
 [ "$CROSS_COMMENTS" = "0" ] || fail "different household read schedule comments"
+OP_FOREIGN_COMMENT=$(python3 -c 'import uuid; print(uuid.uuid4())')
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/edit-task" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" -H "Content-Type: application/json" \
+  -d "{\"operation_id\":\"$OP_FOREIGN_COMMENT\",\"sharing_action\":\"add_comment\",\"task_id\":\"$SCHEDULE_ID\",\"body\":\"Blocked\"}")
+[ "$code" = "403" ] || fail "different household comment mutation was not rejected: $code"
+ATTACHMENT_ID=$(curl -fsS "$API_URL/rest/v1/schedule_attachments?task_id=eq.$SCHEDULE_ID&select=id" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')
+OP_DELETE=$(python3 -c 'import uuid; print(uuid.uuid4())')
+for attempt in 1 2; do
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/edit-task" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: application/json" \
+    -d "{\"operation_id\":\"$OP_DELETE\",\"sharing_action\":\"delete_attachment\",\"task_id\":\"$SCHEDULE_ID\",\"attachment_id\":\"$ATTACHMENT_ID\"}")
+  [ "$code" = "200" ] || fail "attachment removal/replay failed: $code"
+done
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$API_URL/storage/v1$SIGNED_PATH")
+[ "$code" != "200" ] || fail "removed attachment bytes remained accessible"
 info "OK: schedule details, private attachment bytes, and comments round-trip and stay household-isolated"
 
 echo "== all supabase-integration tests passed =="
