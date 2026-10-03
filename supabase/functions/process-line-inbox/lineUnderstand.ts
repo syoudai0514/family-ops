@@ -19,6 +19,7 @@
 // Only the fixed button words (今日, 入力, 共有, ...) skip the model. If the model is
 // unavailable or returns something unusable, the caller falls back to the old handlers.
 import { callGemini } from "../_shared/gemini.ts";
+import { inferredNight } from './scheduleLanguage.ts';
 import { claimsMutationWasPerformed } from "./lineAssistantConversation.ts";
 import { daypartToLocalTime } from "./lineIntent.ts";
 import type { ShoppingWho } from "./lineShoppingList.ts";
@@ -68,6 +69,7 @@ export interface SnapshotTransport {
 }
 
 export interface Snapshot {
+  taskDate?: string;
   now: { date: string; time: string; weekday: string };
   me: string;
   partner: string;
@@ -169,7 +171,8 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
       送り: d.dropoff ? `${WHO_LABEL(snapshot, d.dropoff.who)}${d.dropoff.time ? ` ${d.dropoff.time}` : ""}` : "なし",
       お迎え: d.pickup ? `${WHO_LABEL(snapshot, d.pickup.who)}${d.pickup.time ? ` ${d.pickup.time}` : ""}` : "なし",
     })),
-    今日のタスク:snapshot.tasks.slice(0, 50).map((t) => ({
+    タスクの対象日: snapshot.taskDate ?? snapshot.now.date,
+    対象日のタスク:snapshot.tasks.slice(0, 50).map((t) => ({
       ref: t.ref,
       タスク: t.title,
       担当: WHO_LABEL(snapshot, t.who),
@@ -215,7 +218,8 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     "## draft（create と edit_draft に必ず付ける。登録される中身そのもの）",
     '{"kind":"task|event|request|shopping","title":"…","date":"YYYY-MM-DD","time":"HH:MM"|null,"daypart":"morning|noon|evening|night"|null,"who":"me|partner"|null,"message":"…"|null}',
     "- title: 何をするかが一目で分かる短い一文。言われた具体的な情報（子どもの名前・数・持ち物・場所）は落とさない（例:「将生の保育園に下着を2枚持っていく」）。「〜しないと」「入れといて」などの言い回しは入れない。買い物は品物名だけ（例:「牛乳」）。",
-    "- date: 日付。「明日」なら『いま』の翌日。言われていなければ今日。",
+    "- date: 日付。「明日」なら『いま』の翌日。言われていなければ今日。同じ予定を複数日に登録するときは日付ごとにcreateを並べる。送迎の変更不要という条件は守る。",
+    "- 飲み会・ディナーなどは夜と推定してdaypart=nightにできる。具体時刻が書かれていなければtime=null。開始・終了時刻を作らない。",
     "- time: 言われた時刻だけ（「7時」→ 07:00）。言われていなければ null。時刻を作らない。",
     "- daypart: 「朝」「昼」「夕方」「夜」と言われたら morning / noon / evening / night。「朝担当の人」のように朝のことだと分かるときも morning。",
     "- who: それをする人。me = 話している人、partner = 相手。「朝担当の人」「送りの人」「お迎えの人」は『送迎』のその日の担当で決める。保育園に持っていく物のように送りのときに要ることは、言われていなくてもその日の送り担当。それ以外で言われていなければ null（話している人）。「入れといて」「登録して」「メモして」はおうちノートへの登録の頼みで、相手へのお願いではない（それだけで partner にしない）。",
@@ -663,8 +667,11 @@ export function draftToPending(
   payload.scheduled_date = spec.date ?? (typeof base.scheduled_date === "string" ? base.scheduled_date : ctx.today);
   // A daypart becomes the usual time for it (朝 = 08:00), as the 朝/夜 buttons do: the
   // task itself only stores a time.
-  payload.due_local_time = spec.time ?? daypartToLocalTime(spec.daypart);
-  payload.daypart = spec.daypart;
+  const daypart = spec.daypart ?? (inferredNight(spec.title) ? 'night' : null);
+  const inferred = !spec.time && daypart === 'night' && inferredNight(spec.title);
+  payload.due_local_time = spec.time ?? (inferred ? null : daypartToLocalTime(daypart));
+  payload.daypart = daypart;
+  if (inferred) payload.context = '夜（内容から推定・時刻未定）';
   const partnerLabel = ctx.partnerLabel === "パパ" || ctx.partnerLabel === "ママ" ? ctx.partnerLabel : null;
   const whoId = spec.who === "partner" ? ctx.partnerId : spec.who === "me" ? ctx.actorId : null;
 
@@ -682,9 +689,9 @@ export function draftToPending(
   }
   if (spec.who === "partner" && !ctx.partnerId) return null;
   payload.category = typeof base.category === "string" ? base.category : "todo";
-  payload.routine_phase = typeof base.routine_phase === "string" ? base.routine_phase : "anytime";
+  payload.routine_phase = typeof base.routine_phase === "string" ? base.routine_phase : daypart === 'night' ? 'evening' : daypart === 'noon' ? 'anytime' : daypart ?? 'anytime';
   payload.subtasks = Array.isArray(base.subtasks) ? base.subtasks : [];
-  payload.context = typeof base.context === "string" ? base.context : null;
+  payload.context = typeof payload.context === "string" ? payload.context : null;
   payload.planned_assignee_user_id = whoId ?? ctx.actorId;
   payload.target_label = spec.who === "partner" && partnerLabel ? partnerLabel : "自分";
   if (spec.kind === "event") {

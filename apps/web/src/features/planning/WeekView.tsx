@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useMemo, useState, type FormEvent } from 'react';
 import { useHousehold } from '../../app/HouseholdContext';
 import { formatTimeJa } from '../../lib/date';
-import { addDays, formatShortDate, localIsoDate, mondayOf } from './dateHelpers';
+import { addDays, formatShortDate, localIsoDate, tokyoIsoDate } from './dateHelpers';
 import { usePlanningData } from './usePlanningData';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
@@ -16,7 +16,7 @@ import { mamaUserId, papaUserId } from '../../lib/familyRoles';
 
 export function WeekView() {
   const { household, members, me, partner } = useHousehold();
-  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
+  const [weekStart, setWeekStart] = useState(() => new Date(`${tokyoIsoDate(new Date())}T12:00:00`));
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
     [weekStart],
@@ -45,12 +45,13 @@ export function WeekView() {
       <div className="today-header">
         <div>
           <p className="eyebrow">家族の見通し</p>
-          <h1>今週</h1>
+          <h1>これから7日間</h1>
         </div>
         <Link className="button-link" to="/requests">
           お願いする
         </Link>
       </div>
+      <button type="button" className="text-button" onClick={() => setWeekStart(new Date(`${tokyoIsoDate(new Date())}T12:00:00`))}>今日から表示</button>
       <div className="period-control">
         <button onClick={() => setWeekStart(addDays(weekStart, -7))}>前週</button>
         <strong>
@@ -111,7 +112,7 @@ export function WeekView() {
                           className={item.source === 'google' ? 'calendar-event' : 'task-event'}
                         >
                           <button type="button" className="calendar-detail-trigger" onClick={() => setDetail(item)}>
-                            <span>{item.startsAt ? formatTimeJa(item.startsAt) : '終日'}</span>
+                            <span>{item.startsAt ? formatTimeJa(item.startsAt) : task?.routine_phase === 'evening' ? '夜（時刻未定）' : '終日'}</span>
                             <strong>{item.fullTitle}</strong>
                           </button>
                           {(hasConflict || item.hasConflict) && <span className="error-text">⚠ 予定と重複</span>}

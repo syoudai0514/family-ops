@@ -6,6 +6,7 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { getShoppingItemActions } from './shoppingActions';
 import type { PurchaseMethod, ShoppingItem, ShoppingItemStatus } from '../../lib/types';
+import './Shopping.css';
 
 // A shopping list is a "what do we still need" screen. Grouping strictly by
 // lifecycle status meant that on a household where everything had been bought,
@@ -78,9 +79,9 @@ export function Shopping() {
   const doneCount = doneGroups.reduce((total, entry) => total + entry.items.length, 0);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell shopping-page">
       <div className="today-header">
-        <h1>買い物</h1>
+        <div><p className="eyebrow">家族の買い物リスト</p><h1>買い物</h1><p className="shopping-count">あと {openGroups.reduce((sum, group) => sum + group.items.length, 0)} 件</p></div>
         <button type="button" onClick={() => setShowForm((v) => !v)}>
           {showForm ? '閉じる' : '+ 追加'}
         </button>
@@ -106,7 +107,7 @@ export function Shopping() {
         </section>
       ) : (
         openGroups.map(({ status, items: statusItems }) => (
-          <section className="card" key={status}>
+          <section className="shopping-group" key={status}>
             <h2>
               {STATUS_LABELS[status]} ({statusItems.length})
             </h2>
@@ -200,9 +201,9 @@ function ShoppingItemRow({
     <li className="shopping-item">
       <div>
         <strong>{item.title}</strong>
-        <span className="task-item-meta">
+        <span className="task-item-meta shopping-item-detail">
           {' '}
-          {item.purchase_method === 'undecided' ? '' : ` — ${PURCHASE_METHOD_LABELS[item.purchase_method]}`}
+          {item.purchase_method === 'undecided' ? '購入方法は未定' : PURCHASE_METHOD_LABELS[item.purchase_method]}
           {assignee ? ` · 担当: ${assignee.profile?.display_name ?? assignee.user_id}` : ''}
           {assignmentMode === 'anyone' ? (item.active_claimant_actor_ref_id ? ' · 誰かが対応中' : ' · 誰でもOK') : ''}
         </span>

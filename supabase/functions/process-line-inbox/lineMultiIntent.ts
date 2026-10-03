@@ -1,4 +1,5 @@
 import { callGemini } from "../_shared/gemini.ts";
+import { inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
 import {
   deterministicLineIntent,
   normalizeGeminiLineIntent,
@@ -228,6 +229,26 @@ function sourceSpan(raw: string, source: string, cursor = 0): { start: number; e
 }
 
 function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandidate, "candidateId">[] {
+  if (/(?:登録|追加|送信)(?:しないで|せず|しなくていい)|相談だけ|文章だけ/u.test(clause)) return [];
+  if (/送迎.*(?:変更不要|変更しない|そのまま)/u.test(clause) && !/飲み会|病院|通院/u.test(clause)) return [];
+  // A dated appointment is usable even while the language model is unavailable.
+  const appointment = clause.match(/^(?:(パパ|ママ)[、,\s]*)?(\d{1,2}[\/月]\d{1,2}日?)(?:と\d{1,2}[\/月]\d{1,2}日?)*[、,\s]*(?:(\d{1,2})時(?:(\d{1,2})分)?[\s]*)?(.+)$/u);
+  if (appointment && /飲み会|病院|形成外科|皮膚科|歯科|歯医者|診察|通院|ディナー/u.test(appointment[5])) {
+    const content = appointment[5].replace(/(?:なので|だから)?予定(?:を)?(?:入れといて|入れて|登録して).*$/u, '').trim();
+    const role = explicitRole(`${appointment[1] ?? ''}${content}`);
+    const date = leadingScheduleDates(appointment[2], now)[0];
+    const hour = appointment[3] ? Number(appointment[3]) : null;
+    const minute = Number(appointment[4] ?? 0);
+    if (date && (hour === null || (hour < 24 && minute < 60))) return [{
+      operationId: null, kind: 'task', title: title(content), sourceText: clause, sourceSpan: null,
+      confidence: null, ambiguousFields: [], missingFields: [], duplicateMatch: null,
+      intent: { kind: 'task', title: title(content), scheduledDate: date,
+        dueLocalTime: hour === null ? null : `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+        daypart: hour === null && inferredNight(content) ? 'night' : null,
+        targetRole: role, sharedMessage: null, subtasks: [], context: null,
+        calendarVisibility: 'special', source: 'deterministic' },
+    }];
+  }
   const parsed = deterministicLineIntent(clause, now);
   if (parsed) {
     const cleanedTitle = parsed.kind === "shopping" ? parsed.title.replace(/も$/u, "") : parsed.title;
@@ -629,7 +650,8 @@ export function normalizeSemanticDecomposition(
       });
       const validated = normalizeGeminiLineIntent(intentRaw);
       if (!validated) return [];
-      const sourceRole = explicitRole(sourceText);
+      const eventRole = inferredNight(candidateTitle) ? sourceText.match(/(パパ|ママ)(?:の|が)?(?:飲み会|宴会|懇親会|ディナー|夕食会)/u)?.[0] : null;
+      const sourceRole = explicitRole(eventRole ?? sourceText);
       intent = {
         ...validated,
         // A role may only become canonical when the candidate's own source
@@ -669,7 +691,8 @@ async function geminiSemanticProvider(text: string, now: Date): Promise<string |
   const prompt = [
     "家庭内オペレーションの自然文を、意味上独立した候補へAI-firstで分解してください。",
     `今日(Asia/Tokyo)は ${today} です。`,
-    "最優先: 入力にない担当・時刻・日付・理由・作業を作らない。",
+    "最優先: 入力にない担当・具体時刻・日付・理由・作業を作らない。飲み会・ディナーなどは夜と推定してdaypart=nightにできるがdue_local_time=nullのままにする。",
+    "同じ予定を複数の日付に登録する指示は、日付ごとに別候補を返す。例: 10/6と10/8、パパ飲み会なので予定入れといて -> 10/6パパ飲み会、10/8パパ飲み会。送迎の変更不要と言われたら送迎候補は作らない。",
     "ユーザーがAI/おうちノート自身へ質問・相談・評価・文章作成相談をしている部分は、task/request/shopping/share/actual候補にしない。",
     "『送らないで』『送らず』『登録せず』『相談だけ』『文章だけ考えて』などのmeta指示はmutation禁止。入力全体がその相談だけなら candidates=[] を返す。",
     "『妻にどう言えば角立たない？』『迎えお願いできると思う？』はAIへの相談でありrequestではない。一方『妻に迎えお願いして』『迎えお願いできる？』は明確な家族向けactionなら候補化してよい。",
@@ -731,10 +754,28 @@ export async function decomposeLineConversationCandidates(
   const raw = await provider(text, now);
   if (raw) {
     const candidates = normalizeSemanticDecomposition(raw, text);
-    if (candidates.length > 0) return candidates;
+    if (candidates.length > 0) return expandScheduleDates(candidates, text, now);
     if (isValidSemanticNoActionResult(raw, text)) return [];
   }
-  return deterministicLineConversationCandidates(text, now);
+  return expandScheduleDates(deterministicLineConversationCandidates(text, now), text, now);
+}
+
+export function expandScheduleDates(candidates: LineConversationCandidate[], text: string, now: Date): LineConversationCandidate[] {
+  const dates = leadingScheduleDates(text, now);
+  if (dates.length > 8) return candidates.map((candidate) => ({ ...candidate, missingFields: [...candidate.missingFields, '一度に確認できる予定は8件までです。日付を分けて入力してください。'] }));
+  const schedules = candidates.filter((candidate) => candidate.kind === 'task' && candidate.intent?.calendarVisibility === 'special');
+  const titles = new Set(schedules.map((candidate) => candidate.title));
+  const expanded = dates.length > 1 && titles.size === 1 && schedules.length > 0
+    ? [...candidates.filter((candidate) => !schedules.includes(candidate)), ...dates.map((date) => {
+      const existing = schedules.find((candidate) => candidate.intent?.scheduledDate === date) ?? schedules[0];
+      return { ...existing, operationId: null, intent: { ...existing.intent!, scheduledDate: date } };
+    })]
+    : candidates;
+  return expanded.map((candidate, index) => {
+    const intent = candidate.intent;
+    const night = intent && !intent.dueLocalTime && (!intent.daypart || intent.daypart === 'night') && !/朝|昼|夕方|夜/u.test(candidate.sourceText) && inferredNight(candidate.title);
+    return { ...candidate, candidateId: `c${index + 1}`, intent: night ? { ...intent, daypart: 'night', context: intent.context ?? '夜（内容から推定・時刻未定）' } : intent };
+  });
 }
 
 export function assignCandidateOperationIds(

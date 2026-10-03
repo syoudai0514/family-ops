@@ -86,7 +86,7 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
         state: { ...originState, draft: value, candidates, readOnlyIntent: result.read_only_intent, clarification: result.clarification },
       });
     } catch (err) {
-      setError(err instanceof FamilyOpsApiError ? err.message : '整理できませんでした。入力内容は残っています。');
+      setError(err instanceof FamilyOpsApiError && err.status < 500 ? err.message : '内容の確認が一時的に利用できません。入力は残っています。「選んで入力」から追加することもできます。');
     } finally {
       setBusy(false);
     }
@@ -135,7 +135,7 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
         {!actualOnly && <button type="button" className="secondary-button" disabled={!speechAvailable || busy} onClick={startVoice}>🎙 話す</button>}
         <button type="button" disabled={busy} onClick={() => void organize()}>{busy ? '確認内容を作成中…' : actualOnly ? '実績候補を確認' : '内容を確認'}</button>
       </div>
-      {!actualOnly && <details className="card">
+      {!actualOnly && <details className="card" open={Boolean(error) || undefined}>
         <summary><b>選んで入力</b></summary>
         <p className="meta">自由入力が合わない時だけ、今までの入力画面を選べます。</p>
         <div className="quick-add-list">
@@ -156,6 +156,7 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
       <p className="meta">確認するまでは、登録も家族への送信もしません。</p>
       {taskFormOpen && <TaskFormModal
         mode="create"
+        initialTitle={text.trim() || undefined}
         onClose={() => setTaskFormOpen(false)}
         onSaved={() => {
           setTaskFormOpen(false);

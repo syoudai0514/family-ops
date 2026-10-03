@@ -35,6 +35,8 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { buildCheckinLink, buildTodayLinkFooter } from '../_shared/lineMessaging.ts';
 import { buildRoutineQuickReply } from './routineQuickReply.ts';
 import { buildBriefQuickReply } from './briefQuickReply.ts';
+import { loadPreviousDayReminder } from './previousDayReminder.ts';
+import { logLineTurn } from '../process-line-inbox/lineRouterWiring.ts';
 import {
   buildAssignmentRequestFlex,
   buildGeneralRequestFlex,
@@ -169,6 +171,7 @@ function buildBundledText(
   payload: ClaimedNotification['payload'],
   type: string,
   recipientUserId?: string | null,
+  lead?: string | null,
 ): { text: string; sessionIds: string[] } {
   const items = payload?.items ?? [];
   const seenSessionIds = new Set<string>();
@@ -187,7 +190,7 @@ function buildBundledText(
         })
       : [`Family Ops: ${type}`];
   const footer = buildTodayLinkFooter(type, recipientUserId);
-  const body = blocks.filter((b) => b.length > 0).join('\n\n');
+  const body = [lead, ...blocks].filter((b) => b && b.length > 0).join('\n\n');
   // The footer is reserved space: a long brief is cut before the link, never the link itself.
   const room = LINE_TEXT_MAX_CHARS - (footer ? footer.length + 2 : 0);
   const clipped = body.length <= room ? body : body.slice(0, room - 1) + '…';
@@ -432,12 +435,17 @@ async function sendOne(
 
   await enrichRequestOutcomeItems(serviceClient, item.payload);
   const richMessage = buildRichRequestMessage(item.payload);
-  const { text, sessionIds } = buildBundledText(item.payload, item.type, item.recipient_user_id);
+  const morning = item.type === 'daily_brief.v2' && (item.payload?.items ?? []).some((entry) => entry.title === '朝のおうちノート');
+  const previousDay = morning ? await loadPreviousDayReminder(serviceClient, item.household_id, item.recipient_user_id) : null;
+  const bundled = buildBundledText(item.payload, item.type, item.recipient_user_id, previousDay?.text);
+  const sessionIds = bundled.sessionIds;
+  // Keep the reminder near the beginning so long briefs cannot truncate it.
+  const text = bundled.text;
   // The evening brief is titled 夜のおうちノート (fn_dispatch_daily_brief); only it offers 入力.
   const evening = (item.payload?.items ?? []).some((entry) => entry.title === '夜のおうちノート');
   const quickReply = item.type === 'routine'
     ? buildRoutineQuickReply(sessionIds)
-    : buildBriefQuickReply(item.type, { evening });
+    : buildBriefQuickReply(item.type, { evening, previousDay: Boolean(previousDay) });
   const message: Record<string, unknown> = { type: 'text', text };
   if (quickReply && message.type === 'text')
     message.quickReply = { items: quickReply.map((action) => ({ type: 'action', action })) };
@@ -466,6 +474,7 @@ async function sendOne(
   }
 
   if (response.ok) {
+    if (previousDay) await logLineTurn(serviceClient, item.recipient_user_id, 'assistant', previousDay.text);
     const { data, error: completeError } = await serviceClient.rpc(
       'server_tx_complete_notification_outbox_item',
       {

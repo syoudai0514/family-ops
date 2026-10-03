@@ -244,6 +244,7 @@ export async function loadSnapshot(
   });
   return {
     now: jstClock(),
+    taskDate: today,
     me: labels.get(actorId) ?? "家族",
     partner: partner ? labels.get(partner.user_id) ?? "相手" : "相手",
     children,

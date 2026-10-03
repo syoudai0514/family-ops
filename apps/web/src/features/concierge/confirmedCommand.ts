@@ -91,7 +91,7 @@ export function buildConfirmedCommand(
   const previewBase = {
     title: candidate.title,
     dateLabel: scheduledDate,
-    timeLabel: candidate.intent?.dueLocalTime ?? undefined,
+    timeLabel: candidate.intent?.dueLocalTime ?? (candidate.intent?.daypart === 'night' ? '夜（時刻未定）' : undefined),
     impactLabels: [] as string[],
   };
 
@@ -130,6 +130,7 @@ export function buildConfirmedCommand(
         title: taskTitle(candidate),
         scheduled_date: scheduledDate,
         due_local_time: candidate.intent?.dueLocalTime ?? null,
+        routine_phase: candidate.intent?.daypart === 'night' ? 'evening' : candidate.intent?.daypart === 'noon' ? 'anytime' : candidate.intent?.daypart ?? 'anytime',
         planned_assignee_user_id: targetUserId,
         completion_mode: subtasks.length > 0 ? 'subtasks' : 'whole',
         calendar_visibility: candidate.intent?.calendarVisibility ?? 'hidden',

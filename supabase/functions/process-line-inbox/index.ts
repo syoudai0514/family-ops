@@ -119,6 +119,8 @@ import {
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
 import { type DraftSpec, draftToPending, evaluateUnderstanding, makeGeminiProvider, runPlan, understandLineText } from "./lineUnderstand.ts";
 import { loadSnapshot, logLineTurn, reserveAiCall, understandEnabled } from "./lineRouterWiring.ts";
+import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
+import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import {
   purchaseAllAndReply,
   purchaseShoppingItemAndReply,
@@ -897,7 +899,8 @@ async function buildMultiIntentPendingCandidates(
         scheduled_date: intent?.scheduledDate ?? jstIsoDateOffset(0),
         due_local_time: intent?.dueLocalTime ?? null,
         planned_assignee_user_id: intent?.targetRole ? await householdUserForRole(client, actor.household_id, intent.targetRole) : actor.user_id,
-        routine_phase: "anytime",
+        daypart: intent?.daypart ?? null,
+        routine_phase: intent?.daypart === 'night' ? 'evening' : intent?.daypart === 'noon' ? 'anytime' : intent?.daypart ?? 'anytime',
         calendar_visibility: intent?.calendarVisibility ?? "hidden",
         subtasks: intent?.subtasks ?? [],
         context: intent?.context ?? null,
@@ -941,6 +944,7 @@ async function tryCreateMultiIntentReview(
         kind: candidate.kind,
         title: candidate.title,
         missingFields: candidate.missing_fields,
+        scheduleLabel: scheduleLabel(candidate.payload),
       duplicateMatch: Boolean(candidate.duplicate_match),
       duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
       })),
@@ -998,6 +1002,7 @@ async function cancelMultiIntentCandidate(
       pendingActionId: updated.id,
       candidates: active.map((candidate) => ({
         candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
+        scheduleLabel: scheduleLabel(candidate.payload as Record<string, unknown>),
         missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
       duplicateMatch: Boolean(candidate.duplicate_match),
       duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
@@ -1052,6 +1057,7 @@ async function resolveMultiIntentDuplicate(
       candidates: active.map((candidate) => ({
         candidateId: String(candidate.candidate_id), kind: String(candidate.kind), title: String(candidate.title),
         missingFields: Array.isArray(candidate.missing_fields) ? candidate.missing_fields.filter((field): field is string => typeof field === "string") : [],
+        scheduleLabel: scheduleLabel(candidate.payload as Record<string, unknown>),
         duplicateMatch: Boolean(candidate.duplicate_match),
         duplicateDecision: candidate.duplicate_decision === "existing" || candidate.duplicate_decision === "update" || candidate.duplicate_decision === "separate" ? candidate.duplicate_decision : null,
       })),
@@ -1252,12 +1258,12 @@ function scheduleLabel(payload: Record<string, unknown>): string {
   const date = typeof payload.scheduled_date === "string" ? payload.scheduled_date : "";
   const daypart = typeof payload.daypart === "string" ? payload.daypart : null;
   const localTime = typeof payload.due_local_time === "string" ? payload.due_local_time : null;
-  const dateLabel = date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : "今日";
+  const dateLabel = date ? formatScheduleDate(date) : "今日";
   const partLabel = daypart ? daypartLabel(daypart as "morning" | "noon" | "evening" | "night") : null;
   // "朝（08:00）": the time stored for 朝 is the usual one, so the card says which it came from.
   const part = localTime && partLabel && localTime === daypartToLocalTime(daypart as "morning" | "noon" | "evening" | "night")
     ? `${partLabel}（${localTime}）`
-    : localTime ?? partLabel ?? "時刻なし";
+    : localTime ?? (partLabel && typeof payload.context === 'string' && payload.context.includes('内容から推定') ? `${partLabel}（推定・時刻未定）` : partLabel) ?? "時刻なし";
   return `${dateLabel} ${part}`;
 }
 
@@ -1987,12 +1993,13 @@ async function handleText(
   // The conversation so far is read BEFORE this message is stored, so the model sees
   // "what was said before" and the new message separately (lineUnderstand.ts).
   const pendingDraft = await getLineConversationPending(client, actor, item.source_external_user_id);
+  const reportedDate = completionDate(text, jstIsoDateOffset(0));
   const snapshot = isFixedShortcutText(text) || !(await understandEnabled(client))
     ? null
     : await loadSnapshot(client, {
       actorId: actor.user_id,
       householdId: actor.household_id,
-      today: jstIsoDateOffset(0),
+      today: reportedDate ?? jstIsoDateOffset(0),
       pending: pendingDraft,
     });
   await logLineTurn(client, actor.user_id, "user", text);
@@ -2013,6 +2020,7 @@ async function handleText(
   let routedCreate = false;
   if (snapshot) {
     const understood = await understandLineText(snapshot, text, makeGeminiProvider(() => reserveAiCall(client)));
+    if (await tryHandleDayCompletion(completionContext(client, item, actor), text)) return;
     if (understood.plan) {
       const plan = understood.plan;
       console.info("process-line-inbox: understood", {
@@ -2066,14 +2074,19 @@ async function handleText(
       }, text);
       if (outcome.done) return;
       if (outcome.pendingReply) await sendConfirmation(client, item, actor, outcome.pendingReply);
-      if (outcome.continueWith.draft && await applyUnderstoodDraft(client, item, actor, {
+      const multipleSchedules = plan.actions.filter((action) => action.type === 'create').length > 1 || leadingScheduleDates(text).length > 1;
+      if (multipleSchedules && outcome.continueWith.mode === 'create') {
+        const candidates = await buildMultiIntentPendingCandidates(client, item, actor, text);
+        if (candidates.length > 1 && await tryCreateMultiIntentReview(client, item, actor, text, candidates)) return;
+      }
+      if (!multipleSchedules && outcome.continueWith.draft && await applyUnderstoodDraft(client, item, actor, {
         mode: outcome.continueWith.mode,
         draft: outcome.continueWith.draft,
         pending: pendingDraft,
         partnerLabel: snapshot.partner,
         rawText: text,
       })) return;
-      text = outcome.continueWith.text;
+      text = multipleSchedules ? text : outcome.continueWith.text;
       routedCreate = outcome.continueWith.mode === "create";
     } else if (understood.raw !== null) {
       console.warn("process-line-inbox: understanding unusable, using the fallback handlers");
@@ -2081,6 +2094,7 @@ async function handleText(
   }
 
   if (!routedCreate) {
+    if (!snapshot && await tryHandleDayCompletion(completionContext(client, item, actor), text)) return;
     if (await tryHandleReadOnlyText(client, item, actor, text)) return;
     // "何を買えばいい？" is answered with the shopping list, not turned into a draft.
     if (await tryHandleShoppingListQuestion({
@@ -2093,6 +2107,7 @@ async function handleText(
     if (await tryHandleShoppingPurchaseReport(completionContext(client, item, actor), text)) return;
     // A short "done" report is matched to one of the sender's open tasks for today
     // instead of becoming an unmatched actual-record draft.
+    if (reportedDate && await tryHandleCompletionReport({ ...completionContext(client, item, actor), today: reportedDate }, text.replace(/^(?:昨日|一昨日|今日|明日|\d{1,2}\/\d{1,2})(?:の)?(?:は)?/u, ''))) return;
     if (await tryHandleCompletionReport(completionContext(client, item, actor), text)) return;
     if (await tryHandlePendingReferent(client, item, actor, text)) return;
     if (await tryApplyLineTextEdit(client, item, actor, text)) return;
@@ -2256,7 +2271,10 @@ async function applyUnderstoodDraft(
     return true;
   }
   if (opts.mode !== "create") return false;
-  const built = draftToPending(opts.draft, ctx);
+  const draft = inferredNight(opts.draft.title) && !/\d{1,2}(?:時|:\d{2})/u.test(opts.rawText)
+    ? { ...opts.draft, time: null, daypart: 'night' as const }
+    : opts.draft;
+  const built = draftToPending(draft, ctx);
   if (!built) return false;
   const payload = { ...built.payload, raw_text: opts.rawText };
   const { data, error } = await client.rpc("server_tx_create_pending_action", {
