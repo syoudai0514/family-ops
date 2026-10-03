@@ -120,8 +120,8 @@ begin
   ) returning id into v_google_connection_id;
 
   insert into public.calendar_connections(
-    household_id,external_calendar_id,display_name,google_connection_id,active
-  ) values(v_hh_id,'dd6-calendar-'||v_owner::text,'DD6',v_google_connection_id,true)
+    household_id,external_calendar_id,display_name,google_connection_id,active,is_family_write_target
+  ) values(v_hh_id,'dd6-calendar-'||v_owner::text,'DD6',v_google_connection_id,true,true)
   returning id into v_calendar_connection_id;
 
   insert into public.calendar_event_occurrences(
