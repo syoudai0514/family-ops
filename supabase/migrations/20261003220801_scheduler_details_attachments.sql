@@ -123,7 +123,12 @@ begin
    update public.task_instances set calendar_ends_at=case when starts is null then ((date+(end_date-initial_date))+time '23:59:59') at time zone 'Asia/Tokyo' when ends is null then null else ((date+(end_date-initial_date))+ends) at time zone 'Asia/Tokyo' end
      where household_id=h and task_instances.id=v_id;
    insert into public.task_schedule_details(task_id,household_id,details) values(v_id,h,jsonb_set(d,'{ends_on}',to_jsonb((date+(end_date-initial_date))::text)))
-     on conflict(task_id) do update set details=excluded.details,reminder_sent=false;
+     on conflict(task_id) do update set details=excluded.details,
+       reminder_sent=case when p_task_id is not null and task.scheduled_date=date
+         and task.due_at is not distinct from (case when starts is null then null else (date+starts) at time zone 'Asia/Tokyo' end)
+         and task_schedule_details.details->'reminder_minutes' is not distinct from excluded.details->'reminder_minutes'
+         and coalesce(task_schedule_details.details->'participants','[]')=coalesce(excluded.details->'participants','[]')
+         then task_schedule_details.reminder_sent else false end;
    ids:=array_append(ids,v_id);
    if p_task_id is not null or frequency='none' then exit; end if;
    i:=i+1;

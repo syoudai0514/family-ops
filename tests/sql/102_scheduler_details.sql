@@ -58,6 +58,11 @@ begin
  result:=public.server_tx_save_scheduled_task(actor,gen_random_uuid(),null,null,payload);
  if public.server_tx_dispatch_schedule_reminders(40)<>1 or public.server_tx_dispatch_schedule_reminders(40)<>0 then raise exception 'FAIL reminder exactly once'; end if;
  if not exists(select 1 from public.user_notifications where household_id=household and type='schedule_reminder') then raise exception 'FAIL in-app reminder'; end if;
+ select t.revision into revision from public.task_instances t where id=(result->>'task_id')::uuid;
+ perform public.server_tx_save_scheduled_task(actor,gen_random_uuid(),(result->>'task_id')::uuid,revision,
+   jsonb_set(payload,'{scheduler_details,notes}',to_jsonb('メモだけ更新'::text)));
+ if public.server_tx_dispatch_schedule_reminders(40)<>0 then raise exception 'FAIL note/checklist changes must not resend the reminder'; end if;
+
  operation:=gen_random_uuid();
  payload:=jsonb_build_object('body','水筒を持っていく');
  result:=public.server_tx_mutate_schedule_sharing(actor,operation,target,'add_comment',payload);
