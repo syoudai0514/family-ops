@@ -36,8 +36,10 @@ export function usePendingActions(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
+  const requestSequence = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++requestSequence.current;
     if (!householdId || !userId) {
       setLoading(false);
       return;
@@ -45,19 +47,25 @@ export function usePendingActions(
     setError(null);
     try {
       const result = await callEdgeFunction<PendingAction[]>(EDGE_FUNCTIONS.listPendingActions, {});
+      if (sequence !== requestSequence.current) return;
       setPendingActions(result);
     } catch (err) {
+      if (sequence !== requestSequence.current) return;
       setError(
         err instanceof FamilyOpsApiError ? err.message : '判断待ちの読み込みに失敗しました。',
       );
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
   }, [householdId, userId]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    setPendingActions([]);
+    setError(null);
+    setLoading(Boolean(householdId && userId));
+    void load();
+    return () => { requestSequence.current += 1; };
+  }, [load, householdId, userId]);
 
   const loadRef = useRef(load);
   useEffect(() => {

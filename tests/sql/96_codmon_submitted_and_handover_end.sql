@@ -101,6 +101,10 @@ begin
   if (result->>'inputs_closed')::int<>4 then
     raise exception 'FAIL 96: expected 4 inputs closed, got %',result;
   end if;
+  if (result->>'revision')::bigint is distinct from
+      (select revision from public.task_instances where id=submit_task) then
+    raise exception 'FAIL 96: acknowledgement must return the submit completion revision';
+  end if;
   readiness:=private.fn_codmon_readiness_v1(hh,workday,null);
   if readiness->>'state'<>'acknowledged' then
     raise exception 'FAIL 96: expected acknowledged after the command, got %',readiness->>'state';

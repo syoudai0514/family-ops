@@ -90,7 +90,7 @@ export async function purchaseShoppingItemAndReply(
   operationId: string,
   opts: { quiet?: boolean } = {},
 ): Promise<boolean> {
-  const { error } = await ctx.client.rpc("server_tx_shopping_action_v2", {
+  const { data, error } = await ctx.client.rpc("server_tx_shopping_action_v2", {
     p_actor_id: ctx.actorId,
     p_operation_id: operationId,
     p_shopping_item_id: item.id,
@@ -104,11 +104,13 @@ export async function purchaseShoppingItemAndReply(
     return false;
   }
   if (opts.quiet) return true;
-  // The undo needs the revision the purchase produced.
-  const { data } = await ctx.client.from("shopping_items").select("revision").eq("id", item.id).maybeSingle();
-  const revision = Number((data as { revision?: unknown } | null)?.revision);
+  // Bind undo to this purchase's receipt, including on a replay. A fresh read
+  // could return a later purchase/assignment and allow this button to undo it.
+  const revision = (data as { revision?: number } | null)?.revision;
   const replies: LineQuickReplyAction[] = [];
-  if (Number.isFinite(revision)) replies.push(quick("取り消す", `action=shopping_reopen&item_id=${item.id}&revision=${revision}`));
+  if (typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0) {
+    replies.push(quick("取り消す", `action=shopping_reopen&item_id=${item.id}&revision=${revision}`));
+  }
   replies.push(LIST_QUICK_REPLY);
   await ctx.reply(`✓ 「${item.title}」を買った、で記録しました。`, replies);
   return true;

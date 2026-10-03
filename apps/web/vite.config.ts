@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { restReadCacheKey } from './pwa/restReadCache.ts';
 
 // Vercel exposes the source commit only during its build. Bake that identifier
 // into the client so a support screen can distinguish a stale PWA shell from
@@ -70,7 +71,11 @@ export default defineConfig({
             handler: 'NetworkFirst',
             method: 'GET',
             options: {
-              cacheName: 'supabase-rest-reads',
+              // Cache API matches URLs without considering Authorization by
+              // default. Partition reads so switching accounts cannot serve
+              // the previous account's RLS response on timeout/offline.
+              cacheName: 'supabase-rest-reads-auth-v1',
+              plugins: [{ cacheKeyWillBeUsed: restReadCacheKey }],
               networkTimeoutSeconds: 4,
               expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },

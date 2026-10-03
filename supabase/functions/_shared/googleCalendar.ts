@@ -357,10 +357,17 @@ export async function listProjectionEventsPage(opts: {
 // Rolling window default: past 7d / future 60d, Asia/Tokyo boundaries
 // converted to RFC3339 UTC (#8).
 export function projectionWindow(now = new Date()): { start: string; end: string; startDate: string; endDate: string } {
-  const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const end = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-  const asDate = (d: Date) => d.toISOString().slice(0, 10);
-  return { start: start.toISOString(), end: end.toISOString(), startDate: asDate(start), endDate: asDate(end) };
+  const dayMs = 24 * 60 * 60 * 1000;
+  const tokyoOffsetMs = 9 * 60 * 60 * 1000;
+  const localMidnight = Math.floor((now.getTime() + tokyoOffsetMs) / dayMs) * dayMs;
+  const startLocal = localMidnight - 7 * dayMs;
+  const endLocal = localMidnight + 60 * dayMs;
+  return {
+    start: new Date(startLocal - tokyoOffsetMs).toISOString(),
+    end: new Date(endLocal - tokyoOffsetMs).toISOString(),
+    startDate: new Date(startLocal).toISOString().slice(0, 10),
+    endDate: new Date(endLocal).toISOString().slice(0, 10),
+  };
 }
 
 export type GoogleEventGetResult =

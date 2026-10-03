@@ -75,6 +75,16 @@ export type CodmonSentReport = {
 };
 
 const SENT_VERB = /(送りました|送った|送信しました|送信した|送信済み|送信完了)/u;
+const RECENT_PREFIX = "(?:今日(?:は|も|の)?|今朝(?:は|も)?|さっき|先ほど|今|もう|無事|ちゃんと)\\s*";
+// A verb appearing inside a desire, question or denial is not a report. This
+// fallback has no conversational date resolution, so only today's explicit
+// affirmative send can close today's submit and its still-open inputs.
+const AFFIRMATIVE_SENT_CLAUSE = new RegExp(
+  `^(?:${RECENT_PREFIX})*(?:コドモン(?:の(?:連絡帳|連絡|入力))?(?:を|は|も)?\\s*)?(?:${RECENT_PREFIX})*${SENT_VERB.source}(?:よ|です|だよ|んだよ)?[\\s〜~]*$`,
+  "u",
+);
+const OTHER_DAY_CONTEXT = /^(?:昨日|きのう|一昨日|おととい|明日|あした|明後日|あさって|先週|先月|去年|\d+日前)(?:は|に|の分)?$/u;
+const SEND_RETRACTION = /^(?:でも\s*)?(?:送れて(?:い)?ない|送信(?:して(?:い)?ない|失敗)|失敗(?:した|しました)|取り消した|取消した)/u;
 const ALREADY_DONE = /(やって(あった|ある|あります|くれてた|くれていた|くれた|もらった)|入力(して)?(あった|ある|あります|済み|してくれてた|してくれた)|(は|も)済み|済んで(た|いた))/u;
 
 function codmonCodesIn(clause: string): string[] {
@@ -101,11 +111,13 @@ export function parseCodmonSentReport(text: string): CodmonSentReport | null {
   const t = text.normalize("NFKC").trim();
   if (t.length === 0 || t.length > 120 || /[?？]/u.test(t) || !/コドモン/u.test(t)) return null;
   const clauses = t.split(/[。、,\n!！]+|(?:ので|から|けど|けれど)/u).map((c) => c.trim()).filter(Boolean);
-  if (!clauses.some((c) => SENT_VERB.test(c))) return null;
+  if (clauses.some((c) => OTHER_DAY_CONTEXT.test(c) || SEND_RETRACTION.test(c))) return null;
+  const sentClauses = new Set(clauses.filter((c) => AFFIRMATIVE_SENT_CLAUSE.test(c)));
+  if (sentClauses.size === 0) return null;
   const partner = new Set<string>();
   const unreadNotes: string[] = [];
   for (const clause of clauses) {
-    if (SENT_VERB.test(clause)) continue;
+    if (sentClauses.has(clause)) continue;
     const codes = ALREADY_DONE.test(clause) ? codmonCodesIn(clause) : [];
     if (codes.length === 0) {
       unreadNotes.push(clause);
@@ -314,10 +326,11 @@ export async function completeTaskAndReply(
     }
     return;
   }
-  const { data: after } = await ctx.client.from("task_instances").select("revision").eq("id", taskId).maybeSingle();
-  const revision = (after as { revision?: number } | null)?.revision;
+  // An intervening reopen/recompletion must not give this old confirmation
+  // permission to undo the later work. Replays keep the receipt's revision.
+  const revision = (data as { revision?: number } | null)?.revision;
   const quick: LineQuickReplyAction[] = [];
-  if (typeof revision === "number") {
+  if (typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0) {
     quick.push(quickPostback("取り消す", `action=reopen_task&task_id=${taskId}&revision=${revision}`));
   }
   quick.push(TODAY_QUICK_REPLY);
@@ -392,6 +405,10 @@ export async function tryHandleCompletionReport(ctx: CompletionContext, text: st
     });
     return true;
   }
+
+  // A rejected Codmon send must not become a generic title hint: e.g.
+  // "昨日コドモン送った" would otherwise match today's codmon_submit again.
+  if (/コドモン/u.test(text) && SENT_VERB.test(text)) return false;
 
   const report = parseCompletionReport(text);
   if (!report) return false;

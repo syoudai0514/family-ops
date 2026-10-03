@@ -108,7 +108,7 @@ function fakeContext(opts: {
     rpc: (fn: string, args: Record<string, unknown>) => {
       calls.push({ fn, args });
       return Promise.resolve({
-        data: opts.rpcError ? null : opts.rpcData ?? null,
+        data: opts.rpcError ? null : opts.rpcData === undefined ? { ok: true, revision: 4 } : opts.rpcData,
         error: opts.rpcError ? { message: opts.rpcError } : null,
       });
     },
@@ -156,6 +156,27 @@ Deno.test("handler: a single match completes through the canonical RPC and offer
   assertEquals(undo.data, "action=reopen_task&task_id=t-d&revision=4");
 });
 
+Deno.test("undo: a completion or replay keeps its receipt revision after another change", async () => {
+  // The fake current row has revision 4; this completion produced 2.
+  const { ctx, replies } = fakeContext({ tasks: rows, defs, rpcData: { ok: true, revision: 2 } });
+  await completeTaskAndReply(ctx, "t-d", { operationId: "op", code: "dropoff" });
+  const undo = (replies[0].quick as Array<{ data?: string }>)[0];
+  assertEquals(undo.data, "action=reopen_task&task_id=t-d&revision=2");
+});
+
+Deno.test("undo: old completion receipts without a revision never borrow a later revision", async () => {
+  const { ctx, replies } = fakeContext({ tasks: rows, defs, rpcData: { ok: true } });
+  await completeTaskAndReply(ctx, "t-d", { operationId: "old-op", code: "dropoff" });
+  assertEquals(replies[0].quick, [{ type: "message", label: "今日を見る", text: "今日" }]);
+});
+
+Deno.test("undo: Codmon acknowledgement uses the submit completion receipt revision", async () => {
+  const { ctx, replies } = fakeContext({ tasks: rows, defs, rpcData: { ok: true, revision: 2, inputs_closed: 0 } });
+  await completeTaskAndReply(ctx, "t-c", { operationId: "op", code: "codmon_submit" });
+  const undo = (replies[0].quick as Array<{ data?: string }>)[0];
+  assertEquals(undo.data, "action=reopen_task&task_id=t-c&revision=2");
+});
+
 // Live 2026-09-30 05:43: "コドモン送りました！" was refused with
 // "コドモンの入力がそろっていません". Sending Codmon now ends the job.
 Deno.test("handler: コドモン送りました closes the submit and the unticked inputs in one command", async () => {
@@ -197,6 +218,43 @@ Deno.test("parse Codmon sent: questions and other messages are not reports", () 
   assertEquals(parseCodmonSentReport("コドモン送った？"), null);
   assertEquals(parseCodmonSentReport("コドモンの入力お願い"), null);
   assertEquals(parseCodmonSentReport("送りました"), null);
+});
+
+const NOT_SENT_TODAY = [
+  "コドモン送ったわけじゃない",
+  "コドモン送ったかな",
+  "コドモン送ったよね",
+  "コドモン送ったか覚えていない",
+  "コドモン送ったと思う",
+  "コドモン送ったはず",
+  "コドモン送信したい",
+  "コドモン送ったら教えて",
+  "コドモン送信したつもりだけど送れてない",
+  "コドモン送ったけど取り消した",
+  "コドモン送ったけど失敗した",
+  "コドモン送信しました、でも送れてない",
+  "昨日コドモン送った",
+  "昨日、コドモン送りました",
+  "コドモンは昨日送信した",
+  "明日コドモン送信したい",
+];
+
+Deno.test("parse Codmon sent: only an affirmative report for today can close today's job", () => {
+  for (const text of NOT_SENT_TODAY) assertEquals(parseCodmonSentReport(text), null, text);
+  for (const text of [
+    "今日コドモン送ったよ",
+    "さっきコドモンを送りました",
+    "コドモン今送信した",
+    "コドモンの連絡帳を送信済みです",
+  ]) assertEquals(parseCodmonSentReport(text), { partnerCodes: [], unreadNotes: [] }, text);
+});
+
+Deno.test("handler: negated, uncertain, desired and prior-day Codmon sends never complete today's task", async () => {
+  for (const text of NOT_SENT_TODAY) {
+    const { ctx, calls } = fakeContext({ tasks: rows, defs });
+    assertEquals(await tryHandleCompletionReport(ctx, text), false, text);
+    assertEquals(calls.length, 0, text);
+  }
 });
 
 Deno.test("handler: named inputs go to the partner and the reply says who did what", async () => {

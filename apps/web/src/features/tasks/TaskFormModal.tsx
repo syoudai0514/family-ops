@@ -109,10 +109,6 @@ export function TaskFormModal({
       setError('タイトルを入力してください。');
       return;
     }
-    if (isCalendarEvent && dueLocalTime && !calendarEndLocalTime) {
-      setError('開始時刻を入れる場合は終了時刻も入力してください。');
-      return;
-    }
     if (
       isCalendarEvent &&
       dueLocalTime &&
@@ -236,16 +232,15 @@ export function TaskFormModal({
               />
             </label>
             <label>
-              終了時刻{dueLocalTime ? '' : '（開始時刻を入れた場合）'}
+              終了時刻（任意）
               <input
                 type="time"
                 value={calendarEndLocalTime}
                 onChange={(e) => setCalendarEndLocalTime(e.target.value)}
                 disabled={!dueLocalTime}
-                required={Boolean(dueLocalTime)}
               />
             </label>
-            <p className="form-help time-range-help">時刻を入れない場合は終日予定として扱います。</p>
+            <p className="form-help time-range-help">終了時刻を入れない場合はGoogleに終日予定として表示します。開始時刻がある場合はタイトルの先頭に時刻を付けます。</p>
           </div>
         ) : (
           <label>
