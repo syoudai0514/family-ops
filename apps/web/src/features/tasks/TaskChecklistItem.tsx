@@ -125,6 +125,8 @@ export function TaskChecklistItem({
   const anyoneClaimedBySelf = anyoneTask && Boolean(currentUserId) && task.active_claimant_user_id === currentUserId;
   const anyoneClaimedByOther = anyoneTask && Boolean(task.active_claimant_actor_ref_id) && !anyoneClaimedBySelf;
   const canExecute = !anyoneTask || anyoneUnclaimed || anyoneClaimedBySelf;
+  const performers = completed ? [...new Set(task.actual_completed_by_id ? [task.actual_completed_by_id] : subtasks.filter((item) => item.is_completed && item.completed_by).map((item) => item.completed_by!))] : [];
+  const performerLabel = performers.map((id) => members.find((member) => member.user_id === id)?.profile?.display_name ?? '家族').join('・');
 
   function toggleExpanded() {
     setExpanded((value) => {
@@ -355,6 +357,7 @@ export function TaskChecklistItem({
           <span className="task-item-meta">
             {showTime && task.due_at ? `${localClock(task.due_at)} · ` : ''}
             {assigneeLabel(task, members)}
+            {performerLabel ? ` · 実施: ${performerLabel}` : ''}
             {task.completion_mode === 'subtasks' && subtasks.length > 0
               ? ` · ${doneSubtasks}/${subtasks.length}項目`
               : ''}
@@ -397,7 +400,7 @@ export function TaskChecklistItem({
           </button>
         )}
 
-        {hasPartner && !anyoneTask && !completed && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
+        {hasPartner && !completed && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
           <button type="button" className="secondary-button task-inline-finish" disabled={busy}
             onClick={() => handleComplete('partner')}>相手がやった</button>
         )}

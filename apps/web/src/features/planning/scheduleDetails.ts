@@ -31,6 +31,15 @@ export function emptyScheduleDetails(date: string): ScheduleDetails {
   };
 }
 
+/** PostgREST can expose the composite foreign-key relation as a one-row array. */
+export function readScheduleDetails(value: unknown, date: string): ScheduleDetails | null {
+  const relation = Array.isArray(value) ? value[0] : value;
+  if (!relation || typeof relation !== 'object' || !('details' in relation)) return null;
+  const details = relation.details;
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
+  return { ...emptyScheduleDetails(date), ...details } as ScheduleDetails;
+}
+
 export const SCHEDULE_ATTACHMENT_BUCKET = 'schedule-attachments';
 export const SCHEDULE_FILE_MAX_BYTES = 10 * 1024 * 1024;
 export const SCHEDULE_FILE_TYPES = [

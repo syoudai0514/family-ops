@@ -255,7 +255,7 @@ SCHEDULE_ID=$(curl -fsS -X POST "$API_URL/functions/v1/create-task" \
 [ -n "$SCHEDULE_ID" ] || fail "scheduler create returned no task id"
 JOINED=$(curl -fsS "$API_URL/rest/v1/task_instances?select=id,task_schedule_details(details)&id=eq.$SCHEDULE_ID" \
   -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["task_schedule_details"]["details"]["notes"])')
+  | python3 -c 'import json,sys; r=json.load(sys.stdin)[0]["task_schedule_details"]; r=r[0] if isinstance(r,list) else r; print(r["details"]["notes"])')
 [ "$JOINED" = "Long nursery notice" ] || fail "scheduler metadata relation did not round-trip"
 OP_ATTACHMENT=$(python3 -c 'import uuid; print(uuid.uuid4())')
 OBJECT_PATH="$HH_A/$SCHEDULE_ID/$OP_ATTACHMENT"

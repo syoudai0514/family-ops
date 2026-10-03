@@ -10,6 +10,12 @@ const task = (overrides: Partial<PlanningTask>): PlanningTask => ({
 });
 
 describe('CalendarProjection', () => {
+  it('keeps overnight timed events visible and excludes their midnight end boundary', () => {
+    const projection = buildCalendarProjection({ primaryUserId: null, partnerUserId: null, tasks: [], occurrences: [{
+      id: 'overnight', date: '2026-10-01', time: '2026-10-01T19:00:00+09:00', endsAt: '2026-10-03T00:00:00+09:00', title: '旅行', allDay: false, transparent: false, ownerUserId: null, providerEventId: 'external', generatedByFamilyOps: false, hasConflict: false,
+    }] });
+    expect([...projection.itemsByDate.keys()]).toEqual(['2026-10-01','2026-10-02']);
+  });
   it('keeps an AI/manual task visible in week/month even when its Google visibility is hidden', () => {
     const projection = buildCalendarProjection({ primaryUserId: 'p', partnerUserId: 'm', occurrences: [],
       tasks: [task({ id: 'clinic', origin: 'manual', title: 'R形成外科みなとみらいへの通院', scheduled_date: '2026-10-10', calendar_visibility: 'hidden', due_at: '2026-10-10T07:00:00Z' })] });

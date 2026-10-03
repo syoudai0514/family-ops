@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { addDays, tokyoIsoDate } from './dateHelpers';
 import type { GooglePlanningOccurrence, PlanningTask } from './calendarProjection';
+import { readScheduleDetails } from './scheduleDetails';
 
 export function usePlanningData(householdId: string | null, start: string, end: string) {
   const [tasks, setTasks] = useState<PlanningTask[]>([]);
@@ -41,8 +42,8 @@ export function usePlanningData(householdId: string | null, start: string, end: 
           .eq('household_id', householdId)
           .eq('calendar_connections.active', true)
           .eq('calendar_connections.is_family_write_target', true)
-          .gte('starts_at', rangeStart)
           .lt('starts_at', rangeEndExclusive)
+          .gte('ends_at', rangeStart)
           .order('starts_at'),
         supabase
           .from('calendar_event_occurrences')
@@ -89,7 +90,7 @@ export function usePlanningData(householdId: string | null, start: string, end: 
             ...row,
             definition_code: definition?.code ?? null,
             calendar_visibility: (row.calendar_visibility as PlanningTask['calendar_visibility']) ?? definition?.calendar_visibility ?? null,
-            scheduler_details: (row.task_schedule_details as { details?: PlanningTask['scheduler_details'] } | null)?.details ?? null,
+            scheduler_details: readScheduleDetails(row.task_schedule_details, String(row.scheduled_date)),
           } as PlanningTask;
         }),
       );
