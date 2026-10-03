@@ -1,12 +1,15 @@
 import type { TaskInstance } from '../../lib/types';
+import type { ScheduleDetails } from './scheduleDetails';
+import { tokyoIsoDate } from './dateHelpers';
 
-export type CalendarProjectionKind = 'transport' | 'special' | 'calendar' | 'request';
+export type CalendarProjectionKind = 'transport' | 'special' | 'calendar' | 'request' | 'task';
 export type CalendarProjectionSource = 'family_ops' | 'google';
 export type CalendarOwnerKind = 'primary' | 'partner' | 'family' | 'unknown';
 
 export interface PlanningTask extends TaskInstance {
   definition_code?: string | null;
   calendar_visibility?: 'transport' | 'special' | 'hidden' | null;
+  scheduler_details?: ScheduleDetails | null;
 }
 
 export interface GooglePlanningOccurrence {
@@ -36,7 +39,14 @@ function addUtcDate(date: string, days: number) {
 }
 
 function projectionDates(event: GooglePlanningOccurrence): string[] {
-  if (!event.allDay) return [event.date];
+  if (!event.allDay) {
+    if (!event.endsAt) return [event.date];
+    // Timed ranges are exclusive at their end, including midnight.
+    const last = tokyoIsoDate(new Date(new Date(event.endsAt).getTime() - 1));
+    const dates: string[] = [];
+    for (let date = event.date; date <= last && dates.length < 367; date = addUtcDate(date, 1)) dates.push(date);
+    return dates.length ? dates : [event.date];
+  }
   const endExclusive = event.allDayEndExclusive ?? addUtcDate(event.date, 1);
   const dates: string[] = [];
   for (let date = event.date; date < endExclusive && dates.length < 366; date = addUtcDate(date, 1)) {
@@ -90,6 +100,7 @@ const isRoutine = (task: PlanningTask) =>
 function taskKind(task: PlanningTask): CalendarProjectionKind | null {
   if (isTransport(task)) return 'transport';
   if (task.calendar_visibility === 'special') return 'special';
+  if (task.origin === 'manual') return 'task';
   if (task.calendar_visibility === 'hidden' || isRoutine(task)) return null;
   return null;
 }
@@ -180,11 +191,16 @@ export function buildCalendarProjection({
     const kind = taskKind(task);
     if (!kind || kind === 'transport') continue;
     const owner = ownerKind(task.planned_assignee_id, primaryUserId, partnerUserId);
-    items.push({
-      id: `task:${task.id}`,
+    const endDate = task.due_at && task.calendar_ends_at
+      ? tokyoIsoDate(new Date(new Date(task.calendar_ends_at).getTime() - 1))
+      : task.scheduler_details?.ends_on ?? task.scheduled_date;
+    const dates: string[] = [];
+    for (let date = task.scheduled_date; date <= endDate && dates.length < 367; date = addUtcDate(date, 1)) dates.push(date);
+    for (const date of dates) items.push({
+      id: dates.length === 1 ? `task:${task.id}` : `task:${task.id}:${date}`,
       source: 'family_ops',
       kind,
-      localDate: task.scheduled_date,
+      localDate: date,
       startsAt: task.due_at,
       endsAt: task.calendar_ends_at ?? null,
       allDay: !task.due_at,
@@ -195,8 +211,8 @@ export function buildCalendarProjection({
       hasConflict: false,
       providerEventId: null,
       linkedTaskId: task.id,
-      location: null,
-      description: null,
+      location: task.scheduler_details?.location || null,
+      description: task.scheduler_details?.notes || null,
       sourceCalendar: 'Family Ops',
     });
   }

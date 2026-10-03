@@ -15,3 +15,5 @@
 .shopping-page .shopping-overflow[open] { position: relative; }
 .shopping-page .shopping-overflow[open] .task-item-actions { position: absolute; right: 0; top: 100%; z-index: 4; min-width: 13rem; padding: .75rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: .8rem; box-shadow: 0 8px 28px #0002; }
 .shopping-page .error-text { grid-column: 1 / -1; }
+.shopping-ai-entry { width: 100%; margin: .7rem 0; padding: .8rem; text-align: left; }
+.shopping-manual-entry { margin-bottom: 1.1rem; color: var(--color-text-muted); font-size: .8rem; }

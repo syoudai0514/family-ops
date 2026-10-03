@@ -10,6 +10,26 @@ const task = (overrides: Partial<PlanningTask>): PlanningTask => ({
 });
 
 describe('CalendarProjection', () => {
+  it('keeps overnight timed events visible and excludes their midnight end boundary', () => {
+    const projection = buildCalendarProjection({ primaryUserId: null, partnerUserId: null, tasks: [], occurrences: [{
+      id: 'overnight', date: '2026-10-01', time: '2026-10-01T19:00:00+09:00', endsAt: '2026-10-03T00:00:00+09:00', title: '旅行', allDay: false, transparent: false, ownerUserId: null, providerEventId: 'external', generatedByFamilyOps: false, hasConflict: false,
+    }] });
+    expect([...projection.itemsByDate.keys()]).toEqual(['2026-10-01','2026-10-02']);
+  });
+  it('keeps an AI/manual task visible in week/month even when its Google visibility is hidden', () => {
+    const projection = buildCalendarProjection({ primaryUserId: 'p', partnerUserId: 'm', occurrences: [],
+      tasks: [task({ id: 'clinic', origin: 'manual', title: 'R形成外科みなとみらいへの通院', scheduled_date: '2026-10-10', calendar_visibility: 'hidden', due_at: '2026-10-10T07:00:00Z' })] });
+    expect(projection.itemsByDate.get('2026-10-10')?.[0]).toMatchObject({ fullTitle: 'R形成外科みなとみらいへの通院', kind: 'task', linkedTaskId: 'clinic' });
+  });
+  it('shows a multi-day manual event on every included date', () => {
+    const projection = buildCalendarProjection({ primaryUserId: null, partnerUserId: null, occurrences: [], tasks: [task({
+      id: 'trip', origin: 'manual', scheduled_date: '2026-09-30', calendar_visibility: 'special', scheduler_details: {
+        ends_on: '2026-10-02', notes: '園のお知らせ', location: '公園', url: '', label_color: '#28b78d', participants: [], pinned: false, countdown: false, reminder_minutes: null, repeat_frequency: 'none', repeat_until: null, checklist: [],
+      },
+    })] });
+    expect([...projection.itemsByDate.keys()]).toEqual(['2026-09-30','2026-10-01','2026-10-02']);
+    expect(projection.itemsByDate.get('2026-10-01')?.[0]).toMatchObject({ location: '公園', description: '園のお知らせ' });
+  });
   it('aggregates dropoff and pickup and renders the exact compact transport contract', () => {
     const projection = buildCalendarProjection({
       primaryUserId: 'p', partnerUserId: 'm', occurrences: [],

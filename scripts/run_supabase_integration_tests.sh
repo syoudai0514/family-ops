@@ -244,4 +244,65 @@ CROSS_HOUSEHOLD_READ=$(curl -sS "$API_URL/rest/v1/task_instances?select=id&id=eq
 
 info "OK: create-task -> Data API read -> complete-task -> Data API read round-trips correctly, and stays RLS-isolated from household B"
 
+# 8. Rich schedule save, real private file upload/download and household isolation.
+info "8. scheduler metadata and private attachments over real Storage + Data API"
+OP_SCHEDULE=$(python3 -c 'import uuid; print(uuid.uuid4())')
+SCHEDULE_DATE=$(date +%Y-%m-%d)
+SCHEDULE_ID=$(curl -fsS -X POST "$API_URL/functions/v1/create-task" \
+  -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+  -d "{\"operation_id\":\"$OP_SCHEDULE\",\"title\":\"Schedule with attachment\",\"scheduled_date\":\"$SCHEDULE_DATE\",\"calendar_visibility\":\"special\",\"completion_mode\":\"whole\",\"scheduler_details\":{\"ends_on\":\"$SCHEDULE_DATE\",\"notes\":\"Long nursery notice\",\"checklist\":[\"Bottle\",\"Hat\"]}}" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["task_id"])')
+[ -n "$SCHEDULE_ID" ] || fail "scheduler create returned no task id"
+JOINED=$(curl -fsS "$API_URL/rest/v1/task_instances?select=id,task_schedule_details(details)&id=eq.$SCHEDULE_ID" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" \
+  | python3 -c 'import json,sys; r=json.load(sys.stdin)[0]["task_schedule_details"]; r=r[0] if isinstance(r,list) else r; print(r["details"]["notes"])')
+[ "$JOINED" = "Long nursery notice" ] || fail "scheduler metadata relation did not round-trip"
+OP_ATTACHMENT=$(python3 -c 'import uuid; print(uuid.uuid4())')
+OBJECT_PATH="$HH_A/$SCHEDULE_ID/$OP_ATTACHMENT"
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/storage/v1/object/schedule-attachments/$OBJECT_PATH" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: text/plain" --data-binary 'Nursery notice')
+[ "$code" = "200" ] || fail "same-household attachment upload failed: $code"
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/edit-task" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: application/json" \
+  -d "{\"operation_id\":\"$OP_ATTACHMENT\",\"sharing_action\":\"register_attachment\",\"task_id\":\"$SCHEDULE_ID\",\"file_name\":\"notice.txt\",\"object_path\":\"$OBJECT_PATH\",\"mime_type\":\"text/plain\",\"size_bytes\":14}")
+[ "$code" = "200" ] || fail "attachment metadata write failed: $code"
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/storage/v1/object/schedule-attachments/$HH_A/$SCHEDULE_ID/other.txt" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" -H "Content-Type: text/plain" --data-binary 'Blocked')
+[ "$code" != "200" ] || fail "different household uploaded an attachment"
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/storage/v1/object/sign/schedule-attachments/$OBJECT_PATH" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" -H "Content-Type: application/json" -d '{"expiresIn":300}')
+[ "$code" != "200" ] || fail "different household obtained an attachment download URL"
+SIGNED_PATH=$(curl -fsS -X POST "$API_URL/storage/v1/object/sign/schedule-attachments/$OBJECT_PATH" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: application/json" -d '{"expiresIn":300}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["signedURL"])')
+CONTENT=$(curl -fsS "$API_URL/storage/v1$SIGNED_PATH")
+[ "$CONTENT" = "Nursery notice" ] || fail "private attachment download did not round-trip"
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$API_URL/storage/v1/object/public/schedule-attachments/$OBJECT_PATH")
+[ "$code" != "200" ] || fail "private attachment was accessible as a public file"
+OP_COMMENT=$(python3 -c 'import uuid; print(uuid.uuid4())')
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/edit-task" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: application/json" \
+  -d "{\"operation_id\":\"$OP_COMMENT\",\"sharing_action\":\"add_comment\",\"task_id\":\"$SCHEDULE_ID\",\"body\":\"Bring the bottle\"}")
+[ "$code" = "200" ] || fail "schedule comment write failed: $code"
+CROSS_COMMENTS=$(curl -fsS "$API_URL/rest/v1/schedule_comments?task_id=eq.$SCHEDULE_ID" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')
+[ "$CROSS_COMMENTS" = "0" ] || fail "different household read schedule comments"
+OP_FOREIGN_COMMENT=$(python3 -c 'import uuid; print(uuid.uuid4())')
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/edit-task" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" -H "Content-Type: application/json" \
+  -d "{\"operation_id\":\"$OP_FOREIGN_COMMENT\",\"sharing_action\":\"add_comment\",\"task_id\":\"$SCHEDULE_ID\",\"body\":\"Blocked\"}")
+[ "$code" = "403" ] || fail "different household comment mutation was not rejected: $code"
+ATTACHMENT_ID=$(curl -fsS "$API_URL/rest/v1/schedule_attachments?task_id=eq.$SCHEDULE_ID&select=id" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')
+OP_DELETE=$(python3 -c 'import uuid; print(uuid.uuid4())')
+for attempt in 1 2; do
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/edit-task" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H "Content-Type: application/json" \
+    -d "{\"operation_id\":\"$OP_DELETE\",\"sharing_action\":\"delete_attachment\",\"task_id\":\"$SCHEDULE_ID\",\"attachment_id\":\"$ATTACHMENT_ID\"}")
+  [ "$code" = "200" ] || fail "attachment removal/replay failed: $code"
+done
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$API_URL/storage/v1$SIGNED_PATH")
+[ "$code" != "200" ] || fail "removed attachment bytes remained accessible"
+info "OK: schedule details, private attachment bytes, and comments round-trip and stay household-isolated"
+
 echo "== all supabase-integration tests passed =="

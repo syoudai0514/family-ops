@@ -25,7 +25,6 @@ import { TranscriptPage } from '../features/concierge/TranscriptPage';
 import { ConciergeResultsPage } from '../features/concierge/ConciergeResultsPage';
 import { ConciergeConfirmPage } from '../features/concierge/ConciergeConfirmPage';
 import { NavigationStateManager } from './NavigationStateManager';
-import { PullToRefresh } from './PullToRefresh';
 import { refreshCurrentPwa } from './pwaFreshness';
 import { AccountChip, LinkRecipientBanner } from './AccountIdentity';
 
@@ -63,7 +62,6 @@ export function AppShell() {
   return (
     <div className="app-root">
       <NavigationStateManager />
-      <PullToRefresh />
       <header className="app-nav">
         <NavLink className="app-nav-brand" to="/today"><span aria-hidden="true">⌂</span> おうちノート</NavLink>
         <nav className="desktop-nav" aria-label="主要メニュー">

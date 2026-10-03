@@ -3,6 +3,16 @@ import { formatScheduleDate, leadingScheduleDates } from './scheduleLanguage.ts'
 import { decomposeLineConversationCandidates } from './lineMultiIntent.ts';
 
 const now = new Date('2026-10-03T03:00:00Z');
+Deno.test('shopping wishes retain their deadline without AI', async () => {
+  const candidates = await decomposeLineConversationCandidates('牛乳を明日までに買いたい', now, () => Promise.resolve(null));
+  assertEquals(candidates.length, 1);
+  assertEquals(candidates[0].kind, 'shopping');
+  assertEquals(candidates[0].title, '牛乳');
+  assertEquals(candidates[0].intent?.scheduledDate, '2026-10-04');
+  const absolute = await decomposeLineConversationCandidates('食器用洗剤を10/10までに買いたい', now, () => Promise.resolve(null));
+  assertEquals(absolute[0].title, '食器用洗剤');
+  assertEquals(absolute[0].intent?.scheduledDate, '2026-10-10');
+});
 Deno.test('multiple dates are distinct calendar occurrences with weekdays', () => {
   assertEquals(leadingScheduleDates('10/6と10/8、パパ飲み会', now), ['2026-10-06', '2026-10-08']);
   assertEquals(formatScheduleDate('2026-10-06'), '10/6(火)');

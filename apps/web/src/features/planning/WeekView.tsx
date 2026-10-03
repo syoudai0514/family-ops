@@ -13,6 +13,7 @@ import { useCalendarFreshness } from './useCalendarFreshness';
 import { CalendarStaleBanner } from './CalendarStaleBanner';
 import { assigneeToken, buildCalendarProjection, transportTokens, type CalendarProjectionItem } from './calendarProjection';
 import { mamaUserId, papaUserId } from '../../lib/familyRoles';
+import { DayAgendaSheet } from './DayAgendaSheet';
 
 export function WeekView() {
   const { household, members, me, partner } = useHousehold();
@@ -34,6 +35,7 @@ export function WeekView() {
   const calendarFreshness = useCalendarFreshness({ enabled: Boolean(household) });
   const [changingTask, setChangingTask] = useState<TaskInstance | null>(null);
   const [detail, setDetail] = useState<CalendarProjectionItem | null>(null);
+  const [sheetDate, setSheetDate] = useState<string | null>(null);
   const primaryUserId = papaUserId(members);
   const partnerUserId = mamaUserId(members);
   const projection = useMemo(
@@ -88,7 +90,7 @@ export function WeekView() {
             const dayItems = projection.itemsByDate.get(date) ?? [];
             return (
               <section className="week-day-card" key={date}>
-                <h2>{formatShortDate(day)}</h2>
+                <div className="section-heading"><h2>{formatShortDate(day)}</h2><button type="button" className="text-button" onClick={() => setSheetDate(date)}>詳細・追加</button></div>
                 {!transport && dayItems.length === 0 ? (
                   <p className="empty-hint">予定なし</p>
                 ) : (
@@ -111,7 +113,7 @@ export function WeekView() {
                           key={item.id}
                           className={item.source === 'google' ? 'calendar-event' : 'task-event'}
                         >
-                          <button type="button" className="calendar-detail-trigger" onClick={() => setDetail(item)}>
+                          <button type="button" className="calendar-detail-trigger" onClick={() => item.linkedTaskId ? setSheetDate(date) : setDetail(item)}>
                             <span>{item.startsAt ? formatTimeJa(item.startsAt) : task?.routine_phase === 'evening' ? '夜（時刻未定）' : '終日'}</span>
                             <strong>{item.fullTitle}</strong>
                           </button>
@@ -152,6 +154,7 @@ export function WeekView() {
         />
       )}
       {detail && <CalendarItemDetail detail={detail} onClose={() => setDetail(null)} />}
+      {sheetDate && <DayAgendaSheet date={sheetDate} onClose={() => setSheetDate(null)} onChanged={refresh} />}
     </main>
   );
 }

@@ -35,7 +35,7 @@ describe('TaskFormModal special calendar time contract', () => {
     sessionStorage.clear();
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
     runCommand.mockReset();
-    runCommand.mockResolvedValue({});
+    runCommand.mockResolvedValue({ task_id: 'task-created' });
   });
 
   it('creates a special task with a time and no invented end time', async () => {
@@ -52,6 +52,19 @@ describe('TaskFormModal special calendar time contract', () => {
       title: '食育の準備', scheduled_date: '2026-10-05', calendar_visibility: 'special', due_local_time: '08:00',
     });
     expect(buildPayload('operation-1').calendar_end_local_time).toBeUndefined();
+  });
+
+  it('saves a cross-day event with long notes and its actual end date', async () => {
+    render(<TaskFormModal mode="edit" task={task} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2026-10-06' } });
+    fireEvent.change(screen.getByLabelText(/終了時刻/), { target: { value: '07:00' } });
+    fireEvent.change(screen.getByLabelText('メモ'), { target: { value: '園からの長いお知らせ\n持ち物: 水筒' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(runCommand).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1')).toMatchObject({
+      expected_revision: 1, calendar_end_local_time: '07:00',
+      scheduler_details: { ends_on: '2026-10-06', notes: '園からの長いお知らせ\n持ち物: 水筒' },
+    });
   });
 
   it('allows an existing start-only special task to be edited', async () => {

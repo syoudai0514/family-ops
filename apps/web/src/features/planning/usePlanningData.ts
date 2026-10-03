@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { addDays, tokyoIsoDate } from './dateHelpers';
 import type { GooglePlanningOccurrence, PlanningTask } from './calendarProjection';
+import { readScheduleDetails } from './scheduleDetails';
 
 export function usePlanningData(householdId: string | null, start: string, end: string) {
   const [tasks, setTasks] = useState<PlanningTask[]>([]);
@@ -29,10 +30,10 @@ export function usePlanningData(householdId: string | null, start: string, end: 
       ] = await Promise.all([
         supabase
           .from('task_instances')
-          .select('*, task_definitions(code, calendar_visibility)')
+          .select('*, task_definitions(code, calendar_visibility), task_schedule_details(details)')
           .eq('household_id', householdId)
-          .gte('scheduled_date', start)
           .lte('scheduled_date', end)
+          .or(`scheduled_date.gte.${start},calendar_ends_at.gte.${rangeStart}`)
           .neq('status', 'cancelled')
           .order('scheduled_date'),
         supabase
@@ -41,8 +42,8 @@ export function usePlanningData(householdId: string | null, start: string, end: 
           .eq('household_id', householdId)
           .eq('calendar_connections.active', true)
           .eq('calendar_connections.is_family_write_target', true)
-          .gte('starts_at', rangeStart)
           .lt('starts_at', rangeEndExclusive)
+          .gte('ends_at', rangeStart)
           .order('starts_at'),
         supabase
           .from('calendar_event_occurrences')
@@ -89,6 +90,7 @@ export function usePlanningData(householdId: string | null, start: string, end: 
             ...row,
             definition_code: definition?.code ?? null,
             calendar_visibility: (row.calendar_visibility as PlanningTask['calendar_visibility']) ?? definition?.calendar_visibility ?? null,
+            scheduler_details: readScheduleDetails(row.task_schedule_details, String(row.scheduled_date)),
           } as PlanningTask;
         }),
       );

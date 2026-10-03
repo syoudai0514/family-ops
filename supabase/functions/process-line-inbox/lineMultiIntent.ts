@@ -97,6 +97,13 @@ function dateFromToken(token: string, now: Date): string {
 }
 
 function explicitDate(clause: string, now: Date): string {
+  const absolute = clause.match(/(?:^|[^\d])(?:(\d{4})[年/])?(\d{1,2})[月/](\d{1,2})日?/u);
+  if (absolute) {
+    const year = Number(absolute[1] ?? new Date(now.getTime() + JST_OFFSET_MS).getUTCFullYear());
+    const month = Number(absolute[2]); const day = Number(absolute[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) return date.toISOString().slice(0, 10);
+  }
   const token = clause.match(/今日|明日|明後日|[月火水木金土日]曜/u)?.[0] ?? "今日";
   return dateFromToken(token, now);
 }
@@ -251,12 +258,15 @@ function clauseCandidates(clause: string, now: Date): Omit<LineConversationCandi
   }
   const parsed = deterministicLineIntent(clause, now);
   if (parsed) {
-    const cleanedTitle = parsed.kind === "shopping" ? parsed.title.replace(/も$/u, "") : parsed.title;
+    const cleanedTitle = parsed.kind === "shopping" ? parsed.title
+      .replace(/(?:今日|明後日|明日|[月火水木金土日]曜(?:日)?|\d{1,2}[月/]\d{1,2}日?)(?:までに|まで|に)?/gu, '')
+      .replace(/(?:までに|まで)\s*$/u, '')
+      .replace(/(?:を|も)$/u, "").trim() : parsed.title;
     return [{
       operationId: null,
       kind: parsed.kind,
       title: cleanedTitle,
-      intent: parsed.kind === "shopping" && cleanedTitle !== parsed.title ? { ...parsed, title: cleanedTitle } : parsed,
+      intent: parsed.kind === "shopping" ? { ...parsed, title: cleanedTitle, scheduledDate: explicitDate(clause, now) } : parsed,
       sourceText: clause,
       sourceSpan: null,
       confidence: null,

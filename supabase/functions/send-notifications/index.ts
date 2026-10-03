@@ -570,6 +570,8 @@ Deno.serve(
     requireWorkerToken(req); // throws EDGE_WORKER_UNAUTHORIZED before any DB access
 
     const serviceClient = createServiceRoleClient();
+    const { error: reminderError } = await serviceClient.rpc('server_tx_dispatch_schedule_reminders', { p_limit: 40 });
+    if (reminderError) console.error('send-notifications: schedule reminder dispatch failed', reminderError.message);
     // Dashboard/CLI pastes often include a trailing line break. HTTP header
     // values cannot contain it; trim only surrounding whitespace, never alter
     // a token's meaningful interior characters.

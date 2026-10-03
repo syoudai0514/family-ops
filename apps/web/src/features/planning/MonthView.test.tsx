@@ -83,7 +83,7 @@ describe('MonthView inline day contract', () => {
     expect(screen.getByText('9/6 の予定')).toBeInTheDocument();
     expect(screen.getAllByText('家族予定').length).toBeGreaterThan(0);
     expect(screen.getByText('送り：パパ / 迎え：ママ')).toBeInTheDocument();
-    expect(screen.getByText('水着を準備')).toBeInTheDocument();
+    expect(screen.getAllByText('水着を準備').length).toBeGreaterThan(0);
     expect(screen.getAllByText('送P迎M').length).toBeGreaterThan(0);
     expect(screen.getByTestId('day-agenda-sheet')).toBeInTheDocument();
 

@@ -14,6 +14,7 @@ import {
 } from './calendarProjection';
 import { usePlanningData } from './usePlanningData';
 import './DayAgendaSheet.css';
+import { ScheduleEventCard } from './ScheduleEventCard';
 
 function dayTitle(date: string) {
   const parsed = new Date(`${date}T00:00:00+09:00`);
@@ -76,7 +77,7 @@ export function DayAgendaSheet({
   onChanged: () => void | Promise<void>;
   inline?: boolean;
 }) {
-  const { household, members, partner } = useHousehold();
+  const { household, members, partner, me } = useHousehold();
   const planning = usePlanningData(household?.id ?? null, date, date);
   const primaryUserId = papaUserId(members);
   const partnerUserId = mamaUserId(members);
@@ -141,9 +142,6 @@ export function DayAgendaSheet({
   const transport = projection.transportByDate.get(date);
   const tokens = transportTokens(transport, primaryUserId, partnerUserId);
   const taskById = new Map(planning.tasks.map((task) => [task.id, task]));
-  const timelineTaskIds = new Set(
-    dayItems.map((item) => item.linkedTaskId).filter((id): id is string => Boolean(id)),
-  );
   const transportTaskIds = new Set(
     [transport?.dropoffTaskId, transport?.pickupTaskId].filter((id): id is string => Boolean(id)),
   );
@@ -155,18 +153,11 @@ export function DayAgendaSheet({
     .filter(
       (task) =>
         task.scheduled_date === date &&
-        !isTransportTask(task) &&
-        !timelineTaskIds.has(task.id),
+        !isTransportTask(task),
     )
     .sort(taskSort);
   const completedOperational = operationalTasks.filter((task) => task.status === 'completed').length;
-  const outstandingCount =
-    operationalTasks.filter((task) => task.status !== 'completed').length +
-    transportTasks.filter((task) => task.status !== 'completed').length +
-    dayItems.filter((item) => {
-      const task = item.linkedTaskId ? taskById.get(item.linkedTaskId) : null;
-      return task ? task.status !== 'completed' : false;
-    }).length;
+  const outstandingCount = planning.tasks.filter((task) => task.scheduled_date === date && task.status !== 'completed').length;
 
   const renderTask = (task: PlanningTask, showTime = true) => (
     <TaskChecklistItem
@@ -175,6 +166,7 @@ export function DayAgendaSheet({
       subtasks={subtasksByTaskId.get(task.id) ?? []}
       members={members}
       hasPartner={Boolean(partner)}
+      currentUserId={me?.user_id}
       onEdit={setEditingTask}
       onChanged={() => void refreshAll()}
       showTime={showTime}
@@ -212,42 +204,6 @@ export function DayAgendaSheet({
                 </p>
               )}
 
-              <section className="day-agenda-overview" aria-label="その日の概要">
-                <div>
-                  <span>予定</span>
-                  <strong>{dayItems.length}</strong>
-                </div>
-                <div>
-                  <span>やること</span>
-                  <strong>{operationalTasks.length + transportTasks.length}</strong>
-                </div>
-                <div className={outstandingCount > 0 ? 'attention' : 'done'}>
-                  <span>{outstandingCount > 0 ? '未完了' : 'すべて完了'}</span>
-                  <strong>{outstandingCount > 0 ? outstandingCount : '✓'}</strong>
-                </div>
-              </section>
-
-              {(transportTasks.length > 0 || tokens.dropoff.token !== '—' || tokens.pickup.token !== '—') && (
-                <section className="day-agenda-section">
-                  <div className="day-agenda-section-heading">
-                    <div>
-                      <p className="eyebrow">送り迎え</p>
-                      <h3>送迎</h3>
-                    </div>
-                    <span className="day-agenda-transport-summary">
-                      {tokens.dropoff.token !== '—' && <b>送 {tokens.dropoff.token}</b>}
-                      {tokens.pickup.token !== '—' && <b>迎 {tokens.pickup.token}</b>}
-                    </span>
-                  </div>
-                  {transportTasks.length > 0 ? (
-                    <ul className="task-list day-agenda-task-list">
-                      {transportTasks.map((task) => renderTask(task))}
-                    </ul>
-                  ) : (
-                    <p className="empty-hint">送迎担当だけ設定されています。</p>
-                  )}
-                </section>
-              )}
 
               <section className="day-agenda-section">
                 <div className="day-agenda-section-heading">
@@ -280,23 +236,7 @@ export function DayAgendaSheet({
                           </div>
                           <div className={`day-agenda-timeline-line ${item.source}`} aria-hidden="true" />
                           <div className="day-agenda-timeline-content">
-                            {linkedTask ? (
-                              <ul className="task-list day-agenda-inline-task-list">
-                                {renderTask(linkedTask, false)}
-                              </ul>
-                            ) : (
-                              <article className="day-agenda-external-event">
-                                <strong>{item.fullTitle}</strong>
-                                <span className="day-agenda-source-badge">Google Calendar</span>
-                                {item.location && <p>📍 {item.location}</p>}
-                                {item.description && <p>{item.description}</p>}
-                                <small>
-                                  {item.sourceCalendar
-                                    ? `${item.sourceCalendar} · Google側で編集`
-                                    : 'Google側で編集'}
-                                </small>
-                              </article>
-                            )}
+                            <ScheduleEventCard item={item} task={linkedTask ?? null} onEdit={setEditingTask} onChanged={() => void refreshAll()} />
                           </div>
                         </div>
                       );
@@ -305,11 +245,49 @@ export function DayAgendaSheet({
                 )}
               </section>
 
+              <section className="day-agenda-overview" aria-label="その日の概要">
+                <div>
+                  <span>予定</span>
+                  <strong>{dayItems.length}</strong>
+                </div>
+                <div>
+                  <span>やること</span>
+                  <strong>{operationalTasks.length + transportTasks.length}</strong>
+                </div>
+                <div className={outstandingCount > 0 ? 'attention' : 'done'}>
+                  <span>{outstandingCount > 0 ? '未完了' : 'すべて完了'}</span>
+                  <strong>{outstandingCount > 0 ? outstandingCount : '✓'}</strong>
+                </div>
+              </section>
+
+
+              {(transportTasks.length > 0 || tokens.dropoff.token !== '—' || tokens.pickup.token !== '—') && (
+                <section className="day-agenda-section">
+                  <div className="day-agenda-section-heading">
+                    <div>
+                      <p className="eyebrow">送り迎え</p>
+                      <h3>送迎</h3>
+                    </div>
+                    <span className="day-agenda-transport-summary">
+                      {tokens.dropoff.token !== '—' && <b>送 {tokens.dropoff.token}</b>}
+                      {tokens.pickup.token !== '—' && <b>迎 {tokens.pickup.token}</b>}
+                    </span>
+                  </div>
+                  {transportTasks.length > 0 ? (
+                    <ul className="task-list day-agenda-task-list">
+                      {transportTasks.map((task) => renderTask(task))}
+                    </ul>
+                  ) : (
+                    <p className="empty-hint">送迎担当だけ設定されています。</p>
+                  )}
+                </section>
+              )}
+
               <section className="day-agenda-section day-agenda-tasks-section">
                 <div className="day-agenda-section-heading">
                   <div>
                     <p className="eyebrow">チェックして進める</p>
-                    <h3>やること</h3>
+                    <h3>実績・やること</h3>
                   </div>
                   <span className="day-agenda-progress">
                     {completedOperational}/{operationalTasks.length}
