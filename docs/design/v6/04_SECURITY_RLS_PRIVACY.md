@@ -201,3 +201,9 @@ verify_jwt=false does not mean trusted/public; provider/worker auth happens befo
 - direct browser mutations denied
 - normalized child member composite FK enforces household integrity
 - partial unique prevents duplicate NULL series default
+
+## Scheduler attachments (owner request 2026-10-04)
+
+`task_schedule_details`, `schedule_attachments`, `schedule_comments` are RLS-protected household reads. Authenticated clients cannot directly mutate these business tables. `create-task`/`edit-task` use `server_tx_save_scheduled_task`; attachment registration/deletion and comments use `mutate-schedule-sharing` / `server_tx_mutate_schedule_sharing`, with membership, task scope and idempotency checks.
+
+Only attachment bytes are uploaded through the authenticated Storage SDK. `schedule-attachments` is private, accepts the configured image/PDF/text MIME allowlist and limits each object to 10MB. Paths are household/task/operation UUID; Storage RLS verifies the task belongs to the logged-in household. Registration verifies the stored object and size/MIME before creating metadata. Family reads and signed URLs require the same scope; no public download URL is used. Metadata removal is replayable and server-side file deletion can be retried after an ambiguous response.

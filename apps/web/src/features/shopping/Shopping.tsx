@@ -7,6 +7,7 @@ import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { getShoppingItemActions } from './shoppingActions';
 import type { PurchaseMethod, ShoppingItem, ShoppingItemStatus } from '../../lib/types';
 import './Shopping.css';
+import { useNavigate } from 'react-router-dom';
 
 // A shopping list is a "what do we still need" screen. Grouping strictly by
 // lifecycle status meant that on a household where everything had been bought,
@@ -64,6 +65,7 @@ function useShoppingItems(householdId: string | null) {
 }
 
 export function Shopping() {
+  const navigate = useNavigate();
   const { household, members } = useHousehold();
   const { items, actorRefId, loading, error, refresh } = useShoppingItems(household?.id ?? null);
   const [showForm, setShowForm] = useState(false);
@@ -82,9 +84,7 @@ export function Shopping() {
     <div className="app-shell shopping-page">
       <div className="today-header">
         <div><p className="eyebrow">家族の買い物リスト</p><h1>買い物</h1><p className="shopping-count">あと {openGroups.reduce((sum, group) => sum + group.items.length, 0)} 件</p></div>
-        <button type="button" onClick={() => setShowForm((v) => !v)}>
-          {showForm ? '閉じる' : '+ 追加'}
-        </button>
+        <button type="button" onClick={() => navigate('/concierge?kind=shopping', { state: { originPath: '/shopping', originScrollY: window.scrollY } })}>＋ 追加</button>
       </div>
       {error && (
         <p role="alert" className="error-text">
@@ -99,6 +99,8 @@ export function Shopping() {
           }}
         />
       )}
+      <button type="button" className="shopping-ai-entry secondary-button" onClick={() => navigate('/concierge?kind=shopping', { state: { originPath: '/shopping', originScrollY: window.scrollY } })}>「牛乳を明日までに買いたい」など、そのまま入力</button>
+      <details className="shopping-manual-entry"><summary>商品名を選んで入力</summary><button type="button" className="text-button" onClick={() => setShowForm((v) => !v)}>{showForm ? '入力を閉じる' : '入力フォームを開く'}</button></details>
 
       {openGroups.length === 0 ? (
         <section className="card">
@@ -206,6 +208,7 @@ function ShoppingItemRow({
           {item.purchase_method === 'undecided' ? '購入方法は未定' : PURCHASE_METHOD_LABELS[item.purchase_method]}
           {assignee ? ` · 担当: ${assignee.profile?.display_name ?? assignee.user_id}` : ''}
           {assignmentMode === 'anyone' ? (item.active_claimant_actor_ref_id ? ' · 誰かが対応中' : ' · 誰でもOK') : ''}
+          {item.due_at ? ` · ${new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', weekday: 'short' }).format(new Date(item.due_at))}まで` : ''}
         </span>
         {item.url && (
           <div>

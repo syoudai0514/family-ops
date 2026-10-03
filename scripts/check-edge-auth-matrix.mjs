@@ -62,6 +62,9 @@ const GAP_FILL_FUNCTIONS = new Set([
   'correct-task-actual',
   'change-task-assignment',
   'add-task-completion-evidence',
+  // Owner scheduler request: authenticated, household-scoped attachment
+  // registration/removal and comments through one idempotent server transaction.
+  'mutate-schedule-sharing',
   // Q89-Q106 authenticated nursery review surfaces + worker-token processor.
   'get-nursery-review',
   'list-nursery-reviews',

@@ -182,7 +182,7 @@ jobs:
       - name: supabase start
         run: |
           supabase start \
-            --exclude realtime,storage-api,imgproxy,studio,mailpit,logflare,vector,supavisor,postgres-meta
+            --exclude realtime,imgproxy,studio,mailpit,logflare,vector,supavisor,postgres-meta
 
       - name: Capture local stack connection info
         # v6 review fix (P1-D): `-o env` wraps every value in double quotes,

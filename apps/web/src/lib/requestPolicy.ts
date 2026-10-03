@@ -10,6 +10,7 @@ export const REQUEST_POLICY = {
   configureDropoffPickup: 'mutation',
   createTask: 'mutation',
   editTask: 'mutation',
+  mutateScheduleSharing: 'mutation',
   commitConciergeDuplicate: 'mutation',
   cancelTask: 'mutation',
   completeTask: 'mutation',

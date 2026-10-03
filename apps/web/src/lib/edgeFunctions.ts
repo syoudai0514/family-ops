@@ -8,6 +8,7 @@ export const EDGE_FUNCTIONS = {
   configureDropoffPickup: 'configure-dropoff-pickup',
   createTask: 'create-task',
   editTask: 'edit-task',
+  mutateScheduleSharing: 'mutate-schedule-sharing',
   commitConciergeDuplicate: 'commit-concierge-duplicate',
   cancelTask: 'cancel-task',
   completeTask: 'complete-task',

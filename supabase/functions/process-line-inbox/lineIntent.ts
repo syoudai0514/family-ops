@@ -256,7 +256,7 @@ export function deterministicLineIntent(
       .test(
         normalized,
       );
-  const shoppingSignal = /(?:買って(?:きて)?|買っといて|買っとく|買う|購入|注文して|注文する)/.test(
+  const shoppingSignal = /(?:買って(?:きて)?|買っといて|買っとく|買いたい|買う|購入|注文して|注文する)/.test(
     normalized,
   );
 
@@ -264,7 +264,7 @@ export function deterministicLineIntent(
     const item = cleanNoun(
       normalized
         .replace(/(?:Amazon|アマゾン)で?/gi, "")
-        .replace(/(?:買って(?:きて)?|買っといて|買っとく|買う|購入して|購入する|注文して|注文する).*/u, ""),
+        .replace(/(?:買って(?:きて)?|買っといて|買っとく|買いたい|買う|購入して|購入する|注文して|注文する).*/u, ""),
     )
       .replace(
         /(?:が|は)?(?:もう)?(?:ない|なくなった|なくなりそう|切れそう|切れた)(?:[、,\s]*(?:帰り|帰りに))?$/u,

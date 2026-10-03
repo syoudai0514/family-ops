@@ -69,6 +69,13 @@ const props = {
 };
 
 describe('TaskChecklistItem Q54/Q64/Q106', () => {
+  it('records the partner directly, including the remaining checklist items', async () => {
+    render(<TaskChecklistItem {...props} hasPartner task={makeSubtaskTask()} subtasks={laundrySubtasks} />);
+    fireEvent.click(screen.getByRole('button', { name: '相手がやった' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({
+      task_id: 'laundry-1', completion_actor: 'partner', complete_remaining_subtasks: true,
+    })));
+  });
   beforeEach(() => {
     sessionStorage.clear();
     callEdgeFunction.mockReset();

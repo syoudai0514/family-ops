@@ -199,6 +199,7 @@ export function MonthView() {
         <TaskFormModal
           mode="create"
           initialScheduledDate={taskFormDate}
+          initialCalendarVisibility="special"
           onClose={() => setTaskFormDate(null)}
           onSaved={() => { setTaskFormDate(null); void refresh(); }}
         />

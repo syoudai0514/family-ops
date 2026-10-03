@@ -170,7 +170,7 @@ export function TaskChecklistItem({
     );
   }
 
-  function handleComplete() {
+  function handleComplete(completionActor: 'self' | 'partner' = actor) {
     if (completionPrerequisite?.completeAction === 'codmon_submitted') {
       void withOperation(
         `task:${task.id}:codmon-submitted:r${task.revision ?? 1}`,
@@ -180,12 +180,12 @@ export function TaskChecklistItem({
       return;
     }
     void withOperation(
-      `task:${task.id}:complete:${actor}:r${task.revision ?? 1}`,
+      `task:${task.id}:complete:${completionActor}:r${task.revision ?? 1}`,
       EDGE_FUNCTIONS.completeTask,
       (operationId) => ({
         operation_id: operationId,
         task_id: task.id,
-        completion_actor: actor,
+        completion_actor: completionActor,
         complete_remaining_subtasks: task.completion_mode === 'subtasks',
       }),
     );
@@ -328,7 +328,7 @@ export function TaskChecklistItem({
             type="button"
             className="task-check-control"
             aria-label={completed ? `${task.title}は完了済み` : `${task.title}を完了にする`}
-            onClick={handleComplete}
+            onClick={() => handleComplete()}
             disabled={busy || completed || !canExecute || Boolean(completionPrerequisite?.blocking) || Boolean(completionPrerequisite?.actionLabel)}
           >
             {completed ? '✓' : ''}
@@ -366,7 +366,7 @@ export function TaskChecklistItem({
           <button
             type="button"
             className="secondary-button task-inline-finish"
-            onClick={handleComplete}
+            onClick={() => handleComplete()}
             disabled={busy || !canExecute || completionPrerequisite.blocking}
           >
             {completionPrerequisite.actionLabel}
@@ -378,7 +378,7 @@ export function TaskChecklistItem({
           <button
             type="button"
             className="task-inline-finish"
-            onClick={handleComplete}
+            onClick={() => handleComplete()}
             disabled={busy || !canExecute || Boolean(completionPrerequisite?.blocking)}
             aria-label={`${task.title}を全部やったことにする`}
           >
@@ -390,11 +390,16 @@ export function TaskChecklistItem({
           <button
             type="button"
             className="secondary-button task-inline-finish"
-            onClick={handleComplete}
+            onClick={() => handleComplete()}
             disabled={busy || !canExecute}
           >
             完了
           </button>
+        )}
+
+        {hasPartner && !anyoneTask && !completed && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
+          <button type="button" className="secondary-button task-inline-finish" disabled={busy}
+            onClick={() => handleComplete('partner')}>相手がやった</button>
         )}
 
         {anyoneUnclaimed && !completed && (

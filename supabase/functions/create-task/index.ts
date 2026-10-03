@@ -41,6 +41,13 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   }
 
   const serviceClient = createServiceRoleClient();
+  if (body["scheduler_details"] !== undefined) {
+    const result = await callServerTx<{ task_id: string }>(serviceClient, "server_tx_save_scheduled_task", {
+      p_actor_id: actorId, p_operation_id: operationId, p_task_id: null,
+      p_expected_revision: null, p_payload: body,
+    });
+    return jsonResponse(result);
+  }
   const result = await callServerTx<{ task_id: string }>(
     serviceClient,
     "server_tx_create_task_with_calendar",

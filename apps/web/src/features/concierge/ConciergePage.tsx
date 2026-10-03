@@ -33,6 +33,7 @@ function todayInTokyo(): string {
 export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const shoppingOnly = new URLSearchParams(location.search).get('kind') === 'shopping';
   const { household, me } = useHousehold();
   const incoming = (location.state ?? {}) as ConciergeRouteState;
   const draftScope = useMemo(() => ({
@@ -116,7 +117,7 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
     <div className="app-shell concierge-page">
       <button type="button" className="text-button concierge-back" onClick={() => navigate(-1)}>‹ 戻る</button>
       <div className="eyebrow">{actualOnly ? '予定外の実績' : '追加'}</div>
-      <h1>{actualOnly ? 'やったことを追加' : '追加'}</h1>
+      <h1>{actualOnly ? 'やったことを追加' : shoppingOnly ? '買い物を追加' : '追加'}</h1>
       <p className="page-lead">{actualOnly ? '予定になかった家事・育児も、実際にやった日を選んで記録できます。' : '思いついたことを、そのまま書いてください。分類はあとで整理します。'}</p>
       {actualOnly && (
         <>
@@ -127,8 +128,8 @@ export function ConciergePage({ actualOnly = false }: { actualOnly?: boolean }) 
         </>
       )}
       <label className="concierge-input-label">
-        <span>{actualOnly ? '何をやったか書いてください' : '思いついたことを、そのまま書いてください'}</span>
-        <textarea value={text} onChange={(event) => setText(event.target.value)} rows={7} placeholder={actualOnly ? '例：掃除機かけた' : '例：明日は水遊び。水着を準備。牛乳がなくなりそう。金曜のお迎えお願い。'} />
+        <span>{actualOnly ? '何をやったか書いてください' : shoppingOnly ? '何を、いつまでに買いたいですか？' : '思いついたことを、そのまま書いてください'}</span>
+        <textarea value={text} onChange={(event) => setText(event.target.value)} rows={7} placeholder={actualOnly ? '例：掃除機かけた' : shoppingOnly ? '例：牛乳と食器用洗剤を明日までに買いたい' : '例：明日は水遊び。水着を準備。牛乳がなくなりそう。金曜のお迎えお願い。'} />
       </label>
       {error && <p role="alert" className="error-text">{error}</p>}
       <div className="concierge-actions">
