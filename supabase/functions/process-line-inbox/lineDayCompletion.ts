@@ -57,7 +57,7 @@ export async function tryHandleDayCompletion(ctx: CompletionContext, text: strin
   const parts: string[] = [];
   // A bulk actual report never makes a claim that Codmon was sent.
   for (const task of selected.filter((task) => task.code !== 'codmon_submit')) {
-    await completeTaskAndReply({ ...dayContext, reply: async (message) => { parts.push(message); } }, task.id, {
+    await completeTaskAndReply({ ...dayContext, reply: (message) => { parts.push(message); return Promise.resolve(); } }, task.id, {
       operationId: await ctx.operationId('day-completion', report.date, task.id), title: task.title, code: task.code,
     });
   }
