@@ -8,6 +8,7 @@ import {
   parseDraft,
   parsePlan,
   type Plan,
+  resolveUnderstandModel,
   type PlanEffects,
   runPlan,
   type Snapshot,
@@ -419,4 +420,16 @@ Deno.test("bulk: 「朝の全部」 is picked by the code -- unassigned included
   // ママがやってくれた: by=partner takes the partner's too.
   const byPartner = guardPlan(parsePlan('{"reply":"ありがとう！","actions":[{"type":"complete_tasks","refs":[],"all":"morning","by":"partner"}],"confidence":"high"}')!, s)!;
   assertEquals(byPartner.actions.some((a) => (a as { ref: string }).ref === "t6"), true);
+});
+
+Deno.test("model: the household setting wins when it is a valid Gemini id, else the environment", () => {
+  Deno.env.set("GEMINI_MODEL_LINE_UNDERSTAND", "gemini-3.1-flash-lite");
+  try {
+    assertEquals(resolveUnderstandModel("gemini-3.5-flash"), "gemini-3.5-flash");
+    assertEquals(resolveUnderstandModel(null), "gemini-3.1-flash-lite");
+    assertEquals(resolveUnderstandModel("gemini-3.5-flash:generateContent?key=x"), "gemini-3.1-flash-lite");
+    assertEquals(resolveUnderstandModel("../models/other"), "gemini-3.1-flash-lite");
+  } finally {
+    Deno.env.delete("GEMINI_MODEL_LINE_UNDERSTAND");
+  }
 });

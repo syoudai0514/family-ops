@@ -94,6 +94,16 @@ export async function understandEnabled(client: SupabaseClient): Promise<boolean
   }
 }
 
+/** The model chosen in private.line_ai_settings, or null (then the environment decides). */
+export async function understandModelSetting(client: SupabaseClient): Promise<string | null> {
+  try {
+    const { data, error } = await client.rpc("server_read_line_understand_model");
+    return !error && typeof data === "string" && data ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Asks the shared per-minute Gemini budget for one call. Any failure reads as "no". */
 export async function reserveAiCall(client: SupabaseClient): Promise<boolean> {
   try {

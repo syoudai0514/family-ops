@@ -452,9 +452,20 @@ function isTransient(code: string): boolean {
 
 export type ReserveAiCall = () => Promise<boolean>;
 
-export function makeGeminiProvider(reserve: ReserveAiCall): UnderstandProvider {
+/** A Gemini model id as stored in private.line_ai_settings (no URL tricks). */
+const MODEL_ID = /^gemini-[a-z0-9.-]{1,60}$/;
+
+/**
+ * The model for this call: the household setting (private.line_ai_settings.understand_model,
+ * switchable without a redeploy) when it is a valid id, else the environment.
+ */
+export function resolveUnderstandModel(setting?: string | null): string {
+  return setting && MODEL_ID.test(setting) ? setting : understandModel();
+}
+
+export function makeGeminiProvider(reserve: ReserveAiCall, modelSetting?: string | null): UnderstandProvider {
   return async (prompt: string) => {
-    const model = understandModel();
+    const model = resolveUnderstandModel(modelSetting);
     if (!model) return null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       if (!(await reserve())) {
@@ -742,7 +753,7 @@ function evalSnapshot(input: Record<string, unknown>): Snapshot {
 }
 
 // At most 5 cases per request: evaluation must never eat the family's per-minute budget.
-export async function evaluateUnderstanding(cases: unknown, provider: UnderstandProvider = noModel) {
+export async function evaluateUnderstanding(cases: unknown, provider: UnderstandProvider = noModel, model: string = understandModel()) {
   const list = Array.isArray(cases) ? cases.slice(0, 5) : [];
   const results = [];
   for (const c of list) {
@@ -753,5 +764,5 @@ export async function evaluateUnderstanding(cases: unknown, provider: Understand
     const result = await understandLineText(snapshot, message, provider);
     results.push({ id: r.id ?? null, message, ms: Date.now() - started, raw: result.raw, plan: result.plan, rejected: Boolean(result.parsed) && !result.plan });
   }
-  return { model: understandModel(), results };
+  return { model, results };
 }
