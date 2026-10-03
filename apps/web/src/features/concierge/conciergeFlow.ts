@@ -43,6 +43,7 @@ export type ConciergeCandidate = {
   intent: {
     scheduledDate?: string;
     dueLocalTime?: string | null;
+    daypart?: 'morning' | 'noon' | 'evening' | 'night' | null;
     desiredDueAt?: string | null;
     priority?: 'low' | 'normal' | 'high' | null;
     targetUserId?: string | null;
@@ -58,6 +59,7 @@ export type ConciergeCandidate = {
 type RawLineIntent = {
   scheduledDate?: string;
   dueLocalTime?: string | null;
+  daypart?: 'morning' | 'noon' | 'evening' | 'night' | null;
   targetRole?: string | null;
   sharedMessage?: string | null;
   subtasks?: string[];
@@ -165,6 +167,7 @@ export function normalizeConciergeProposal(raw: RawConciergeProposal, sourceText
         intent: candidate.intent ? {
           scheduledDate: candidate.intent.scheduledDate,
           dueLocalTime: candidate.intent.dueLocalTime ?? null,
+          daypart: candidate.intent.daypart ?? null,
           desiredDueAt: null,
           priority: null,
           targetUserId: null,

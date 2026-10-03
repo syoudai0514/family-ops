@@ -66,7 +66,7 @@ Google provider mutation remains asynchronous through the existing Family Ops ca
 
 ## 5. PWA Month interaction
 
-Tapping a date in Month does **not** immediately navigate away or open the detail sheet. It first selects the date and renders an inline summary directly below the calendar.
+Owner update 2026-10-03 (Baseline §29.12): tapping a date selects it and immediately opens the day agenda sheet. The sheet shows the full titles and a time-ordered agenda. Closing it preserves the month and selected date. The inline summary below the calendar remains available.
 
 The inline summary contains at minimum:
 
@@ -82,7 +82,7 @@ From the inline summary the user can choose:
 - `この日に追加` → existing add form with the selected date prefilled
 - `この日だけ変更` in transport → occurrence-override editor
 
-The selected date remains in Month until the user changes month/date; opening and closing a child editor must not turn the date tap itself into navigation.
+The selected date remains in Month until the user changes month/date; opening and closing the agenda or a child editor preserves the month route and its selected date.
 
 ## 6. Mobile layout
 
@@ -94,7 +94,7 @@ At minimum automated tests must cover:
 
 1. exact `送P迎M`, `送P`, `迎M`
 2. no whitespace or separator in compact transport
-3. Month date selection → inline summary
+3. Month date selection → day agenda sheet; closing preserves selection
 4. inline summary → detail/edit and selected-date add
 5. new template → previous template closes on the prior day
 6. newest template open-ended by default

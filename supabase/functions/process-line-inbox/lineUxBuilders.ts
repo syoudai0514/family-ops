@@ -229,6 +229,7 @@ export function buildMultiIntentPreviewFlex(data: {
     kind: string;
     title: string;
     missingFields: string[];
+    scheduleLabel?: string;
     duplicateMatch?: boolean;
     duplicateDecision?: "existing" | "update" | "separate" | null;
   }>;
@@ -242,8 +243,9 @@ export function buildMultiIntentPreviewFlex(data: {
       displayText: labelText,
     },
   });
-  const lines: Record<string, unknown>[] = data.candidates.slice(0, 5).flatMap((candidate) => [
+  const lines: Record<string, unknown>[] = data.candidates.slice(0, 8).flatMap((candidate) => [
     row(label(candidate.kind), candidate.title),
+    ...(candidate.scheduleLabel ? [row('日時', candidate.scheduleLabel)] : []),
     ...(candidate.missingFields.length > 0 ? [{
       type: "text", size: "xxs", color: "#B54708", wrap: true,
       text: `確認が必要: ${candidate.missingFields.join("・")}`,

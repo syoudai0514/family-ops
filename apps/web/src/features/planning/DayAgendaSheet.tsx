@@ -38,7 +38,8 @@ function clock(value: string | null) {
   }).format(parsed);
 }
 
-function timelineLabel(item: CalendarProjectionItem) {
+function timelineLabel(item: CalendarProjectionItem, task?: PlanningTask | null) {
+  if (item.allDay && task?.routine_phase === 'evening' && !task.due_at) return { start: '夜', end: '時刻未定' };
   if (item.allDay) return { start: '終日', end: null };
   return { start: clock(item.startsAt) ?? '—', end: clock(item.endsAt) };
 }
@@ -60,14 +61,20 @@ function taskSort(a: PlanningTask, b: PlanningTask) {
   return (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999') || a.title.localeCompare(b.title);
 }
 
+function AgendaFrame({ inline, children, ...props }: Parameters<typeof Modal>[0] & { inline?: boolean }) {
+  return inline ? <section className="day-agenda-inline"><h1>{props.title}</h1>{children}</section> : <Modal {...props}>{children}</Modal>;
+}
+
 export function DayAgendaSheet({
   date,
   onClose,
   onChanged,
+  inline = false,
 }: {
   date: string;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
+  inline?: boolean;
 }) {
   const { household, members, partner } = useHousehold();
   const planning = usePlanningData(household?.id ?? null, date, date);
@@ -176,7 +183,7 @@ export function DayAgendaSheet({
 
   return (
     <>
-      <Modal
+      <AgendaFrame inline={inline}
         title={dayTitle(date)}
         onClose={onClose}
         panelClassName="day-agenda-modal"
@@ -215,8 +222,8 @@ export function DayAgendaSheet({
                   <strong>{operationalTasks.length + transportTasks.length}</strong>
                 </div>
                 <div className={outstandingCount > 0 ? 'attention' : 'done'}>
-                  <span>{outstandingCount > 0 ? '未完了' : '完了'}</span>
-                  <strong>{outstandingCount}</strong>
+                  <span>{outstandingCount > 0 ? '未完了' : 'すべて完了'}</span>
+                  <strong>{outstandingCount > 0 ? outstandingCount : '✓'}</strong>
                 </div>
               </section>
 
@@ -263,8 +270,8 @@ export function DayAgendaSheet({
                 ) : (
                   <div className="day-agenda-timeline">
                     {dayItems.map((item) => {
-                      const time = timelineLabel(item);
                       const linkedTask = item.linkedTaskId ? taskById.get(item.linkedTaskId) : null;
+                      const time = timelineLabel(item, linkedTask);
                       return (
                         <div className="day-agenda-timeline-row" key={item.id}>
                           <div className="day-agenda-time">
@@ -334,7 +341,7 @@ export function DayAgendaSheet({
             </>
           )}
         </div>
-      </Modal>
+      </AgendaFrame>
 
       {createKind && (
         <TaskFormModal

@@ -11,11 +11,11 @@ import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
 
 const say = (label: string, text: string = label): LineQuickReplyAction => ({ type: "message", label, text });
 
-export function buildBriefQuickReply(type: string, opts: { evening?: boolean } = {}): LineQuickReplyAction[] | undefined {
+export function buildBriefQuickReply(type: string, opts: { evening?: boolean; previousDay?: boolean } = {}): LineQuickReplyAction[] | undefined {
   if (type === "daily_brief.v2") {
     return opts.evening
       ? [say("入力"), say("今日"), say("買い物", "買い物リスト"), say("共有")]
-      : [say("今日"), say("買い物", "買い物リスト"), say("共有")];
+      : [...(opts.previousDay ? [say('昨日は全部完了', '昨日のは全部終わっている')] : []), say("今日"), say("買い物", "買い物リスト"), say("共有")];
   }
   if (type === "codmon.deadline") {
     return [say("コドモン送りました"), say("今日")];

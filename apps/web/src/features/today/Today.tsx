@@ -25,6 +25,9 @@ import type { PendingAction, RequestRow, TaskInstance } from '../../lib/types';
 import { buildCodmonCompletionPrerequisite } from './codmonReadiness';
 import { LoadingScreen } from '../../components/LoadingScreen';
 import { HandoverActions } from '../handovers/HandoverActions';
+import { DayAgendaSheet } from '../planning/DayAgendaSheet';
+import { tokyoIsoDate } from '../planning/dateHelpers';
+import { useSearchParams } from 'react-router-dom';
 
 const INPUT_LABELS: Record<string, string> = {
   dropoff: '朝の入力',
@@ -288,6 +291,34 @@ function scheduleLabel(item: DailyBriefScheduleItem): string {
 }
 
 export function Today() {
+  const [params, setParams] = useSearchParams();
+  const currentClock = useTodayClock(() => {});
+  const today = tokyoIsoDate(currentClock.now);
+  const value = params.get('date') ?? today;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : today;
+  function selectDate(next: string) {
+    const copy = new URLSearchParams(params);
+    if (next === today) copy.delete('date'); else copy.set('date', next);
+    setParams(copy);
+  }
+  function move(delta: number) {
+    const next = new Date(`${date}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + delta);
+    selectDate(next.toISOString().slice(0, 10));
+  }
+  return <>
+    <nav className="app-shell daily-date-nav" aria-label="実績の対象日">
+      <button type="button" className="secondary-button" onClick={() => move(-1)} aria-label="前日">‹ 前日</button>
+      <input aria-label="表示する日" type="date" value={date} onChange={(event) => event.target.value && selectDate(event.target.value)} />
+      <button type="button" className="secondary-button" onClick={() => move(1)} aria-label="翌日">翌日 ›</button>
+      {date !== today && <button type="button" className="text-button" onClick={() => selectDate(today)}>今日に戻る</button>}
+    </nav>
+    {date === today ? <TodayDashboard /> : <div className="app-shell"><p className="meta">この日の予定・やることを確認して、完了や未完了を更新できます。</p><DayAgendaSheet key={date} date={date} inline onClose={() => selectDate(today)} onChanged={() => {}} /></div>}
+  </>;
+}
+
+function TodayDashboard() {
   const { user } = useAuth();
   const { household, members, partner } = useHousehold();
   const data = useTodayData(household?.id ?? null, user?.id ?? null);

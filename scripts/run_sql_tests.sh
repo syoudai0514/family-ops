@@ -28,7 +28,7 @@ node "$REPO_ROOT/scripts/seed_jp_holidays.mjs" "$TEST_DB"
 
 echo "== running SQL test suite =="
 shopt -s nullglob
-for f in "$REPO_ROOT"/tests/sql/[0-9][0-9]_*.sql; do
+for f in "$REPO_ROOT"/tests/sql/[0-9][0-9]_*.sql "$REPO_ROOT"/tests/sql/[0-9][0-9][0-9]_*.sql; do
   base="$(basename "$f")"
   if [ "$base" = "00_local_auth_shim.sql" ]; then
     continue

@@ -71,7 +71,7 @@ describe('MonthView inline day contract', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('selects a date inline first, then opens detail, add, or one-day transport edit from the summary', () => {
+  it('opens the selected day immediately and retains its inline add and transport controls', () => {
     render(<MonthView />);
 
     expect(screen.queryByTestId('day-agenda-sheet')).not.toBeInTheDocument();
@@ -85,7 +85,7 @@ describe('MonthView inline day contract', () => {
     expect(screen.getByText('送り：パパ / 迎え：ママ')).toBeInTheDocument();
     expect(screen.getByText('水着を準備')).toBeInTheDocument();
     expect(screen.getAllByText('送P迎M').length).toBeGreaterThan(0);
-    expect(screen.queryByTestId('day-agenda-sheet')).not.toBeInTheDocument();
+    expect(screen.getByTestId('day-agenda-sheet')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '詳しく見る・編集' }));
     expect(screen.getByTestId('day-agenda-sheet')).toHaveTextContent('detail:2026-09-06');

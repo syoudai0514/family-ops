@@ -8,7 +8,7 @@ import {
   transportLabel,
   type CalendarProjectionItem,
 } from './calendarProjection';
-import { localIsoDate } from './dateHelpers';
+import { localIsoDate, tokyoIsoDate } from './dateHelpers';
 import { DayAgendaSheet } from './DayAgendaSheet';
 import { TransportOccurrenceOverrideModal } from './TransportOccurrenceOverrideModal';
 import { usePlanningData } from './usePlanningData';
@@ -50,7 +50,7 @@ export function monthDateHeading(date: string) {
 
 export function MonthView() {
   const { household, members } = useHousehold();
-  const [anchor, setAnchor] = useState(() => new Date());
+  const [anchor, setAnchor] = useState(() => new Date(`${tokyoIsoDate(new Date())}T12:00:00`));
   const { start, end } = monthRange(anchor);
   const { tasks, occurrences, loading, error, refresh } = usePlanningData(
     household?.id ?? null,
@@ -61,7 +61,7 @@ export function MonthView() {
   // the week view. Without it the month grid silently renders "予定はありません"
   // on every day while the cache stays stale.
   useCalendarFreshness({ enabled: Boolean(household) });
-  const [selected, setSelected] = useState(localIsoDate(new Date()));
+  const [selected, setSelected] = useState(tokyoIsoDate(new Date()));
   const [sheetDate, setSheetDate] = useState<string | null>(null);
   const [taskFormDate, setTaskFormDate] = useState<string | null>(null);
   const [transportOverrideDate, setTransportOverrideDate] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export function MonthView() {
   );
   const firstOffset = (start.getDay() + 6) % 7;
   const totalCells = firstOffset + days.length > 35 ? 42 : 35;
-  const today = localIsoDate(new Date());
+  const today = tokyoIsoDate(new Date());
   const selectedTransport = projection.transportByDate.get(selected);
   const selectedItems = projection.itemsByDate.get(selected) ?? [];
   const selectedMainTasks = tasks.filter(
@@ -118,7 +118,7 @@ export function MonthView() {
         <p role="status">読み込み中…</p>
       ) : (
         <>
-          <p className="month-contract-hint">日を選ぶと、予定・送迎・やることをカレンダーの下で確認できます。</p>
+          <p className="month-contract-hint">日付をタップすると、予定を時間順に大きく表示できます。</p>
           <div className="month-grid month-weekdays" aria-hidden="true">
             {['月', '火', '水', '木', '金', '土', '日'].map((day) => <span key={day}>{day}</span>)}
           </div>
@@ -139,7 +139,8 @@ export function MonthView() {
                 <button
                   key={date}
                   type="button"
-                  onClick={() => setSelected(date)}
+                  onClick={() => { setSelected(date); setSheetDate(date); }}
+                  onDoubleClick={() => setSheetDate(date)}
                   aria-pressed={selected === date}
                   aria-label={`${date}を選択`}
                   className={['month-day', selected === date ? 'selected' : '', date === today ? 'today' : '', dayOfWeek === 6 ? 'saturday' : '', dayOfWeek === 0 ? 'sunday' : ''].filter(Boolean).join(' ')}

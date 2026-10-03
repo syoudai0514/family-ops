@@ -523,3 +523,10 @@
     grid-column: auto;
   }
 }
+
+.app-shell.daily-date-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .5rem; align-items: center; min-height: 0; padding-top: .8rem; padding-bottom: .5rem; }
+.daily-date-nav input { min-width: 0; text-align: center; }
+.daily-date-nav .text-button { grid-column: 1 / -1; justify-self: center; }
+.day-agenda-inline .day-agenda { padding: 0; }
+.day-agenda-inline .day-agenda-handle { display: none; }
+.day-agenda-inline .day-agenda-sticky-actions { position: static; }
