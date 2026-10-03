@@ -5,8 +5,29 @@ import {
   isLiveCalendarEligible,
   isGoogleCalendarForbiddenError,
   listEligibleCalendarCandidates,
+  projectionWindow,
   revalidateCalendarEligibilityAfterForbidden,
 } from './googleCalendar.ts';
+
+Deno.test('projection window uses Tokyo midnight boundaries and matching local dates', () => {
+  assertEquals(projectionWindow(new Date('2026-10-03T02:30:00Z')), {
+    start: '2026-09-25T15:00:00.000Z',
+    end: '2026-12-01T15:00:00.000Z',
+    startDate: '2026-09-26',
+    endDate: '2026-12-02',
+  });
+});
+
+Deno.test('projection window stays stable within a Tokyo day and advances at local midnight', () => {
+  const before = projectionWindow(new Date('2026-10-03T14:59:59Z'));
+  assertEquals(before, projectionWindow(new Date('2026-10-02T15:00:00Z')));
+  assertEquals(projectionWindow(new Date('2026-10-03T15:00:00Z')), {
+    start: '2026-09-26T15:00:00.000Z',
+    end: '2026-12-02T15:00:00.000Z',
+    startDate: '2026-09-27',
+    endDate: '2026-12-03',
+  });
+});
 
 Deno.test('keeps every writable Asia/Tokyo calendar as a candidate without choosing a target', () => {
   const candidates = listEligibleCalendarCandidates([

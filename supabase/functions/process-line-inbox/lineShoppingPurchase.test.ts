@@ -3,6 +3,7 @@ import type { CompletionContext } from "./lineCompletionReport.ts";
 import {
   matchShoppingItems,
   parsePurchaseReport,
+  purchaseShoppingItemAndReply,
   reopenShoppingItemAndReply,
   tryHandleShoppingPurchaseReport,
 } from "./lineShoppingPurchase.ts";
@@ -40,7 +41,7 @@ Deno.test("match: a hint finds the item whether typed in katakana or with the ve
   assertEquals(matchShoppingItems(items, { hint: null, all: false }).length, 2);
 });
 
-function fakeContext(opts: { items: Array<{ id: string; title: string; revision: number }>; rpcError?: string }) {
+function fakeContext(opts: { items: Array<{ id: string; title: string; revision: number }>; rpcError?: string; rpcData?: unknown }) {
   const calls: Array<{ fn: string; args: Record<string, unknown> }> = [];
   const replies: Array<{ text: string; quick?: unknown[] }> = [];
   const builder = () => {
@@ -55,7 +56,7 @@ function fakeContext(opts: { items: Array<{ id: string; title: string; revision:
     from: () => builder(),
     rpc: (fn: string, args: Record<string, unknown>) => {
       calls.push({ fn, args });
-      return Promise.resolve({ data: null, error: opts.rpcError ? { message: opts.rpcError } : null });
+      return Promise.resolve({ data: opts.rpcData === undefined ? { revision: 7 } : opts.rpcData, error: opts.rpcError ? { message: opts.rpcError } : null });
     },
   };
   const ctx = {
@@ -90,6 +91,21 @@ Deno.test("handler: a hint picks its item among several", async () => {
   const { ctx, calls } = fakeContext({ items: [TSHIRT, MILK] });
   assertEquals(await tryHandleShoppingPurchaseReport(ctx, "Tシャツ買った！"), true);
   assertEquals(calls.map((c) => c.args.p_shopping_item_id), ["s-1"]);
+});
+
+Deno.test("undo: the purchase receipt revision is kept when a later change has advanced the row", async () => {
+  // The fake row read returns 7; this purchase (or its idempotent replay)
+  // produced revision 3. Undo must conflict with that later row state.
+  const { ctx, replies } = fakeContext({ items: [TSHIRT], rpcData: { revision: 3 } });
+  await purchaseShoppingItemAndReply(ctx, TSHIRT, "op");
+  const undo = (replies[0].quick as Array<{ data?: string }>)[0];
+  assertEquals(undo.data, "action=shopping_reopen&item_id=s-1&revision=3");
+});
+
+Deno.test("undo: no revision in the purchase receipt never borrows the current row revision", async () => {
+  const { ctx, replies } = fakeContext({ items: [TSHIRT], rpcData: null });
+  await purchaseShoppingItemAndReply(ctx, TSHIRT, "op");
+  assertEquals(replies[0].quick, [{ type: "message", label: "買い物リスト", text: "買い物リスト" }]);
 });
 
 Deno.test("handler: a bare report with several items asks which and changes nothing", async () => {
