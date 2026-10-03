@@ -531,8 +531,6 @@
 .day-agenda-inline .day-agenda-sticky-actions { position: static; }
 .day-agenda-inline .day-agenda { min-height: 0; max-height: none; overflow: visible; overscroll-behavior: auto; padding: .5rem 0 1rem; }
 .day-agenda-inline, .day-agenda-section { min-width: 0; }
-.day-agenda .task-checklist-main { grid-template-columns: 2.65rem minmax(0, 1fr); }
-.day-agenda .task-inline-finish, .day-agenda .task-overflow { grid-column: 2; justify-self: start; }
 .schedule-form-fields { display: grid; gap: .85rem; min-width: 0; margin: 0; padding: 0; border: 0; }
 .schedule-form-fields > label, .schedule-options label { display: grid; gap: .3rem; min-width: 0; }
 .schedule-form-fields .checkbox-row, .schedule-options .checkbox-row { display: flex; align-items: center; gap: .5rem; }

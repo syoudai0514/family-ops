@@ -736,6 +736,9 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+/* Today task card (owner 2026-10-04: "わかりやすくて更新しやすい"):
+   [○ done]  title / time · who        [•••]
+             [✓ 全部やった] [相手がやった]   <- one compact row, never stacked */
 .task-checklist-main {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -757,6 +760,15 @@ button:disabled {
   line-height: 1;
 }
 
+/* An open task's circle shows a faint check, so it reads as "tap to finish". */
+.task-check-hint {
+  opacity: 0.22;
+}
+
+.task-check-control:not(:disabled):active .task-check-hint {
+  opacity: 0.7;
+}
+
 .task-checklist-content {
   min-width: 0;
   padding: 0.15rem 0;
@@ -770,46 +782,59 @@ button:disabled {
   gap: 0.15rem;
 }
 
-.task-inline-finish {
-  white-space: nowrap;
-  word-break: keep-all;
-  writing-mode: horizontal-tb;
-  flex-shrink: 0;
-  min-width: max-content;
+/* The ••• menu sits at the top right of the card and opens leftwards, inside it. */
+.task-checklist-item .task-checklist-main > .task-overflow {
+  grid-column: 3;
+  justify-self: end;
+  align-self: start;
 }
 
-.task-checklist-main > .task-overflow {
-  grid-column: 2 / -1;
-  justify-self: start;
-}
-
-/* The menu button sits at the left of the row, so the panel opens rightwards
-   and never wider than the screen (it used to open leftwards off-screen). */
 .task-checklist-main > .task-overflow > div {
-  left: 0;
-  right: auto;
+  left: auto;
+  right: 0;
   width: max-content;
   max-width: min(20rem, calc(100vw - 2rem));
+}
+
+.task-checklist-item .task-actions {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: -0.2rem;
+}
+
+.task-checklist-item .task-actions:empty {
+  display: none;
+}
+
+.task-checklist-item .task-action {
+  min-height: 2.25rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.task-checklist-item .task-action-primary {
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.task-checklist-item .task-action-secondary {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .subtask-checklist {
   margin-top: 0.65rem;
 }
 
-@media (max-width: 520px) {
-  .task-checklist-main {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .task-checklist-main > .task-inline-finish {
-    grid-column: 2;
-    justify-self: start;
-  }
-
-  .task-checklist-main > .task-overflow {
-    grid-column: 2;
-  }
-}
 
 .request-item,
 .shopping-item {
