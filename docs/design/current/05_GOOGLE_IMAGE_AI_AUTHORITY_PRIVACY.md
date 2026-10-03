@@ -115,6 +115,14 @@ v6 statement that shared Google calendar is the family schedule source of truth 
 
 ADR 0013 explicitly records this architecture evolution.
 
+## 4.1 Household-visible Google Calendar boundary
+
+- `calendar_connections.is_family_write_target = true` のactive connectionだけが、Google予定の件名・場所・説明・日時をPWA/LINEの家庭共有scheduleへ出せる。
+- 非targetのactive calendarはbusy/conflict計算に利用してよいが、予定詳細をhousehold-visible read modelへ混ぜない。
+- Browserが直接読むGoogle event cache / occurrence projectionはRLSでもtarget calendarに限定し、React側filterだけをprivacy boundaryにしない。
+- Today / Week / DailyBrief / legacy digestのservice-role readerもtarget条件を必須にする。busy判定関数は非target calendarを利用可能なままとする。
+- target未選択時に、先頭のeligible calendarを暗黙に家庭共有へ昇格させない。
+
 ## 5. Family Event ↔ Google link modes
 
 ### 5.1 `family_ops_owned`
