@@ -223,27 +223,61 @@ export function validateInvariant(rawText: string, proposedText: string): Invari
 // this against the live API is a manual-setup item, see the WP5 report)
 // ---------------------------------------------------------------------------
 
-export async function callGemini(prompt: string, model: string): Promise<string> {
+export type GeminiThinkingLevel = "minimal" | "low" | "medium" | "high";
+
+export interface GeminiCallOptions {
+  /** Abort the request after this long; the failure reads as GEMINI_TIMEOUT. */
+  timeoutMs?: number;
+  /** Gemini 3 family only (thinkingConfig.thinkingLevel); ignored for other models. */
+  thinkingLevel?: GeminiThinkingLevel;
+}
+
+export function geminiGenerationConfig(model: string, options: GeminiCallOptions = {}): Record<string, unknown> {
+  const config: Record<string, unknown> = { temperature: 0.2, responseMimeType: "application/json" };
+  if (options.thinkingLevel && /^gemini-3/.test(model)) {
+    config.thinkingConfig = { thinkingLevel: options.thinkingLevel };
+  }
+  return config;
+}
+
+export async function callGemini(prompt: string, model: string, options: GeminiCallOptions = {}): Promise<string> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey || apiKey.length === 0 || !model || model.length === 0) {
     throw new Error("GEMINI_NOT_CONFIGURED");
   }
 
   const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: geminiGenerationConfig(model, options),
+      }),
+      signal: options.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : undefined,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new Error("GEMINI_TIMEOUT");
+    }
+    throw error;
+  }
 
   if (!res.ok) {
     throw new Error(`GEMINI_HTTP_${res.status}`);
   }
 
-  const data = await res.json();
+  let data: { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> } }> };
+  try {
+    data = await res.json();
+  } catch (error) {
+    if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new Error("GEMINI_TIMEOUT");
+    }
+    throw error;
+  }
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (typeof text !== "string" || text.length === 0) {
     throw new Error("GEMINI_EMPTY_RESPONSE");

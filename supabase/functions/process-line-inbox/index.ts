@@ -117,8 +117,9 @@ import {
   type CompletionContext,
 } from "./lineCompletionReport.ts";
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
-import { type DraftSpec, draftToPending, evaluateUnderstanding, makeGeminiProvider, resolveUnderstandModel, runPlan, understandLineText } from "./lineUnderstand.ts";
-import { loadSnapshot, logLineTurn, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
+import { type DraftSpec, draftToPending, evaluateUnderstanding, makeGeminiProvider, resolveUnderstandModel, runPlan, UNDERSTAND_THINKING_LEVEL, understandLineText } from "./lineUnderstand.ts";
+import type { GeminiThinkingLevel } from "../_shared/gemini.ts";
+import { loadSnapshot, logLineTurn, markUnderstandModelBusy, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
 import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
 import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import {
@@ -2023,7 +2024,13 @@ async function handleText(
     // it does not spend one of the per-minute AI calls on an answer that is never used.
     if (await tryHandleDayCompletion(completionContext(client, item, actor), text)) return;
     const modelSetting = await understandModelSetting(client);
-    const understood = await understandLineText(snapshot, text, makeGeminiProvider(() => reserveAiCall(client), modelSetting));
+    const understood = await understandLineText(snapshot, text, makeGeminiProvider(
+      () => reserveAiCall(client),
+      modelSetting,
+      undefined,
+      undefined,
+      (model) => markUnderstandModelBusy(client, model),
+    ));
     if (understood.plan) {
       const plan = understood.plan;
       console.info("process-line-inbox: understood", {
@@ -2317,9 +2324,13 @@ Deno.serve(
       const evalClient = createServiceRoleClient();
       // `model` compares a candidate before it is switched on; default = the live setting.
       const setting = typeof body.model === "string" ? body.model : await understandModelSetting(evalClient);
+      // `thinking` compares Gemini 3 thinking levels ("none" = the model's own default).
+      const thinking = body.thinking === "none" ? null
+        : ["minimal", "low", "medium", "high"].includes(String(body.thinking)) ? body.thinking as GeminiThinkingLevel
+        : UNDERSTAND_THINKING_LEVEL;
       return jsonResponse(await evaluateUnderstanding(
         body.cases,
-        makeGeminiProvider(() => reserveAiCall(evalClient), setting),
+        makeGeminiProvider(() => reserveAiCall(evalClient), setting, thinking),
         resolveUnderstandModel(setting),
       ));
     }

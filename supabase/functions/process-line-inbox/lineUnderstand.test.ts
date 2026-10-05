@@ -5,6 +5,9 @@ import {
   evaluateUnderstanding,
   guardPlan,
   makeGeminiProvider,
+  UNDERSTAND_ATTEMPT_TIMEOUT_MS,
+  UNDERSTAND_RETRY_TIMEOUT_MS,
+  understandAttempts,
   parseDraft,
   parsePlan,
   type Plan,
@@ -14,6 +17,7 @@ import {
   type Snapshot,
   understandLineText,
 } from "./lineUnderstand.ts";
+import { geminiGenerationConfig } from "../_shared/gemini.ts";
 import { isFixedShortcutText } from "./lineConversation.ts";
 import { describePendingDraft, jstClock } from "./lineRouterWiring.ts";
 import { buildShoppingListReply } from "./lineShoppingList.ts";
@@ -251,6 +255,42 @@ Deno.test("budget: no call when the minute is used up; no retry on 429; one retr
     if (env === undefined) Deno.env.delete("GEMINI_MODEL_LINE_UNDERSTAND"); else Deno.env.set("GEMINI_MODEL_LINE_UNDERSTAND", env);
     if (realKey === undefined) Deno.env.delete("GEMINI_API_KEY"); else Deno.env.set("GEMINI_API_KEY", realKey);
   }
+});
+
+Deno.test("provider: a slow or busy model retries once on the environment model, with low thinking and a timeout", async () => {
+  const env = Deno.env.get("GEMINI_MODEL_LINE_UNDERSTAND");
+  Deno.env.set("GEMINI_MODEL_LINE_UNDERSTAND", "gemini-3.1-flash-lite");
+  try {
+    const seen: Array<{ model: string; timeoutMs?: number; thinkingLevel?: string }> = [];
+    const call = (_prompt: string, model: string, options: { timeoutMs?: number; thinkingLevel?: string } = {}) => {
+      seen.push({ model, ...options });
+      return seen.length === 1 ? Promise.reject(new Error("GEMINI_TIMEOUT")) : Promise.resolve('{"reply":"ok","actions":[]}');
+    };
+    const busy: string[] = [];
+    const provider = makeGeminiProvider(() => Promise.resolve(true), "gemini-3.5-flash", undefined, call, (m) => {
+      busy.push(m);
+      return Promise.resolve();
+    });
+    assertEquals(await provider("p"), '{"reply":"ok","actions":[]}');
+    assertEquals(seen.map((s) => s.model), ["gemini-3.5-flash", "gemini-3.1-flash-lite"]);
+    // The busy model steps aside so the next message does not wait on it again.
+    assertEquals(busy, ["gemini-3.5-flash"]);
+    // The configured model gets the low thinking level and a short wait; the lighter
+    // environment model keeps its own (fast) default thinking.
+    assertEquals(seen.map((s) => [s.timeoutMs, s.thinkingLevel]), [
+      [UNDERSTAND_ATTEMPT_TIMEOUT_MS, "low"],
+      [UNDERSTAND_RETRY_TIMEOUT_MS, undefined],
+    ]);
+    assertEquals(understandAttempts(null).map((a) => a.model), ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"]);
+  } finally {
+    if (env === undefined) Deno.env.delete("GEMINI_MODEL_LINE_UNDERSTAND"); else Deno.env.set("GEMINI_MODEL_LINE_UNDERSTAND", env);
+  }
+});
+
+Deno.test("gemini request: thinking level is sent only to Gemini 3 models", () => {
+  assertEquals(geminiGenerationConfig("gemini-3.5-flash", { thinkingLevel: "low" }).thinkingConfig, { thinkingLevel: "low" });
+  assertEquals(geminiGenerationConfig("gemini-2.5-flash", { thinkingLevel: "low" }).thinkingConfig, undefined);
+  assertEquals(geminiGenerationConfig("gemini-3.5-flash").thinkingConfig, undefined);
 });
 
 Deno.test("evaluation: at most 5 cases per request", async () => {
