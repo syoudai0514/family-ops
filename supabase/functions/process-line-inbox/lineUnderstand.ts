@@ -467,15 +467,18 @@ export function resolveUnderstandModel(setting?: string | null): string {
 /**
  * The person is waiting on the LINE reply. A busy model (Gemini 3.5 Flash answered 503
  * after ~20 s, then ~23 s on the retry: a 49 s reply) must not hold it: each attempt is
- * cut at UNDERSTAND_ATTEMPT_TIMEOUT_MS, and the retry goes to the environment model
+ * cut at UNDERSTAND_ATTEMPT_TIMEOUT_MS (3.5 Flash took 12 s+ on every call that day), and the retry goes to the environment model
  * (the lighter one) instead of asking the busy one again.
  */
-export const UNDERSTAND_ATTEMPT_TIMEOUT_MS = 12_000;
+export const UNDERSTAND_ATTEMPT_TIMEOUT_MS = 8_000;
+export const UNDERSTAND_RETRY_TIMEOUT_MS = 12_000;
 export const UNDERSTAND_THINKING_LEVEL: GeminiThinkingLevel = "low";
 
 export interface UnderstandAttempt {
   model: string;
   timeoutMs: number;
+  /** Only the configured model gets the thinking level; the environment model keeps its own default (fast). */
+  primary: boolean;
 }
 
 export function understandAttempts(modelSetting?: string | null): UnderstandAttempt[] {
@@ -483,9 +486,10 @@ export function understandAttempts(modelSetting?: string | null): UnderstandAtte
   if (!primary) return [];
   const env = understandModel();
   const retry = env && MODEL_ID.test(env) ? env : primary;
+  const configured = primary !== env;
   return [
-    { model: primary, timeoutMs: UNDERSTAND_ATTEMPT_TIMEOUT_MS },
-    { model: retry, timeoutMs: UNDERSTAND_ATTEMPT_TIMEOUT_MS },
+    { model: primary, timeoutMs: configured ? UNDERSTAND_ATTEMPT_TIMEOUT_MS : UNDERSTAND_RETRY_TIMEOUT_MS, primary: configured },
+    { model: retry, timeoutMs: UNDERSTAND_RETRY_TIMEOUT_MS, primary: retry !== env },
   ];
 }
 
@@ -502,14 +506,14 @@ export function makeGeminiProvider(
   return async (prompt: string) => {
     const attempts = understandAttempts(modelSetting);
     for (let i = 0; i < attempts.length; i++) {
-      const { model, timeoutMs } = attempts[i];
+      const { model, timeoutMs, primary } = attempts[i];
       if (!(await reserve())) {
         console.warn("process-line-inbox: AI budget for this minute is used up; using the fallback", { attempt: i + 1 });
         return null;
       }
       const started = Date.now();
       try {
-        return await call(prompt, model, { timeoutMs, thinkingLevel: thinkingLevel ?? undefined });
+        return await call(prompt, model, { timeoutMs, thinkingLevel: primary ? thinkingLevel ?? undefined : undefined });
       } catch (error) {
         const code = error instanceof Error ? error.message : "unknown";
         console.warn("process-line-inbox: understand unavailable", { code, attempt: i + 1, model, ms: Date.now() - started });
