@@ -359,6 +359,56 @@ export async function completeTaskAndReply(
   await ctx.reply(lines.join("\n"), quick);
 }
 
+/**
+ * "詩乃の薬あげるの忘れちゃった": recorded as できなかった, kept apart from an open
+ * (未記録) todo. One tap undoes it (back to todo).
+ */
+export async function couldNotDoAndReply(
+  ctx: CompletionContext,
+  taskId: string,
+  options: { operationId: string; title?: string | null },
+): Promise<void> {
+  const { error } = await ctx.client.rpc("server_tx_mark_task_could_not_do_v1", {
+    p_actor_id: ctx.actorId,
+    p_operation_id: options.operationId,
+    p_task_id: taskId,
+    p_undo: false,
+    p_source: "line",
+  });
+  const name = options.title ? `「${clip(options.title, 40)}」` : "この作業";
+  if (error) {
+    const message = error.message ?? "";
+    console.warn("process-line-inbox: LINE could-not-do failed", { message: message.slice(0, 120) });
+    await ctx.reply(
+      message.includes("TASK_TERMINAL")
+        ? `${name}はすでに完了か取り消しになっています。`
+        : `${name}を「できなかった」にできませんでした。Todayから操作してください。`,
+      [TODAY_QUICK_REPLY],
+    );
+    return;
+  }
+  await ctx.reply(
+    `− ${name}は今日は「できなかった」で記録しました（未記録とは別に残ります）。`,
+    [quickPostback("取り消す", `action=could_not_do_undo&task_id=${taskId}`), TODAY_QUICK_REPLY],
+  );
+}
+
+export async function undoCouldNotDoAndReply(ctx: CompletionContext, taskId: string, operationId: string): Promise<void> {
+  const { error } = await ctx.client.rpc("server_tx_mark_task_could_not_do_v1", {
+    p_actor_id: ctx.actorId,
+    p_operation_id: operationId,
+    p_task_id: taskId,
+    p_undo: true,
+    p_source: "line",
+  });
+  if (error) {
+    console.warn("process-line-inbox: LINE could-not-do undo failed", { message: (error.message ?? "").slice(0, 120) });
+    await ctx.reply("元に戻せませんでした。すでに状態が変わっている可能性があります。Todayで確認してください。", [TODAY_QUICK_REPLY]);
+    return;
+  }
+  await ctx.reply("「できなかった」を取り消しました（未完了に戻しました）。", [TODAY_QUICK_REPLY]);
+}
+
 export async function reopenTaskAndReply(ctx: CompletionContext, taskId: string, revision: number, operationId: string): Promise<void> {
   const { error } = await ctx.client.rpc("server_tx_reopen_task", {
     p_actor_id: ctx.actorId,

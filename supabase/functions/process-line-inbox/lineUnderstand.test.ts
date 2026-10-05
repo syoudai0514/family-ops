@@ -95,12 +95,40 @@ function fakeEffects() {
     showShopping: (who) => { log.push(`list:${who}`); return Promise.resolve([{ text: `LIST(${who})` }]); },
     markBought: (items) => { log.push(`bought:${items.map((i) => i.id).join(",")}`); return Promise.resolve([{ text: "✓ 買った", quick: ["undo-buy"] }]); },
     completeTask: (task, by, codes) => { log.push(`done:${task.id}:${by}${codes?.length ? `:${codes.join("+")}` : ""}`); return Promise.resolve([{ text: `✓ ${task.title}`, quick: ["undo-task"] }]); },
+    couldNotDo: (task) => { log.push(`could_not_do:${task.id}`); return Promise.resolve([{ text: `− ${task.title}はできなかった`, quick: ["undo-cnd"] }]); },
     cancelDraft: () => { log.push("cancel"); return Promise.resolve([{ text: "✓ 取り消し" }]); },
     showSchedule: (range, lead) => { log.push(`schedule:${range}:${lead}`); return Promise.resolve(); },
     send: (text, quick) => { log.push(`SEND:${text}|${JSON.stringify(quick ?? null)}`); return Promise.resolve(); },
   };
   return { log, effects };
 }
+
+Deno.test("could_not_do: 「忘れた」 is recorded as できなかった, only for an open task, never as done", async () => {
+  // Parsed from the model.
+  assertEquals(parsePlan('{"understanding":"薬を忘れた","reply":"了解","actions":[{"type":"could_not_do","ref":"t2"}],"confidence":"high"}')?.actions,
+    [{ type: "could_not_do", ref: "t2" }]);
+  const p = (actions: Plan["actions"]): Plan => ({ understanding: "", reply: "了解、記録しておくね。", actions, confidence: "high" });
+  // Unknown ref, or a task that is already done / already できなかった -> nothing to record.
+  assertEquals(guardPlan(p([{ type: "could_not_do", ref: "t99" }]), snap()), null);
+  const doneSnap = snap({ tasks: snap().tasks.map((t) => t.ref === "t2" ? { ...t, status: "done" as const } : t) });
+  assertEquals(guardPlan(p([{ type: "could_not_do", ref: "t2" }]), doneSnap), null);
+  // The same task both done and できなかった in one message: the first wins.
+  assertEquals(guardPlan(p([{ type: "complete_task", ref: "t2", by: "self" }, { type: "could_not_do", ref: "t2" }]), snap())?.actions,
+    [{ type: "complete_task", ref: "t2", by: "self" }]);
+  // The reply must not claim the record itself; the handler prints the outcome.
+  assertEquals(guardPlan({ ...p([{ type: "could_not_do", ref: "t2" }]), reply: "登録しました！" }, snap())?.reply, "");
+
+  const { log, effects } = fakeEffects();
+  const out = await runPlan(p([{ type: "could_not_do", ref: "t2" }]), snap(), effects, "洗濯忘れた");
+  assertEquals(out, { done: true });
+  assertEquals(log, ["could_not_do:uuid-t2", 'SEND:了解、記録しておくね。\n\n− 洗濯はできなかった|["undo-cnd"]']);
+});
+
+Deno.test("prompt: a task recorded as できなかった is shown as such, not as 未完了", () => {
+  const prompt = buildUnderstandPrompt(snap({ tasks: [{ ref: "t1", id: "x", title: "詩乃（便秘）の薬", who: "me", due: "07:00", status: "could_not_do", code: null }] }), "x");
+  assertEquals(prompt.includes("できなかった"), true);
+  assertEquals(prompt.includes('"type":"could_not_do"'), true);
+});
 
 Deno.test("run: several results go out as ONE reply (one free LINE reply per message)", async () => {
   const { log, effects } = fakeEffects();

@@ -302,6 +302,35 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     }));
   });
 
+  it('records a forgotten task as できなかった, apart from an open (未記録) one', async () => {
+    render(<TaskChecklistItem {...props} task={makeAnyoneTask()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'できなかった（忘れた）' }));
+
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
+      operation_id: expect.any(String),
+      task_id: 'anyone-1',
+      action: 'could_not_do',
+    }));
+  });
+
+  it('shows できなかった as closed, with its own undo and no completion', async () => {
+    const forgotten = { ...makeAnyoneTask(), status: 'skipped', outcome_reason: 'could_not_do' } as TaskInstance;
+    render(<TaskChecklistItem {...props} hasPartner task={forgotten} />);
+
+    expect(screen.getByRole('button', { name: '詩乃（便秘）の薬はできなかった' })).toBeDisabled();
+    expect(screen.getByText(/できなかった$/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '相手がやった' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'できなかった（忘れた）' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '「できなかった」を取り消す' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
+      operation_id: expect.any(String),
+      task_id: 'anyone-1',
+      action: 'could_not_do_undo',
+    }));
+  });
+
   it('allows a completed checklist subtask to be unchecked and reopened', async () => {
     const completedTask = {
       ...makeSubtaskTask(),

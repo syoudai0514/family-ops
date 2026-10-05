@@ -113,6 +113,8 @@ import {
   completeTaskAndReply,
   parseCodmonSentReport,
   reopenTaskAndReply,
+  couldNotDoAndReply,
+  undoCouldNotDoAndReply,
   tryHandleCompletionReport,
   type CompletionContext,
 } from "./lineCompletionReport.ts";
@@ -1619,6 +1621,12 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     return;
   }
 
+  if (fields.action === "could_not_do_undo" && fields.task_id) {
+    const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
+    await undoCouldNotDoAndReply(completionContext(client, item, actor), fields.task_id, operationId);
+    return;
+  }
+
   if (fields.action === "reopen_task" && fields.task_id && /^\d+$/.test(fields.revision ?? "")) {
     const operationId = await deterministicOperationId("line-postback", item.provider_event_id);
     await reopenTaskAndReply(completionContext(client, item, actor), fields.task_id, Number(fields.revision), operationId);
@@ -2070,6 +2078,13 @@ async function handleText(
             completionActor: by,
             partnerInputCodes: partnerCodes.length ? partnerCodes : undefined,
             unreadNotes: codmon?.unreadNotes,
+          });
+          return drain();
+        },
+        couldNotDo: async (task) => {
+          await couldNotDoAndReply(collectingCompletion, task.id, {
+            operationId: await deterministicOperationId("line-understand", item.provider_event_id, task.id),
+            title: task.title,
           });
           return drain();
         },
