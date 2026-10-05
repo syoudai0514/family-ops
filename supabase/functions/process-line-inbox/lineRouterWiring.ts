@@ -157,11 +157,11 @@ export async function loadSnapshot(
     safe<Array<Record<string, unknown>>>([], async () => {
       const { data } = await client
         .from("task_instances")
-        .select("id,title,status,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase")
+        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase")
         .eq("household_id", householdId)
         .eq("scheduled_date", today)
         .is("test_context_id", null)
-        .in("status", ["todo", "in_progress", "completed"])
+        .in("status", ["todo", "in_progress", "completed", "skipped"])
         .order("due_at", { ascending: true, nullsFirst: false })
         .limit(60);
       return data ?? [];
@@ -231,7 +231,8 @@ export async function loadSnapshot(
   const labels = new Map(members.map((m) => [m.user_id, ROLE_LABEL[m.family_role ?? ""] ?? "家族"]));
   const partner = members.find((m) => m.user_id !== actorId);
 
-  const tasks: SnapshotTask[] = taskRows.map((row, index) => ({
+  // Of the skipped tasks, only できなかった is shown (not "今回は不要" and the like).
+  const tasks: SnapshotTask[] = taskRows.filter((row) => row.status !== "skipped" || row.outcome_reason === "could_not_do").map((row, index) => ({
     ref: `t${index + 1}`,
     id: String(row.id),
     title: String(row.title ?? ""),
@@ -239,7 +240,7 @@ export async function loadSnapshot(
       ? "anyone"
       : !row.planned_assignee_id ? null : row.planned_assignee_id === actorId ? "me" : "partner",
     due: jstTime(row.due_at),
-    status: row.status === "completed" ? "done" : "todo",
+    status: row.status === "completed" ? "done" : row.status === "skipped" ? "could_not_do" : "todo",
     code: typeof row.task_definition_id === "string" ? codes.get(row.task_definition_id) ?? null : null,
     phase: typeof row.routine_phase === "string" ? row.routine_phase : null,
   }));

@@ -305,6 +305,18 @@
   background: var(--color-bg);
 }
 
+/* できなかった（忘れた）: closed for today like done, but marked apart (not struck through, a dash, not a check). */
+.task-checklist-item.could-not-do {
+  opacity: 0.72;
+  background: var(--color-bg);
+}
+
+.task-checklist-item.could-not-do .task-check-control {
+  border-style: dashed;
+  border-color: var(--color-border);
+  color: var(--color-text-muted, var(--color-text));
+}
+
 .task-checklist-main {
   display: grid;
   grid-template-columns: 2.65rem minmax(0, 1fr) auto;

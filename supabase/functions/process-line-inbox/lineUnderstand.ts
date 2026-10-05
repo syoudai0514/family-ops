@@ -35,7 +35,8 @@ export interface SnapshotTask {
   title: string;
   who: "me" | "partner" | "anyone" | null;
   due: string | null; // "07:05" (JST) or null
-  status: "todo" | "done";
+  /** could_not_do: recorded as できなかった (forgotten), apart from an open todo. */
+  status: "todo" | "done" | "could_not_do";
   code: string | null;
   /** routine_phase: "morning" | "evening" | "anytime" ... ("朝の全部やった"). */
   phase?: string | null;
@@ -108,6 +109,8 @@ export type Action =
   | { type: "complete_task"; ref: string; by: "self" | "partner"; bulk?: true }
   /** "朝の全部やった": every open task of that time of day, picked by the code (guardPlan). */
   | { type: "complete_all"; phase: "morning" | "evening" | "today"; by: "self" | "partner" }
+  /** "詩乃の薬あげるの忘れた": できなかった, kept apart from 未記録. */
+  | { type: "could_not_do"; ref: string }
   | { type: "create"; text: string; draft?: DraftSpec }
   | { type: "edit_draft"; text: string; draft?: DraftSpec }
   | { type: "cancel_draft" }
@@ -178,7 +181,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
       担当: WHO_LABEL(snapshot, t.who),
       時刻: t.due,
       ...(t.phase ? { 時間帯: PHASE_LABEL[t.phase] ?? t.phase } : {}),
-      状態: t.status === "done" ? "完了" : "未完了",
+      状態: t.status === "done" ? "完了" : t.status === "could_not_do" ? "できなかった" : "未完了",
     })),
     買い物リスト_未購入: snapshot.shopping.slice(0, 30).map((s) => ({
       ref: s.ref,
@@ -212,6 +215,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。',
     '- {"type":"complete_task","ref":"t3","by":"self|partner"} 今日のタスクを「やった」にする。by = 実際にやった人（相手がやってくれたなら partner）。',
     '- {"type":"complete_tasks","refs":["t1","t2","t5"],"all":null,"by":"self|partner"} 複数のタスクをまとめて「やった」にする。時間帯ごと全部なら {"type":"complete_tasks","refs":[],"all":"morning|evening|today","by":"self"}。',
+    '- {"type":"could_not_do","ref":"t2"} 今日のタスクを「できなかった」にする（忘れた・やれなかった・間に合わなかった）。やっていないことを「やった」にしない。「あとでやる」「まだ」「これからやる」は記録しない（actions を空にして reply だけ）。同じ名前のタスクが朝と夜など複数あるときは、『いま』より前の時刻のもの（過ぎてしまった方）を選ぶ。',
     '- {"type":"create","text":"…","draft":{…}} 予定・タスク・買い物・お願い・共有を新しく登録したい。text は会話の文脈を補い、「それ」「さっきの」を具体的にした一文（例:「明日の朝、ゴミ出しをママにお願い」）。',
     '- {"type":"edit_draft","text":"…","draft":{…}} 確認待ちの下書きの中身を直したい（例:「時間は7時」「担当はママ」「将生のね」）。',
     "",
@@ -233,7 +237,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     "## reply（返事）",
     "- 日本語。家族向けのやわらかい口調で、1〜3文。絵文字は0〜1個。",
     "- show_shopping / show_schedule のときは、一覧はアプリが続けて表示するので、前置きの一言だけ（例:「パパが買うものはこれだよ👇」）。",
-    "- mark_bought / complete_task / create / cancel_draft のときは、記録の結果はアプリが続けて表示するので、短い相づちだけ（例:「了解！」）。『登録しました』『送りました』『完了にしました』など、結果を先取りする言い方はしない。",
+    "- mark_bought / complete_task / could_not_do / create / cancel_draft のときは、記録の結果はアプリが続けて表示するので、短い相づちだけ（例:「了解！」）。『登録しました』『送りました』『完了にしました』など、結果を先取りする言い方はしない。",
     "",
     "## 例",
     '- 「買うものは？」→ {"understanding":"買い物リストを見たい","reply":"いまの買い物リストはこれだよ👇","actions":[{"type":"show_shopping","who":"any"}],"confidence":"high"}',
@@ -244,6 +248,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- 「朝の全部やったよ」→ {"understanding":"朝のタスクを全部やった","reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":[],"all":"morning","by":"self"}],"confidence":"high"}',
     '- 「洗濯と掃除と食器洗いやった」（t4=洗濯・t6=掃除・t7=食器洗い）→ {"understanding":"3つやった","reply":"おつかれさま！","actions":[{"type":"complete_tasks","refs":["t4","t6","t7"],"all":null,"by":"self"}],"confidence":"high"}',
     '- 直前のおうちノート「コドモンは送信まで済んだ？」→「コドモンも終わってるよ」（t9=コドモン送信）→ {"understanding":"コドモン送信済み","reply":"了解！","actions":[{"type":"complete_task","ref":"t9","by":"self"}],"confidence":"high"}',
+    '- 「今日詩乃の薬あげるの忘れちゃった」（t2=詩乃（便秘）の薬）→ {"understanding":"詩乃の薬をあげ忘れた","reply":"了解、記録しておくね。","actions":[{"type":"could_not_do","ref":"t2"}],"confidence":"high"}',
     '- 「ママが洗濯やってくれてた」→ {"understanding":"相手が洗濯をやった","reply":"了解！","actions":[{"type":"complete_task","ref":"t4","by":"partner"}],"confidence":"high"}',
     '- 「今日お迎え誰だっけ？」（お迎えの担当がママ）→ {"understanding":"今日のお迎え担当を知りたい","reply":"今日のお迎えはママだよ（18:20）。","actions":[],"confidence":"high"}',
     `- 「牛乳買っといて」→ {"understanding":"牛乳を買い物に追加したい","reply":"了解！","actions":[{"type":"create","text":"牛乳を買う","draft":{"kind":"shopping","title":"牛乳","date":"${today}","time":null,"daypart":null,"who":null,"message":null}}],"confidence":"high"}`,
@@ -321,6 +326,10 @@ function parseAction(raw: unknown): Action | Action[] | null {
       const ref = str(a.ref);
       return ref ? { type: "complete_task", ref, by: a.by === "partner" ? "partner" : "self" } : null;
     }
+    case "could_not_do": {
+      const ref = str(a.ref);
+      return ref ? { type: "could_not_do", ref } : null;
+    }
     case "complete_tasks": {
       const refs = Array.isArray(a.refs) ? [...new Set(a.refs.filter((r): r is string => typeof r === "string"))] : [];
       const by = a.by === "partner" ? "partner" : "self";
@@ -370,7 +379,7 @@ export function parsePlan(raw: string): Plan | null {
   };
 }
 
-const RECORDING = new Set<Action["type"]>(["mark_bought", "complete_task", "create", "cancel_draft"]);
+const RECORDING = new Set<Action["type"]>(["mark_bought", "complete_task", "could_not_do", "create", "cancel_draft"]);
 
 /**
  * The safety net. Returns the plan to run, or null for the old path.
@@ -405,6 +414,13 @@ export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
       // In a bulk report, a task that is already done is not reported again.
       if (action.bulk && snapshot.tasks.find((t) => t.ref === action.ref)?.status === "done") continue;
       if (actions.some((a) => a.type === "complete_task" && a.ref === action.ref)) continue;
+      actions.push(action);
+      continue;
+    }
+    if (action.type === "could_not_do") {
+      // Only an open task of today; a done one is not turned into できなかった.
+      if (snapshot.tasks.find((t) => t.ref === action.ref)?.status !== "todo") continue;
+      if (actions.some((a) => (a.type === "could_not_do" || a.type === "complete_task") && a.ref === action.ref)) continue;
       actions.push(action);
       continue;
     }
@@ -564,6 +580,8 @@ export interface PlanEffects {
   markBought(items: SnapshotShopping[]): Promise<ReplyPart[]>;
   /** For the Codmon submit task, `partnerInputCodes` lists the inputs the other adult did. */
   completeTask(task: SnapshotTask, by: "self" | "partner", partnerInputCodes?: string[]): Promise<ReplyPart[]>;
+  /** できなかった (forgotten), apart from an open todo. */
+  couldNotDo(task: SnapshotTask): Promise<ReplyPart[]>;
   cancelDraft(): Promise<ReplyPart[]>;
   /** These send their own message (a Flex card or the schedule view); `lead` goes in front. */
   showSchedule(range: "today" | "tomorrow" | "week", lead: string): Promise<void>;
@@ -627,6 +645,11 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
         if (task) {
           parts.push(...await effects.completeTask(task, action.by, task.code === "codmon_submit" ? partnerInputCodes : undefined));
         }
+        break;
+      }
+      case "could_not_do": {
+        const task = snapshot.tasks.find((t) => t.ref === action.ref);
+        if (task) parts.push(...await effects.couldNotDo(task));
         break;
       }
       case "cancel_draft":

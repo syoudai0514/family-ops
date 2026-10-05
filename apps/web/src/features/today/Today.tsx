@@ -631,6 +631,7 @@ function TodayDashboard() {
   function renderCompleted() {
     const completedTasks = data.completedTodayTasks ?? [];
     if (completedTasks.length === 0) return null;
+    const couldNotDoCount = completedTasks.filter((task) => task.status === 'skipped' && task.outcome_reason === 'could_not_do').length;
     return (
       <section className="card collapsible compact-section" aria-label="完了済み">
         <button
@@ -638,11 +639,11 @@ function TodayDashboard() {
           className="collapsible-toggle"
           onClick={() => setCompletedCollapsed((value) => !value)}
         >
-          完了済み（{completedTasks.length}件）{completedCollapsed ? '▼' : '▲'}
+          完了済み（{completedTasks.length}件{couldNotDoCount > 0 ? `・うちできなかった${couldNotDoCount}件` : ''}）{completedCollapsed ? '▼' : '▲'}
         </button>
         {!completedCollapsed && (
           <>
-            <p className="empty-hint">押し間違えた場合はここから未完了に戻せます。</p>
+            <p className="empty-hint">押し間違えた場合はここから戻せます。忘れた・できなかったものは「−」で残ります（未記録とは別）。</p>
             {renderTaskList(completedTasks)}
           </>
         )}

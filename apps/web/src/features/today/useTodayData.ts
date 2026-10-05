@@ -343,7 +343,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
           .select('*')
           .eq('household_id', householdId)
           .eq('scheduled_date', localDate)
-          .eq('status', 'completed')
+          .in('status', ['completed', 'skipped'])
           .order('completed_at', { ascending: false }),
         requestIds.length
           ? supabase.from('requests').select('*').in('id', requestIds)
@@ -362,7 +362,9 @@ export function useTodayData(householdId: string | null, userId: string | null):
 
       const completedCandidateRows = ((completedRes.data ?? []) as TodayTaskInstance[])
         .filter((task) =>
-          task.status === 'completed'
+          // Done, or recorded as できなかった (forgotten) -- both are closed for today,
+          // unlike an open (未記録) todo.
+          (task.status === 'completed' || (task.status === 'skipped' && task.outcome_reason === 'could_not_do'))
           && task.scheduled_date === localDate
           && (
             task.assignment_mode === 'anyone'

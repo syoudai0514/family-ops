@@ -37,6 +37,22 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
     return jsonResponse(result);
   }
 
+  // "できなかった（忘れた）": recorded apart from an open (未記録) todo; undo returns it to todo.
+  if (body["action"] === "could_not_do" || body["action"] === "could_not_do_undo") {
+    const result = await callServerTx<{ ok: true; task_id: string; status: string; revision: number }>(
+      serviceClient,
+      "server_tx_mark_task_could_not_do_v1",
+      {
+        p_actor_id: actorId,
+        p_operation_id: operationId,
+        p_task_id: taskId,
+        p_undo: body["action"] === "could_not_do_undo",
+        p_source: "pwa",
+      },
+    );
+    return jsonResponse(result);
+  }
+
   // "コドモンで送信した": closes the still-open Codmon inputs and the submit task
   // in one transaction (owner decision 2026-09-30: sending Codmon ends the job).
   if (body["action"] === "codmon_submitted") {

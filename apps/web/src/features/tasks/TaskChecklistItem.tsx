@@ -93,7 +93,10 @@ export function TaskChecklistItem({
   completionPrerequisite,
 }: TaskChecklistItemProps) {
   const completed = task.status === 'completed';
-  const editable = task.origin === 'manual' && !completed;
+  // "できなかった（忘れた）" is its own result, not an open (未記録) todo and not done.
+  const couldNotDo = task.status === 'skipped' && task.outcome_reason === 'could_not_do';
+  const finished = completed || couldNotDo;
+  const editable = task.origin === 'manual' && !finished;
   const subtaskTotal = subtasks.length;
   const subtaskDone = subtasks.filter((item) => item.is_completed).length;
   // The whole checklist is one tap ("全部やった"), so the individual boxes stay
@@ -202,6 +205,18 @@ export function TaskChecklistItem({
         task_id: task.id,
         action: 'reopen',
         expected_revision: task.revision ?? 1,
+      }),
+    );
+  }
+
+  function handleCouldNotDo(undo = false) {
+    void withOperation(
+      `task:${task.id}:could-not-do:${undo ? 'undo' : 'set'}:r${task.revision ?? 1}`,
+      EDGE_FUNCTIONS.completeTask,
+      (operationId) => ({
+        operation_id: operationId,
+        task_id: task.id,
+        action: undo ? 'could_not_do_undo' : 'could_not_do',
       }),
     );
   }
@@ -323,17 +338,17 @@ export function TaskChecklistItem({
   }
 
   return (
-    <li className={['task-item', 'task-checklist-item', completed ? 'completed' : ''].filter(Boolean).join(' ')}>
+    <li className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : ''].filter(Boolean).join(' ')}>
       <div className="task-checklist-main">
         {task.completion_mode === 'whole' ? (
           <button
             type="button"
             className="task-check-control"
-            aria-label={completed ? `${task.title}は完了済み` : `${task.title}を完了にする`}
+            aria-label={completed ? `${task.title}は完了済み` : couldNotDo ? `${task.title}はできなかった` : `${task.title}を完了にする`}
             onClick={() => handleComplete()}
-            disabled={busy || completed || !canExecute || Boolean(completionPrerequisite?.blocking) || Boolean(completionPrerequisite?.actionLabel)}
+            disabled={busy || finished || !canExecute || Boolean(completionPrerequisite?.blocking) || Boolean(completionPrerequisite?.actionLabel)}
           >
-            <span aria-hidden="true" className={completed ? undefined : 'task-check-hint'}>✓</span>
+            <span aria-hidden="true" className={finished ? undefined : 'task-check-hint'}>{couldNotDo ? '−' : '✓'}</span>
           </button>
         ) : (
           <button
@@ -343,7 +358,7 @@ export function TaskChecklistItem({
             onClick={toggleExpanded}
             disabled={busy}
           >
-            {completed ? '✓' : subtasks.length > 0 ? `${doneSubtasks}/${subtasks.length}` : '…'}
+            {completed ? '✓' : couldNotDo ? '−' : subtasks.length > 0 ? `${doneSubtasks}/${subtasks.length}` : '…'}
           </button>
         )}
 
@@ -362,6 +377,7 @@ export function TaskChecklistItem({
               ? ` · ${doneSubtasks}/${subtasks.length}項目`
               : ''}
             {task.attention_state === 'waiting' ? ` · 待ち${task.next_check_at ? `（確認 ${localClock(task.next_check_at)}）` : ''}` : ''}
+            {couldNotDo ? ' · できなかった' : ''}
           </span>
         </button>
 
@@ -382,10 +398,10 @@ export function TaskChecklistItem({
                 </select>
               </label>
             )}
-            {!completed && members.length > 0 && !anyoneTask && (
+            {!finished && members.length > 0 && !anyoneTask && (
               <button type="button" onClick={() => setEditingAssignment(true)} disabled={busy}>担当を調整</button>
             )}
-            {anyoneUnclaimed && !completed && (
+            {anyoneUnclaimed && !finished && (
               <button
                 type="button"
                 onClick={() => handleAnyoneClaim('claim')}
@@ -395,12 +411,12 @@ export function TaskChecklistItem({
                 自分がやる
               </button>
             )}
-            {anyoneClaimedBySelf && !completed && (
+            {anyoneClaimedBySelf && !finished && (
               <button type="button" onClick={() => handleAnyoneClaim('release')} disabled={busy}>
                 手放す
               </button>
             )}
-            {anyoneClaimedByOther && !completed && (
+            {anyoneClaimedByOther && !finished && (
               <button type="button" onClick={() => handleAnyoneClaim('takeover')} disabled={busy}>
                 引き継ぐ
               </button>
@@ -408,13 +424,13 @@ export function TaskChecklistItem({
             {editable && (
               <button type="button" onClick={() => onEdit(task)} disabled={busy}>編集</button>
             )}
-            {!editable && !completed && task.origin !== 'manual' && (
+            {!editable && !finished && task.origin !== 'manual' && (
               <small className="task-menu-note">定例から作られた項目です</small>
             )}
-            {!completed && task.attention_state !== 'waiting' && (
+            {!finished && task.attention_state !== 'waiting' && (
               <button type="button" onClick={() => setEditingWaiting(true)} disabled={busy}>待ちにする</button>
             )}
-            {!completed && task.attention_state === 'waiting' && (
+            {!finished && task.attention_state === 'waiting' && (
               <>
                 <button type="button" onClick={handleResumeWaiting} disabled={busy}>再開する</button>
                 <button type="button" onClick={() => setEditingWaiting(true)} disabled={busy}>確認日を変更</button>
@@ -423,7 +439,13 @@ export function TaskChecklistItem({
             {completed && (
               <button type="button" onClick={() => setEditingEvidence(true)} disabled={busy}>証跡を追加（任意）</button>
             )}
-            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy || completed}>
+            {!finished && (
+              <button type="button" onClick={() => handleCouldNotDo()} disabled={busy}
+                title="忘れた・間に合わなかったなど。未記録とは別に「できなかった」として残します。">
+                できなかった（忘れた）
+              </button>
+            )}
+            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy || finished}>
               キャンセル
             </button>
           </div>
@@ -433,7 +455,7 @@ export function TaskChecklistItem({
             full-width buttons made one task fill half the screen). Tapping the circle is
             still the one-tap "done"; rarely used actions live in the ••• menu. */}
         <div className="task-actions">
-          {completionPrerequisite?.actionLabel && !completed && (
+          {completionPrerequisite?.actionLabel && !finished && (
             <button
               type="button"
               className="task-action task-action-secondary"
@@ -444,7 +466,7 @@ export function TaskChecklistItem({
             </button>
           )}
 
-          {task.completion_mode === 'subtasks' && !completed && !optionalOnlyChecklist && subtasks.length > 0 &&
+          {task.completion_mode === 'subtasks' && !finished && !optionalOnlyChecklist && subtasks.length > 0 &&
             !completionPrerequisite?.actionLabel && (
             <button
               type="button"
@@ -457,7 +479,7 @@ export function TaskChecklistItem({
             </button>
           )}
 
-          {optionalOnlyChecklist && !completed && (
+          {optionalOnlyChecklist && !finished && (
             <button
               type="button"
               className="task-action task-action-secondary"
@@ -468,9 +490,20 @@ export function TaskChecklistItem({
             </button>
           )}
 
-          {hasPartner && !completed && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
+          {hasPartner && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
             <button type="button" className="task-action task-action-secondary" disabled={busy}
               onClick={() => handleComplete('partner')}>相手がやった</button>
+          )}
+
+          {couldNotDo && (
+            <button
+              type="button"
+              className="task-action task-action-secondary"
+              onClick={() => handleCouldNotDo(true)}
+              disabled={busy}
+            >
+              「できなかった」を取り消す
+            </button>
           )}
 
           {completed && task.completion_mode === 'whole' && (
@@ -520,7 +553,7 @@ export function TaskChecklistItem({
                   <input
                     type="checkbox"
                     checked={subtask.is_completed}
-                    disabled={busy || (!completed && !canExecute)}
+                    disabled={busy || couldNotDo || (!completed && !canExecute)}
                     onChange={() => handleToggleSubtask(subtask)}
                   />
                   <span className={subtask.is_completed ? 'checked' : ''}>
@@ -531,7 +564,7 @@ export function TaskChecklistItem({
               </li>
             ))
           )}
-          {optionalOnlyChecklist && !completed && (
+          {optionalOnlyChecklist && !finished && (
             <li className="empty-hint">必要な項目だけチェックして、最後に「完了」を押します。</li>
           )}
           {completed && (
@@ -540,7 +573,7 @@ export function TaskChecklistItem({
         </ul>
       )}
 
-      {editingAssignment && !completed && (
+      {editingAssignment && !finished && (
         <form className="task-waiting-editor" onSubmit={handleAssignmentSubmit}>
           <strong>担当をどう変える？</strong>
           <label>担当する人<select value={assignmentUserId} onChange={(event) => setAssignmentUserId(event.target.value)} required>{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.family_role === 'papa' ? 'パパ' : member.family_role === 'mama' ? 'ママ' : member.profile?.display_name ?? member.user_id}</option>)}</select></label>
