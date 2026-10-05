@@ -18,7 +18,7 @@
 //
 // Only the fixed button words (今日, 入力, 共有, ...) skip the model. If the model is
 // unavailable or returns something unusable, the caller falls back to the old handlers.
-import { callGemini } from "../_shared/gemini.ts";
+import { callGemini, type GeminiThinkingLevel } from "../_shared/gemini.ts";
 import { inferredNight } from './scheduleLanguage.ts';
 import { claimsMutationWasPerformed } from "./lineAssistantConversation.ts";
 import { daypartToLocalTime } from "./lineIntent.ts";
@@ -441,13 +441,14 @@ export function understandModel(): string {
     Deno.env.get("GEMINI_MODEL_REWRITE") ?? "";
 }
 
-// One retry for a transient failure (an empty answer or a 5xx; 1 in 10 in the first
-// production evaluation). Never on 429: the free tier's limit is per minute (15 RPM for
-// Gemini 3.1 Flash Lite), so asking again seconds later only spends another request.
+// One retry for a transient failure (an empty answer, a 5xx, a timeout; 1 in 10 in the
+// first production evaluation). Never on 429: the free tier's limit is per minute, so
+// asking again seconds later only spends another request.
 // Every call -- the retry included -- first asks the shared budget (server_tx_reserve_ai_call);
 // when it says no, the message simply takes the old path.
 function isTransient(code: string): boolean {
-  return code === "GEMINI_EMPTY_RESPONSE" || /^GEMINI_HTTP_5\d\d$/.test(code) || /fetch|network|timed out|connection/i.test(code);
+  return code === "GEMINI_EMPTY_RESPONSE" || code === "GEMINI_TIMEOUT" ||
+    /^GEMINI_HTTP_5\d\d$/.test(code) || /fetch|network|timed out|connection/i.test(code);
 }
 
 export type ReserveAiCall = () => Promise<boolean>;
@@ -463,22 +464,53 @@ export function resolveUnderstandModel(setting?: string | null): string {
   return setting && MODEL_ID.test(setting) ? setting : understandModel();
 }
 
-export function makeGeminiProvider(reserve: ReserveAiCall, modelSetting?: string | null): UnderstandProvider {
+/**
+ * The person is waiting on the LINE reply. A busy model (Gemini 3.5 Flash answered 503
+ * after ~20 s, then ~23 s on the retry: a 49 s reply) must not hold it: each attempt is
+ * cut at UNDERSTAND_ATTEMPT_TIMEOUT_MS, and the retry goes to the environment model
+ * (the lighter one) instead of asking the busy one again.
+ */
+export const UNDERSTAND_ATTEMPT_TIMEOUT_MS = 12_000;
+export const UNDERSTAND_THINKING_LEVEL: GeminiThinkingLevel = "low";
+
+export interface UnderstandAttempt {
+  model: string;
+  timeoutMs: number;
+}
+
+export function understandAttempts(modelSetting?: string | null): UnderstandAttempt[] {
+  const primary = resolveUnderstandModel(modelSetting);
+  if (!primary) return [];
+  const env = understandModel();
+  const retry = env && MODEL_ID.test(env) ? env : primary;
+  return [
+    { model: primary, timeoutMs: UNDERSTAND_ATTEMPT_TIMEOUT_MS },
+    { model: retry, timeoutMs: UNDERSTAND_ATTEMPT_TIMEOUT_MS },
+  ];
+}
+
+export function makeGeminiProvider(
+  reserve: ReserveAiCall,
+  modelSetting?: string | null,
+  thinkingLevel: GeminiThinkingLevel | null = UNDERSTAND_THINKING_LEVEL,
+  call: typeof callGemini = callGemini,
+): UnderstandProvider {
   return async (prompt: string) => {
-    const model = resolveUnderstandModel(modelSetting);
-    if (!model) return null;
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    const attempts = understandAttempts(modelSetting);
+    for (let i = 0; i < attempts.length; i++) {
+      const { model, timeoutMs } = attempts[i];
       if (!(await reserve())) {
-        console.warn("process-line-inbox: AI budget for this minute is used up; using the fallback", { attempt });
+        console.warn("process-line-inbox: AI budget for this minute is used up; using the fallback", { attempt: i + 1 });
         return null;
       }
+      const started = Date.now();
       try {
-        return await callGemini(prompt, model);
+        return await call(prompt, model, { timeoutMs, thinkingLevel: thinkingLevel ?? undefined });
       } catch (error) {
         const code = error instanceof Error ? error.message : "unknown";
-        console.warn("process-line-inbox: understand unavailable", { code, attempt });
-        if (attempt === 2 || !isTransient(code)) return null;
-        await new Promise((resolve) => setTimeout(resolve, 700));
+        console.warn("process-line-inbox: understand unavailable", { code, attempt: i + 1, model, ms: Date.now() - started });
+        if (i === attempts.length - 1 || !isTransient(code)) return null;
+        await new Promise((resolve) => setTimeout(resolve, 300));
       }
     }
     return null;
