@@ -265,9 +265,15 @@ Deno.test("provider: a slow or busy model retries once on the environment model,
       seen.push({ model, ...options });
       return seen.length === 1 ? Promise.reject(new Error("GEMINI_TIMEOUT")) : Promise.resolve('{"reply":"ok","actions":[]}');
     };
-    const provider = makeGeminiProvider(() => Promise.resolve(true), "gemini-3.5-flash", undefined, call);
+    const busy: string[] = [];
+    const provider = makeGeminiProvider(() => Promise.resolve(true), "gemini-3.5-flash", undefined, call, (m) => {
+      busy.push(m);
+      return Promise.resolve();
+    });
     assertEquals(await provider("p"), '{"reply":"ok","actions":[]}');
     assertEquals(seen.map((s) => s.model), ["gemini-3.5-flash", "gemini-3.1-flash-lite"]);
+    // The busy model steps aside so the next message does not wait on it again.
+    assertEquals(busy, ["gemini-3.5-flash"]);
     assertEquals(seen.every((s) => s.timeoutMs === UNDERSTAND_ATTEMPT_TIMEOUT_MS && s.thinkingLevel === "low"), true);
     assertEquals(understandAttempts(null).map((a) => a.model), ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"]);
   } finally {

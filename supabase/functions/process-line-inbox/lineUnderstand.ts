@@ -489,11 +489,15 @@ export function understandAttempts(modelSetting?: string | null): UnderstandAtte
   ];
 }
 
+/** Called when the configured model timed out or answered 5xx (it then steps aside for a while). */
+export type MarkModelBusy = (model: string) => Promise<void>;
+
 export function makeGeminiProvider(
   reserve: ReserveAiCall,
   modelSetting?: string | null,
   thinkingLevel: GeminiThinkingLevel | null = UNDERSTAND_THINKING_LEVEL,
   call: typeof callGemini = callGemini,
+  markBusy: MarkModelBusy = () => Promise.resolve(),
 ): UnderstandProvider {
   return async (prompt: string) => {
     const attempts = understandAttempts(modelSetting);
@@ -509,7 +513,9 @@ export function makeGeminiProvider(
       } catch (error) {
         const code = error instanceof Error ? error.message : "unknown";
         console.warn("process-line-inbox: understand unavailable", { code, attempt: i + 1, model, ms: Date.now() - started });
-        if (i === attempts.length - 1 || !isTransient(code)) return null;
+        if (!isTransient(code)) return null;
+        if (i === 0 && attempts[1]?.model !== model) await markBusy(model).catch(() => undefined);
+        if (i === attempts.length - 1) return null;
         await new Promise((resolve) => setTimeout(resolve, 300));
       }
     }

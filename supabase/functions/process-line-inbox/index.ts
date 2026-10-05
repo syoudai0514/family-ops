@@ -119,7 +119,7 @@ import {
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
 import { type DraftSpec, draftToPending, evaluateUnderstanding, makeGeminiProvider, resolveUnderstandModel, runPlan, UNDERSTAND_THINKING_LEVEL, understandLineText } from "./lineUnderstand.ts";
 import type { GeminiThinkingLevel } from "../_shared/gemini.ts";
-import { loadSnapshot, logLineTurn, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
+import { loadSnapshot, logLineTurn, markUnderstandModelBusy, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
 import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
 import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import {
@@ -2024,7 +2024,13 @@ async function handleText(
     // it does not spend one of the per-minute AI calls on an answer that is never used.
     if (await tryHandleDayCompletion(completionContext(client, item, actor), text)) return;
     const modelSetting = await understandModelSetting(client);
-    const understood = await understandLineText(snapshot, text, makeGeminiProvider(() => reserveAiCall(client), modelSetting));
+    const understood = await understandLineText(snapshot, text, makeGeminiProvider(
+      () => reserveAiCall(client),
+      modelSetting,
+      undefined,
+      undefined,
+      (model) => markUnderstandModelBusy(client, model),
+    ));
     if (understood.plan) {
       const plan = understood.plan;
       console.info("process-line-inbox: understood", {

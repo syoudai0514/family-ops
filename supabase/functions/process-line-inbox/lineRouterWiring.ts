@@ -104,6 +104,15 @@ export async function understandModelSetting(client: SupabaseClient): Promise<st
   }
 }
 
+/** The configured model timed out or was busy: the setting reads as the environment model for a while. */
+export async function markUnderstandModelBusy(client: SupabaseClient, model: string): Promise<void> {
+  try {
+    await client.rpc("server_tx_mark_line_understand_model_busy", { p_model: model });
+  } catch {
+    // Best effort: the next message simply tries the configured model again.
+  }
+}
+
 /** Asks the shared per-minute Gemini budget for one call. Any failure reads as "no". */
 export async function reserveAiCall(client: SupabaseClient): Promise<boolean> {
   try {
