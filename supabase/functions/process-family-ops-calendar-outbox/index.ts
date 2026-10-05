@@ -17,6 +17,7 @@ import {
   patchEvent,
   revalidateCalendarEligibilityAfterForbidden,
 } from "../_shared/googleCalendar.ts";
+import { withExclusiveEventTimes } from "./eventTimePatch.ts";
 import { decryptRefreshToken } from "../_shared/cryptoHelper.ts";
 import {
   ProviderMutationFencedError,
@@ -266,7 +267,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
           throw new Error("provider id collision for Family Ops mirror");
         }
         const desiredForPatch = {
-          ...desired,
+          ...withExclusiveEventTimes(desired),
           extendedProperties: {
             private: mergePrivateExtendedProperties(
               mirrorProperties(existing.body ?? {}),
