@@ -1,5 +1,6 @@
 import { completeTaskAndReply, loadOpenTasks, type CompletionContext, type OpenTask } from './lineCompletionReport.ts';
 import { formatScheduleDate } from './scheduleLanguage.ts';
+import type { LineQuickReplyAction } from '../_shared/lineMessaging.ts';
 
 export type DayCompletionReport = { date: string; except: string | null };
 export function completionDate(text: string, today: string): string | null {
@@ -35,7 +36,36 @@ export function selectDayCompletionTasks(tasks: OpenTask[], except: string | nul
   return tasks.filter((task) => !excluded.has(task.id));
 }
 
+const CODMON_QUESTION = /(\d{1,2})\/(\d{1,2})\([日月火水木金土]\)のコドモンは送信まで済みましたか[?？]/u;
+
+/**
+ * The date a "M/D(曜)のコドモンは送信まで済みましたか？" question was about (JST yyyy-mm-dd),
+ * read from the bot's own previous turn. 2026-10-07: the answer 「終わっている」 to the
+ * question about 10/6 was taken as "this morning's tasks are done" and closed nine of
+ * today's tasks; the answer belongs to the day that was asked about.
+ */
+export function codmonQuestionDate(assistantText: string | undefined, today: string): string | null {
+  const m = assistantText?.normalize("NFKC").match(CODMON_QUESTION);
+  if (!m) return null;
+  const month = Number(m[1]);
+  const day = Number(m[2]);
+  const [year, todayMonth] = today.split("-").map(Number);
+  const date = new Date(Date.UTC(month > todayMonth ? year - 1 : year, month - 1, day));
+  if (date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+/** A short answer to that question: true = sent, false = not yet, null = something else. */
+export function codmonAnswer(text: string): boolean | null {
+  const value = text.normalize("NFKC").replace(/\s/gu, "").replace(/[。!！よねー〜]+$/u, "");
+  if (value.length === 0 || value.length > 20) return null;
+  if (/^(?:まだ|いや|いいえ|ううん|してない|送ってない|送れてない|終わってない|済んでない|未送信)/u.test(value)) return false;
+  if (/^(?:はい|うん|うい|OK|おk|済み|済んだ|済んでる|済んでいる|済みです|送った|送りました|送信した|送信しました|送信してます|送信している|送信済み|した|しました|してる|しています|終わった|終わってる|終わっている|終わってます|終わりました|完了|完了です|大丈夫)$/iu.test(value)) return true;
+  return null;
+}
+
 export async function tryHandleDayCompletion(ctx: CompletionContext, text: string): Promise<boolean> {
+  if (await tryAnswerCodmonQuestion(ctx, text)) return true;
   let report = parseDayCompletion(text, ctx.today);
   if (!report && !/昨日|今日|明日|一昨日|\d+\//u.test(text) && /以外|全部|すべて/u.test(text)) {
     const { data, error } = await ctx.client.rpc('server_read_line_turns', { p_actor_id: ctx.actorId, p_limit: 4 });
@@ -63,8 +93,35 @@ export async function tryHandleDayCompletion(ctx: CompletionContext, text: strin
   }
   const submit = selected.find((task) => task.code === 'codmon_submit');
   const lead = `${formatScheduleDate(report.date)} の記録`;
-  if (submit) parts.push('コドモンは送信まで済みましたか？');
+  if (submit) parts.push(`${formatScheduleDate(report.date)}のコドモンは送信まで済みましたか？`);
   if (!parts.length) parts.push('更新する未完了の作業はありません。');
   await ctx.reply([lead, ...parts].join('\n'), submit ? [{ type: 'postback', label: '送信した', data: `action=complete_task&task_id=${submit.id}`, displayText: `${formatScheduleDate(report.date)}のコドモンを送信した` }] : undefined);
+  return true;
+}
+
+/** "終わっている" right after "10/6(火)のコドモンは送信まで済みましたか？" closes 10/6's submit, nothing of today. */
+async function tryAnswerCodmonQuestion(ctx: CompletionContext, text: string): Promise<boolean> {
+  const answer = codmonAnswer(text);
+  if (answer === null) return false;
+  const { data, error } = await ctx.client.rpc('server_read_line_turns', { p_actor_id: ctx.actorId, p_limit: 4 });
+  const turns = !error && Array.isArray(data) ? data as Array<{ role: string; text: string }> : [];
+  const date = codmonQuestionDate(turns.filter((turn) => turn.role === 'assistant').at(-1)?.text, ctx.today);
+  if (!date || date === ctx.today) return false;
+  const label = formatScheduleDate(date);
+  if (!answer) {
+    await ctx.reply(`了解。${label}のコドモン送信は未完了のままにしています。`);
+    return true;
+  }
+  const submit = (await loadOpenTasks({ ...ctx, today: date })).find((task) => task.code === 'codmon_submit');
+  if (!submit) {
+    await ctx.reply(`${label}のコドモン送信は、すでに完了になっています。今日の作業は変えていません。`);
+    return true;
+  }
+  const dated = { ...ctx, today: date, reply: (message: string, quick?: LineQuickReplyAction[]) => ctx.reply(`${label} の記録\n${message}`, quick) };
+  await completeTaskAndReply(dated, submit.id, {
+    operationId: await ctx.operationId('day-completion-codmon', date, submit.id),
+    title: submit.title,
+    code: submit.code,
+  });
   return true;
 }
