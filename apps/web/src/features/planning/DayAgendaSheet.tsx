@@ -178,44 +178,44 @@ export function DayAgendaSheet({
 
   const scheduleSection = (
     <section className="day-agenda-section">
-                <div className="day-agenda-section-heading">
-                  <div>
-                    <p className="eyebrow">時間順</p>
-                    <h3>予定</h3>
-                  </div>
-                  <button type="button" className="text-button" onClick={() => setCreateKind('event')}>
-                    ＋ 追加
-                  </button>
-                </div>
-                {dayItems.length === 0 ? (
-                  <button
-                    type="button"
-                    className="day-agenda-empty-action"
-                    onClick={() => setCreateKind('event')}
-                  >
-                    予定はありません。＋ この日に予定を追加
-                  </button>
-                ) : (
-                  <div className="day-agenda-timeline">
-                    {dayItems.map((item) => {
-                      const linkedTask = item.linkedTaskId ? taskById.get(item.linkedTaskId) : null;
-                      const time = timelineLabel(item, linkedTask);
-                      return (
-                        <div className="day-agenda-timeline-row" key={item.id}>
-                          <div className="day-agenda-time">
-                            <strong>{time.start}</strong>
-                            {time.end && <span>{time.end}</span>}
-                          </div>
-                          <div className={`day-agenda-timeline-line ${item.source}`} aria-hidden="true" />
-                          <div className="day-agenda-timeline-content">
-                            <ScheduleEventCard item={item} task={linkedTask ?? null} onEdit={setEditingTask} onChanged={() => void refreshAll()} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
+    <div className="day-agenda-section-heading">
+      <div>
+        <p className="eyebrow">時間順</p>
+        <h3>予定</h3>
+      </div>
+      <button type="button" className="text-button" onClick={() => setCreateKind('event')}>
+        ＋ 追加
+      </button>
+    </div>
+    {dayItems.length === 0 ? (
+      <button
+        type="button"
+        className="day-agenda-empty-action"
+        onClick={() => setCreateKind('event')}
+      >
+        予定はありません。＋ この日に予定を追加
+      </button>
+    ) : (
+      <div className="day-agenda-timeline">
+        {dayItems.map((item) => {
+          const linkedTask = item.linkedTaskId ? taskById.get(item.linkedTaskId) : null;
+          const time = timelineLabel(item, linkedTask);
+          return (
+            <div className="day-agenda-timeline-row" key={item.id}>
+              <div className="day-agenda-time">
+                <strong>{time.start}</strong>
+                {time.end && <span>{time.end}</span>}
+              </div>
+              <div className={`day-agenda-timeline-line ${item.source}`} aria-hidden="true" />
+              <div className="day-agenda-timeline-content">
+                <ScheduleEventCard item={item} task={linkedTask ?? null} onEdit={setEditingTask} onChanged={() => void refreshAll()} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </section>
   );
 
   return (
