@@ -109,6 +109,8 @@ export type Action =
   | { type: "show_shopping"; who: ShoppingWho }
   | { type: "show_schedule"; range: ScheduleRange }
   | { type: "mark_bought"; refs: string[] }
+  /** One list item bundles several things and only some were bought: the rest stays on the list. */
+  | { type: "buy_part"; ref: string; bought: string; remaining: string }
   /** `bulk`: one of several tasks reported together ("朝の全部やった"). */
   | { type: "complete_task"; ref: string; by: "self" | "partner"; bulk?: true }
   /** "朝の全部やった": every open task of that time of day, picked by the code (guardPlan). */
@@ -226,7 +228,9 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- {"type":"show_shopping","who":"me|partner|unassigned|any"} 買い物リストを見せる。me = 話している人が買うもの（担当なしを含む）。',
     '- {"type":"show_schedule","range":"today|tomorrow|week|yesterday"} 予定・タスクの一覧を見せる（アプリが全部を整えて出す）。「今日のタスク」「今日のは？」は today、「昨日の作業は？」「昨日の残りある？」は yesterday。',
     "- 一覧・リンク（URL）・おうちノートの過去の返事を reply に書き写さない。一覧は show_schedule / show_shopping でアプリが出す。",
-    '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。',
+    '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。その1件の中身を全部買ったと言われたときだけ。',
+    '- {"type":"buy_part","ref":"s1","bought":"食器用洗剤","remaining":"パパ用のシャンプーとリンス"} 1件に複数の品物がまとまっている買い物（例「食器用洗剤とパパ用のシャンプーとリンスの購入」）のうち、一部だけ買ったと言われたとき。bought = 買ったもの、remaining = まだ買っていないもの（元の言い方のまま、「の購入」などは付けても付けなくてもよい）。残りは買い物リストに残る。全部買ったと言われたら mark_bought。どれが買ったものか分からなければ、actions を空にして reply で聞き返す。',
+    "- 買い物1件に「〜と〜」で複数の品物があるときは、言われた品物だけを数える。言われていない品物を「買った」にしない（2026-10-07: 食器用洗剤だけ買ったのに、シャンプーとリンスまで買った扱いになった）。",
     '- {"type":"complete_task","ref":"t3","by":"self|partner"} 今日のタスクを「やった」にする。by = 実際にやった人（相手がやってくれたなら partner）。',
     '- {"type":"complete_tasks","refs":["t1","t2","t5"],"all":null,"by":"self|partner"} 複数のタスクをまとめて「やった」にする。時間帯ごと全部なら {"type":"complete_tasks","refs":[],"all":"morning|evening|today","by":"self"}。',
     '- {"type":"could_not_do","ref":"t2"} 今日のタスクを「できなかった」にする（忘れた・やれなかった・間に合わなかった）。やっていないことを「やった」にしない。「あとでやる」「まだ」「これからやる」は記録しない（actions を空にして reply だけ）。同じ名前のタスクが朝と夜など複数あるときは、『いま』より前の時刻のもの（過ぎてしまった方）を選ぶ。',
@@ -332,6 +336,14 @@ function parseAction(raw: unknown): Action | Action[] | null {
       return { type: "show_shopping", who: (["me", "partner", "unassigned", "any"] as const).find((w) => w === a.who) ?? "any" };
     case "show_schedule":
       return { type: "show_schedule", range: (["today", "tomorrow", "week", "yesterday"] as const).find((r) => r === a.range) ?? "today" };
+    case "buy_part": {
+      const ref = str(a.ref);
+      const bought = str(a.bought);
+      const remaining = str(a.remaining);
+      return ref && bought && remaining && bought !== remaining && bought.length <= 200 && remaining.length <= 200
+        ? { type: "buy_part", ref, bought, remaining }
+        : null;
+    }
     case "mark_bought": {
       const refs = Array.isArray(a.refs) ? a.refs.filter((r): r is string => typeof r === "string") : [];
       return refs.length ? { type: "mark_bought", refs } : null;
@@ -393,7 +405,7 @@ export function parsePlan(raw: string): Plan | null {
   };
 }
 
-const RECORDING = new Set<Action["type"]>(["mark_bought", "complete_task", "could_not_do", "create", "cancel_draft"]);
+const RECORDING = new Set<Action["type"]>(["mark_bought", "buy_part", "complete_task", "could_not_do", "create", "cancel_draft"]);
 
 /**
  * The safety net. Returns the plan to run, or null for the old path.
@@ -426,8 +438,16 @@ export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
   const actions: Action[] = [];
   const requested = plan.actions.flatMap((a) => a.type === "complete_all" ? expandCompleteAll(a, snapshot) : [a]);
   for (const action of requested) {
+    if (action.type === "buy_part") {
+      if (!shopRefs.has(action.ref)) continue;
+      // An item bought whole in the same message is not split as well.
+      if (actions.some((a) => a.type === "mark_bought" && a.refs.includes(action.ref))) continue;
+      actions.push(action);
+      continue;
+    }
     if (action.type === "mark_bought") {
-      const refs = [...new Set(action.refs.filter((r) => shopRefs.has(r)))];
+      const split = new Set(actions.flatMap((a) => a.type === "buy_part" ? [a.ref] : []));
+      const refs = [...new Set(action.refs.filter((r) => shopRefs.has(r) && !split.has(r)))];
       if (refs.length) actions.push({ ...action, refs });
       continue;
     }
@@ -600,6 +620,8 @@ export interface PlanEffects {
   /** Each returns the text it would have replied with (collected, not sent). */
   showShopping(who: ShoppingWho): Promise<ReplyPart[]>;
   markBought(items: SnapshotShopping[]): Promise<ReplyPart[]>;
+  /** One list item bundles several things; only `bought` was bought, `remaining` stays on the list. */
+  buyPart(item: SnapshotShopping, bought: string, remaining: string): Promise<ReplyPart[]>;
   /** For the Codmon submit task, `partnerInputCodes` lists the inputs the other adult did. */
   completeTask(task: SnapshotTask, by: "self" | "partner", partnerInputCodes?: string[]): Promise<ReplyPart[]>;
   /** できなかった (forgotten), apart from an open todo. */
@@ -662,6 +684,11 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
       case "mark_bought":
         parts.push(...await effects.markBought(snapshot.shopping.filter((s) => action.refs.includes(s.ref))));
         break;
+      case "buy_part": {
+        const item = snapshot.shopping.find((s) => s.ref === action.ref);
+        if (item) parts.push(...await effects.buyPart(item, action.bought, action.remaining));
+        break;
+      }
       case "complete_task": {
         const task = knownTasks(snapshot).find((t) => t.ref === action.ref);
         if (task) {
