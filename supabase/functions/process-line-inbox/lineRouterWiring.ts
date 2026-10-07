@@ -143,7 +143,8 @@ export async function loadSnapshot(
   const { actorId, householdId, today } = opts;
 
   const tomorrow = addDays(today, 1);
-  const [turns, members, taskRows, shopRows, children, notes, transportRows] = await Promise.all([
+  const yesterday = addDays(today, -1);
+  const [turns, members, taskRows, shopRows, children, notes, transportRows, yesterdayRows] = await Promise.all([
     safe<Turn[]>([], async () => {
       const { data } = await client.rpc("server_read_line_turns", { p_actor_id: actorId, p_limit: 12 });
       return (Array.isArray(data) ? data : [])
@@ -219,10 +220,22 @@ export async function loadSnapshot(
         .order("updated_at", { ascending: true });
       return (data ?? []).map((row: Record<string, unknown>) => ({ ...row, code: codeById.get(String(row.task_definition_id)) }));
     }),
+    safe<Array<Record<string, unknown>>>([], async () => {
+      const { data } = await client
+        .from("task_instances")
+        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase")
+        .eq("household_id", householdId)
+        .eq("scheduled_date", yesterday)
+        .is("test_context_id", null)
+        .in("status", ["todo", "in_progress", "completed", "skipped"])
+        .order("due_at", { ascending: true, nullsFirst: false })
+        .limit(60);
+      return data ?? [];
+    }),
   ]);
 
   const codes = await safe(new Map<string, string>(), async () => {
-    const ids = [...new Set(taskRows.map((t) => t.task_definition_id).filter((id): id is string => typeof id === "string"))];
+    const ids = [...new Set([...taskRows, ...yesterdayRows].map((t) => t.task_definition_id).filter((id): id is string => typeof id === "string"))];
     if (!ids.length) return new Map<string, string>();
     const { data } = await client.from("task_definitions").select("id,code").in("id", ids);
     return new Map((data ?? []).map((row: Record<string, unknown>) => [String(row.id), String(row.code ?? "")]));
@@ -232,18 +245,22 @@ export async function loadSnapshot(
   const partner = members.find((m) => m.user_id !== actorId);
 
   // Of the skipped tasks, only できなかった is shown (not "今回は不要" and the like).
-  const tasks: SnapshotTask[] = taskRows.filter((row) => row.status !== "skipped" || row.outcome_reason === "could_not_do").map((row, index) => ({
-    ref: `t${index + 1}`,
-    id: String(row.id),
-    title: String(row.title ?? ""),
-    who: row.assignment_mode === "anyone"
-      ? "anyone"
-      : !row.planned_assignee_id ? null : row.planned_assignee_id === actorId ? "me" : "partner",
-    due: jstTime(row.due_at),
-    status: row.status === "completed" ? "done" : row.status === "skipped" ? "could_not_do" : "todo",
-    code: typeof row.task_definition_id === "string" ? codes.get(row.task_definition_id) ?? null : null,
-    phase: typeof row.routine_phase === "string" ? row.routine_phase : null,
-  }));
+  const toTasks = (rows: Array<Record<string, unknown>>, prefix: string): SnapshotTask[] =>
+    rows.filter((row) => row.status !== "skipped" || row.outcome_reason === "could_not_do").map((row, index) => ({
+      ref: `${prefix}${index + 1}`,
+      id: String(row.id),
+      title: String(row.title ?? ""),
+      who: row.assignment_mode === "anyone"
+        ? "anyone"
+        : !row.planned_assignee_id ? null : row.planned_assignee_id === actorId ? "me" : "partner",
+      due: jstTime(row.due_at),
+      status: row.status === "completed" ? "done" : row.status === "skipped" ? "could_not_do" : "todo",
+      code: typeof row.task_definition_id === "string" ? codes.get(row.task_definition_id) ?? null : null,
+      phase: typeof row.routine_phase === "string" ? row.routine_phase : null,
+    }));
+  const tasks = toTasks(taskRows, "t");
+  // Yesterday's, for "昨日の洗濯やった" (y-refs). "全部" (all) never reaches them.
+  const yesterdayTasks = toTasks(yesterdayRows, "y");
   const shopping: SnapshotShopping[] = shopRows.map((row, index) => ({
     ref: `s${index + 1}`,
     id: String(row.id),
@@ -271,6 +288,7 @@ export async function loadSnapshot(
     turns,
     pendingDraft: describePendingDraft(opts.pending, actorId),
     tasks,
+    yesterdayTasks,
     shopping,
     sharedNotes: notes,
     transport,
