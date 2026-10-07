@@ -69,8 +69,12 @@ export interface SnapshotTransport {
   pickup: { who: "me" | "partner" | null; time: string | null } | null;
 }
 
+export type ScheduleRange = "today" | "tomorrow" | "week" | "yesterday";
+
 export interface Snapshot {
   taskDate?: string;
+  /** Yesterday's tasks (refs y1..), for "昨日の洗濯やった". Never part of "全部". */
+  yesterdayTasks?: SnapshotTask[];
   now: { date: string; time: string; weekday: string };
   me: string;
   partner: string;
@@ -103,7 +107,7 @@ export interface DraftSpec {
 
 export type Action =
   | { type: "show_shopping"; who: ShoppingWho }
-  | { type: "show_schedule"; range: "today" | "tomorrow" | "week" }
+  | { type: "show_schedule"; range: ScheduleRange }
   | { type: "mark_bought"; refs: string[] }
   /** `bulk`: one of several tasks reported together ("朝の全部やった"). */
   | { type: "complete_task"; ref: string; by: "self" | "partner"; bulk?: true }
@@ -183,6 +187,12 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
       ...(t.phase ? { 時間帯: PHASE_LABEL[t.phase] ?? t.phase } : {}),
       状態: t.status === "done" ? "完了" : t.status === "could_not_do" ? "できなかった" : "未完了",
     })),
+    昨日のタスク: (snapshot.yesterdayTasks ?? []).slice(0, 40).map((t) => ({
+      ref: t.ref,
+      タスク: t.title,
+      担当: WHO_LABEL(snapshot, t.who),
+      状態: t.status === "done" ? "完了" : t.status === "could_not_do" ? "できなかった" : "未完了",
+    })),
     買い物リスト_未購入: snapshot.shopping.slice(0, 30).map((s) => ({
       ref: s.ref,
       品物: s.title,
@@ -202,7 +212,8 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     "- 対象がはっきりしないときは推測せず、1つだけ聞き返す（actions は空、reply に質問）。分かっていることは聞き直さない。",
     "- 1通に複数の用件があれば、actions を複数並べてよい（最大4つ）。タスクをまとめて「やった」にするときは complete_tasks 1つに全部の ref を入れる（4つの上限とは別に、30件まで）。",
     "- all を使うのは「朝の」「夜の」「今日の」と、時間帯か今日がはっきり言われたときだけ。「終わっている」「やった」だけの返事を今日のタスク全部にしない。",
-    "- 直前のおうちノートが昨日・10/6 など今日以外の日について聞いていたら、その答えを今日のタスクに当てはめない（『家庭の状況』のタスクは今日の分だけ）。actions は空にして、その日のことはアプリで確かめるよう reply で伝える。",
+    "- 直前のおうちノートが昨日・10/6 など今日以外の日について聞いていたら、その答えを今日のタスクに当てはめない。昨日のことなら『昨日のタスク』の ref（y1 など）を使う。それより前の日はアプリで確かめるよう reply で伝える。",
+    "- 『昨日のタスク』も complete_task / could_not_do できる（「昨日の洗濯やった」→ y の ref）。complete_tasks の all は今日の分だけ。",
     "- 「朝の全部やった」「夜のは全部終わった」「今日のは全部やった」は、complete_tasks の all にその時間帯（morning / evening / today）を入れる。対象のタスクはアプリが拾う（その時間帯の未完了のうち、相手の担当以外。by=partner なら相手の担当も）。refs を並べなくてよい。",
     "- 「全部やったよ？」「まだ残ってない？」のように、完了の報告を繰り返されたら聞き返さない。残っている分を完了にする。",
     "- コドモン送信は、相手の入力が済んでいないと送れない。まとめての報告ではアプリが確かめて、必要なら「コドモンは送信まで済んだ？」と聞く（reply で聞いてもよい）。",
@@ -213,7 +224,8 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     "",
     "## actions（refは『家庭の状況』にあるものだけ）",
     '- {"type":"show_shopping","who":"me|partner|unassigned|any"} 買い物リストを見せる。me = 話している人が買うもの（担当なしを含む）。',
-    '- {"type":"show_schedule","range":"today|tomorrow|week"} 予定の一覧を見せる。',
+    '- {"type":"show_schedule","range":"today|tomorrow|week|yesterday"} 予定・タスクの一覧を見せる（アプリが全部を整えて出す）。「今日のタスク」「今日のは？」は today、「昨日の作業は？」「昨日の残りある？」は yesterday。',
+    "- 一覧・リンク（URL）・おうちノートの過去の返事を reply に書き写さない。一覧は show_schedule / show_shopping でアプリが出す。",
     '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。',
     '- {"type":"complete_task","ref":"t3","by":"self|partner"} 今日のタスクを「やった」にする。by = 実際にやった人（相手がやってくれたなら partner）。',
     '- {"type":"complete_tasks","refs":["t1","t2","t5"],"all":null,"by":"self|partner"} 複数のタスクをまとめて「やった」にする。時間帯ごと全部なら {"type":"complete_tasks","refs":[],"all":"morning|evening|today","by":"self"}。',
@@ -319,7 +331,7 @@ function parseAction(raw: unknown): Action | Action[] | null {
     case "show_shopping":
       return { type: "show_shopping", who: (["me", "partner", "unassigned", "any"] as const).find((w) => w === a.who) ?? "any" };
     case "show_schedule":
-      return { type: "show_schedule", range: (["today", "tomorrow", "week"] as const).find((r) => r === a.range) ?? "today" };
+      return { type: "show_schedule", range: (["today", "tomorrow", "week", "yesterday"] as const).find((r) => r === a.range) ?? "today" };
     case "mark_bought": {
       const refs = Array.isArray(a.refs) ? a.refs.filter((r): r is string => typeof r === "string") : [];
       return refs.length ? { type: "mark_bought", refs } : null;
@@ -391,6 +403,11 @@ const RECORDING = new Set<Action["type"]>(["mark_bought", "complete_task", "coul
  *  - cancel/edit need a draft.
  */
 /** "朝の全部やった": the open tasks of that time of day; the partner's only when by=partner. */
+/** Today's tasks and yesterday's (y-refs): what a single task action may name. */
+function knownTasks(snapshot: Snapshot): SnapshotTask[] {
+  return [...snapshot.tasks, ...(snapshot.yesterdayTasks ?? [])];
+}
+
 function expandCompleteAll(action: Extract<Action, { type: "complete_all" }>, snapshot: Snapshot): Action[] {
   const inPhase = (phase: string | null | undefined) =>
     action.phase === "today" || phase === action.phase || (action.phase === "evening" && phase === "night");
@@ -401,7 +418,10 @@ function expandCompleteAll(action: Extract<Action, { type: "complete_all" }>, sn
 }
 
 export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
-  const taskRefs = new Set(snapshot.tasks.map((t) => t.ref));
+  // A link or a copied list in the model's own words is never sent (2026-10-07: it
+  // re-typed the daily brief on one line with a broken URL). The app shows lists itself.
+  if (/https?:\/\/|vercel\.|\.app\//iu.test(plan.reply)) return null;
+  const taskRefs = new Set(knownTasks(snapshot).map((t) => t.ref));
   const shopRefs = new Set(snapshot.shopping.map((s) => s.ref));
   const actions: Action[] = [];
   const requested = plan.actions.flatMap((a) => a.type === "complete_all" ? expandCompleteAll(a, snapshot) : [a]);
@@ -414,14 +434,14 @@ export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
     if (action.type === "complete_task") {
       if (!taskRefs.has(action.ref)) continue;
       // In a bulk report, a task that is already done is not reported again.
-      if (action.bulk && snapshot.tasks.find((t) => t.ref === action.ref)?.status === "done") continue;
+      if (action.bulk && knownTasks(snapshot).find((t) => t.ref === action.ref)?.status === "done") continue;
       if (actions.some((a) => a.type === "complete_task" && a.ref === action.ref)) continue;
       actions.push(action);
       continue;
     }
     if (action.type === "could_not_do") {
       // Only an open task of today; a done one is not turned into できなかった.
-      if (snapshot.tasks.find((t) => t.ref === action.ref)?.status !== "todo") continue;
+      if (knownTasks(snapshot).find((t) => t.ref === action.ref)?.status !== "todo") continue;
       if (actions.some((a) => (a.type === "could_not_do" || a.type === "complete_task") && a.ref === action.ref)) continue;
       actions.push(action);
       continue;
@@ -586,7 +606,7 @@ export interface PlanEffects {
   couldNotDo(task: SnapshotTask): Promise<ReplyPart[]>;
   cancelDraft(): Promise<ReplyPart[]>;
   /** These send their own message (a Flex card or the schedule view); `lead` goes in front. */
-  showSchedule(range: "today" | "tomorrow" | "week", lead: string): Promise<void>;
+  showSchedule(range: ScheduleRange, lead: string): Promise<void>;
   /** Sends the combined text reply. */
   send(text: string, quick?: unknown[]): Promise<void>;
 }
@@ -604,7 +624,7 @@ export interface HandOff {
 
 export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffects, original: string): Promise<PlanOutcome> {
   const parts: ReplyPart[] = [];
-  let schedule: "today" | "tomorrow" | "week" | null = null;
+  let schedule: ScheduleRange | null = null;
   let handOff: HandOff | null = null;
 
   // Completing the Codmon submit closes every open input in the same transaction
@@ -643,14 +663,14 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
         parts.push(...await effects.markBought(snapshot.shopping.filter((s) => action.refs.includes(s.ref))));
         break;
       case "complete_task": {
-        const task = snapshot.tasks.find((t) => t.ref === action.ref);
+        const task = knownTasks(snapshot).find((t) => t.ref === action.ref);
         if (task) {
-          parts.push(...await effects.completeTask(task, action.by, task.code === "codmon_submit" ? partnerInputCodes : undefined));
+          parts.push(...await effects.completeTask(task, action.by, task.code === "codmon_submit" && !task.ref.startsWith("y") ? partnerInputCodes : undefined));
         }
         break;
       }
       case "could_not_do": {
-        const task = snapshot.tasks.find((t) => t.ref === action.ref);
+        const task = knownTasks(snapshot).find((t) => t.ref === action.ref);
         if (task) parts.push(...await effects.couldNotDo(task));
         break;
       }

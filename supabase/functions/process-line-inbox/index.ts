@@ -124,6 +124,7 @@ import type { GeminiThinkingLevel } from "../_shared/gemini.ts";
 import { loadSnapshot, logLineTurn, markUnderstandModelBusy, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
 import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
 import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
+import { loadTodayTaskBlock, mergeTodayBrief } from "./lineTodayTasks.ts";
 import {
   purchaseAllAndReply,
   purchaseShoppingItemAndReply,
@@ -270,9 +271,24 @@ async function sendLineSchedule(
   client: SupabaseClient,
   item: WebhookInboxItem,
   actor: LineActor,
-  kind: "today" | "tomorrow" | "week",
+  kind: "today" | "tomorrow" | "week" | "yesterday",
   leadingText?: string,
 ): Promise<void> {
+  if (kind === "yesterday") {
+    // "昨日の作業は？": yesterday's tasks in full, the same way as today's.
+    const date = jstIsoDateOffset(-1);
+    const block = await loadTodayTaskBlock(client, actor.household_id, actor.user_id, date).catch(() => null);
+    const link = todayUrlForDate(date, actor.user_id);
+    await sendConfirmation(
+      client,
+      item,
+      actor,
+      [leadingText, block ? `${formatScheduleDate(date)} のタスク\n\n${block}` : "昨日のタスクを読み込めませんでした。少し待ってからもう一度送ってください。", link]
+        .filter(Boolean).join("\n\n"),
+      menuQuickReplies(),
+    );
+    return;
+  }
   if (kind === "today") {
   const [rendered, structured] = await Promise.all([
     client.rpc("server_read_line_today_daily_brief", { p_actor_id: actor.user_id }),
@@ -292,9 +308,13 @@ async function sendLineSchedule(
     );
     return;
   }
-  const baseText = typeof rendered.data === "string" && rendered.data.trim()
+  const briefText = typeof rendered.data === "string" && rendered.data.trim()
     ? rendered.data
     : "今日のおうちノート\n\n確認が必要な項目はありません。";
+  // Every one of the sender's tasks, done ones included; the partner's summarised.
+  const taskBlock = await loadTodayTaskBlock(client, actor.household_id, actor.user_id, jstIsoDateOffset(0))
+    .catch(() => null);
+  const baseText = taskBlock ? mergeTodayBrief(briefText, taskBlock) : briefText;
   const todayText = appendTodayDetailLinks(
     baseText,
     structured.data,
@@ -477,6 +497,12 @@ type EditablePendingAction = {
   status: string;
   expires_at?: string;
 };
+
+/** The PWA Today page for that date (?date=), for a LINE list of another day. */
+function todayUrlForDate(date: string, forUserId: string): string {
+  const base = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
+  return base ? `詳しく見る\n${base}/today?date=${date}&for=${encodeURIComponent(forUserId)}` : "";
+}
 
 function jstIsoDateOffset(offsetDays: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", {

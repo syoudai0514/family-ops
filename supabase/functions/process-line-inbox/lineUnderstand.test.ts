@@ -130,6 +130,28 @@ Deno.test("prompt: a task recorded as できなかった is shown as such, not a
   assertEquals(prompt.includes('"type":"could_not_do"'), true);
 });
 
+Deno.test("yesterday: 「昨日の作業は？」 shows yesterday's list; a y-ref can be recorded, never by 「全部」", async () => {
+  assertEquals(parsePlan('{"reply":"昨日のはこれだよ👇","actions":[{"type":"show_schedule","range":"yesterday"}],"confidence":"high"}')?.actions,
+    [{ type: "show_schedule", range: "yesterday" }]);
+  const s = snap({ yesterdayTasks: [{ ref: "y1", id: "uuid-y1", title: "洗濯", who: "me", due: null, status: "todo", code: null, phase: "evening" }] });
+  const p = (actions: Plan["actions"]): Plan => ({ understanding: "", reply: "おつかれさま！", actions, confidence: "high" });
+  assertEquals(guardPlan(p([{ type: "complete_task", ref: "y1", by: "self" }]), s)?.actions, [{ type: "complete_task", ref: "y1", by: "self" }]);
+  // 「今日の全部」 never reaches yesterday's.
+  const all = guardPlan(p([{ type: "complete_all", phase: "today", by: "self" }]), s)?.actions ?? [];
+  assertEquals(all.some((a) => a.type === "complete_task" && a.ref === "y1"), false);
+  const { log, effects } = fakeEffects();
+  await runPlan(p([{ type: "complete_task", ref: "y1", by: "self" }]), s, effects, "昨日の洗濯やった");
+  assertEquals(log[0], "done:uuid-y1:self");
+  const prompt = buildUnderstandPrompt(s, "昨日の作業は？");
+  assertEquals(prompt.includes("昨日のタスク") && prompt.includes('"y1"'), true);
+});
+
+Deno.test("guard: a reply with a link or a copied list is never sent (the app shows lists)", () => {
+  const brief = "今日のおうちノートはこれだよ👇 朝のおうちノート 夜にやること ・明日の保育園準備 詳しく見る ・今日の一覧 https://family-ops-web.vercel.php/today";
+  assertEquals(guardPlan({ understanding: "", reply: brief, actions: [], confidence: "high" }, snap()), null);
+  assertEquals(guardPlan({ understanding: "", reply: "family-ops-web.vercel.app/today を見てね", actions: [], confidence: "high" }, snap()), null);
+});
+
 Deno.test("run: several results go out as ONE reply (one free LINE reply per message)", async () => {
   const { log, effects } = fakeEffects();
   const out = await runPlan({
