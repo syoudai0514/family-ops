@@ -116,6 +116,37 @@ export async function purchaseShoppingItemAndReply(
   return true;
 }
 
+/**
+ * "食器用洗剤は買った" for the item "食器用洗剤とパパ用のシャンプーとリンスの購入": only the bought
+ * part is recorded; the rest stays on the list (owner 2026-10-07).
+ */
+export async function buyPartOfShoppingItemAndReply(
+  ctx: CompletionContext,
+  item: { id: string; title: string },
+  bought: string,
+  remaining: string,
+  operationId: string,
+  opts: { quiet?: boolean } = {},
+): Promise<boolean> {
+  const { error } = await ctx.client.rpc("server_tx_shopping_buy_part_v1", {
+    p_actor_id: ctx.actorId,
+    p_operation_id: operationId,
+    p_shopping_item_id: item.id,
+    p_bought_title: bought,
+    p_remaining_title: remaining,
+    p_source: "line",
+  });
+  if (error) {
+    console.warn("process-line-inbox: LINE partial purchase failed", { message: (error.message ?? "").slice(0, 120) });
+    if (!opts.quiet) await ctx.reply(`「${item.title}」の一部を買った、にできませんでした。すでに状態が変わっている可能性があります。`, [LIST_QUICK_REPLY]);
+    return false;
+  }
+  if (!opts.quiet) {
+    await ctx.reply(`✓ 「${bought}」を買った、で記録しました。\n残りの「${remaining}」は買い物リストに残しています。`, [LIST_QUICK_REPLY]);
+  }
+  return true;
+}
+
 /** Button path: the postback carries only the item id, so read its current revision here. */
 export async function purchaseShoppingItemByIdAndReply(ctx: CompletionContext, itemId: string, operationId: string): Promise<void> {
   const items = await loadOpenItems(ctx);

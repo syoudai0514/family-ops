@@ -128,6 +128,7 @@ import { loadTodayTaskBlock, mergeTodayBrief } from "./lineTodayTasks.ts";
 import {
   purchaseAllAndReply,
   purchaseShoppingItemAndReply,
+  buyPartOfShoppingItemAndReply,
   purchaseShoppingItemByIdAndReply,
   reopenShoppingItemAndReply,
   tryHandleShoppingPurchaseReport,
@@ -2091,6 +2092,16 @@ async function handleText(
           } else {
             await purchaseAllAndReply(collectingCompletion, items.map((i) => i.id));
           }
+          return drain();
+        },
+        buyPart: async (shoppingItem, bought, remaining) => {
+          await buyPartOfShoppingItemAndReply(
+            collectingCompletion,
+            shoppingItem,
+            bought,
+            remaining,
+            await deterministicOperationId("line-understand", item.provider_event_id, shoppingItem.id, "part"),
+          );
           return drain();
         },
         completeTask: async (task, by, modelPartnerCodes) => {

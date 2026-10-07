@@ -95,6 +95,7 @@ function fakeEffects() {
     showShopping: (who) => { log.push(`list:${who}`); return Promise.resolve([{ text: `LIST(${who})` }]); },
     markBought: (items) => { log.push(`bought:${items.map((i) => i.id).join(",")}`); return Promise.resolve([{ text: "✓ 買った", quick: ["undo-buy"] }]); },
     completeTask: (task, by, codes) => { log.push(`done:${task.id}:${by}${codes?.length ? `:${codes.join("+")}` : ""}`); return Promise.resolve([{ text: `✓ ${task.title}`, quick: ["undo-task"] }]); },
+    buyPart: (item, bought, remaining) => { log.push(`part:${item.id}:${bought}|${remaining}`); return Promise.resolve([{ text: `✓ ${bought}（残り: ${remaining}）` }]); },
     couldNotDo: (task) => { log.push(`could_not_do:${task.id}`); return Promise.resolve([{ text: `− ${task.title}はできなかった`, quick: ["undo-cnd"] }]); },
     cancelDraft: () => { log.push("cancel"); return Promise.resolve([{ text: "✓ 取り消し" }]); },
     showSchedule: (range, lead) => { log.push(`schedule:${range}:${lead}`); return Promise.resolve(); },
@@ -150,6 +151,26 @@ Deno.test("guard: a reply with a link or a copied list is never sent (the app sh
   const brief = "今日のおうちノートはこれだよ👇 朝のおうちノート 夜にやること ・明日の保育園準備 詳しく見る ・今日の一覧 https://family-ops-web.vercel.php/today";
   assertEquals(guardPlan({ understanding: "", reply: brief, actions: [], confidence: "high" }, snap()), null);
   assertEquals(guardPlan({ understanding: "", reply: "family-ops-web.vercel.app/today を見てね", actions: [], confidence: "high" }, snap()), null);
+});
+
+Deno.test("buy_part: a bundled item bought in part keeps the rest on the list", async () => {
+  const s = snap({ shopping: [
+    { ref: "s1", id: "uuid-s1", title: "食器用洗剤とパパ用のシャンプーとリンスの購入", who: "me", revision: 2 },
+    { ref: "s2", id: "uuid-s2", title: "味噌", who: null, revision: 1 },
+  ] });
+  const p = (actions: Plan["actions"]): Plan => ({ understanding: "", reply: "おつかれさま！", actions, confidence: "high" });
+  const part = { type: "buy_part" as const, ref: "s1", bought: "食器用洗剤", remaining: "パパ用のシャンプーとリンス" };
+  assertEquals(parsePlan(JSON.stringify({ reply: "了解", actions: [part], confidence: "high" }))?.actions, [part]);
+  // Missing / identical titles are junk.
+  for (const bad of [{ ...part, bought: "" }, { ...part, remaining: "" }, { ...part, remaining: part.bought }]) {
+    assertEquals(parsePlan(JSON.stringify({ reply: "了解", actions: [bad], confidence: "high" })), null);
+  }
+  assertEquals(guardPlan(p([part, { type: "mark_bought", refs: ["s1", "s2"] }]), s)?.actions,
+    [part, { type: "mark_bought", refs: ["s2"] }]); // s1 is not also bought whole
+  assertEquals(guardPlan(p([{ ...part, ref: "s9" }]), s), null);
+  const { log, effects } = fakeEffects();
+  await runPlan(p([part, { type: "mark_bought", refs: ["s2"] }]), s, effects, "食器用洗剤は買った あと味噌も");
+  assertEquals(log.slice(0, 2), ["part:uuid-s1:食器用洗剤|パパ用のシャンプーとリンス", "bought:uuid-s2"]);
 });
 
 Deno.test("run: several results go out as ONE reply (one free LINE reply per message)", async () => {
