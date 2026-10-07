@@ -6,6 +6,7 @@ import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { assignmentDecisionCommand, type AssignmentDecision } from './assignmentDecision';
 import type { TaskCompletionPrerequisite } from '../today/codmonReadiness';
+import { isTaskRecorded } from './taskRecording';
 
 export interface TaskChecklistItemProps {
   task: TaskInstance;
@@ -14,7 +15,7 @@ export interface TaskChecklistItemProps {
   hasPartner: boolean;
   currentUserId?: string | null;
   onEdit: (task: TaskInstance) => void;
-  onChanged: () => void;
+  onChanged: () => void | Promise<void>;
   showTime?: boolean;
   /** Optional per-surface key. Today uses this to restore detail state after Back. */
   expandedStorageKey?: string;
@@ -93,16 +94,16 @@ export function TaskChecklistItem({
   completionPrerequisite,
 }: TaskChecklistItemProps) {
   const completed = task.status === 'completed';
-  // "できなかった（忘れた）" is its own result, not an open (未記録) todo and not done.
+  // An explicit missed result closes the occurrence without claiming completion.
   const couldNotDo = task.status === 'skipped' && task.outcome_reason === 'could_not_do';
-  const finished = completed || couldNotDo;
+  const finished = isTaskRecorded(task);
   const editable = task.origin === 'manual' && !finished;
   const subtaskTotal = subtasks.length;
   const subtaskDone = subtasks.filter((item) => item.is_completed).length;
   // The whole checklist is one tap ("全部やった"), so the individual boxes stay
   // folded until someone has started ticking them (owner request 2026-09-30).
   const defaultExpanded =
-    task.completion_mode === 'subtasks' && !completed && subtaskDone > 0 && subtaskDone < subtaskTotal;
+    task.completion_mode === 'subtasks' && !finished && subtaskDone > 0 && subtaskDone < subtaskTotal;
   const [expanded, setExpanded] = useState(() => storedExpanded(expandedStorageKey, defaultExpanded));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,11 +149,11 @@ export function TaskChecklistItem({
     setBusy(true);
     try {
       await runCommand(logicalKey, endpoint, buildPayload);
-      onChanged();
+      await onChanged();
       return true;
     } catch (err) {
       if (err instanceof FamilyOpsApiError && err.code === 'TASK_TERMINAL') {
-        setError('この項目はすでに完了・キャンセル済みです。');
+        setError('この項目はすでに記録済み・キャンセル済みです。');
       } else {
         setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。');
       }
@@ -337,49 +338,40 @@ export function TaskChecklistItem({
     }
   }
 
+  const resultLabel = completed ? '' : couldNotDo ? '実施漏れ' : finished ? '記録済み' : '';
+  const taskContent = <>
+    <strong>{task.title}</strong>
+    <span className="task-item-meta">
+      {showTime && task.due_at ? `${localClock(task.due_at)} · ` : ''}
+      {assigneeLabel(task, members)}
+      {performerLabel ? ` · 実施: ${performerLabel}` : ''}
+      {task.completion_mode === 'subtasks' && subtasks.length > 0 ? ` · ${doneSubtasks}/${subtasks.length}項目` : ''}
+      {task.attention_state === 'waiting' ? ` · 待ち${task.next_check_at ? `（確認 ${localClock(task.next_check_at)}）` : ''}` : ''}
+      {resultLabel ? ` · ${resultLabel}` : ''}
+      {task.completion_mode === 'subtasks' && <span aria-hidden="true"> {expanded ? '▴' : '▾'}</span>}
+    </span>
+  </>;
+
   return (
     <li className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : ''].filter(Boolean).join(' ')}>
       <div className="task-checklist-main">
-        {task.completion_mode === 'whole' ? (
+        <span className="task-result-icon" role="img"
+          aria-label={`${task.title}：${completed ? '完了済み' : couldNotDo ? '実施漏れ・記録済み' : finished ? '記録済み' : '未記録'}`}>
+          {completed ? '✓' : finished ? '−' : '○'}
+        </span>
+
+        {task.completion_mode === 'subtasks' ? (
           <button
             type="button"
-            className="task-check-control"
-            aria-label={completed ? `${task.title}は完了済み` : couldNotDo ? `${task.title}はできなかった` : `${task.title}を完了にする`}
-            onClick={() => handleComplete()}
-            disabled={busy || finished || !canExecute || Boolean(completionPrerequisite?.blocking) || Boolean(completionPrerequisite?.actionLabel)}
-          >
-            <span aria-hidden="true" className={finished ? undefined : 'task-check-hint'}>{couldNotDo ? '−' : '✓'}</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="task-check-control task-progress-control"
+            className="task-checklist-content"
             aria-label={`${task.title}のチェック項目を${expanded ? '閉じる' : '開く'}`}
+            aria-expanded={expanded}
             onClick={toggleExpanded}
             disabled={busy}
           >
-            {completed ? '✓' : couldNotDo ? '−' : subtasks.length > 0 ? `${doneSubtasks}/${subtasks.length}` : '…'}
+            {taskContent}
           </button>
-        )}
-
-        <button
-          type="button"
-          className="task-checklist-content"
-          onClick={() => task.completion_mode === 'subtasks' && toggleExpanded()}
-          disabled={busy && task.completion_mode === 'subtasks'}
-        >
-          <strong>{task.title}</strong>
-          <span className="task-item-meta">
-            {showTime && task.due_at ? `${localClock(task.due_at)} · ` : ''}
-            {assigneeLabel(task, members)}
-            {performerLabel ? ` · 実施: ${performerLabel}` : ''}
-            {task.completion_mode === 'subtasks' && subtasks.length > 0
-              ? ` · ${doneSubtasks}/${subtasks.length}項目`
-              : ''}
-            {task.attention_state === 'waiting' ? ` · 待ち${task.next_check_at ? `（確認 ${localClock(task.next_check_at)}）` : ''}` : ''}
-            {couldNotDo ? ' · できなかった' : ''}
-          </span>
-        </button>
+        ) : <div className="task-checklist-content">{taskContent}</div>}
 
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
@@ -439,21 +431,13 @@ export function TaskChecklistItem({
             {completed && (
               <button type="button" onClick={() => setEditingEvidence(true)} disabled={busy}>証跡を追加（任意）</button>
             )}
-            {!finished && (
-              <button type="button" onClick={() => handleCouldNotDo()} disabled={busy}
-                title="忘れた・間に合わなかったなど。未記録とは別に「できなかった」として残します。">
-                できなかった（忘れた）
-              </button>
-            )}
             <button type="button" className="danger-button" onClick={handleCancel} disabled={busy || finished}>
               キャンセル
             </button>
           </div>
         </details>
 
-        {/* One row of compact actions under the title, in the title's column (owner 2026-10-04: the stacked
-            full-width buttons made one task fill half the screen). Tapping the circle is
-            still the one-tap "done"; rarely used actions live in the ••• menu. */}
+        {/* The same explicit completion button for whole tasks and checklists. */}
         <div className="task-actions">
           {completionPrerequisite?.actionLabel && !finished && (
             <button
@@ -461,38 +445,38 @@ export function TaskChecklistItem({
               className="task-action task-action-secondary"
               onClick={() => handleComplete()}
               disabled={busy || !canExecute || completionPrerequisite.blocking}
+              aria-label={completionPrerequisite.actionLabel}
+              title={completionPrerequisite.actionLabel}
             >
-              {completionPrerequisite.actionLabel}
+              {completionPrerequisite.completeAction === 'codmon_submitted' ? '✓ 送信済み' : completionPrerequisite.actionLabel}
             </button>
           )}
 
-          {task.completion_mode === 'subtasks' && !finished && !optionalOnlyChecklist && subtasks.length > 0 &&
-            !completionPrerequisite?.actionLabel && (
+          {!finished && !completionPrerequisite?.actionLabel && (
             <button
               type="button"
               className="task-action task-action-primary"
               onClick={() => handleComplete()}
-              disabled={busy || !canExecute || Boolean(completionPrerequisite?.blocking)}
-              aria-label={`${task.title}を全部やったことにする`}
+              disabled={busy || !canExecute || Boolean(completionPrerequisite?.blocking) || (task.completion_mode === 'subtasks' && subtasks.length === 0)}
+              aria-label={`${task.title}を完了にする`}
+              title={task.completion_mode === 'subtasks' ? '残りのチェック項目もまとめて完了します' : undefined}
             >
-              ✓ 全部やった
-            </button>
-          )}
-
-          {optionalOnlyChecklist && !finished && (
-            <button
-              type="button"
-              className="task-action task-action-secondary"
-              onClick={() => handleComplete()}
-              disabled={busy || !canExecute}
-            >
-              完了
+              ✓ 完了
             </button>
           )}
 
           {hasPartner && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
             <button type="button" className="task-action task-action-secondary" disabled={busy}
-              onClick={() => handleComplete('partner')}>相手がやった</button>
+              aria-label="相手が完了" title="相手が実施したことを記録します"
+              onClick={() => handleComplete('partner')}>相手</button>
+          )}
+
+          {!finished && (
+            <button type="button" className="task-action task-action-missed" onClick={() => handleCouldNotDo()} disabled={busy}
+              aria-label={`${task.title}を実施漏れとして記録`}
+              title="忘れた・間に合わなかった作業を、この日の記録として確定します">
+              実施漏れ
+            </button>
           )}
 
           {couldNotDo && (
@@ -502,7 +486,7 @@ export function TaskChecklistItem({
               onClick={() => handleCouldNotDo(true)}
               disabled={busy}
             >
-              「できなかった」を取り消す
+              記録を戻す
             </button>
           )}
 
@@ -553,7 +537,7 @@ export function TaskChecklistItem({
                   <input
                     type="checkbox"
                     checked={subtask.is_completed}
-                    disabled={busy || couldNotDo || (!completed && !canExecute)}
+                    disabled={busy || (finished && !completed) || (!completed && !canExecute)}
                     onChange={() => handleToggleSubtask(subtask)}
                   />
                   <span className={subtask.is_completed ? 'checked' : ''}>

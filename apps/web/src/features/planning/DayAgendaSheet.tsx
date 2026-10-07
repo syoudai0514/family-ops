@@ -15,6 +15,9 @@ import {
 import { usePlanningData } from './usePlanningData';
 import './DayAgendaSheet.css';
 import { ScheduleEventCard } from './ScheduleEventCard';
+import { isTaskRecorded, summarizeTaskRecording } from '../tasks/taskRecording';
+import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
+import { tokyoIsoDate } from './dateHelpers';
 
 function dayTitle(date: string) {
   const parsed = new Date(`${date}T00:00:00+09:00`);
@@ -56,8 +59,8 @@ function isTransportTask(task: PlanningTask) {
 }
 
 function taskSort(a: PlanningTask, b: PlanningTask) {
-  const aDone = a.status === 'completed' ? 1 : 0;
-  const bDone = b.status === 'completed' ? 1 : 0;
+  const aDone = isTaskRecorded(a) ? 1 : 0;
+  const bDone = isTaskRecorded(b) ? 1 : 0;
   if (aDone !== bDone) return aDone - bDone;
   return (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999') || a.title.localeCompare(b.title);
 }
@@ -156,8 +159,8 @@ export function DayAgendaSheet({
         !isTransportTask(task),
     )
     .sort(taskSort);
-  const completedOperational = operationalTasks.filter((task) => task.status === 'completed').length;
-  const outstandingCount = planning.tasks.filter((task) => task.scheduled_date === date && task.status !== 'completed').length;
+  const recordedOperational = operationalTasks.filter(isTaskRecorded).length;
+  const recording = summarizeTaskRecording(planning.tasks, date);
 
   const renderTask = (task: PlanningTask, showTime = true) => (
     <TaskChecklistItem
@@ -168,44 +171,13 @@ export function DayAgendaSheet({
       hasPartner={Boolean(partner)}
       currentUserId={me?.user_id}
       onEdit={setEditingTask}
-      onChanged={() => void refreshAll()}
+      onChanged={refreshAll}
       showTime={showTime}
     />
   );
 
-  return (
-    <>
-      <AgendaFrame inline={inline}
-        title={dayTitle(date)}
-        onClose={onClose}
-        panelClassName="day-agenda-modal"
-        backdropClassName="day-agenda-backdrop"
-        headerAction={
-          <button
-            type="button"
-            className="day-agenda-header-add"
-            aria-label="この日に予定を追加"
-            onClick={() => setCreateKind('event')}
-          >
-            ＋
-          </button>
-        }
-      >
-        <div className="day-agenda">
-          <div className="day-agenda-handle" aria-hidden="true" />
-
-          {planning.loading ? (
-            <p role="status" className="day-agenda-loading">読み込み中…</p>
-          ) : (
-            <>
-              {(planning.error || subtaskError) && (
-                <p role="alert" className="error-text day-agenda-error">
-                  {planning.error ?? subtaskError}
-                </p>
-              )}
-
-
-              <section className="day-agenda-section">
+  const scheduleSection = (
+    <section className="day-agenda-section">
                 <div className="day-agenda-section-heading">
                   <div>
                     <p className="eyebrow">時間順</p>
@@ -244,25 +216,47 @@ export function DayAgendaSheet({
                   </div>
                 )}
               </section>
+  );
 
-              <section className="day-agenda-overview" aria-label="その日の概要">
-                <div>
-                  <span>予定</span>
-                  <strong>{dayItems.length}</strong>
-                </div>
-                <div>
-                  <span>やること</span>
-                  <strong>{operationalTasks.length + transportTasks.length}</strong>
-                </div>
-                <div className={outstandingCount > 0 ? 'attention' : 'done'}>
-                  <span>{outstandingCount > 0 ? '未完了' : 'すべて完了'}</span>
-                  <strong>{outstandingCount > 0 ? outstandingCount : '✓'}</strong>
-                </div>
-              </section>
+  return (
+    <>
+      <AgendaFrame inline={inline}
+        title={dayTitle(date)}
+        onClose={onClose}
+        panelClassName="day-agenda-modal"
+        backdropClassName="day-agenda-backdrop"
+        headerAction={
+          <button
+            type="button"
+            className="day-agenda-header-add"
+            aria-label="この日に予定を追加"
+            onClick={() => setCreateKind('event')}
+          >
+            ＋
+          </button>
+        }
+      >
+        <div className="day-agenda">
+          <div className="day-agenda-handle" aria-hidden="true" />
 
+          {planning.loading ? (
+            <p role="status" className="day-agenda-loading">読み込み中…</p>
+          ) : (
+            <>
+              {!inline && !planning.error && <div className="day-agenda-recording" role="status" aria-label="家族の記録状況">
+                <TaskRecordingBadge summary={recording} future={date > tokyoIsoDate(new Date())} />
+              </div>}
+              {(planning.error || subtaskError) && (
+                <p role="alert" className="error-text day-agenda-error">
+                  {planning.error ?? subtaskError}
+                </p>
+              )}
+
+
+              {!inline && scheduleSection}
 
               {(transportTasks.length > 0 || tokens.dropoff.token !== '—' || tokens.pickup.token !== '—') && (
-                <section className="day-agenda-section">
+                <section className="day-agenda-section day-agenda-transport-section">
                   <div className="day-agenda-section-heading">
                     <div>
                       <p className="eyebrow">送り迎え</p>
@@ -290,7 +284,7 @@ export function DayAgendaSheet({
                     <h3>実績・やること</h3>
                   </div>
                   <span className="day-agenda-progress">
-                    {completedOperational}/{operationalTasks.length}
+                    記録 {recordedOperational}/{operationalTasks.length}
                   </span>
                 </div>
                 {operationalTasks.length === 0 ? (
@@ -307,6 +301,8 @@ export function DayAgendaSheet({
                   </ul>
                 )}
               </section>
+
+              {inline && scheduleSection}
 
               <div className="day-agenda-sticky-actions" aria-label="この日に追加">
                 <button type="button" className="secondary-button" onClick={() => setCreateKind('task')}>

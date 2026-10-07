@@ -95,7 +95,7 @@ describe('CF-14 Today user-visible state evidence', () => {
     mockUseTodayData.mockReturnValue(todayData({ status: 'loading', loading: true, lastUpdatedAt: null }));
     renderToday();
 
-    expect(screen.getByRole('status')).toHaveTextContent('読み込み中…');
+    expect(screen.getByText('読み込み中…')).toHaveAttribute('role', 'status');
     expect(screen.queryByRole('heading', { name: '今日' })).not.toBeInTheDocument();
   });
 
@@ -119,8 +119,10 @@ describe('CF-14 Today user-visible state evidence', () => {
     }));
     renderToday();
 
-    expect(screen.getByRole('status')).toHaveTextContent('通信が不安定なため、最後に取得できた内容を表示しています。');
+    expect(screen.getByText('通信が不安定なため、最後に取得できた内容を表示しています。')).toHaveAttribute('role', 'status');
     expect(screen.getByRole('alert')).toHaveTextContent('読み込みに失敗しました。');
     expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
   });
 });
+
+vi.mock('./useDayTaskRecording', () => ({ useDayTaskRecording: () => ({ summary: null, error: false, refresh: vi.fn(async () => {}) }) }));

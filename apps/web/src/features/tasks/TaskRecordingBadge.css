@@ -1,0 +1,22 @@
+.task-recording-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+.task-recording-badge.completed {
+  color: var(--color-accent);
+}
+.task-recording-badge.recorded,
+.task-recording-badge.pending:not(.future) {
+  color: #996216;
+}
+@media (prefers-color-scheme: dark) {
+  .task-recording-badge.recorded,
+  .task-recording-badge.pending:not(.future) {
+    color: #edc17d;
+  }
+}

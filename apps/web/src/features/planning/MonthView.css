@@ -14,6 +14,7 @@
 .month-page .month-nav-button:last-child { justify-self: end; }
 .month-page .month-contract-hint { margin: 0.2rem 0.25rem 0.55rem; color: var(--color-text-muted); font-size: 0.8rem; }
 .month-page .month-weekdays { gap: 0; border-bottom: 1px solid var(--color-border); }
+.month-page .month-weekdays, .month-page .month-calendar { padding-bottom: 0; }
 .month-page .month-weekdays span { padding: 0.32rem 0 0.28rem; color: var(--color-text-muted); font-size: 0.75rem; font-weight: 700; text-align: center; }
 .month-page .month-weekdays span:nth-child(6) { color: #1769aa; }
 .month-page .month-weekdays span:nth-child(7) { color: #c43a3a; }
@@ -33,6 +34,10 @@
 .month-page .month-day.saturday:not(.today) .month-date-number { color: #1769aa; }
 .month-page .month-day.sunday:not(.today) .month-date-number { color: #c43a3a; }
 .month-page .month-day.today .month-date-number { background: var(--color-accent); color: var(--color-accent-text); font-weight: 800; }
+.month-page .month-date-number { position: relative; box-sizing: border-box; }
+.month-page .recording-completed .month-date-number { box-shadow: 0 0 0 1.5px var(--color-accent); }
+.month-page .recording-recorded .month-date-number { outline: 1.5px dashed #996216; }
+.month-page .recording-pending .month-date-number::after { content: ''; position: absolute; right: -0.28rem; top: 0.04rem; width: 0.25rem; height: 0.25rem; border-radius: 50%; background: #996216; }
 .month-page .month-events { display: grid; gap: 0.12rem; min-width: 0; width: 100%; }
 .month-page .month-day small { min-width: 0; width: 100%; overflow: hidden; border-radius: 0.2rem; font-size: 0.61rem; font-weight: 650; line-height: 1.22; }
 .month-page .projection-row { display: flex; align-items: center; gap: 0.12rem; padding: 0.09rem 0.1rem; border-left: 0.16rem solid transparent; white-space: nowrap; }
@@ -67,6 +72,8 @@
 .month-page .day-transport-summary > span { display: inline-flex; align-items: center; gap: 0.12rem; }
 
 @media (prefers-color-scheme: dark) {
+  .month-page .recording-recorded .month-date-number { outline-color: #edc17d; }
+  .month-page .recording-pending .month-date-number::after { background: #edc17d; }
   .month-page .projection-row.family_ops { background: #163d33; color: #bdebdc; }
   .month-page .projection-row.google { background: #26334f; color: #cbd8ff; }
   .month-page .transport-compact, .month-page .month-inline-transport-token { background: #292f2c; color: #d8dfdb; }

@@ -82,15 +82,14 @@ export function TomorrowPreparationCard({
     <section className="card tomorrow-preparation-card" aria-labelledby="tomorrow-preparation-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">迎えで分かった持ち物を、その場で翌朝へ</p>
           <h2 id="tomorrow-preparation-title">明日の準備・引き継ぎ</h2>
         </div>
         <span>{formattedDate}</span>
       </div>
 
       <p className="page-lead">
-        登録すると、明日の「引き継ぎ・今日だけの準備」にチェック項目として出ます。
-        {assigneeLabel ? ` 朝担当：${assigneeLabel}` : ' 朝担当はまだ未定です。'}
+        持ち物・提出物を明日のやることに追加。
+        {assigneeLabel ? ` 朝担当：${assigneeLabel}` : ' 朝担当は未定です。'}
       </p>
 
       {existingTitles.length > 0 && (

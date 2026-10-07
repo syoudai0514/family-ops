@@ -305,51 +305,9 @@
   background: var(--color-bg);
 }
 
-/* できなかった（忘れた）: closed for today like done, but marked apart (not struck through, a dash, not a check). */
-.task-checklist-item.could-not-do {
-  opacity: 0.72;
-  background: var(--color-bg);
-}
-
-.task-checklist-item.could-not-do .task-check-control {
-  border-style: dashed;
-  border-color: var(--color-border);
-  color: var(--color-text-muted, var(--color-text));
-}
-
-.task-checklist-main {
-  display: grid;
-  grid-template-columns: 2.65rem minmax(0, 1fr) auto;
-  gap: 0.45rem;
-  align-items: center;
-}
-
-.task-check-control {
-  display: grid;
-  place-items: center;
-  width: 2.4rem;
-  height: 2.4rem;
-  padding: 0;
-  border: 2px solid color-mix(in srgb, var(--color-accent) 70%, var(--color-border));
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-accent);
-  font-weight: 900;
-}
-
-.task-check-control:disabled {
-  opacity: 1;
-}
-
-.task-checklist-item.completed .task-check-control {
-  background: var(--color-accent);
-  color: var(--color-accent-text);
-}
-
-.task-progress-control {
-  font-size: 0.68rem;
-  letter-spacing: -0.03em;
-}
+/* A missed result is recorded, with a dash instead of a completion check. */
+.task-checklist-item.could-not-do { background: var(--color-bg); }
+.task-checklist-main { grid-template-columns: 1.5rem minmax(0, 1fr) auto; gap: 0.4rem; align-items: start; }
 
 .task-checklist-content {
   display: grid;
@@ -514,13 +472,8 @@
   }
 
   .task-checklist-main {
-    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+    grid-template-columns: 1.5rem minmax(0, 1fr) auto;
     gap: 0.35rem;
-  }
-
-  .task-check-control {
-    width: 2.25rem;
-    height: 2.25rem;
   }
 
   .subtask-checklist {
@@ -538,7 +491,11 @@
 
 .app-shell.daily-date-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .5rem; align-items: center; min-height: 0; padding-top: .8rem; padding-bottom: .5rem; }
 .daily-date-nav input { min-width: 0; text-align: center; }
-.daily-date-nav .text-button { grid-column: 1 / -1; justify-self: center; }
+.daily-recording-row { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: .4rem; min-width: 0; }
+.daily-recording-status { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; font-size: .8rem; min-width: 0; }
+.daily-recording-caption { color: var(--color-text-muted); font-size: .72rem; }
+.daily-recording-row > .text-button { flex: 0 0 auto; min-height: 2.75rem; padding: .3rem .5rem; font-size: .8rem; }
+.day-agenda-recording { margin-bottom: .6rem; }
 .day-agenda-inline .day-agenda-handle { display: none; }
 .day-agenda-inline .day-agenda-sticky-actions { position: static; }
 .day-agenda-inline .day-agenda { min-height: 0; max-height: none; overflow: visible; overscroll-behavior: auto; padding: .5rem 0 1rem; }
@@ -571,3 +528,8 @@
 .schedule-comment-list p { margin: .3rem 0 0; font-size: .85rem; }
 .schedule-comment-form label { display: grid; gap: .4rem; }
 .schedule-comment-form button { margin-top: .5rem; padding: .4rem .7rem; }
+
+/* Date-switched home keeps recording actions before the longer schedule. */
+.app-shell.daily-date-content { padding-top: 0.5rem; }
+.day-agenda-inline > h1 { margin: 0.15rem 0 0.5rem; font-size: 1.2rem; }
+.day-agenda-inline .day-agenda { display: flex; flex-direction: column; }
