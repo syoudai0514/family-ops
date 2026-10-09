@@ -91,7 +91,8 @@ begin
   -- A second protected range proves the all-keep path.
   select ti.id into protected2
   from public.task_instances ti join public.task_definitions td on td.household_id=ti.household_id and td.id=ti.task_definition_id
-  where ti.household_id=h1 and td.code='dropoff' and ti.scheduled_date='2026-10-12';
+  -- Monday 2026-10-19 (10-12 is スポーツの日: a public holiday has no dropoff).
+  where ti.household_id=h1 and td.code='dropoff' and ti.scheduled_date='2026-10-19';
   if protected2 is null then raise exception 'FAIL Q50: second protected occurrence fixture missing'; end if;
   update public.task_instances set planned_assignee_id=u1,planned_assignee_actor_ref_id=actor1,
     assignment_mode='person',assignment_source='agreement',revision=revision+1 where id=protected2;

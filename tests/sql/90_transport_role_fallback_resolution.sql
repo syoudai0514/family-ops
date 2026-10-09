@@ -48,6 +48,8 @@ begin
   -- covered separately by 91_weekend_role_tasks_anyone.sql.
   chosen_date:=(now() at time zone 'Asia/Tokyo')::date
     + ((8-extract(isodow from (now() at time zone 'Asia/Tokyo')::date)::int)%7);
+  -- A public holiday has no dropoff / pickup (誰でもOK, as on a weekend): take an ordinary Monday.
+  while private.fn_is_jp_holiday_v1(chosen_date) loop chosen_date:=chosen_date+7; end loop;
   dow:=1;
 
   insert into public.task_instances(
