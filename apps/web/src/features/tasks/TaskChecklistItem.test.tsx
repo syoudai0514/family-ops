@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
+import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { TaskChecklistItem } from './TaskChecklistItem';
 
 const callEdgeFunction = vi.fn();
@@ -69,6 +70,35 @@ const props = {
 };
 
 describe('TaskChecklistItem Q54/Q64/Q106', () => {
+  it.each([
+    ['papa-user', 'ママ'],
+    ['mama-user', 'パパ'],
+  ])('names the other parent for viewer %s and records their completion', async (currentUserId, label) => {
+    const members: HouseholdMemberWithProfile[] = [
+      { household_id: 'household-1', user_id: 'mama-user', member_role: 'adult', family_role: 'mama', joined_at: '2026-09-01', profile: null },
+      { household_id: 'household-1', user_id: 'papa-user', member_role: 'adult', family_role: 'papa', joined_at: '2026-09-01', profile: null },
+    ];
+    render(<TaskChecklistItem {...props} members={members} hasPartner currentUserId={currentUserId}
+      task={{ ...makeTask('todo'), planned_assignee_id: currentUserId }} />);
+    const button = screen.getByRole('button', { name: `${label}が完了` });
+    expect(button).toHaveTextContent(`${label}完了`);
+    fireEvent.click(button);
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({
+      task_id: 'task-1', completion_actor: 'partner',
+    })));
+  });
+
+  it('does not guess a parent label when there is more than one other member', () => {
+    const members: HouseholdMemberWithProfile[] = [
+      { household_id: 'household-1', user_id: 'papa-user', member_role: 'adult', family_role: 'papa', joined_at: '2026-09-01', profile: null },
+      { household_id: 'household-1', user_id: 'child-user', member_role: 'child', family_role: null, joined_at: '2026-09-02', profile: null },
+      { household_id: 'household-1', user_id: 'mama-user', member_role: 'adult', family_role: 'mama', joined_at: '2026-09-01', profile: null },
+    ];
+    render(<TaskChecklistItem {...props} members={members} hasPartner currentUserId="papa-user" task={makeTask('todo')} />);
+    expect(screen.getByRole('button', { name: '相手が完了' })).toHaveTextContent('相手完了');
+    expect(screen.queryByRole('button', { name: 'ママが完了' })).not.toBeInTheDocument();
+  });
+
   it('also offers partner completion for anyone tasks', async () => {
     render(<TaskChecklistItem {...props} hasPartner currentUserId="user-1" task={makeAnyoneTask('user-2')} />);
     fireEvent.click(screen.getByRole('button', { name: '相手が完了' }));

@@ -129,6 +129,14 @@ export function TaskChecklistItem({
   const anyoneClaimedBySelf = anyoneTask && Boolean(currentUserId) && task.active_claimant_user_id === currentUserId;
   const anyoneClaimedByOther = anyoneTask && Boolean(task.active_claimant_actor_ref_id) && !anyoneClaimedBySelf;
   const canExecute = !anyoneTask || anyoneUnclaimed || anyoneClaimedBySelf;
+  // Resolve the other member from the viewer, never from this task's assignee.
+  // Naming multiple possible performers needs an explicit performer command;
+  // the current API only accepts self/partner for a two-member household.
+  const otherMembers = currentUserId && members.some((member) => member.user_id === currentUserId)
+    ? members.filter((member) => member.user_id !== currentUserId)
+    : [];
+  const partnerRole = otherMembers.length === 1 ? otherMembers[0].family_role : null;
+  const partnerLabel = partnerRole === 'papa' ? 'パパ' : partnerRole === 'mama' ? 'ママ' : '相手';
   const performers = completed ? [...new Set(task.actual_completed_by_id ? [task.actual_completed_by_id] : subtasks.filter((item) => item.is_completed && item.completed_by).map((item) => item.completed_by!))] : [];
   const performerLabel = performers.map((id) => members.find((member) => member.user_id === id)?.profile?.display_name ?? '家族').join('・');
 
@@ -475,8 +483,8 @@ export function TaskChecklistItem({
 
           {hasPartner && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
             <button type="button" className="task-action task-action-secondary" disabled={busy}
-              aria-label="相手が完了" title="相手が実施したことを記録します"
-              onClick={() => handleComplete('partner')}>相手完了</button>
+              aria-label={`${partnerLabel}が完了`} title={`${partnerLabel}が実施したことを記録します`}
+              onClick={() => handleComplete('partner')}>{partnerLabel}完了</button>
           )}
 
           {couldNotDo && (
