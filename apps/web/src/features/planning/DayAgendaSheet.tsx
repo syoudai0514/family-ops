@@ -16,6 +16,7 @@ import { usePlanningData } from './usePlanningData';
 import './DayAgendaSheet.css';
 import { ScheduleEventCard } from './ScheduleEventCard';
 import { isTaskRecorded, summarizeTaskRecording } from '../tasks/taskRecording';
+import { groupTasksByOwner } from '../tasks/taskOwnerGroups';
 import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
 import { tokyoIsoDate } from './dateHelpers';
 
@@ -176,6 +177,35 @@ export function DayAgendaSheet({
     />
   );
 
+  // Mine / shared / the other adult's, apart from each other (owner 2026-10-09: with both lists
+  // mixed, a tap could land on the other adult's task). The other adult's list is folded.
+  const ownerGroups = groupTasksByOwner(operationalTasks, me?.user_id);
+  const roleLabel = (role: string | null | undefined, fallback: string) => role === 'papa' ? 'パパ' : role === 'mama' ? 'ママ' : fallback;
+  const meLabel = roleLabel(me?.family_role, '自分');
+  const partnerLabel = roleLabel(partner?.family_role, '相手');
+  const renderOwnerGroup = (kind: 'mine' | 'shared' | 'partner', title: string, list: PlanningTask[], folded = false) => {
+    if (list.length === 0) return null;
+    const open = list.filter((task) => !isTaskRecorded(task)).length;
+    const summary = (
+      <>
+        <strong>{title}</strong>
+        <span>{list.length}件{open > 0 ? `・未記録${open}` : '・すべて記録済み'}</span>
+      </>
+    );
+    const items = <ul className="task-list day-agenda-task-list">{list.map((task) => renderTask(task))}</ul>;
+    return folded ? (
+      <details className={`day-agenda-owner day-agenda-owner-${kind}`} key={kind}>
+        <summary className="day-agenda-owner-heading">{summary}</summary>
+        {items}
+      </details>
+    ) : (
+      <div className={`day-agenda-owner day-agenda-owner-${kind}`} key={kind}>
+        <h4 className="day-agenda-owner-heading">{summary}</h4>
+        {items}
+      </div>
+    );
+  };
+
   const scheduleSection = (
     <section className="day-agenda-section">
     <div className="day-agenda-section-heading">
@@ -296,9 +326,17 @@ export function DayAgendaSheet({
                     やることはありません。＋ 追加
                   </button>
                 ) : (
-                  <ul className="task-list day-agenda-task-list">
-                    {operationalTasks.map((task) => renderTask(task))}
-                  </ul>
+                  ownerGroups ? (
+                    <>
+                      {renderOwnerGroup('mine', `${meLabel}（自分）の担当`, ownerGroups.mine)}
+                      {renderOwnerGroup('shared', '誰でもOK・担当未定', ownerGroups.shared)}
+                      {renderOwnerGroup('partner', `${partnerLabel}の担当`, ownerGroups.partner, true)}
+                    </>
+                  ) : (
+                    <ul className="task-list day-agenda-task-list">
+                      {operationalTasks.map((task) => renderTask(task))}
+                    </ul>
+                  )
                 )}
               </section>
 

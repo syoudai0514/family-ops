@@ -7,6 +7,7 @@ import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { assignmentDecisionCommand, type AssignmentDecision } from './assignmentDecision';
 import type { TaskCompletionPrerequisite } from '../today/codmonReadiness';
 import { isTaskRecorded } from './taskRecording';
+import { isPartnersTask } from './taskOwnerGroups';
 
 export interface TaskChecklistItemProps {
   task: TaskInstance;
@@ -135,6 +136,9 @@ export function TaskChecklistItem({
   const otherMembers = currentUserId && members.some((member) => member.user_id === currentUserId)
     ? members.filter((member) => member.user_id !== currentUserId)
     : [];
+  // The other adult's task: the one-tap button records THEIR completion, so a tap meant for my own
+  // task cannot close theirs as mine (owner 2026-10-09). Doing it myself instead is in the ••• menu.
+  const partnersTask = isPartnersTask(task, currentUserId);
   const partnerRole = otherMembers.length === 1 ? otherMembers[0].family_role : null;
   const partnerLabel = partnerRole === 'papa' ? 'パパ' : partnerRole === 'mama' ? 'ママ' : '相手';
   const performers = completed ? [...new Set(task.actual_completed_by_id ? [task.actual_completed_by_id] : subtasks.filter((item) => item.is_completed && item.completed_by).map((item) => item.completed_by!))] : [];
@@ -361,7 +365,7 @@ export function TaskChecklistItem({
   </>;
 
   return (
-    <li className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : ''].filter(Boolean).join(' ')}>
+    <li className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : '', partnersTask ? 'task-owner-partner' : ''].filter(Boolean).join(' ')}>
       <div className="task-checklist-main">
         <span className="task-result-icon" role="img"
           aria-label={`${task.title}：${completed ? '完了済み' : couldNotDo ? '実施漏れ・記録済み' : finished ? '記録済み' : '未記録'}`}>
@@ -397,6 +401,12 @@ export function TaskChecklistItem({
                   <option value="partner">パートナー</option>
                 </select>
               </label>
+            )}
+            {partnersTask && !finished && !completionPrerequisite?.actionLabel && !completionPrerequisite?.blocking && (
+              <button type="button" onClick={() => handleComplete()} disabled={busy || !canExecute}
+                aria-label={`${task.title}を自分がやったことにする`}>
+                自分がやった（代わりに）
+              </button>
             )}
             {!finished && members.length > 0 && !anyoneTask && (
               <button type="button" onClick={() => setEditingAssignment(true)} disabled={busy}>担当を調整</button>
@@ -460,7 +470,7 @@ export function TaskChecklistItem({
             </button>
           )}
 
-          {!finished && !completionPrerequisite?.actionLabel && (
+          {!finished && !completionPrerequisite?.actionLabel && !partnersTask && (
             <button
               type="button"
               className="task-action task-action-primary"
@@ -482,7 +492,7 @@ export function TaskChecklistItem({
           )}
 
           {hasPartner && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
-            <button type="button" className="task-action task-action-secondary" disabled={busy}
+            <button type="button" className={`task-action ${partnersTask ? 'task-action-partner' : 'task-action-secondary'}`} disabled={busy}
               aria-label={`${partnerLabel}が完了`} title={`${partnerLabel}が実施したことを記録します`}
               onClick={() => handleComplete('partner')}>{partnerLabel}完了</button>
           )}

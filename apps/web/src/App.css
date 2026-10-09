@@ -823,6 +823,13 @@ button:disabled {
   color: var(--color-text);
 }
 
+/* The other adult's task: their completion is the main button, outlined in their colour. */
+.task-checklist-item .task-action-partner {
+  border: 2px solid var(--color-pending);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
 .subtask-checklist {
   margin-top: 0.65rem;
 }

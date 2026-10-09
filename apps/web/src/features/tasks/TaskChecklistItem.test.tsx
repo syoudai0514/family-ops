@@ -361,6 +361,36 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     }));
   });
 
+  it("on the other adult's task, the main button records THEIR completion; doing it myself is in the menu", async () => {
+    const members = [
+      { user_id: 'user-1', family_role: 'papa', profile: { display_name: 'パパ' } },
+      { user_id: 'user-2', family_role: 'mama', profile: { display_name: 'ママ' } },
+    ] as never;
+    const theirs = { ...makeTask('todo'), id: 'theirs-1', title: 'お風呂', planned_assignee_id: 'user-2', assignment_mode: 'person' } as TaskInstance;
+    const { container } = render(<TaskChecklistItem {...props} hasPartner members={members} currentUserId="user-1" task={theirs} />);
+
+    expect(container.querySelector('li')).toHaveClass('task-owner-partner');
+    // No one-tap "完了" for me on their task.
+    expect(screen.queryByRole('button', { name: 'お風呂を完了にする' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'ママが完了' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({ task_id: 'theirs-1', completion_actor: 'partner' })));
+
+    callEdgeFunction.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'お風呂を自分がやったことにする' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({ task_id: 'theirs-1', completion_actor: 'self' })));
+  });
+
+  it('keeps the one-tap completion on my own task', () => {
+    const members = [
+      { user_id: 'user-1', family_role: 'papa', profile: { display_name: 'パパ' } },
+      { user_id: 'user-2', family_role: 'mama', profile: { display_name: 'ママ' } },
+    ] as never;
+    const mine = { ...makeTask('todo'), id: 'mine-1', title: '送り', planned_assignee_id: 'user-1', assignment_mode: 'person' } as TaskInstance;
+    const { container } = render(<TaskChecklistItem {...props} hasPartner members={members} currentUserId="user-1" task={mine} />);
+    expect(container.querySelector('li')).not.toHaveClass('task-owner-partner');
+    expect(screen.getByRole('button', { name: '送りを完了にする' })).toBeInTheDocument();
+  });
+
   it('allows a completed checklist subtask to be unchecked and reopened', async () => {
     const completedTask = {
       ...makeSubtaskTask(),
