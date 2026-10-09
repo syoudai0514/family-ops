@@ -22,7 +22,7 @@ export function RemoveDayTransport({ date, tasks, onChanged }: { date: string; t
     setBusy(true);
     setError(null);
     try {
-      await runCommand(`day-transport:clear:${date}`, EDGE_FUNCTIONS.removeDayTransport, (operationId) => ({ operation_id: operationId, date }));
+      await runCommand(`day-transport:clear:${date}`, EDGE_FUNCTIONS.transportSchedule, (operationId) => ({ action: 'clear_day', operation_id: operationId, date }));
       setConfirming(false);
       await onChanged();
     } catch (err) {

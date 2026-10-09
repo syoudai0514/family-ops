@@ -12,7 +12,6 @@ export const REQUEST_POLICY = {
   editTask: 'mutation',
   commitConciergeDuplicate: 'mutation',
   cancelTask: 'mutation',
-  removeDayTransport: 'mutation',
   completeTask: 'mutation',
   reopenTask: 'mutation',
   recordUnplannedActual: 'mutation',
