@@ -160,7 +160,7 @@ export function DayAgendaSheet({
     )
     .sort(taskSort);
   const recordedOperational = operationalTasks.filter(isTaskRecorded).length;
-  const recording = summarizeTaskRecording(planning.tasks, date);
+  const recording = summarizeTaskRecording(planning.tasks, date, { userId: me?.user_id });
 
   const renderTask = (task: PlanningTask, showTime = true) => (
     <TaskChecklistItem
@@ -243,7 +243,7 @@ export function DayAgendaSheet({
             <p role="status" className="day-agenda-loading">読み込み中…</p>
           ) : (
             <>
-              {!inline && !planning.error && <div className="day-agenda-recording" role="status" aria-label="家族の記録状況">
+              {!inline && !planning.error && <div className="day-agenda-recording" role="status" aria-label="自分の記録状況">
                 <TaskRecordingBadge summary={recording} future={date > tokyoIsoDate(new Date())} />
               </div>}
               {(planning.error || subtaskError) && (

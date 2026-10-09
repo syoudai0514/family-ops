@@ -6,7 +6,7 @@ import { summarizeTaskRecording, type RecordingTask } from '../tasks/taskRecordi
 
 const TABLES = ['task_instances'];
 
-export function useDayTaskRecording(householdId: string | null, date: string) {
+export function useDayTaskRecording(householdId: string | null, date: string, userId: string | null = null) {
   const key = `${householdId}:${date}`;
   const [snapshot, setSnapshot] = useState<{
     key: string;
@@ -21,7 +21,7 @@ export function useDayTaskRecording(householdId: string | null, date: string) {
       const { data, error } = await withTimeout(
         supabase
           .from('task_instances')
-          .select('scheduled_date,status,outcome_reason')
+          .select('scheduled_date,status,outcome_reason,planned_assignee_id,assignment_mode,active_claimant_user_id,expectation')
           .eq('household_id', householdId)
           .eq('scheduled_date', date),
         12_000,
@@ -48,7 +48,7 @@ export function useDayTaskRecording(householdId: string | null, date: string) {
   useRealtimeRefresh({ householdId, userId: null, tables: TABLES, onRemoteChange: refresh });
   const current = snapshot?.key === key ? snapshot : null;
   return {
-    summary: current && !current.error ? summarizeTaskRecording(current.tasks, date) : null,
+    summary: current && !current.error ? summarizeTaskRecording(current.tasks, date, { userId }) : null,
     error: current?.error ?? false,
     refresh,
   };
