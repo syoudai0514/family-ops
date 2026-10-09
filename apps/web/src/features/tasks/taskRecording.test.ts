@@ -53,3 +53,36 @@ describe('date-specific recording', () => {
     ).toBe('すべて記録済み');
   });
 });
+
+describe('summarizeTaskRecording for one person (owner 2026-10-09)', () => {
+  const day = '2026-10-09';
+  const row = (status: string, extra: Record<string, unknown> = {}) => ({ scheduled_date: day, status, outcome_reason: null, ...extra }) as never;
+
+  it("is ○ when my own tasks are all done, even if the partner's are not", () => {
+    const tasks = [
+      row('completed', { planned_assignee_id: 'me' }),
+      row('todo', { planned_assignee_id: 'partner' }),
+      row('todo', { planned_assignee_id: 'partner' }),
+    ];
+    expect(summarizeTaskRecording(tasks, day).state).toBe('pending');
+    expect(summarizeTaskRecording(tasks, day, { userId: 'me' })).toMatchObject({ state: 'completed', total: 1, pending: 0 });
+    expect(summarizeTaskRecording(tasks, day, { userId: 'partner' })).toMatchObject({ state: 'pending', pending: 2 });
+  });
+
+  it('counts shared (誰でもOK) and unassigned tasks for both, until the other adult takes one', () => {
+    const tasks = [
+      row('todo', { assignment_mode: 'anyone' }),
+      row('todo', { planned_assignee_id: null }),
+      row('todo', { assignment_mode: 'anyone', active_claimant_user_id: 'partner' }),
+    ];
+    expect(summarizeTaskRecording(tasks, day, { userId: 'me' }).pending).toBe(2);
+    expect(summarizeTaskRecording(tasks, day, { userId: 'partner' }).pending).toBe(3);
+  });
+
+  it('never counts an open optional task as left, but shows a recorded one', () => {
+    const open = [row('completed', { planned_assignee_id: 'me' }), row('todo', { assignment_mode: 'anyone', expectation: 'optional' })];
+    expect(summarizeTaskRecording(open, day, { userId: 'me' })).toMatchObject({ state: 'completed', total: 1 });
+    const done = [row('completed', { planned_assignee_id: 'me' }), row('completed', { assignment_mode: 'anyone', expectation: 'optional' })];
+    expect(summarizeTaskRecording(done, day, { userId: 'me' })).toMatchObject({ state: 'completed', total: 2 });
+  });
+});

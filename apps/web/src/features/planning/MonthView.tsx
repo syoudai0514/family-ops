@@ -50,7 +50,7 @@ export function monthDateHeading(date: string) {
 }
 
 export function MonthView() {
-  const { household, members } = useHousehold();
+  const { household, members, me } = useHousehold();
   const [anchor, setAnchor] = useState(() => new Date(`${tokyoIsoDate(new Date())}T12:00:00`));
   const { start, end } = monthRange(anchor);
   const { tasks, occurrences, loading, error, refresh } = usePlanningData(
@@ -119,7 +119,7 @@ export function MonthView() {
         <p role="status">読み込み中…</p>
       ) : (
         <>
-          <p className="month-contract-hint">日付の○＝すべて完了、破線○＝記録済み、・＝未記録あり。タップで確認・記録。</p>
+          <p className="month-contract-hint">日付の○＝自分の担当がすべて完了、破線○＝記録済み、・＝自分の未記録あり。タップで確認・記録。</p>
           <div className="month-grid month-weekdays" aria-hidden="true">
             {['月', '火', '水', '木', '金', '土', '日'].map((day) => <span key={day}>{day}</span>)}
           </div>
@@ -136,7 +136,7 @@ export function MonthView() {
               const visibleItems = dayItems.slice(0, visibleItemLimit);
               const hiddenCount = Math.max(0, dayItems.length - visibleItems.length);
               const dayOfWeek = day.getDay();
-              const recording = summarizeTaskRecording(tasks, date);
+              const recording = summarizeTaskRecording(tasks, date, { userId: me?.user_id });
               const mark = error || (recording.state === 'pending' && date > today) ? '' : recording.state;
               return (
                 <button

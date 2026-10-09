@@ -3,11 +3,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MonthView } from './MonthView';
 
-const extra = vi.hoisted(() => ({ tasks: [] as Array<Record<string, unknown>>, error: null as string | null }));
+const extra = vi.hoisted(() => ({ tasks: [] as Array<Record<string, unknown>>, error: null as string | null, me: null as { user_id: string } | null }));
 
 vi.mock('../../app/HouseholdContext', () => ({
   useHousehold: () => ({
     household: { id: 'hh' },
+    me: extra.me,
     members: [
       { user_id: 'p', family_role: 'papa', profile: { display_name: 'パパ' } },
       { user_id: 'm', family_role: 'mama', profile: { display_name: 'ママ' } },
@@ -71,6 +72,7 @@ describe('MonthView inline day contract', () => {
   beforeEach(() => {
     extra.tasks = [];
     extra.error = null;
+    extra.me = null;
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-05T10:00:00+09:00'));
   });
@@ -91,6 +93,21 @@ describe('MonthView inline day contract', () => {
     extra.error = 'offline';
     view.rerender(<MonthView />);
     expect(screen.getByRole('button', { name: '2026-09-01を選択：記録状況を取得できませんでした' })).not.toHaveClass('recording-completed');
+  });
+
+  it("marks a day ○ when my own tasks are all done, even if the partner's are not (owner 2026-10-09)", () => {
+    const row = (status: string, who: string) => ({
+      id: `${who}-${status}`, scheduled_date: '2026-09-01', title: '家事', category: 'housework',
+      completion_mode: 'whole', status, outcome_reason: null, due_at: null, planned_assignee_id: who, calendar_visibility: 'hidden',
+    });
+    extra.tasks = [row('completed', 'p'), row('todo', 'm')];
+    extra.me = { user_id: 'p' };
+    const view = render(<MonthView />);
+    expect(screen.getByRole('button', { name: '2026-09-01を選択：すべて完了' })).toHaveClass('recording-completed');
+    // The partner looking at the same day still has an open task.
+    extra.me = { user_id: 'm' };
+    view.rerender(<MonthView />);
+    expect(screen.getByRole('button', { name: '2026-09-01を選択：未記録 1件' })).toHaveClass('recording-pending');
   });
 
   it('opens the selected day immediately and retains its inline add and transport controls', () => {

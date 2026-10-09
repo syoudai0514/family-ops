@@ -294,13 +294,13 @@ function scheduleLabel(item: DailyBriefScheduleItem): string {
 
 export function Today() {
   const [params, setParams] = useSearchParams();
-  const { household } = useHousehold();
+  const { household, me } = useHousehold();
   const currentClock = useTodayClock(() => {});
   const today = tokyoIsoDate(currentClock.now);
   const value = params.get('date') ?? today;
   const parsed = new Date(`${value}T00:00:00Z`);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : today;
-  const recording = useDayTaskRecording(household?.id ?? null, date);
+  const recording = useDayTaskRecording(household?.id ?? null, date, me?.user_id ?? null);
   function selectDate(next: string) {
     const copy = new URLSearchParams(params);
     if (next === today) copy.delete('date'); else copy.set('date', next);
@@ -317,7 +317,7 @@ export function Today() {
       <input aria-label="表示する日" type="date" value={date} onChange={(event) => event.target.value && selectDate(event.target.value)} />
       <button type="button" className="secondary-button" onClick={() => move(1)} aria-label="翌日">翌日 ›</button>
       <div className="daily-recording-row">
-        <span role="status" aria-label="家族の記録状況" className="daily-recording-status">
+        <span role="status" aria-label="自分の記録状況" className="daily-recording-status">
           <span className="daily-recording-caption">家族の記録</span>
           {recording.summary ? <TaskRecordingBadge summary={recording.summary} future={date > today} /> : recording.error ? '取得できませんでした' : '確認中…'}
           {recording.error && <button type="button" className="text-button" onClick={() => void recording.refresh()}>再試行</button>}

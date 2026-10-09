@@ -11,10 +11,10 @@ describe('date-specific actuals from the top screen', () => {
   it('moves across past and future days and preserves the LINE recipient parameter', () => {
     render(<MemoryRouter initialEntries={['/today?date=2026-10-02&for=mama']}><Today /><Location /></MemoryRouter>);
     expect(screen.getByText('対象日:2026-10-02')).toBeTruthy();
-    expect(screen.getByLabelText('家族の記録状況')).toHaveTextContent('すべて完了');
+    expect(screen.getByLabelText('自分の記録状況')).toHaveTextContent('すべて完了');
     fireEvent.click(screen.getByRole('button',{name:'前日'}));
     expect(screen.getByText('対象日:2026-10-01')).toBeTruthy();
-    expect(screen.getByLabelText('家族の記録状況')).toHaveTextContent('記録済み・実施漏れ 1件');
+    expect(screen.getByLabelText('自分の記録状況')).toHaveTextContent('記録済み・実施漏れ 1件');
     fireEvent.change(screen.getByLabelText('表示する日'),{target:{value:'2026-10-06'}});
     expect(screen.getByText('対象日:2026-10-06')).toBeTruthy();
     fireEvent.click(screen.getByRole('button',{name:'翌日'}));
