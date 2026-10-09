@@ -56,7 +56,7 @@ function byTime(a: TodayTaskRow, b: TodayTaskRow): number {
   return (a.due_at ?? "9999").localeCompare(b.due_at ?? "9999");
 }
 
-export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel: string, partnerLabel: string): string {
+export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel: string, partnerLabel: string, isToday = true): string {
   const visible = rows.filter(shown);
   const mine = visible.filter((r) =>
     r.assignment_mode === "anyone" || !r.planned_assignee_id || r.planned_assignee_id === actorId
@@ -79,7 +79,7 @@ export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel:
   }
 
   const theirOpen = open(theirs).sort(byTime);
-  lines.push("", `${partnerLabel}の今日（残り${theirOpen.length}件・済み${theirs.length - theirOpen.length}件）`);
+  lines.push("", `${partnerLabel}の${isToday ? "今日" : "分"}（残り${theirOpen.length}件・済み${theirs.length - theirOpen.length}件）`);
   if (theirOpen.length) {
     const names = theirOpen.slice(0, 3).map((r) => r.title);
     lines.push(`・${names.join("、")}${theirOpen.length > 3 ? ` ほか${theirOpen.length - 3}件` : ""}`);
@@ -115,6 +115,7 @@ export async function loadTodayTaskBlock(
   householdId: string,
   actorId: string,
   today: string,
+  isToday = true,
 ): Promise<string | null> {
   const [tasks, members] = await Promise.all([
     client.from("task_instances")
@@ -137,5 +138,6 @@ export async function loadTodayTaskBlock(
     actorId,
     roleLabel(me?.family_role, "自分"),
     roleLabel(partner?.family_role, "相手"),
+    isToday,
   );
 }

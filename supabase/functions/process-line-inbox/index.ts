@@ -278,7 +278,7 @@ async function sendLineSchedule(
   if (kind === "yesterday") {
     // "昨日の作業は？": yesterday's tasks in full, the same way as today's.
     const date = jstIsoDateOffset(-1);
-    const block = await loadTodayTaskBlock(client, actor.household_id, actor.user_id, date).catch(() => null);
+    const block = await loadTodayTaskBlock(client, actor.household_id, actor.user_id, date, false).catch(() => null);
     const link = todayUrlForDate(date, actor.user_id);
     await sendConfirmation(
       client,

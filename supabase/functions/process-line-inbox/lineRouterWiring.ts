@@ -36,6 +36,15 @@ function jstTime(iso: unknown): string | null {
 
 const ROLE_LABEL: Record<string, string> = { papa: "パパ", mama: "ママ" };
 
+/**
+ * The day whose tasks go into the snapshot as "昨日のタスク": the calendar's yesterday, and only
+ * while the task date is today. A dated report ("昨日の…") makes yesterday the task date itself,
+ * so no second "yesterday" is added (it would be two days ago).
+ */
+export function yesterdayForSnapshot(taskDate: string, calendarToday: string): string | null {
+  return taskDate === calendarToday ? addDays(calendarToday, -1) : null;
+}
+
 function addDays(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -143,7 +152,11 @@ export async function loadSnapshot(
   const { actorId, householdId, today } = opts;
 
   const tomorrow = addDays(today, 1);
-  const yesterday = addDays(today, -1);
+  // Yesterday of the calendar, not of the task date: "昨日の…" loads yesterday AS the task
+  // date (today = 10/8), and its "yesterday" would then be two days ago (2026-10-09: 10/7's
+  // tasks were completed by "昨日のパパのは全部終わってます"). When the task date already is
+  // yesterday there is nothing more to add.
+  const yesterday = yesterdayForSnapshot(today, jstClock().date);
   const [turns, members, taskRows, shopRows, children, notes, transportRows, yesterdayRows] = await Promise.all([
     safe<Turn[]>([], async () => {
       const { data } = await client.rpc("server_read_line_turns", { p_actor_id: actorId, p_limit: 12 });
@@ -221,6 +234,7 @@ export async function loadSnapshot(
       return (data ?? []).map((row: Record<string, unknown>) => ({ ...row, code: codeById.get(String(row.task_definition_id)) }));
     }),
     safe<Array<Record<string, unknown>>>([], async () => {
+      if (!yesterday) return [];
       const { data } = await client
         .from("task_instances")
         .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase")
