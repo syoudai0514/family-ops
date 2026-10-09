@@ -19,7 +19,7 @@ import {
 } from "./lineUnderstand.ts";
 import { geminiGenerationConfig } from "../_shared/gemini.ts";
 import { isFixedShortcutText } from "./lineConversation.ts";
-import { describePendingDraft, jstClock } from "./lineRouterWiring.ts";
+import { describePendingDraft, jstClock, yesterdayForSnapshot } from "./lineRouterWiring.ts";
 import { buildShoppingListReply } from "./lineShoppingList.ts";
 
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
@@ -145,6 +145,13 @@ Deno.test("yesterday: 「昨日の作業は？」 shows yesterday's list; a y-re
   assertEquals(log[0], "done:uuid-y1:self");
   const prompt = buildUnderstandPrompt(s, "昨日の作業は？");
   assertEquals(prompt.includes("昨日のタスク") && prompt.includes('"y1"'), true);
+});
+
+Deno.test("snapshot: 「昨日のタスク」 is the calendar's yesterday, and absent when the task date is already yesterday", () => {
+  assertEquals(yesterdayForSnapshot("2026-10-09", "2026-10-09"), "2026-10-08");
+  // 2026-10-09: "昨日のパパのは全部終わってます" loads 10/8 as the task date; 10/7 must not appear as "yesterday".
+  assertEquals(yesterdayForSnapshot("2026-10-08", "2026-10-09"), null);
+  assertEquals(yesterdayForSnapshot("2026-10-12", "2026-10-09"), null);
 });
 
 Deno.test("guard: a reply with a link or a copied list is never sent (the app shows lists)", () => {
