@@ -595,3 +595,28 @@
   border-left: 3px solid var(--color-pending);
   background: color-mix(in srgb, var(--color-pending) 5%, var(--color-surface));
 }
+
+/* "この日は送迎なし": a quiet link, then a two-step confirmation. */
+.day-agenda-clear-transport {
+  margin-top: 0.5rem;
+  text-align: right;
+}
+
+.day-agenda-clear-transport.confirming {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  background: var(--color-bg);
+  text-align: left;
+}
+
+.day-agenda-clear-transport.confirming p {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.day-agenda-clear-transport-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}

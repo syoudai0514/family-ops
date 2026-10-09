@@ -18,6 +18,7 @@ import { ScheduleEventCard } from './ScheduleEventCard';
 import { isTaskRecorded, summarizeTaskRecording } from '../tasks/taskRecording';
 import { groupTasksByOwner } from '../tasks/taskOwnerGroups';
 import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
+import { RemoveDayTransport } from './RemoveDayTransport';
 import { tokyoIsoDate } from './dateHelpers';
 
 function dayTitle(date: string) {
@@ -304,6 +305,7 @@ export function DayAgendaSheet({
                   ) : (
                     <p className="empty-hint">送迎担当だけ設定されています。</p>
                   )}
+                  <RemoveDayTransport date={date} tasks={planning.tasks} onChanged={refreshAll} />
                 </section>
               )}
 

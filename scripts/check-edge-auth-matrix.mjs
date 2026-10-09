@@ -40,6 +40,8 @@ const GAP_FILL_FUNCTIONS = new Set([
   'create-assignment-change-request',
   'accept-assignment-change-request',
   'deactivate-recurrence',
+  // 2026-10-09 "この日は送迎なし": authenticated; the Edge adapter delegates to one service-role-only RPC.
+  'remove-day-transport',
   'get-week-schedule',
   'complete-onboarding-step',
   'replace-recurrence-schedule',

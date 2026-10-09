@@ -10,6 +10,7 @@ export const EDGE_FUNCTIONS = {
   editTask: 'edit-task',
   commitConciergeDuplicate: 'commit-concierge-duplicate',
   cancelTask: 'cancel-task',
+  removeDayTransport: 'remove-day-transport',
   completeTask: 'complete-task',
   reopenTask: 'complete-task',
   recordUnplannedActual: 'record-unplanned-actual',

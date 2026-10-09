@@ -79,6 +79,8 @@ begin
     + ((6-extract(isodow from (now() at time zone 'Asia/Tokyo')::date)::int+7)%7);
   if sat<(now() at time zone 'Asia/Tokyo')::date then sat:=sat+7; end if;
   mon:=sat+2;
+  -- The weekday side of this test needs an ordinary Monday: a public holiday has no dropoff either.
+  while private.fn_is_jp_holiday_v1(mon) loop sat:=sat+7; mon:=sat+2; end loop;
 
   -- The generic household bootstrap may materialize transport rows for every
   -- weekday. This scenario specifically proves a transport-free weekend, so

@@ -55,6 +55,9 @@ begin
   select * into v_dinner_instance
   from public.task_instances
   where recurrence_rule_id = (v_dinner_result->>'rule_id')::uuid and status = 'todo'
+    -- A public holiday has no dropoff (誰でもOK, as on a weekend), so look at an ordinary Monday.
+    and not private.fn_is_jp_holiday_v1(scheduled_date)
+  order by scheduled_date
   limit 1;
 
   if v_dinner_instance.planned_assignee_id is distinct from v_owner then
