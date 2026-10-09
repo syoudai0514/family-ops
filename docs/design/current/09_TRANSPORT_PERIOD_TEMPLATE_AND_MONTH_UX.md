@@ -157,3 +157,10 @@ In addition to §7, automated coverage must prove:
 16. accepted dropoff moves unprotected `dropoff_assignee` occurrences;
 17. protected agreement/override is not rewritten;
 18. one-off transport acceptance does not mutate the base recurrence strategy.
+
+
+## 10. Date recording status — owner instruction 2026-10-07
+
+Requirements Baseline §29.20 governs PWA daily recording. The home date navigator and month date cells summarize the same household task occurrences by `scheduled_date`, including transport and hidden routine work. Count `completed` and explicit `skipped` outcomes as recorded; `could_not_do` remains missed work rather than completion. Exclude cancelled occurrences and never infer all-completed from an empty day or an unsuccessful read.
+
+Month markers occupy the existing date-number footprint: solid ring for all completed, dashed ring for all recorded with other outcomes, dot for pending records through today. Future open work has no missing-record marker. The home navigator shows a concise text status with the same meaning and refreshes after local commands and household realtime changes. Explicit completion and missed-result buttons are consistent for whole and checklist tasks; opening checklist details is a separate action.

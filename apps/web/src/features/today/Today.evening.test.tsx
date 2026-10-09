@@ -77,3 +77,5 @@ describe('Today Q87 evening collapse', () => {
     expect(screen.getByText('朝の薬を確認')).toBeInTheDocument();
   });
 });
+
+vi.mock('./useDayTaskRecording', () => ({ useDayTaskRecording: () => ({ summary: null, error: false, refresh: vi.fn(async () => {}) }) }));

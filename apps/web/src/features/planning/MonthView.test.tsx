@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MonthView } from './MonthView';
 
+const extra = vi.hoisted(() => ({ tasks: [] as Array<Record<string, unknown>>, error: null as string | null }));
+
 vi.mock('../../app/HouseholdContext', () => ({
   useHousehold: () => ({
     household: { id: 'hh' },
@@ -16,7 +18,7 @@ vi.mock('../../app/HouseholdContext', () => ({
 vi.mock('./usePlanningData', () => ({
   usePlanningData: () => ({
     loading: false,
-    error: null,
+    error: extra.error,
     refresh: vi.fn(),
     occurrences: [
       {
@@ -26,6 +28,7 @@ vi.mock('./usePlanningData', () => ({
       },
     ],
     tasks: [
+      ...extra.tasks,
       {
         id: 'dropoff-6', household_id: 'hh', task_definition_id: 'd1', recurrence_rule_id: null,
         definition_code: 'dropoff', origin: 'recurring', title: '送り', category: 'dropoff',
@@ -66,10 +69,29 @@ vi.mock('../tasks/TaskFormModal', () => ({
 
 describe('MonthView inline day contract', () => {
   beforeEach(() => {
+    extra.tasks = [];
+    extra.error = null;
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-05T10:00:00+09:00'));
   });
   afterEach(() => vi.useRealTimers());
+
+  it('marks completed, recorded-with-missed, and pending past days without marking future or empty days', () => {
+    const row = (day: string, status: string, outcome_reason: string | null = null) => ({
+      id: `${day}-${status}`, scheduled_date: `2026-09-${day}`, title: '家事', category: 'housework',
+      completion_mode: 'whole', status, outcome_reason, due_at: null, planned_assignee_id: 'p', calendar_visibility: 'hidden',
+    });
+    extra.tasks = [row('01', 'completed'), row('02', 'completed'), row('02', 'skipped', 'could_not_do'), row('03', 'todo'), row('04', 'cancelled')];
+    const view = render(<MonthView />);
+    expect(screen.getByRole('button', { name: '2026-09-01を選択：すべて完了' })).toHaveClass('recording-completed');
+    expect(screen.getByRole('button', { name: '2026-09-02を選択：記録済み・実施漏れ 1件' })).toHaveClass('recording-recorded');
+    expect(screen.getByRole('button', { name: '2026-09-03を選択：未記録 1件' })).toHaveClass('recording-pending');
+    expect(screen.getByRole('button', { name: '2026-09-04を選択：やることなし' })).not.toHaveClass('recording-completed');
+    expect(screen.getByRole('button', { name: '2026-09-06を選択：未完了 3件' })).not.toHaveClass('recording-pending');
+    extra.error = 'offline';
+    view.rerender(<MonthView />);
+    expect(screen.getByRole('button', { name: '2026-09-01を選択：記録状況を取得できませんでした' })).not.toHaveClass('recording-completed');
+  });
 
   it('opens the selected day immediately and retains its inline add and transport controls', () => {
     render(<MonthView />);
@@ -78,7 +100,7 @@ describe('MonthView inline day contract', () => {
     expect(screen.queryByTestId('task-form-modal')).not.toBeInTheDocument();
     expect(screen.queryByTestId('transport-override-modal')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '2026-09-06を選択' }));
+    fireEvent.click(screen.getByRole('button', { name: '2026-09-06を選択：未完了 3件' }));
 
     expect(screen.getByText('9/6 の予定')).toBeInTheDocument();
     expect(screen.getAllByText('家族予定').length).toBeGreaterThan(0);

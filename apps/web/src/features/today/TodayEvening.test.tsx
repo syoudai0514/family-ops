@@ -51,3 +51,5 @@ describe('Q87 evening Today compact summary', () => {
     expect(screen.getByText('朝の水筒')).toBeInTheDocument();
   });
 });
+
+vi.mock('./useDayTaskRecording', () => ({ useDayTaskRecording: () => ({ summary: null, error: false, refresh: vi.fn(async () => {}) }) }));

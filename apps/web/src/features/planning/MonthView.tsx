@@ -13,6 +13,7 @@ import { DayAgendaSheet } from './DayAgendaSheet';
 import { TransportOccurrenceOverrideModal } from './TransportOccurrenceOverrideModal';
 import { usePlanningData } from './usePlanningData';
 import { useCalendarFreshness } from './useCalendarFreshness';
+import { summarizeTaskRecording, taskRecordingLabel } from '../tasks/taskRecording';
 import './MonthView.css';
 
 function monthRange(anchor: Date) {
@@ -118,7 +119,7 @@ export function MonthView() {
         <p role="status">読み込み中…</p>
       ) : (
         <>
-          <p className="month-contract-hint">日付をタップすると、予定を時間順に大きく表示できます。</p>
+          <p className="month-contract-hint">日付の○＝すべて完了、破線○＝記録済み、・＝未記録あり。タップで確認・記録。</p>
           <div className="month-grid month-weekdays" aria-hidden="true">
             {['月', '火', '水', '木', '金', '土', '日'].map((day) => <span key={day}>{day}</span>)}
           </div>
@@ -135,6 +136,8 @@ export function MonthView() {
               const visibleItems = dayItems.slice(0, visibleItemLimit);
               const hiddenCount = Math.max(0, dayItems.length - visibleItems.length);
               const dayOfWeek = day.getDay();
+              const recording = summarizeTaskRecording(tasks, date);
+              const mark = error || (recording.state === 'pending' && date > today) ? '' : recording.state;
               return (
                 <button
                   key={date}
@@ -142,8 +145,8 @@ export function MonthView() {
                   onClick={() => { setSelected(date); setSheetDate(date); }}
                   onDoubleClick={() => setSheetDate(date)}
                   aria-pressed={selected === date}
-                  aria-label={`${date}を選択`}
-                  className={['month-day', selected === date ? 'selected' : '', date === today ? 'today' : '', dayOfWeek === 6 ? 'saturday' : '', dayOfWeek === 0 ? 'sunday' : ''].filter(Boolean).join(' ')}
+                  aria-label={`${date}を選択：${error ? '記録状況を取得できませんでした' : taskRecordingLabel(recording, date > today)}`}
+                  className={['month-day', mark ? `recording-${mark}` : '', selected === date ? 'selected' : '', date === today ? 'today' : '', dayOfWeek === 6 ? 'saturday' : '', dayOfWeek === 0 ? 'sunday' : ''].filter(Boolean).join(' ')}
                 >
                   <span className="month-date-number">{day.getDate()}</span>
                   <span className="month-events">

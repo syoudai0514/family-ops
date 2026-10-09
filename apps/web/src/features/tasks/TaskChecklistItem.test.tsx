@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
+import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { TaskChecklistItem } from './TaskChecklistItem';
 
 const callEdgeFunction = vi.fn();
@@ -69,14 +70,43 @@ const props = {
 };
 
 describe('TaskChecklistItem Q54/Q64/Q106', () => {
+  it.each([
+    ['papa-user', 'ママ'],
+    ['mama-user', 'パパ'],
+  ])('names the other parent for viewer %s and records their completion', async (currentUserId, label) => {
+    const members: HouseholdMemberWithProfile[] = [
+      { household_id: 'household-1', user_id: 'mama-user', member_role: 'adult', family_role: 'mama', joined_at: '2026-09-01', profile: null },
+      { household_id: 'household-1', user_id: 'papa-user', member_role: 'adult', family_role: 'papa', joined_at: '2026-09-01', profile: null },
+    ];
+    render(<TaskChecklistItem {...props} members={members} hasPartner currentUserId={currentUserId}
+      task={{ ...makeTask('todo'), planned_assignee_id: currentUserId }} />);
+    const button = screen.getByRole('button', { name: `${label}が完了` });
+    expect(button).toHaveTextContent(`${label}完了`);
+    fireEvent.click(button);
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({
+      task_id: 'task-1', completion_actor: 'partner',
+    })));
+  });
+
+  it('does not guess a parent label when there is more than one other member', () => {
+    const members: HouseholdMemberWithProfile[] = [
+      { household_id: 'household-1', user_id: 'papa-user', member_role: 'adult', family_role: 'papa', joined_at: '2026-09-01', profile: null },
+      { household_id: 'household-1', user_id: 'child-user', member_role: 'child', family_role: null, joined_at: '2026-09-02', profile: null },
+      { household_id: 'household-1', user_id: 'mama-user', member_role: 'adult', family_role: 'mama', joined_at: '2026-09-01', profile: null },
+    ];
+    render(<TaskChecklistItem {...props} members={members} hasPartner currentUserId="papa-user" task={makeTask('todo')} />);
+    expect(screen.getByRole('button', { name: '相手が完了' })).toHaveTextContent('相手完了');
+    expect(screen.queryByRole('button', { name: 'ママが完了' })).not.toBeInTheDocument();
+  });
+
   it('also offers partner completion for anyone tasks', async () => {
     render(<TaskChecklistItem {...props} hasPartner currentUserId="user-1" task={makeAnyoneTask('user-2')} />);
-    fireEvent.click(screen.getByRole('button', { name: '相手がやった' }));
+    fireEvent.click(screen.getByRole('button', { name: '相手が完了' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({ task_id: 'anyone-1', completion_actor: 'partner' })));
   });
   it('records the partner directly, including the remaining checklist items', async () => {
     render(<TaskChecklistItem {...props} hasPartner task={makeSubtaskTask()} subtasks={laundrySubtasks} />);
-    fireEvent.click(screen.getByRole('button', { name: '相手がやった' }));
+    fireEvent.click(screen.getByRole('button', { name: '相手が完了' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({
       task_id: 'laundry-1', completion_actor: 'partner', complete_remaining_subtasks: true,
     })));
@@ -136,7 +166,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
 
     // Folded by default: nothing to tick one by one.
     expect(screen.queryByRole('checkbox', { name: '回す' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '洗濯を全部やったことにする' }));
+    fireEvent.click(screen.getByRole('button', { name: '洗濯を完了にする' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
       operation_id: expect.any(String),
@@ -150,11 +180,11 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     const partly = laundrySubtasks.map((item, index) => (index === 0 ? { ...item, is_completed: true } : item));
     render(<TaskChecklistItem {...props} hasPartner task={makeSubtaskTask()} subtasks={partly} />);
     expect(screen.getByRole('checkbox', { name: '干す/乾燥' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '洗濯を全部やったことにする' })).toBeInTheDocument();
-    // "全部やった" and "相手がやった" sit side by side in one compact row under the title.
-    const row = screen.getByRole('button', { name: '洗濯を全部やったことにする' }).closest('.task-actions');
+    expect(screen.getByRole('button', { name: '洗濯を完了にする' })).toBeInTheDocument();
+    // "全部やった" and "相手が完了" sit side by side in one compact row under the title.
+    const row = screen.getByRole('button', { name: '洗濯を完了にする' }).closest('.task-actions');
     expect(row).not.toBeNull();
-    expect(row!.contains(screen.getByRole('button', { name: '相手がやった' }))).toBe(true);
+    expect(row!.contains(screen.getByRole('button', { name: '相手が完了' }))).toBe(true);
   });
 
   it('shows fine-grained recurring subtasks on request and records an individual checkbox', async () => {
@@ -305,7 +335,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
   it('records a forgotten task as できなかった, apart from an open (未記録) one', async () => {
     render(<TaskChecklistItem {...props} task={makeAnyoneTask()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'できなかった（忘れた）' }));
+    fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬を実施漏れとして記録' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
       operation_id: expect.any(String),
@@ -318,12 +348,12 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     const forgotten = { ...makeAnyoneTask(), status: 'skipped', outcome_reason: 'could_not_do' } as TaskInstance;
     render(<TaskChecklistItem {...props} hasPartner task={forgotten} />);
 
-    expect(screen.getByRole('button', { name: '詩乃（便秘）の薬はできなかった' })).toBeDisabled();
-    expect(screen.getByText(/できなかった$/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '相手がやった' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'できなかった（忘れた）' })).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '詩乃（便秘）の薬：実施漏れ・記録済み' })).toBeInTheDocument();
+    expect(screen.getByText(/実施漏れ$/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '相手が完了' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '詩乃（便秘）の薬を実施漏れとして記録' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '「できなかった」を取り消す' }));
+    fireEvent.click(screen.getByRole('button', { name: '記録を戻す' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
       operation_id: expect.any(String),
       task_id: 'anyone-1',
@@ -358,6 +388,16 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       completed: false,
       completion_actor: 'self',
     }));
+  });
+
+  it('keeps explicitly unnecessary checklist work recorded without enabling new results', () => {
+    const unnecessary = { ...makeSubtaskTask(), status: 'skipped', outcome_reason: 'not_needed_this_occurrence' } as TaskInstance;
+    render(<TaskChecklistItem {...props} task={unnecessary} subtasks={laundrySubtasks} />);
+    expect(screen.getByRole('img', { name: '洗濯：記録済み' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '洗濯を完了にする' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '洗濯を実施漏れとして記録' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
+    expect(screen.getByRole('checkbox', { name: '回す' })).toBeDisabled();
   });
 
   it('offers evidence only after completion and saves an optional memo separately', async () => {

@@ -28,6 +28,8 @@ import { HandoverActions } from '../handovers/HandoverActions';
 import { DayAgendaSheet } from '../planning/DayAgendaSheet';
 import { tokyoIsoDate } from '../planning/dateHelpers';
 import { useSearchParams } from 'react-router-dom';
+import { useDayTaskRecording } from './useDayTaskRecording';
+import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
 
 const INPUT_LABELS: Record<string, string> = {
   dropoff: '朝の入力',
@@ -292,11 +294,13 @@ function scheduleLabel(item: DailyBriefScheduleItem): string {
 
 export function Today() {
   const [params, setParams] = useSearchParams();
+  const { household } = useHousehold();
   const currentClock = useTodayClock(() => {});
   const today = tokyoIsoDate(currentClock.now);
   const value = params.get('date') ?? today;
   const parsed = new Date(`${value}T00:00:00Z`);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : today;
+  const recording = useDayTaskRecording(household?.id ?? null, date);
   function selectDate(next: string) {
     const copy = new URLSearchParams(params);
     if (next === today) copy.delete('date'); else copy.set('date', next);
@@ -312,18 +316,28 @@ export function Today() {
       <button type="button" className="secondary-button" onClick={() => move(-1)} aria-label="前日">‹ 前日</button>
       <input aria-label="表示する日" type="date" value={date} onChange={(event) => event.target.value && selectDate(event.target.value)} />
       <button type="button" className="secondary-button" onClick={() => move(1)} aria-label="翌日">翌日 ›</button>
-      {date !== today && <button type="button" className="text-button" onClick={() => selectDate(today)}>今日に戻る</button>}
+      <div className="daily-recording-row">
+        <span role="status" aria-label="家族の記録状況" className="daily-recording-status">
+          <span className="daily-recording-caption">家族の記録</span>
+          {recording.summary ? <TaskRecordingBadge summary={recording.summary} future={date > today} /> : recording.error ? '取得できませんでした' : '確認中…'}
+          {recording.error && <button type="button" className="text-button" onClick={() => void recording.refresh()}>再試行</button>}
+        </span>
+        {date !== today && <button type="button" className="text-button" onClick={() => selectDate(today)}>今日に戻る</button>}
+      </div>
     </nav>
-    {date === today ? <TodayDashboard /> : <div className="app-shell"><p className="meta">この日の予定・やることを確認して、完了や未完了を更新できます。</p><DayAgendaSheet key={date} date={date} inline onClose={() => selectDate(today)} onChanged={() => {}} /></div>}
+    {date === today ? <TodayDashboard onRecordingChanged={recording.refresh} /> : <div className="app-shell daily-date-content"><DayAgendaSheet key={date} date={date} inline onClose={() => selectDate(today)} onChanged={recording.refresh} /></div>}
   </>;
 }
 
-function TodayDashboard() {
+function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Promise<void> }) {
   const { user } = useAuth();
   const { household, members, partner } = useHousehold();
   const data = useTodayData(household?.id ?? null, user?.id ?? null);
+  async function refreshToday() {
+    await Promise.all([data.refresh(), onRecordingChanged()]);
+  }
   const pending = usePendingActions(household?.id ?? null, user?.id ?? null);
-  const clock = useTodayClock(data.refresh);
+  const clock = useTodayClock(refreshToday);
   const navigate = useNavigate();
   const [editingTask, setEditingTask] = useState<TaskInstance | null>(null);
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
@@ -397,7 +411,7 @@ function TodayDashboard() {
             hasPartner={Boolean(partner)}
             currentUserId={user?.id}
             onEdit={setEditingTask}
-            onChanged={data.refresh}
+            onChanged={refreshToday}
             completionPrerequisite={
               data.codmon?.submit_task_id === task.id
                 ? buildCodmonCompletionPrerequisite(data.codmon, members)
@@ -439,7 +453,7 @@ function TodayDashboard() {
               key={request.id}
               request={request}
               attempt={data.requestAttemptsByRequestId.get(request.id)}
-              onChanged={data.refresh}
+              onChanged={refreshToday}
             />
           ))}
           {nonRequestUrgent.map((action, index) => (
@@ -450,7 +464,7 @@ function TodayDashboard() {
                 task={data.urgentTasksById.get(action.task_id)}
                 userId={user?.id}
                 partnerId={partner?.user_id}
-                onChanged={data.refresh}
+                onChanged={refreshToday}
               />
             ) : (
               <li className="request-item" key={`${action.kind ?? 'urgent'}:${action.task_id ?? index}`}>
@@ -553,7 +567,7 @@ function TodayDashboard() {
           {data.unreadHandovers.map((handover) => (
             <li key={handover.id} className="handover-item unread">
               <p><strong>{PERIOD_LABELS[handover.period] ?? 'その他'}</strong> — {handover.shared_text}</p>
-              <HandoverActions handover={handover} currentUserId={user?.id} isRead={false} onChanged={data.refresh} />
+              <HandoverActions handover={handover} currentUserId={user?.id} isRead={false} onChanged={refreshToday} />
             </li>
           ))}
         </ul>
@@ -633,17 +647,17 @@ function TodayDashboard() {
     if (completedTasks.length === 0) return null;
     const couldNotDoCount = completedTasks.filter((task) => task.status === 'skipped' && task.outcome_reason === 'could_not_do').length;
     return (
-      <section className="card collapsible compact-section" aria-label="完了済み">
+      <section className="card collapsible compact-section" aria-label="記録済み">
         <button
           type="button"
           className="collapsible-toggle"
           onClick={() => setCompletedCollapsed((value) => !value)}
         >
-          完了済み（{completedTasks.length}件{couldNotDoCount > 0 ? `・うちできなかった${couldNotDoCount}件` : ''}）{completedCollapsed ? '▼' : '▲'}
+          記録済み（{completedTasks.length}件{couldNotDoCount > 0 ? `・実施漏れ${couldNotDoCount}件` : ''}）{completedCollapsed ? '▼' : '▲'}
         </button>
         {!completedCollapsed && (
           <>
-            <p className="empty-hint">押し間違えた場合はここから戻せます。忘れた・できなかったものは「−」で残ります（未記録とは別）。</p>
+            <p className="empty-hint">✓＝完了、−＝実施漏れ。押し間違えた記録はここから戻せます。</p>
             {renderTaskList(completedTasks)}
           </>
         )}
@@ -680,7 +694,7 @@ function TodayDashboard() {
           <p className="eyebrow">{formatTokyoHeading(clock.now)} · 今日の段取り</p>
           <h1>今日</h1>
         </div>
-        <QuickAdd label="＋ 追加" ariaLabel="追加する" onTaskSaved={data.refresh} />
+        <QuickAdd label="＋ 追加" ariaLabel="追加する" onTaskSaved={refreshToday} />
       </div>
 
       {data.status === 'stale' && (
@@ -790,7 +804,7 @@ function TodayDashboard() {
           assigneeId={tomorrowAssigneeId}
           assigneeLabel={tomorrowAssigneeLabel}
           existingTitles={tomorrowPreparationTitles}
-          onChanged={() => void data.refresh()}
+          onChanged={() => void refreshToday()}
         />
       )}
 
@@ -808,7 +822,7 @@ function TodayDashboard() {
           onClose={() => setEditingTask(null)}
           onSaved={() => {
             setEditingTask(null);
-            void data.refresh();
+            void refreshToday();
           }}
         />
       )}
@@ -819,7 +833,7 @@ function TodayDashboard() {
           onClose={() => setCorrectionTitle(null)}
           onSaved={() => {
             setCorrectionTitle(null);
-            void data.refresh();
+            void refreshToday();
           }}
         />
       )}

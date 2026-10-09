@@ -126,13 +126,13 @@ describe('Today first-flow priority contract', () => {
 
     render(<MemoryRouter><Today /></MemoryRouter>);
 
-    const section = screen.getByRole('region', { name: '完了済み' });
-    expect(section).toHaveTextContent('完了済み（1件）');
+    const section = screen.getByRole('region', { name: '記録済み' });
+    expect(section).toHaveTextContent('記録済み（1件）');
     expect(section).not.toHaveTextContent('燃えるゴミのゴミ出し');
 
-    fireEvent.click(screen.getByRole('button', { name: /完了済み（1件）/ }));
+    fireEvent.click(screen.getByRole('button', { name: /記録済み（1件）/ }));
     expect(section).toHaveTextContent('燃えるゴミのゴミ出し');
-    expect(section).toHaveTextContent('押し間違えた場合はここから戻せます');
+    expect(section).toHaveTextContent('押し間違えた記録はここから戻せます');
   });
 
   it('shows the partner state without scoring their day', () => {
@@ -205,3 +205,5 @@ describe('Today first-flow priority contract', () => {
     expect(screen.getByRole('heading', { name: '今日は確認が必要な項目はありません' })).toBeInTheDocument();
   });
 });
+
+vi.mock('./useDayTaskRecording', () => ({ useDayTaskRecording: () => ({ summary: null, error: false, refresh: vi.fn(async () => {}) }) }));
