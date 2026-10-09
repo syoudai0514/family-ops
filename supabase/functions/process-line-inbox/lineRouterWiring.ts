@@ -171,7 +171,7 @@ export async function loadSnapshot(
     safe<Array<Record<string, unknown>>>([], async () => {
       const { data } = await client
         .from("task_instances")
-        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase")
+        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase,expectation")
         .eq("household_id", householdId)
         .eq("scheduled_date", today)
         .is("test_context_id", null)
@@ -237,7 +237,7 @@ export async function loadSnapshot(
       if (!yesterday) return [];
       const { data } = await client
         .from("task_instances")
-        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase")
+        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase,expectation")
         .eq("household_id", householdId)
         .eq("scheduled_date", yesterday)
         .is("test_context_id", null)
@@ -271,6 +271,7 @@ export async function loadSnapshot(
       status: row.status === "completed" ? "done" : row.status === "skipped" ? "could_not_do" : "todo",
       code: typeof row.task_definition_id === "string" ? codes.get(row.task_definition_id) ?? null : null,
       phase: typeof row.routine_phase === "string" ? row.routine_phase : null,
+      ...(row.expectation === "optional" ? { optional: true as const } : {}),
     }));
   const tasks = toTasks(taskRows, "t");
   // Yesterday's, for "昨日の洗濯やった" (y-refs). "全部" (all) never reaches them.

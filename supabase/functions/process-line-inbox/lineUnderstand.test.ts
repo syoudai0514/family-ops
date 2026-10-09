@@ -147,6 +147,18 @@ Deno.test("yesterday: 「昨日の作業は？」 shows yesterday's list; a y-re
   assertEquals(prompt.includes("昨日のタスク") && prompt.includes('"y1"'), true);
 });
 
+Deno.test("bulk: 「今日の全部やった」 never closes an optional task (the app's all_done does not either)", () => {
+  const s = snap({ tasks: [
+    { ref: "t1", id: "u1", title: "送り", who: "me", due: "08:00", status: "todo", code: null, phase: "morning" },
+    { ref: "t2", id: "u2", title: "掃除（ルンバのほかにやったら）", who: "anyone", due: null, status: "todo", code: null, phase: "evening", optional: true },
+  ] });
+  const plan: Plan = { understanding: "", reply: "おつかれさま！", confidence: "high", actions: [{ type: "complete_all", phase: "today", by: "self" }] };
+  assertEquals(guardPlan(plan, s)?.actions.map((a) => a.type === "complete_task" ? a.ref : a.type), ["t1"]);
+  // Named one by one, it can still be recorded.
+  assertEquals(guardPlan({ ...plan, actions: [{ type: "complete_task", ref: "t2", by: "self" }] }, s)?.actions.length, 1);
+  assertEquals(buildUnderstandPrompt(s, "x").includes("余裕があれば"), true);
+});
+
 Deno.test("snapshot: 「昨日のタスク」 is the calendar's yesterday, and absent when the task date is already yesterday", () => {
   assertEquals(yesterdayForSnapshot("2026-10-09", "2026-10-09"), "2026-10-08");
   // 2026-10-09: "昨日のパパのは全部終わってます" loads 10/8 as the task date; 10/7 must not appear as "yesterday".

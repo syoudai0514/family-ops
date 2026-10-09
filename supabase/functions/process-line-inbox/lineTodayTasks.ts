@@ -15,6 +15,8 @@ export interface TodayTaskRow {
   due_at?: string | null;
   planned_assignee_id?: string | null;
   assignment_mode?: string | null;
+  /** "optional": 余裕があれば (e.g. 掃除 -- the Roomba does it). Never counted as left to do. */
+  expectation?: string | null;
 }
 
 const PHASES: Array<{ label: string; match: (phase: string | null | undefined) => boolean }> = [
@@ -58,10 +60,13 @@ function byTime(a: TodayTaskRow, b: TodayTaskRow): number {
 
 export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel: string, partnerLabel: string, isToday = true): string {
   const visible = rows.filter(shown);
-  const mine = visible.filter((r) =>
+  const isOptional = (r: TodayTaskRow) => r.expectation === "optional";
+  const mineAll = visible.filter((r) =>
     r.assignment_mode === "anyone" || !r.planned_assignee_id || r.planned_assignee_id === actorId
   );
-  const theirs = visible.filter((r) => !mine.includes(r));
+  const mine = mineAll.filter((r) => !isOptional(r));
+  const mineOptional = mineAll.filter(isOptional);
+  const theirs = visible.filter((r) => !mineAll.includes(r) && !isOptional(r));
   const open = (list: TodayTaskRow[]) => list.filter((r) => r.status === "todo" || r.status === "in_progress");
 
   const lines: string[] = [];
@@ -76,6 +81,11 @@ export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel:
       const note = r.assignment_mode === "anyone" ? "（誰でもOK）" : !r.planned_assignee_id ? "（担当未定）" : "";
       lines.push(line(r, note));
     }
+  }
+  // Not required: shown so it can be recorded, never counted as left.
+  if (mineOptional.length) {
+    lines.push("", "余裕があれば");
+    for (const r of mineOptional.sort(byTime)) lines.push(line(r));
   }
 
   const theirOpen = open(theirs).sort(byTime);
@@ -119,7 +129,7 @@ export async function loadTodayTaskBlock(
 ): Promise<string | null> {
   const [tasks, members] = await Promise.all([
     client.from("task_instances")
-      .select("title,status,outcome_reason,routine_phase,due_at,planned_assignee_id,assignment_mode")
+      .select("title,status,outcome_reason,routine_phase,due_at,planned_assignee_id,assignment_mode,expectation")
       .eq("household_id", householdId)
       .eq("scheduled_date", today)
       .is("test_context_id", null)

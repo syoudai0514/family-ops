@@ -45,3 +45,27 @@ Deno.test("today: the brief keeps its other sections; its task sections are repl
   // A brief without task sections gets the list right after its title.
   assertEquals(mergeTodayBrief("今日のおうちノート\n\n確認が必要な項目はありません。", "TASKS"), "今日のおうちノート\n\nTASKS\n\n確認が必要な項目はありません。");
 });
+
+Deno.test("today: an optional task (掃除) is listed apart as 余裕があれば and never counted as left", () => {
+  const rows: TodayTaskRow[] = [
+    { title: "送り", status: "todo", routine_phase: "morning", due_at: at("08:00"), planned_assignee_id: ME },
+    { title: "掃除（ルンバのほかにやったら）", status: "todo", routine_phase: "evening", assignment_mode: "anyone", expectation: "optional" },
+    { title: "お迎え", status: "todo", routine_phase: "evening", due_at: at("18:20"), planned_assignee_id: PARTNER },
+    { title: "partner optional", status: "todo", routine_phase: "evening", planned_assignee_id: PARTNER, expectation: "optional" },
+  ];
+  assertEquals(formatTodayTasks(rows, ME, "パパ", "ママ"), [
+    "パパのタスク（1件・残り1）",
+    "",
+    "朝",
+    "・ 8:00 送り",
+    "",
+    "余裕があれば",
+    "・ 掃除（ルンバのほかにやったら）",
+    "",
+    "ママの今日（残り1件・済み0件）",
+    "・お迎え",
+  ].join("\n"));
+  // Done optional work is shown as done.
+  const done = formatTodayTasks([{ ...rows[1], status: "completed" }], ME, "パパ", "ママ");
+  assertEquals(done.includes("✓ 掃除（ルンバのほかにやったら）") && done.includes("パパのタスク（0件・残り0）"), true);
+});
