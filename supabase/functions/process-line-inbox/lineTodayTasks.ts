@@ -42,16 +42,17 @@ function shown(row: TodayTaskRow): boolean {
   return true;
 }
 
-function mark(row: TodayTaskRow): string {
+function mark(row: TodayTaskRow, quiet: boolean): string {
   if (row.status === "completed") return "✓";
   if (row.status === "skipped") return "−";
-  return "・";
+  // 余裕があれば is not left-over work: a lighter dot than the "・" of a to-do.
+  return quiet ? "◦" : "・";
 }
 
-function line(row: TodayTaskRow, note = ""): string {
+function line(row: TodayTaskRow, note = "", quiet = false): string {
   const time = jstClock(row.due_at);
   const tail = row.status === "skipped" ? "（できなかった）" : note;
-  return `${mark(row)} ${time ? `${time} ` : ""}${row.title}${tail}`;
+  return `${mark(row, quiet)} ${time ? `${time} ` : ""}${row.title}${tail}`;
 }
 
 function byTime(a: TodayTaskRow, b: TodayTaskRow): number {
@@ -85,7 +86,7 @@ export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel:
   // Not required: shown so it can be recorded, never counted as left.
   if (mineOptional.length) {
     lines.push("", "余裕があれば");
-    for (const r of mineOptional.sort(byTime)) lines.push(line(r));
+    for (const r of mineOptional.sort(byTime)) lines.push(line(r, "", true));
   }
 
   const theirOpen = open(theirs).sort(byTime);

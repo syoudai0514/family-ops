@@ -792,7 +792,15 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
         </>
       )}
 
-      {optionalTasks.length > 0 && renderTaskSection('余裕があれば', optionalTasks)}
+      {optionalTasks.length > 0 && (
+        <details className="today-optional">
+          <summary>
+            <span>余裕があれば</span>
+            <small>{optionalTasks.length}件</small>
+          </summary>
+          {renderTaskList(optionalTasks)}
+        </details>
+      )}
       {renderCompleted()}
 
       {clock.daypart !== 'evening' && renderTomorrowImpact()}
