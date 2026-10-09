@@ -1412,3 +1412,32 @@ fieldset {
     flex: 1;
   }
 }
+
+/* 余裕があれば: folded, muted, no card -- it must not read as unfinished work. */
+.today-optional {
+  margin: 0.5rem 0.25rem;
+  color: var(--color-text-muted);
+}
+
+.today-optional > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0.2rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.today-optional > summary::-webkit-details-marker {
+  display: none;
+}
+
+.today-optional > summary::after {
+  content: '▾';
+  margin-left: auto;
+}
+
+.today-optional[open] > summary::after {
+  content: '▴';
+}

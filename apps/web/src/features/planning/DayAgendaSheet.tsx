@@ -161,7 +161,10 @@ export function DayAgendaSheet({
         !isTransportTask(task),
     )
     .sort(taskSort);
-  const recordedOperational = operationalTasks.filter(isTaskRecorded).length;
+  // 余裕があれば (optional) is kept apart and quiet: it is never "left to do" (owner 2026-10-09).
+  const optionalTasks = operationalTasks.filter((task) => task.expectation === 'optional');
+  const requiredTasks = operationalTasks.filter((task) => task.expectation !== 'optional');
+  const recordedOperational = requiredTasks.filter(isTaskRecorded).length;
   const recording = summarizeTaskRecording(planning.tasks, date, { userId: me?.user_id });
 
   const renderTask = (task: PlanningTask, showTime = true) => (
@@ -180,7 +183,7 @@ export function DayAgendaSheet({
 
   // Mine / shared / the other adult's, apart from each other (owner 2026-10-09: with both lists
   // mixed, a tap could land on the other adult's task). The other adult's list is folded.
-  const ownerGroups = groupTasksByOwner(operationalTasks, me?.user_id);
+  const ownerGroups = groupTasksByOwner(requiredTasks, me?.user_id);
   const roleLabel = (role: string | null | undefined, fallback: string) => role === 'papa' ? 'パパ' : role === 'mama' ? 'ママ' : fallback;
   const meLabel = roleLabel(me?.family_role, '自分');
   const partnerLabel = roleLabel(partner?.family_role, '相手');
@@ -315,9 +318,11 @@ export function DayAgendaSheet({
                     <p className="eyebrow">チェックして進める</p>
                     <h3>実績・やること</h3>
                   </div>
-                  <span className="day-agenda-progress">
-                    記録 {recordedOperational}/{operationalTasks.length}
-                  </span>
+                  {requiredTasks.length > 0 && (
+                    <span className="day-agenda-progress">
+                      記録 {recordedOperational}/{requiredTasks.length}
+                    </span>
+                  )}
                 </div>
                 {operationalTasks.length === 0 ? (
                   <button
@@ -336,9 +341,18 @@ export function DayAgendaSheet({
                     </>
                   ) : (
                     <ul className="task-list day-agenda-task-list">
-                      {operationalTasks.map((task) => renderTask(task))}
+                      {requiredTasks.map((task) => renderTask(task))}
                     </ul>
                   )
+                )}
+                {optionalTasks.length > 0 && (
+                  <details className="day-agenda-optional">
+                    <summary>
+                      <span>余裕があれば</span>
+                      <small>{optionalTasks.length}件</small>
+                    </summary>
+                    <ul className="task-list day-agenda-task-list">{optionalTasks.map((task) => renderTask(task))}</ul>
+                  </details>
                 )}
               </section>
 

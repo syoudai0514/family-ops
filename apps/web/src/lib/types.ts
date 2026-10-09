@@ -80,6 +80,8 @@ export interface TaskInstance {
   title: string;
   category: string;
   routine_phase: RoutinePhase | null;
+  /** 'optional': 余裕があれば (not required, never counted as left to do). */
+  expectation?: string | null;
   scheduled_date: string;
   due_at: string | null;
   calendar_ends_at?: string | null;

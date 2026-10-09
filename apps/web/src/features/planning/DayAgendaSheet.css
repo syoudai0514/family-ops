@@ -620,3 +620,36 @@
   gap: 0.6rem;
   align-items: center;
 }
+
+/* 余裕があれば: folded and quiet, so it never reads as unfinished work. */
+.day-agenda-optional {
+  margin-top: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.day-agenda-optional > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.2rem 0.1rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.day-agenda-optional > summary::-webkit-details-marker {
+  display: none;
+}
+
+.day-agenda-optional > summary::after {
+  content: '▾';
+  margin-left: auto;
+}
+
+.day-agenda-optional[open] > summary::after {
+  content: '▴';
+}
+
+.day-agenda-optional .task-checklist-item {
+  opacity: 0.85;
+}
