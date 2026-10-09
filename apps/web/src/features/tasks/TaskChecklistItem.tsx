@@ -465,18 +465,18 @@ export function TaskChecklistItem({
             </button>
           )}
 
-          {hasPartner && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
-            <button type="button" className="task-action task-action-secondary" disabled={busy}
-              aria-label="相手が完了" title="相手が実施したことを記録します"
-              onClick={() => handleComplete('partner')}>相手</button>
-          )}
-
           {!finished && (
             <button type="button" className="task-action task-action-missed" onClick={() => handleCouldNotDo()} disabled={busy}
               aria-label={`${task.title}を実施漏れとして記録`}
               title="忘れた・間に合わなかった作業を、この日の記録として確定します">
               実施漏れ
             </button>
+          )}
+
+          {hasPartner && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
+            <button type="button" className="task-action task-action-secondary" disabled={busy}
+              aria-label="相手が完了" title="相手が実施したことを記録します"
+              onClick={() => handleComplete('partner')}>相手完了</button>
           )}
 
           {couldNotDo && (
