@@ -1,12 +1,12 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { codmonAnswer, codmonQuestionDate, parseDayCompletion, selectDayCompletionTasks, tryHandleDayCompletion } from './lineDayCompletion.ts';
+import { codmonAnswer, codmonQuestionDate, completionDate, parseDayCompletion, selectDayCompletionTasks, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import type { CompletionContext } from './lineCompletionReport.ts';
 
 Deno.test('yesterday, future dates and exclusion are explicit and negatives do not mutate', () => {
-  assertEquals(parseDayCompletion('昨日のは全部終わっている', '2026-10-03'), {date:'2026-10-02',except:null});
-  assertEquals(parseDayCompletion('昨日の洗濯以外は完了', '2026-10-03'), {date:'2026-10-02',except:'洗濯'});
-  assertEquals(parseDayCompletion('明日のは全部やった', '2026-10-03'), {date:'2026-10-04',except:null});
-  assertEquals(parseDayCompletion('10/6のは全部完了', '2026-10-03'), {date:'2026-10-06',except:null});
+  assertEquals(parseDayCompletion('昨日のは全部終わっている', '2026-10-03'), {date:'2026-10-02',except:null,owner:null});
+  assertEquals(parseDayCompletion('昨日の洗濯以外は完了', '2026-10-03'), {date:'2026-10-02',except:'洗濯',owner:null});
+  assertEquals(parseDayCompletion('明日のは全部やった', '2026-10-03'), {date:'2026-10-04',except:null,owner:null});
+  assertEquals(parseDayCompletion('10/6のは全部完了', '2026-10-03'), {date:'2026-10-06',except:null,owner:null});
   for (const text of ['昨日全部終わってない','昨日全部完了？','昨日全部終わったら','昨日全部完了予定','2/30のは全部完了']) assertEquals(parseDayCompletion(text, '2026-10-03'), null);
 });
 const tasks = [{id:'a',title:'洗濯',code:null,due_at:null,revision:1},{id:'b',title:'掃除',code:null,due_at:null,revision:1}];
@@ -78,4 +78,36 @@ Deno.test('the yesterday Codmon question names its date, and a short answer clos
   const plain = { ...ctx, client: { ...client, rpc: (name: string, payload: Record<string, unknown>) => { calls.push({ name, payload }); return Promise.resolve({ data: [{ role: 'assistant', text: 'おつかれさま！' }], error: null }); } } } as unknown as CompletionContext;
   assertEquals(await tryHandleDayCompletion(plain, '終わっている'), false);
   assertEquals(calls.filter((c) => c.name.startsWith('server_tx_')).length, 0);
+});
+
+Deno.test('"昨日のパパのは全部終わってます": the date is yesterday, the owner is read, and only the sender\'s own list is closed', async () => {
+  assertEquals(parseDayCompletion('昨日のパパのは全部終わってます。', '2026-10-09'), { date: '2026-10-08', except: null, owner: 'パパ' });
+  assertEquals(parseDayCompletion('昨日の自分のは全部終わった', '2026-10-09'), { date: '2026-10-08', except: null, owner: '自分' });
+  assertEquals(completionDate('昨日のパパのは全部終わってます。', '2026-10-09'), '2026-10-08');
+
+  const calls: Array<{ name: string; payload: Record<string, unknown> }> = [];
+  const filters: Array<[string, unknown]> = [];
+  const replies: string[] = [];
+  const make = (role: string) => ({
+    from: (table: string) => {
+      const chain: Record<string, unknown> = {};
+      const result = table === 'household_members'
+        ? { data: { family_role: role }, error: null }
+        : { data: table === 'task_instances' ? [{ id: 'a', title: 'パパ飲み会', revision: 1, due_at: null, planned_assignee_id: 'me', task_definition_id: null }] : [], error: null };
+      Object.assign(chain, { select: () => chain, eq: (k: string, v: unknown) => { filters.push([k, v]); return chain; }, is: () => chain, in: () => chain, limit: () => chain, maybeSingle: () => Promise.resolve(result), then: (r: (x: unknown) => unknown) => Promise.resolve(result).then(r) });
+      return chain;
+    },
+    rpc: (name: string, payload: Record<string, unknown>) => { calls.push({ name, payload }); return Promise.resolve({ data: { revision: 2 }, error: null }); },
+  });
+  const ctx = (client: unknown) => ({ client, actorId: 'me', householdId: 'hh', today: '2026-10-09', operationId: (...p: string[]) => Promise.resolve(p.join(':')), reply: (t: string) => { replies.push(t); return Promise.resolve(); } }) as unknown as CompletionContext;
+
+  // The papa says "パパの": his own open tasks of 10/8 are closed (and nothing of other days).
+  assertEquals(await tryHandleDayCompletion(ctx(make('papa')), '昨日のパパのは全部終わってます。'), true);
+  assertEquals(filters.filter(([k]) => k === 'scheduled_date').map(([, v]) => v), ['2026-10-08']);
+  assertEquals(calls.map((c) => [c.name, c.payload.p_task_id]), [['server_tx_complete_task', 'a']]);
+
+  // The mama's list named by the papa is not closed here (left to the normal path).
+  calls.length = 0;
+  assertEquals(await tryHandleDayCompletion(ctx(make('papa')), '昨日のママのは全部終わってます'), false);
+  assertEquals(calls.length, 0);
 });

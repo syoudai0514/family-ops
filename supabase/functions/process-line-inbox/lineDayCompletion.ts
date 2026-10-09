@@ -2,7 +2,7 @@ import { completeTaskAndReply, loadOpenTasks, type CompletionContext, type OpenT
 import { formatScheduleDate } from './scheduleLanguage.ts';
 import type { LineQuickReplyAction } from '../_shared/lineMessaging.ts';
 
-export type DayCompletionReport = { date: string; except: string | null };
+export type DayCompletionReport = { date: string; except: string | null; owner: string | null };
 export function completionDate(text: string, today: string): string | null {
   const value = text.normalize('NFKC').trim();
   if (!/^(昨日|一昨日|今日|明日|\d{1,2}\/\d{1,2})[^。！？?]*?(?:終わ|完了|やった|済|送った|送信した|送りました)/u.test(value)) return null;
@@ -12,7 +12,7 @@ export function completionDate(text: string, today: string): string | null {
 export function parseDayCompletion(text: string, today: string): DayCompletionReport | null {
   const value = text.normalize('NFKC').replace(/\s/gu, '').replace(/[。!！よねだ]+$/u, '').replace(/^(昨日|一昨日|今日|明日)の?(?:タスク|作業|やること)/u, '$1の');
   if (/[?？]|未完了|まだ|してない|終わってない|終わっていない|完了にしない|予定|つもり/u.test(value)) return null;
-  const match = value.match(/^(昨日|一昨日|今日|明日|\d{1,2}\/\d{1,2})(?:の)?(?:は)?(?:(全部|すべて)|(.+?)以外(?:は|のは)?(?:全部|すべて)?)(?:終わって(?:いる|います|る)|終わった|終わりました|完了(?:した|しました|です)?|済んだ|やった)$/u);
+  const match = value.match(/^(昨日|一昨日|今日|明日|\d{1,2}\/\d{1,2})(?:の)?(?:(パパ|ママ|自分|わたし|私|おれ|俺|ぼく|僕)の)?(?:は)?(?:(全部|すべて)|(.+?)以外(?:は|のは)?(?:全部|すべて)?)(?:終わって(?:いる|います|ます|る)|終わった|終わりました|完了(?:した|しました|です)?|済んだ|やった)$/u);
   if (!match) return null;
   const base = new Date(`${today}T00:00:00Z`);
   if (/\//u.test(match[1])) {
@@ -20,7 +20,7 @@ export function parseDayCompletion(text: string, today: string): DayCompletionRe
     base.setUTCMonth(month - 1, day);
     if (base.getUTCMonth() !== month - 1 || base.getUTCDate() !== day) return null;
   } else base.setUTCDate(base.getUTCDate() + ({昨日: -1, 一昨日: -2, 今日: 0, 明日: 1}[match[1]] ?? 0));
-  return { date: base.toISOString().slice(0, 10), except: match[3] ?? null };
+  return { date: base.toISOString().slice(0, 10), except: match[4] ?? null, owner: match[2] ?? null };
 }
 
 export function selectDayCompletionTasks(tasks: OpenTask[], except: string | null): OpenTask[] | null {
@@ -77,6 +77,8 @@ export async function tryHandleDayCompletion(ctx: CompletionContext, text: strin
     if (date === yesterday.toISOString().slice(0, 10)) report = parseDayCompletion(`昨日の${text}`, ctx.today);
   }
   if (!report) return false;
+  // "昨日のパパのは全部…": the sender's own work. Another person's list is not closed here.
+  if (report.owner && !(await ownerIsSender(ctx, report.owner))) return false;
   const dayContext = { ...ctx, today: report.date };
   const tasks = await loadOpenTasks(dayContext);
   const selected = selectDayCompletionTasks(tasks, report.except);
@@ -124,4 +126,14 @@ async function tryAnswerCodmonQuestion(ctx: CompletionContext, text: string): Pr
     code: submit.code,
   });
   return true;
+}
+
+const OWNER_ROLE: Record<string, string> = { パパ: 'papa', ママ: 'mama' };
+
+/** "パパの" is the sender only when the sender is the papa; 自分・私・俺… always are. */
+async function ownerIsSender(ctx: CompletionContext, owner: string): Promise<boolean> {
+  const role = OWNER_ROLE[owner];
+  if (!role) return true;
+  const { data } = await ctx.client.from('household_members').select('family_role').eq('household_id', ctx.householdId).eq('user_id', ctx.actorId).maybeSingle();
+  return (data as { family_role?: string | null } | null)?.family_role === role;
 }
