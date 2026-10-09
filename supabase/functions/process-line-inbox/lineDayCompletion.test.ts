@@ -111,3 +111,9 @@ Deno.test('"昨日のパパのは全部終わってます": the date is yesterda
   assertEquals(await tryHandleDayCompletion(ctx(make('papa')), '昨日のママのは全部終わってます'), false);
   assertEquals(calls.length, 0);
 });
+
+Deno.test('a day "全部終わった" leaves optional work alone', () => {
+  const all = [{ id: 'a', title: '送り', code: null, due_at: null, revision: 1 }, { id: 'b', title: '掃除', code: null, due_at: null, revision: 1, optional: true }];
+  assertEquals(selectDayCompletionTasks(all, null)?.map((t) => t.id), ['a']);
+  assertEquals(selectDayCompletionTasks(all, '送り')?.map((t) => t.id), []);
+});

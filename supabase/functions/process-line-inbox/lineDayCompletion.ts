@@ -23,7 +23,9 @@ export function parseDayCompletion(text: string, today: string): DayCompletionRe
   return { date: base.toISOString().slice(0, 10), except: match[4] ?? null, owner: match[2] ?? null };
 }
 
-export function selectDayCompletionTasks(tasks: OpenTask[], except: string | null): OpenTask[] | null {
+export function selectDayCompletionTasks(allTasks: OpenTask[], except: string | null): OpenTask[] | null {
+  // "全部終わった" never claims 余裕があれば (optional) work was done, as in the app.
+  const tasks = allTasks.filter((task) => !task.optional);
   if (!except) return tasks;
   const hints = except.split(/と|、|,|・/u).map((hint) => hint.replace(/(?:の)?タスク$/u, '').trim()).filter(Boolean);
   if (!hints.length) return null;

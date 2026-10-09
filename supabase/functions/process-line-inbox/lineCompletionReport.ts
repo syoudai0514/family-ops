@@ -21,6 +21,8 @@ export type OpenTask = {
   code: string | null;
   due_at: string | null;
   revision: number;
+  /** 余裕があれば: never closed by a bulk "全部終わった". */
+  optional?: boolean;
 };
 
 export type CompletionReport =
@@ -184,7 +186,7 @@ export type CompletionContext = {
 
 export async function loadOpenTasks(ctx: CompletionContext): Promise<OpenTask[]> {
   const { data: rows } = await ctx.client.from("task_instances")
-    .select("id,title,due_at,revision,task_definition_id,planned_assignee_id")
+    .select("id,title,due_at,revision,task_definition_id,planned_assignee_id,expectation")
     .eq("household_id", ctx.householdId)
     .eq("scheduled_date", ctx.today)
     .is("test_context_id", null)
@@ -192,7 +194,7 @@ export async function loadOpenTasks(ctx: CompletionContext): Promise<OpenTask[]>
     .limit(80);
   const tasks = (rows ?? []) as Array<{
     id: string; title: string; due_at: string | null; revision: number;
-    task_definition_id: string | null; planned_assignee_id: string | null;
+    task_definition_id: string | null; planned_assignee_id: string | null; expectation?: string | null;
   }>;
   const defIds = [...new Set(tasks.map((t) => t.task_definition_id).filter((v): v is string => Boolean(v)))];
   const codeById = new Map<string, string>();
@@ -208,6 +210,7 @@ export async function loadOpenTasks(ctx: CompletionContext): Promise<OpenTask[]>
       due_at: t.due_at,
       revision: t.revision,
       assignee: t.planned_assignee_id,
+      ...(t.expectation === "optional" ? { optional: true } : {}),
     }))
     // Your own and unassigned work. Codmon submission is whoever sent it:
     // whichever parent pressed send in Codmon can report it.

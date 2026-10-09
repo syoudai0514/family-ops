@@ -40,6 +40,8 @@ export interface SnapshotTask {
   code: string | null;
   /** routine_phase: "morning" | "evening" | "anytime" ... ("朝の全部やった"). */
   phase?: string | null;
+  /** 余裕があれば (not required): left out of "全部やった", as in the app's bulk completion. */
+  optional?: true;
 }
 
 export interface SnapshotShopping {
@@ -187,6 +189,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
       担当: WHO_LABEL(snapshot, t.who),
       時刻: t.due,
       ...(t.phase ? { 時間帯: PHASE_LABEL[t.phase] ?? t.phase } : {}),
+      ...(t.optional ? { 必須: "ではない（余裕があれば。「全部」には含めない）" } : {}),
       状態: t.status === "done" ? "完了" : t.status === "could_not_do" ? "できなかった" : "未完了",
     })),
     昨日のタスク: (snapshot.yesterdayTasks ?? []).slice(0, 40).map((t) => ({
@@ -424,7 +427,7 @@ function expandCompleteAll(action: Extract<Action, { type: "complete_all" }>, sn
   const inPhase = (phase: string | null | undefined) =>
     action.phase === "today" || phase === action.phase || (action.phase === "evening" && phase === "night");
   return snapshot.tasks
-    .filter((t) => t.status === "todo" && inPhase(t.phase) && (action.by === "partner" || t.who !== "partner"))
+    .filter((t) => t.status === "todo" && !t.optional && inPhase(t.phase) && (action.by === "partner" || t.who !== "partner"))
     .slice(0, MAX_BULK_TASKS)
     .map((t) => ({ type: "complete_task" as const, ref: t.ref, by: action.by, bulk: true as const }));
 }
