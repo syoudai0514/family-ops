@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { addDays, tokyoIsoDate } from './dateHelpers';
 import type { GooglePlanningOccurrence, PlanningTask } from './calendarProjection';
@@ -9,13 +9,19 @@ export function usePlanningData(householdId: string | null, start: string, end: 
   const [occurrences, setOccurrences] = useState<GooglePlanningOccurrence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The range already on screen. Reloading it after a change (a task checked off) must not
+  // swap the whole sheet for "読み込み中…": the list was rebuilt and the scroll jumped back to
+  // the top after every tap, so recording a day's tasks one by one meant scrolling down again
+  // each time (2026-10-09). A different range (next month) still shows the loading state.
+  const shownRange = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (!householdId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    const rangeKey = `${householdId}|${start}|${end}`;
+    if (shownRange.current !== rangeKey) setLoading(true);
     setError(null);
     try {
       const nextDay = tokyoIsoDate(addDays(new Date(`${end}T00:00:00+09:00`), 1));
@@ -152,6 +158,7 @@ export function usePlanningData(householdId: string | null, start: string, end: 
       });
 
       setOccurrences([...googleOccurrences, ...familyOccurrences]);
+      shownRange.current = rangeKey;
     } catch (err) {
       setError(err instanceof Error ? err.message : '予定を読み込めませんでした。');
     } finally {

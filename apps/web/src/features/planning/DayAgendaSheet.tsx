@@ -58,11 +58,11 @@ function isTransportTask(task: PlanningTask) {
   );
 }
 
+// Time order only. Recorded tasks used to sink below the open ones, so checking one off moved
+// it away and shifted every row under the finger; a task now stays where it was and only its
+// check changes (2026-10-09: recording a whole day's tasks one by one).
 function taskSort(a: PlanningTask, b: PlanningTask) {
-  const aDone = isTaskRecorded(a) ? 1 : 0;
-  const bDone = isTaskRecorded(b) ? 1 : 0;
-  if (aDone !== bDone) return aDone - bDone;
-  return (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999') || a.title.localeCompare(b.title);
+  return (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999') || a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
 }
 
 function AgendaFrame({ inline, children, ...props }: Parameters<typeof Modal>[0] & { inline?: boolean }) {
