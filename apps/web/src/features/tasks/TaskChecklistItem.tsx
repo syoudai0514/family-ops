@@ -1,5 +1,6 @@
 import { useUndoNotice } from '../../app/UndoNotice';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useTaskSelection, type BulkOutcome, type BulkTaskRunner, type BulkUndo } from './TaskSelection';
 import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
@@ -161,6 +162,56 @@ export function TaskChecklistItem({
   }
 
   const offerUndo = useUndoNotice();
+  const selection = useTaskSelection();
+  const selectable = Boolean(selection) && !finished;
+  const selected = selectable && Boolean(selection?.isSelected(task.id));
+
+  // Bulk recording reuses this row's own command and rules, without refreshing per row.
+  async function runBulk(outcome: BulkOutcome): Promise<BulkUndo> {
+    if (outcome === 'could_not_do') {
+      const result = await runCommand<{ revision?: number }>(
+        `task:${task.id}:could-not-do:set:r${task.revision ?? 1}`,
+        EDGE_FUNCTIONS.completeTask,
+        (operationId) => ({ operation_id: operationId, task_id: task.id, action: 'could_not_do', expected_revision: task.revision ?? 1 }),
+      );
+      if (!Number.isSafeInteger(result.revision)) return null;
+      const revision = result.revision!;
+      return async () => { await runCommand(`task:${task.id}:could-not-do:undo:r${revision}`, EDGE_FUNCTIONS.completeTask, operation_id => ({ operation_id, task_id: task.id, action: 'could_not_do_undo', expected_revision: revision })); };
+    }
+    if (completionPrerequisite?.completeAction === 'codmon_submitted') {
+      await runCommand(`task:${task.id}:codmon-submitted:r${task.revision ?? 1}`, EDGE_FUNCTIONS.completeTask,
+        (operationId) => ({ operation_id: operationId, task_id: task.id, action: 'codmon_submitted' }));
+      return null;
+    }
+    const completionActor = partnersTask ? 'partner' : 'self';
+    const result = await runCommand<{ revision?: number }>(
+      `task:${task.id}:complete:${completionActor}:r${task.revision ?? 1}`,
+      EDGE_FUNCTIONS.completeTask,
+      (operationId) => ({ operation_id: operationId, task_id: task.id, completion_actor: completionActor, complete_remaining_subtasks: task.completion_mode === 'subtasks' }),
+    );
+    if (!Number.isSafeInteger(result.revision)) return null;
+    const revision = result.revision!;
+    return async () => { await runCommand(`task:${task.id}:reopen:r${revision}`, EDGE_FUNCTIONS.reopenTask, operation_id => ({ operation_id, task_id: task.id, action: 'reopen', expected_revision: revision })); };
+  }
+  function bulkBlockedReason(outcome: BulkOutcome): string | null {
+    if (outcome === 'could_not_do') return null;
+    if (completionPrerequisite?.blocking) return completionPrerequisite.message || 'まだ完了にできません';
+    if (completionPrerequisite?.actionLabel && completionPrerequisite.completeAction !== 'codmon_submitted') return '個別に記録してください';
+    if (!canExecute) return 'ほかの人が対応中です';
+    if (task.completion_mode === 'subtasks' && subtasks.length === 0) return 'チェック項目を読み込めていません';
+    return null;
+  }
+  const bulkRunner = useRef<BulkTaskRunner | null>(null);
+  bulkRunner.current = { title: task.title, recordsPartner: partnersTask, blockedReason: bulkBlockedReason, run: runBulk };
+  useEffect(() => {
+    if (!selection || finished) return;
+    return selection.register(task.id, {
+      get title() { return bulkRunner.current!.title; },
+      get recordsPartner() { return bulkRunner.current!.recordsPartner; },
+      blockedReason: (outcome) => bulkRunner.current!.blockedReason(outcome),
+      run: (outcome) => bulkRunner.current!.run(outcome),
+    });
+  }, [selection?.register, task.id, finished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function withOperation(
     logicalKey: string,
@@ -394,12 +445,24 @@ export function TaskChecklistItem({
   </>;
 
   return (
-    <li id={`task-${task.id}`} className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : '', partnersTask ? 'task-owner-partner' : '', compact ? 'task-compact' : ''].filter(Boolean).join(' ')}>
+    <li id={`task-${task.id}`} className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : '', partnersTask ? 'task-owner-partner' : '', compact ? 'task-compact' : '', selectable ? 'task-selectable' : '', selected ? 'task-selected' : ''].filter(Boolean).join(' ')}>
       <div className="task-checklist-main">
-        <span className="task-result-icon" role="img"
-          aria-label={`${task.title}：${completed ? '完了済み' : couldNotDo ? 'できなかった・記録済み' : finished ? '記録済み' : '未記録'}`}>
-          {completed ? '✓' : finished ? '−' : '○'}
-        </span>
+        {selectable ? (
+          <label className="task-select" title="選んでから、下の「完了」「できなかった」でまとめて記録します">
+            <input
+              type="checkbox"
+              checked={selected}
+              disabled={busy}
+              onChange={() => selection?.toggle(task.id)}
+              aria-label={`${task.title}を選ぶ`}
+            />
+          </label>
+        ) : (
+          <span className="task-result-icon" role="img"
+            aria-label={`${task.title}：${completed ? '完了済み' : couldNotDo ? 'できなかった・記録済み' : finished ? '記録済み' : '未記録'}`}>
+            {completed ? '✓' : finished ? '−' : '○'}
+          </span>
+        )}
 
         {task.completion_mode === 'subtasks' ? (
           <button

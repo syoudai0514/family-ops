@@ -5,6 +5,7 @@ import { mamaUserId, papaUserId } from '../../lib/familyRoles';
 import { supabase } from '../../lib/supabaseClient';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import { TaskChecklistItem } from '../tasks/TaskChecklistItem';
+import { TaskSelectionProvider } from '../tasks/TaskSelection';
 import { TaskFormModal } from '../tasks/TaskFormModal';
 import {
   buildCalendarProjection,
@@ -252,7 +253,7 @@ export function DayAgendaSheet({
   );
 
   return (
-    <>
+    <TaskSelectionProvider onChanged={refreshAll} partnerLabel={partner?.family_role === 'papa' ? 'パパ' : partner?.family_role === 'mama' ? 'ママ' : undefined}>
       <AgendaFrame inline={inline}
         title={dayTitle(date)}
         onClose={onClose}
@@ -387,6 +388,6 @@ export function DayAgendaSheet({
           }}
         />
       )}
-    </>
+    </TaskSelectionProvider>
   );
 }

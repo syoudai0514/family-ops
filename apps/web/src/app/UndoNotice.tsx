@@ -1,4 +1,7 @@
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+
+// Long enough to notice a mistap, short enough not to keep covering the list (owner 2026-10-10).
+const UNDO_VISIBLE_MS = 8000;
 
 type UndoAction = { label: string; undo: () => Promise<void> };
 const UndoContext = createContext<(action: UndoAction) => void>(() => {});
@@ -10,6 +13,14 @@ export function UndoNoticeProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const latestAction = useRef<UndoAction | null>(null);
+  useEffect(() => {
+    if (!action || busy || error) return;
+    const timer = window.setTimeout(() => {
+      setAction((current) => (current === action ? null : current));
+      if (latestAction.current === action) latestAction.current = null;
+    }, UNDO_VISIBLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [action, busy, error]);
   async function undo() {
     if (!action || busy) return;
     setBusy(true);
