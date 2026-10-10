@@ -67,14 +67,15 @@ vi.mock('./PendingActionEditModal', () => ({ PendingActionEditModal: () => null 
 vi.mock('../tasks/TaskFormModal', () => ({ TaskFormModal: () => null }));
 vi.mock('../tasks/QuickAdd', () => ({ QuickAdd: () => <button type="button">追加</button> }));
 
-// Q87: 夜は未済を優先し、朝完了タスクは再掲せず「朝 n/n 完了」程度に畳む。
+// 夜は朝の残りをたたみ、完了済みの朝作業や点数表示は再掲しない。
 describe('Today Q87 evening collapse', () => {
-  it('shows the server-owned morning completion summary and only the unresolved morning item concretely', () => {
+  it('shows unresolved morning work without a completion scoreboard', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
 
-    expect(screen.getByRole('heading', { name: '朝 1/2 完了' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '朝 1/2 完了' })).not.toBeInTheDocument();
+    expect(screen.getByText('朝の残り 1件（記録する）')).toBeInTheDocument();
     expect(screen.queryByText('朝の洗濯')).not.toBeInTheDocument();
-    expect(screen.getByText('朝の薬を確認')).toBeInTheDocument();
+    expect(screen.getByLabelText('朝の残り')).not.toHaveAttribute('open');
   });
 });
 

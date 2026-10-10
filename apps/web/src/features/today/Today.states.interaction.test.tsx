@@ -102,12 +102,12 @@ describe('CF-14 Today user-visible state evidence', () => {
   it('renders the actual Today error surface without converting the failed read into empty success', () => {
     mockUseTodayData.mockReturnValue(todayData({
       status: 'error',
-      error: '今日の情報を読み込めませんでした。',
+      error: '今日の情報を取得できませんでした',
       lastUpdatedAt: null,
     }));
     renderToday();
 
-    expect(screen.getByRole('alert')).toHaveTextContent('今日の情報を読み込めませんでした。');
+    expect(screen.getByRole('alert')).toHaveTextContent('今日の情報を取得できませんでした');
     expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
   });
 
@@ -120,7 +120,7 @@ describe('CF-14 Today user-visible state evidence', () => {
     renderToday();
 
     expect(screen.getByText('通信が不安定なため、最後に取得できた内容を表示しています。')).toHaveAttribute('role', 'status');
-    expect(screen.getByRole('alert')).toHaveTextContent('読み込みに失敗しました。');
+    expect(screen.getByRole('alert')).toHaveTextContent('最後に取得した内容です。');
     expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument();
   });
 });

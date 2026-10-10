@@ -244,6 +244,66 @@ CROSS_HOUSEHOLD_READ=$(curl -sS "$API_URL/rest/v1/task_instances?select=id&id=eq
 
 info "OK: create-task -> Data API read -> complete-task -> Data API read round-trips correctly, and stays RLS-isolated from household B"
 
+# 7b. Both input shapes must resolve to the shared outcome implementation via PostgREST.
+info "7b. could-not-do and undo with current and legacy Edge input shapes"
+OP_OUTCOME_CREATE=$(python3 -c 'import uuid; print(uuid.uuid4())')
+OUTCOME_TASK_ID=$(curl -fsS -X POST "$API_URL/functions/v1/create-task" \
+  -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+  -d "{\"operation_id\":\"$OP_OUTCOME_CREATE\",\"title\":\"Outcome compatibility\",\"category\":\"chore\",\"scheduled_date\":\"$(date +%Y-%m-%d)\",\"completion_mode\":\"whole\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['task_id'])")
+for outcome_step in 'could_not_do:current:skipped' 'could_not_do_undo:current:todo' 'could_not_do:legacy:skipped' 'could_not_do_undo:legacy:todo'; do
+  IFS=: read -r outcome_action outcome_client outcome_status <<< "$outcome_step"
+  outcome_revision_field=''
+  if [ "$outcome_client" = 'current' ]; then
+    outcome_revision=$(curl -fsS "$API_URL/rest/v1/task_instances?select=revision&id=eq.$OUTCOME_TASK_ID" \
+      -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["revision"])')
+    outcome_revision_field=",\"expected_revision\":$outcome_revision"
+  fi
+  outcome_operation=$(python3 -c 'import uuid; print(uuid.uuid4())')
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/complete-task" \
+    -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+    -d "{\"operation_id\":\"$outcome_operation\",\"task_id\":\"$OUTCOME_TASK_ID\",\"action\":\"$outcome_action\"$outcome_revision_field}")
+  [ "$code" = '200' ] || fail "$outcome_client $outcome_action failed via Edge/PostgREST: $code"
+  outcome_actual=$(curl -fsS "$API_URL/rest/v1/task_instances?select=status&id=eq.$OUTCOME_TASK_ID" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["status"])')
+  [ "$outcome_actual" = "$outcome_status" ] || fail "$outcome_client $outcome_action returned status=$outcome_actual"
+done
+info "OK: current and legacy recorded-outcome calls share the real Edge/PostgREST implementation"
+
+# 7c. Shared setup endpoint keeps the old onboarding input and scopes new actions to the caller.
+info "7c. shared family setup endpoint: legacy onboarding, new actions, and household isolation"
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/complete-onboarding-step" \
+  -H 'Content-Type: application/json' -d '{"action":"read"}')
+[ "$code" = '401' ] || fail "family setup without JWT returned $code"
+# Deferring setup establishes the earlier steps required by the legacy ordered flow.
+for setup_input in '{"action":"finish_later"}' '{"step":"connections"}'; do
+  setup_operation=$(python3 -c 'import uuid; print(uuid.uuid4())')
+  setup_payload=$(jq -c --arg operation_id "$setup_operation" '. + {operation_id:$operation_id}' <<< "$setup_input")
+  setup_household=$(curl -fsS -X POST "$API_URL/functions/v1/complete-onboarding-step" \
+    -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+    -d "$setup_payload" | python3 -c 'import json,sys; print(json.load(sys.stdin)["household_id"])')
+  [ "$setup_household" = "$HH_A" ] || fail "shared setup returned the wrong household"
+done
+setup_operation=$(python3 -c 'import uuid; print(uuid.uuid4())')
+curl -fsS -X POST "$API_URL/functions/v1/complete-onboarding-step" \
+  -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+  -d "{\"operation_id\":\"$setup_operation\",\"action\":\"save_context\",\"payload\":{\"display_name\":\"CI child\",\"school_display_name\":\"CI nursery\",\"effective_from\":\"2026-10-01\"}}" \
+  | python3 -c 'import json,sys; result=json.load(sys.stdin); assert result["child_id"] and result["context_id"]'
+for setup_actor in A B; do
+  setup_jwt_name="JWT_$setup_actor"
+  setup_child_count=$(curl -fsS -X POST "$API_URL/functions/v1/complete-onboarding-step" \
+    -H "Authorization: Bearer ${!setup_jwt_name}" -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+    -d '{"action":"read"}' | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["children"]))')
+  if [ "$setup_actor" = A ]; then
+    [ "$setup_child_count" = 1 ] || fail "family setup did not return the caller's child"
+  else
+    [ "$setup_child_count" = 0 ] || fail "family setup leaked another household's child"
+  fi
+done
+info "OK: shared family setup keeps legacy inputs and household isolation over real Edge/PostgREST"
+
 # 8. Rich schedule save, real private file upload/download and household isolation.
 info "8. scheduler metadata and private attachments over real Storage + Data API"
 OP_SCHEDULE=$(python3 -c 'import uuid; print(uuid.uuid4())')

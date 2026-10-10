@@ -86,7 +86,7 @@ describe('MonthView inline day contract', () => {
     extra.tasks = [row('01', 'completed'), row('02', 'completed'), row('02', 'skipped', 'could_not_do'), row('03', 'todo'), row('04', 'cancelled')];
     const view = render(<MonthView />);
     expect(screen.getByRole('button', { name: '2026-09-01を選択：すべて完了' })).toHaveClass('recording-completed');
-    expect(screen.getByRole('button', { name: '2026-09-02を選択：記録済み・実施漏れ 1件' })).toHaveClass('recording-recorded');
+    expect(screen.getByRole('button', { name: '2026-09-02を選択：記録済み・できなかった 1件' })).toHaveClass('recording-recorded');
     expect(screen.getByRole('button', { name: '2026-09-03を選択：未記録 1件' })).toHaveClass('recording-pending');
     expect(screen.getByRole('button', { name: '2026-09-04を選択：やることなし' })).not.toHaveClass('recording-completed');
     expect(screen.getByRole('button', { name: '2026-09-06を選択：未完了 3件' })).not.toHaveClass('recording-pending');

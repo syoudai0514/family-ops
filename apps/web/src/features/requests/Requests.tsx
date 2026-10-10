@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { AssignmentPreview } from './AssignmentPreview';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
@@ -192,14 +193,14 @@ function statusLabel(status: RequestRow['status']): string {
   switch (status) { case 'pending': return '保留中'; case 'accepted': return '引き受け済み'; case 'declined': return '難しい'; case 'completed': return '完了'; case 'cancelled': return 'キャンセル済み'; default: return status; }
 }
 
-function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; initialShowOther?: boolean }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [showOther, setShowOther] = useState(initialShowOther); const [confirmAccept, setConfirmAccept] = useState(false);
+export function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; initialShowOther?: boolean }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [showOther, setShowOther] = useState(initialShowOther); const [confirmAccept, setConfirmAccept] = useState(false); const [previewReady, setPreviewReady] = useState(false); const run = useCommandAttempt();
   async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
     setBusy(true); setError(null);
     try {
       const functionName = kind === 'checking' || kind === 'consult' ? EDGE_FUNCTIONS.respondRequest : kind === 'accept' && request.assignment_task_instance_id ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
-      const result = await callEdgeFunction<{ reproposal_required?: boolean }>(functionName, { operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision, ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}) });
+      const result = await run<{ reproposal_required?: boolean }>(`request:${attempt.id}:${kind}:r${attempt.revision}:terms${attempt.terms_revision}`, functionName, operation_id => ({ operation_id, request_id: request.id, attempt_id: attempt.id, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision, ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}) }));
       if (result.reproposal_required) setError('この依頼は期限切れです。新しい担当変更のお願いを作成してください。');
       if (kind === 'accept') setConfirmAccept(false);
       await onChanged();
@@ -209,7 +210,7 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
     if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
     setBusy(true); setError(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.negotiateRequest, { operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id, action, terms, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision });
+      await run(`request:${attempt.id}:${action}:r${attempt.revision}:${JSON.stringify(terms ?? {})}`, EDGE_FUNCTIONS.negotiateRequest, operation_id => ({ operation_id, request_id: request.id, attempt_id: attempt.id, action, terms, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision }));
       await onChanged();
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
@@ -226,7 +227,7 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
     {isActive && attempt?.state !== 'consulting' && attempt?.state !== 'awaiting_confirmation' && !confirmAccept && (
       <div className="task-item-actions">
         {isAssignmentChange
-          ? <button type="button" disabled={busy} onClick={() => setConfirmAccept(true)}>引き受ける</button>
+          ? <button type="button" disabled={busy} onClick={() => { setPreviewReady(false); setConfirmAccept(true); }}>引き受ける</button>
           : <button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button>}
         <button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button>
         {isAssignmentChange
@@ -238,9 +239,9 @@ function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = fa
       <div className="request-other-actions" aria-label="担当変更の最終確認">
         <p><strong>この担当変更を引き受けますか？</strong></p>
         <p className="task-item-meta">{request.due_at ? `${formatDateTimeJa(request.due_at)} / ` : ''}{request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}</p>
-        <p className="task-item-meta">確定すると、この担当があなたに変わります。送り/お迎えに連動する当日の家事がある場合は、既存ルールどおり担当も切り替わります。</p>
+        <AssignmentPreview key={`${attempt?.id}:${attempt?.revision}:${attempt?.terms_revision}`} requestId={request.id} attemptId={attempt?.id ?? ''} expectedRevision={attempt?.revision ?? 0} expectedTermsRevision={attempt?.terms_revision ?? 0} onReady={setPreviewReady} />
         <div className="task-item-actions">
-          <button type="button" disabled={busy} onClick={() => respond('accept')}>引き受ける</button>
+          <button type="button" disabled={busy || !previewReady} onClick={() => respond('accept')}>引き受ける</button>
           <button type="button" className="text-button" disabled={busy} onClick={() => setConfirmAccept(false)}>戻る</button>
         </div>
       </div>
@@ -257,6 +258,18 @@ function ConsultationTerms({ request, attempt, busy, onAction }: { request: Requ
   const savedPatch = attempt.terms?.material_patch && typeof attempt.terms.material_patch === 'object' ? attempt.terms.material_patch as Record<string, unknown> : null;
   const savedWorkDue = typeof savedPatch?.work_due_at === 'string' ? toDateTimeLocal(savedPatch.work_due_at) : '';
   const [memo, setMemo] = useState(savedMemo);
+  const [privateMemo, setPrivateMemo] = useState('');
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
+  async function softenProposal() {
+    if (!privateMemo.trim() || rewriting) return;
+    setRewriting(true); setRewriteError(null);
+    try {
+      const proposal = await callEdgeFunction<{ proposed_text: string }>(EDGE_FUNCTIONS.proposeAiDraft, { operation_id: newOperationId(), raw_text: privateMemo.trim(), target_type: 'consultation' });
+      setMemo(proposal.proposed_text);
+    } catch { setRewriteError('AIの提案を作れませんでした。入力は残っています。再試行するか、送る文面を直接入力してください。'); }
+    finally { setRewriting(false); }
+  }
   const [workDue, setWorkDue] = useState(savedWorkDue);
   const weeklyAssignment = Boolean(request.assignment_task_instance_id && request.assignment_scope === 'this_week');
   const dirty = memo.trim() !== savedMemo || workDue !== savedWorkDue;
@@ -282,20 +295,23 @@ function ConsultationTerms({ request, attempt, busy, onAction }: { request: Requ
   }
 
   return <div className="request-other-actions" aria-label="相談の条件">
-    <p><strong>相談中</strong> — まだTaskは変わりません。文章の相談メモと、実際に反映する具体条件を分けて確認します。</p>
-    <label>相談メモ（自動反映されません）<input aria-label="相談メモ" value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="例：時間なら調整できそう" /></label>
-    <label>変更後の作業期限（具体条件）<input aria-label="変更後の作業期限" type="datetime-local" value={workDue} disabled={weeklyAssignment} onChange={(event) => setWorkDue(event.target.value)} /></label>
-    {weeklyAssignment && <p className="task-item-meta">「今週だけ」は複数のTaskを含むため、1つの期限で全件を書き換えません。担当変更だけをこの条件版で確認し、各日の期限変更は個別Taskの変更相談で扱います。</p>}
-    {request.assignment_task_instance_id && <p className="task-item-meta">担当の具体条件: この依頼で固定された対象Taskを、依頼相手へ変更します。対象Taskとrevisionはサーバー発行の条件版から変更できません。</p>}
-    <button type="button" className="secondary-button" disabled={busy || !dirty} onClick={propose}>具体条件を提案</button>
-    <button type="button" disabled={busy || dirty} onClick={() => onAction('confirm_terms')}>表示中の条件版を確認する</button>
+    <p><strong>相談中</strong> — まだ担当や予定は変わりません。変更したい内容を提案し、二人が同じ内容を確認してから確定します。</p>
+    <label>まずは気持ちも含めて入力（相手には送りません）<textarea value={privateMemo} disabled={busy || rewriting} onChange={event => setPrivateMemo(event.target.value)} placeholder="何が難しいか、どうなら引き受けられるか" /></label>
+    <button type="button" className="secondary-button" disabled={busy || rewriting || !privateMemo.trim()} onClick={() => void softenProposal()}>{rewriting ? 'AIが伝え方を整理中…' : 'AIで揉めにくい伝え方を考える'}</button>
+    {rewriteError && <p role="alert">{rewriteError}</p>}
+    <label>相手へ送る相談文（確認・編集できます）<textarea aria-label="相談メモ" rows={4} value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：時間なら調整できそう" /></label>
+    <label>変更後の作業期限（具体条件）<input aria-label="変更後の作業期限" type="datetime-local" value={workDue} disabled={weeklyAssignment || busy || rewriting} onChange={(event) => setWorkDue(event.target.value)} /></label>
+    {weeklyAssignment && <p className="task-item-meta">「今週だけ」は担当をまとめて変更します。時刻の変更は、それぞれの日の予定から相談してください。</p>}
+    {request.assignment_task_instance_id && <p className="task-item-meta">担当の変更: このお願いの対象を、依頼された人へ変更します。別の作業を頼む場合は新しいお願いを作ってください。</p>}
+    <button type="button" className="secondary-button" disabled={busy || rewriting || !dirty} onClick={propose}>この文面・条件で提案する</button>
+    <button type="button" disabled={busy || rewriting || dirty} onClick={() => onAction('confirm_terms')}>この変更案を確認する</button>
     <div className="task-item-meta" aria-label="反映される具体条件">
-      <strong>この条件版で反映される内容</strong>
+      <strong>この変更案で変わること</strong>
       <div>作業期限: {savedWorkDue ? `${request.due_at ? formatDateTimeJa(request.due_at) : '未設定'} → ${formatDateTimeJa(String(savedPatch?.work_due_at))}` : '変更なし'}</div>
-      <div>担当: {request.assignment_task_instance_id ? (assignmentIsExplicit ? '固定された対象Task → 依頼相手' : '既存の担当変更条件') : '変更なし'}</div>
-      <div>相談メモ: {savedMemo || 'なし（文章だけではTaskを変更しません）'}</div>
+      <div>担当: {request.assignment_task_instance_id ? (assignmentIsExplicit ? 'このお願いの対象 → 依頼された人' : '既存の担当変更条件') : '変更なし'}</div>
+      <div>相談メモ: {savedMemo || 'なし（メモだけでは担当や予定は変わりません）'}</div>
     </div>
-    <p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? 'もう一人の確認待ち' : '条件の提案・確認待ち'}（条件版 {attempt.terms_revision}）</p>
+    <p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? 'もう一人の確認待ち' : '条件の提案・確認待ち'}</p>
   </div>;
 }
 
@@ -393,5 +409,5 @@ function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage =
       setError(err instanceof FamilyOpsApiError ? err.message : '送信結果を確認できませんでした。入力内容はこの画面に残っています。');
     } finally { setSubmitting(false); }
   }
-  return <form onSubmit={handleSubmit} className="stack-form card request-composer"><div className="composer-steps" aria-label="お願い作成の手順"><span className={!previewing ? 'active' : ''}>1 作成</span><span className={previewing ? 'active' : ''}>2 確認</span><span>3 送信</span></div><p className="eyebrow">相手に見えるのは、確認した文面だけです</p><label>タイトル<input value={title} onChange={(e) => setTitle(e.target.value)} disabled={Boolean(lockedAttempt)} placeholder="未入力なら「お願い」" /></label><label>まずはそのまま入力<textarea value={rawMessage} onChange={(e) => { setRawMessage(e.target.value); setRawInputId(null); }} disabled={Boolean(lockedAttempt)} placeholder="今日ちょっと遅くなるから、迎えをお願いしたい" /></label><button type="button" className="secondary-button" onClick={rewriteMessageWithAi} disabled={Boolean(lockedAttempt) || submitting || rewriting || rawMessage.trim().length === 0}>{rewriting ? 'AIが言い換え中…' : 'AIでやわらかく言い換える'}</button><label>相手へ送る文面（確認・編集できます）<textarea value={message} onChange={(e) => setMessage(e.target.value)} disabled={Boolean(lockedAttempt)} required placeholder="AIで言い換えるか、直接入力してください" /></label><div className="request-deadline-grid"><label>返事がほしい期限（任意）<input type="datetime-local" value={replyDueDate} onChange={(e) => setReplyDueDate(e.target.value)} disabled={Boolean(lockedAttempt)} /></label><label>作業期限（任意）<input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} disabled={Boolean(lockedAttempt)} /></label></div><p className="request-scope"><strong>返事期限</strong>は「いつまでに返事がほしいか」、<strong>作業期限</strong>は「いつまでにやるか」です。別々に設定できます。返事期限を空欄にした場合は、送信時にシステムが返事期限を自動提案します。</p><p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>{lockedAttempt && <p className="request-scope" role="status">送信結果がまだ確定していないため、内容を固定しています。同じ操作IDで結果を確認します。</p>}{error && <p role="alert" className="error-text">{error}</p>}{!previewing ? <button type="button" disabled={submitting || !message.trim()} onClick={() => setPreviewing(true)}>送信内容を確認</button> : <section className="line-sender-preview" aria-label="LINE送信プレビュー"><p className="line-preview-kicker">LINE · 送る側の確認</p><h3>この内容で送りますか？</h3><p className="line-preview-message">{message}</p><p className="line-preview-meta">{replyDueDate ? `返事期限: ${new Date(replyDueDate).toLocaleString('ja-JP')}` : '返事期限: 自動提案（送信時に確定）'} / {dueDate ? `作業期限: ${new Date(dueDate).toLocaleString('ja-JP')}` : '作業期限なし'} / 今回だけ</p><p className="empty-hint">送るまでは、相手に通知されません。</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={Boolean(lockedAttempt) || submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '確認中…' : lockedAttempt ? '送信結果を確認' : 'LINEで送る'}</button></div></section>}</form>;
+  return <form onSubmit={handleSubmit} className="stack-form card request-composer"><div className="composer-steps" aria-label="お願い作成の手順"><span className={!previewing ? 'active' : ''}>1 作成</span><span className={previewing ? 'active' : ''}>2 確認</span><span>3 送信</span></div><p className="eyebrow">相手に見えるのは、確認した文面だけです</p><label>タイトル<input value={title} onChange={(e) => setTitle(e.target.value)} disabled={Boolean(lockedAttempt)} placeholder="未入力なら「お願い」" /></label><label>まずはそのまま入力<textarea value={rawMessage} onChange={(e) => { setRawMessage(e.target.value); setRawInputId(null); }} disabled={Boolean(lockedAttempt)} placeholder="今日ちょっと遅くなるから、迎えをお願いしたい" /></label><button type="button" className="secondary-button" onClick={rewriteMessageWithAi} disabled={Boolean(lockedAttempt) || submitting || rewriting || rawMessage.trim().length === 0}>{rewriting ? 'AIが言い換え中…' : 'AIでやわらかく言い換える'}</button><label>相手へ送る文面（確認・編集できます）<textarea value={message} onChange={(e) => setMessage(e.target.value)} disabled={Boolean(lockedAttempt)} required placeholder="AIで言い換えるか、直接入力してください" /></label><div className="request-deadline-grid"><label>返事がほしい期限（任意）<input type="datetime-local" value={replyDueDate} onChange={(e) => setReplyDueDate(e.target.value)} disabled={Boolean(lockedAttempt)} /></label><label>作業期限（任意）<input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} disabled={Boolean(lockedAttempt)} /></label></div><p className="request-scope"><strong>返事期限</strong>は「いつまでに返事がほしいか」、<strong>作業期限</strong>は「いつまでにやるか」です。別々に設定できます。返事期限を空欄にした場合は、送信時にシステムが返事期限を自動提案します。</p><p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>{lockedAttempt && <p className="request-scope" role="status">送信結果がまだ確定していないため、内容を固定しています。二重送信せず、送信結果を確認します。</p>}{error && <p role="alert" className="error-text">{error}</p>}{!previewing ? <button type="button" disabled={submitting || !message.trim()} onClick={() => setPreviewing(true)}>送信内容を確認</button> : <section className="line-sender-preview" aria-label="LINE送信プレビュー"><p className="line-preview-kicker">LINE · 送る側の確認</p><h3>この内容で送りますか？</h3><p className="line-preview-message">{message}</p><p className="line-preview-meta">{replyDueDate ? `返事期限: ${new Date(replyDueDate).toLocaleString('ja-JP')}` : '返事期限: 自動提案（送信時に確定）'} / {dueDate ? `作業期限: ${new Date(dueDate).toLocaleString('ja-JP')}` : '作業期限なし'} / 今回だけ</p><p className="empty-hint">送るまでは、相手に通知されません。</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={Boolean(lockedAttempt) || submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '確認中…' : lockedAttempt ? '送信結果を確認' : 'LINEで送る'}</button></div></section>}</form>;
 }

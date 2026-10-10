@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { newOperationId } from '../../lib/id';
 import { WEEKDAYS } from '../../lib/weekdays';
 import './TransportTemplateEditor.css';
@@ -38,9 +39,12 @@ export function TransportTemplateEditor({ members }: { members: HouseholdMemberW
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [protectedConflicts, setProtectedConflicts] = useState<ProtectedConflict[]>([]);
-  const latest = useMemo(() => [...templates].sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0], [templates]);
+  const run = useCommandAttempt();
+  const current = templates.find(t => t.valid_from <= todayIso() && (!t.valid_to || t.valid_to >= todayIso()));
+  const [confirming, setConfirming] = useState(false);
+  const memberName = (id: string) => members.find(m => m.user_id === id)?.profile?.display_name ?? 'なし';
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (selectedDate = todayIso()) => {
     setLoading(true); setError(null);
     try {
       const [schedule, conflictReviews] = await Promise.all([
@@ -49,7 +53,7 @@ export function TransportTemplateEditor({ members }: { members: HouseholdMemberW
       ]);
       const loaded = schedule.templates ?? [];
       setTemplates(loaded); setReviews(conflictReviews ?? []);
-      setDays(defaultDays([...loaded].sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0]));
+      setDays(defaultDays(loaded.find(t => t.valid_from <= selectedDate && (!t.valid_to || t.valid_to >= selectedDate))));
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '送り迎えの定例を読み込めませんでした。');
     } finally { setLoading(false); }
@@ -63,16 +67,17 @@ export function TransportTemplateEditor({ members }: { members: HouseholdMemberW
   async function save() {
     setSaving(true); setError(null); setNotice(null); setProtectedConflicts([]);
     try {
-      const result = await callEdgeFunction<{ protected_conflicts?: ProtectedConflict[] }>(EDGE_FUNCTIONS.transportSchedule, {
-        action: 'save_template', operation_id: newOperationId(), valid_from: validFrom,
+      const result = await run<{ protected_conflicts?: ProtectedConflict[] }>(`transport-template:${validFrom}:${JSON.stringify(days)}`, EDGE_FUNCTIONS.transportSchedule, operation_id => ({
+        action: 'save_template', operation_id, valid_from: validFrom,
         days: days.map((day) => ({ weekday: day.weekday, dropoff_user_id: day.dropoffUserId || null, pickup_user_id: day.pickupUserId || null, dropoff_local_time: day.dropoffUserId ? day.dropoffLocalTime || null : null, pickup_local_time: day.pickupUserId ? day.pickupLocalTime || null : null })),
-      });
+      }));
+      setConfirming(false);
       const conflicts = result.protected_conflicts ?? [];
       setProtectedConflicts(conflicts);
       setNotice(conflicts.length > 0
         ? `新しい生活パターンを保存しました。個別合意${conflicts.length}件は変更せず、パパ・ママ双方の維持確認を待っています。`
         : '新しい生活パターンを保存しました。直前の期間は自動で前日までに調整されます。');
-      await load();
+      await load(validFrom);
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '送り迎えの定例を保存できませんでした。');
     } finally { setSaving(false); }
@@ -88,7 +93,7 @@ export function TransportTemplateEditor({ members }: { members: HouseholdMemberW
       setNotice(result.status === 'needs_review'
         ? '双方の回答を確認しました。元の個別合意を維持したまま担当調整中にしました。'
         : result.status === 'kept' ? '双方が「維持する」で一致しました。個別合意を維持します。' : '回答を保存しました。もう一方の確認を待っています。');
-      await load();
+      await load(validFrom);
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '維持確認を保存できませんでした。最新状態を読み直してください。');
     } finally { setBusyReviewId(null); }
@@ -107,9 +112,9 @@ export function TransportTemplateEditor({ members }: { members: HouseholdMemberW
           <button type="button" disabled={busyReviewId === review.id} onClick={() => respondReview(review, 'review')}>見直す</button>
         </div>
       </section>)}
-      {templates.length > 0 && <div className="transport-template-timeline" aria-label="生活パターンの期間"><h3>生活パターンの履歴</h3><ol>{[...templates].sort((a, b) => a.valid_from.localeCompare(b.valid_from)).map((template) => <li key={template.id} className={template.id === latest?.id ? 'current' : ''}><span>{periodLabel(template)}</span>{template.id === latest?.id && template.valid_to === null && <b>現在</b>}</li>)}</ol></div>}
-      <label className="transport-template-start">この生活パターンを始める日<input type="date" aria-label="この生活パターンを始める日" value={validFrom} onChange={(event) => setValidFrom(event.target.value)} /><small>期限未定で保存され、次の生活パターンを追加すると直前分が自動で閉じます。</small></label>
-      <div className="transport-week-matrix" role="table" aria-label="1週間の送り迎え担当">
+      {templates.length > 0 && <div className="transport-template-timeline" aria-label="生活パターンの期間"><h3>生活パターンの履歴</h3><ol>{[...templates].sort((a, b) => a.valid_from.localeCompare(b.valid_from)).map((template) => <li key={template.id} className={template.id === current?.id ? 'current' : ''}><span>{periodLabel(template)}</span>{template.id === current?.id && <b>現在</b>}{template.valid_from > todayIso() && <b>開始予定</b>}</li>)}</ol></div>}
+      <label className="transport-template-start">この生活パターンを始める日<input type="date" aria-label="この生活パターンを始める日" value={validFrom} disabled={saving || confirming} onChange={(event) => { const date = event.target.value; setValidFrom(date); setDays(defaultDays(templates.find(t => t.valid_from <= date && (!t.valid_to || t.valid_to >= date)))); setConfirming(false); }} /><small>期限未定で保存され、次の生活パターンを追加すると直前分が自動で閉じます。</small></label>
+      <fieldset disabled={saving || confirming} className="transport-edit-fields"><div className="transport-week-matrix" role="table" aria-label="1週間の送り迎え担当">
         <div className="transport-week-head" role="columnheader">曜日</div><div className="transport-week-head" role="columnheader">送り</div><div className="transport-week-head" role="columnheader">お迎え</div>
         {WEEKDAYS.map((weekday) => { const row = days.find((day) => day.weekday === weekday.value); if (!row) return null; return <div className="transport-week-row" role="row" key={weekday.value}>
           <strong role="cell">{weekday.label}</strong>
@@ -117,7 +122,9 @@ export function TransportTemplateEditor({ members }: { members: HouseholdMemberW
           <div role="cell" className="transport-week-cell"><select aria-label={`${weekday.label}曜日のお迎え担当`} value={row.pickupUserId} onChange={(event) => patchDay(weekday.value, { pickupUserId: event.target.value })}><option value="">なし</option>{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.profile?.display_name ?? '家族'}</option>)}</select>{row.pickupUserId && <input type="time" aria-label={`${weekday.label}曜日のお迎え時刻`} value={row.pickupLocalTime} onChange={(event) => patchDay(weekday.value, { pickupLocalTime: event.target.value })} />}</div>
         </div>; })}
       </div>
-      <button type="button" onClick={save} disabled={saving || !validFrom}>{saving ? '保存中…' : 'この日から新しい生活パターンとして保存'}</button>
+      </fieldset>
+      {confirming && <section className="card" aria-label="送り迎えの変更確認"><h3>{validFrom}からの送り・お迎え</h3><ul>{days.map(day => <li key={day.weekday}>{WEEKDAYS.find(w => w.value === day.weekday)?.label}：送り {memberName(day.dropoffUserId)} {day.dropoffUserId && day.dropoffLocalTime} ／ お迎え {memberName(day.pickupUserId)} {day.pickupUserId && day.pickupLocalTime}</li>)}</ul><p>個別に合意した担当は上書きせず、必要な場合は二人に確認します。</p><button disabled={saving} onClick={() => void save()}>{saving ? '保存中…' : '確認した担当で保存'}</button><button className="text-button" disabled={saving} onClick={() => setConfirming(false)}>編集に戻る</button></section>}
+      {!confirming && <button type="button" onClick={() => setConfirming(true)} disabled={saving || !validFrom}>{saving ? '保存中…' : 'この日からの担当を確認'}</button>}
     </>}
     {notice && <p role="status" className="success-text">{notice}</p>}
     {protectedConflicts.length > 0 && <details className="transport-protected-conflicts"><summary>維持中の個別確定予定 {protectedConflicts.length}件</summary><ul>{protectedConflicts.map((conflict) => <li key={`${conflict.task_id}:${conflict.leg}`}>{conflict.date} · {conflict.leg === 'dropoff' ? '送り' : 'お迎え'}</li>)}</ul><p className="empty-hint">ルール変更では上書きしていません。上の双方確認で「維持する / 見直す」を回答してください。</p></details>}

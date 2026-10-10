@@ -60,5 +60,5 @@ export function taskRecordingLabel(summary: TaskRecordingSummary, future = false
   if (summary.state === 'empty') return 'やることなし';
   if (summary.pending > 0) return `${future ? '未完了' : '未記録'} ${summary.pending}件`;
   if (summary.state === 'completed') return 'すべて完了';
-  return summary.missed > 0 ? `記録済み・実施漏れ ${summary.missed}件` : 'すべて記録済み';
+  return summary.missed > 0 ? `記録済み・できなかった ${summary.missed}件` : 'すべて記録済み';
 }

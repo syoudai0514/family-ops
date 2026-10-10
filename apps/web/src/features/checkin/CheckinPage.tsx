@@ -139,10 +139,10 @@ export function CheckinPage() {
   const [rescheduleDates, setRescheduleDates] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState<string | null>(null);
 
-  if (!sessionId) return <div className="app-shell">セッションが指定されていません。</div>;
+  if (!sessionId) return <div className="app-shell">記録画面が指定されていません。</div>;
   if (loading) return <div className="app-shell">読み込み中…</div>;
   if (error) return <div className="app-shell"><p role="alert" className="error-text">{error}</p></div>;
-  if (!session) return <div className="app-shell">セッションが見つかりません。</div>;
+  if (!session) return <div className="app-shell">記録画面が見つかりません。</div>;
 
   const activeItems = session.items.filter(isItemActive);
   const { eligibleCount, optionalCount } = countCheckinBulkScope(activeItems);
@@ -252,8 +252,8 @@ export function CheckinPage() {
         <strong>「全部やった」で完了にする対象</strong>
         <ul className="checkin-scope-names">{scopeNames.eligible.map((name) => <li key={`eligible-${name}`}>{name}</li>)}</ul>
         <span className="task-item-meta">必須/通常 {eligibleCount}件</span>
-        {scopeNames.optional.length > 0 && <><strong className="task-item-meta">対象外（余力）</strong><ul className="checkin-scope-names excluded">{scopeNames.optional.map((name) => <li key={`optional-${name}`}>{name}</li>)}</ul></>}
-        <span className="task-item-meta">余力 {optionalCount}件は対象外</span>
+        {scopeNames.optional.length > 0 && <><strong className="task-item-meta">対象外（余裕があれば）</strong><ul className="checkin-scope-names excluded">{scopeNames.optional.map((name) => <li key={`optional-${name}`}>{name}</li>)}</ul></>}
+        <span className="task-item-meta">余裕があれば {optionalCount}件は対象外</span>
       </div>
       <p className="empty-hint">上に名前が出ている項目だけが「全部やった」の対象です。「大体やった」では未入力項目や子項目を勝手に完了にしません。</p>
       <div className="checkin-reconciliation-actions"><button type="button" className="hero-primary" disabled={busyAll || eligibleCount === 0} onClick={() => runReconciliation('all_done')}>全部やった</button><button type="button" className="secondary-button" disabled={busyAll || eligibleCount === 0} onClick={() => runReconciliation('mostly_done')}>大体やった</button><button type="button" className="text-button" disabled={busyAll} onClick={() => runReconciliation('individual')}>個別に記録</button></div>

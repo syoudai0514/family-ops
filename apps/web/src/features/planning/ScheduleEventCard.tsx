@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
@@ -193,6 +194,7 @@ export function ScheduleEventCard({
               通知: {details.reminder_minutes === 0 ? '開始時' : `${details.reminder_minutes}分前`}
             </p>
           )}
+          {item.familyEventId && <Link to={`/events/${item.familyEventId}`}>行事と準備することを見る</Link>}
           {!task && (
             <p className="meta">
               {item.source === 'google'

@@ -39,6 +39,10 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
 
   // "できなかった（忘れた）": recorded apart from an open (未記録) todo; undo returns it to todo.
   if (body["action"] === "could_not_do" || body["action"] === "could_not_do_undo") {
+    const expectedRevision = body["expected_revision"];
+    if (expectedRevision !== undefined && (typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1)) {
+      throw new FamilyOpsError("INVALID_INPUT", "expected_revision must be a positive integer", 400);
+    }
     const result = await callServerTx<{ ok: true; task_id: string; status: string; revision: number }>(
       serviceClient,
       "server_tx_mark_task_could_not_do_v1",
@@ -48,6 +52,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
         p_task_id: taskId,
         p_undo: body["action"] === "could_not_do_undo",
         p_source: "pwa",
+        ...(expectedRevision === undefined ? {} : { p_expected_revision: expectedRevision }),
       },
     );
     return jsonResponse(result);

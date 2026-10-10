@@ -19,3 +19,6 @@ supabase/.temp
 # Test/coverage artifacts
 coverage
 /tmp-test-db
+
+# Browser verification output
+artifacts/

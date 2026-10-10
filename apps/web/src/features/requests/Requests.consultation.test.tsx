@@ -16,7 +16,7 @@ describe('requester consultation from the actual PWA row', () => {
     const refresh = vi.fn();
     render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={refresh} /></ul>);
     expect(screen.getByDisplayValue('玄関で引き継ぐ')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '表示中の条件版を確認する' }));
+    fireEvent.click(screen.getByRole('button', { name: 'この変更案を確認する' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('negotiate-request', expect.objectContaining({
       request_id: request.id, attempt_id: attempt.id, action: 'confirm_terms', expected_revision: 4, expected_terms_revision: 2,
     })));
@@ -26,7 +26,7 @@ describe('requester consultation from the actual PWA row', () => {
   it('cannot confirm unsaved prose as if it were the saved agreement', () => {
     render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
     fireEvent.change(screen.getByLabelText('相談メモ'), { target: { value: '園で引き継ぐ' } });
-    const confirm = screen.getByRole('button', { name: '表示中の条件版を確認する' });
+    const confirm = screen.getByRole('button', { name: 'この変更案を確認する' });
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(confirm);
     expect(callEdgeFunction).not.toHaveBeenCalled();
@@ -35,7 +35,7 @@ describe('requester consultation from the actual PWA row', () => {
   it('sends work-date changes only as an explicit structured material patch', async () => {
     render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
     fireEvent.change(screen.getByLabelText('変更後の作業期限'), { target: { value: '2026-09-11T18:30' } });
-    fireEvent.click(screen.getByRole('button', { name: '具体条件を提案' }));
+    fireEvent.click(screen.getByRole('button', { name: 'この文面・条件で提案する' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('negotiate-request', expect.objectContaining({
       request_id: request.id,
       attempt_id: attempt.id,
@@ -52,4 +52,35 @@ describe('requester consultation from the actual PWA row', () => {
       }),
     })));
   });
+});
+
+it('keeps feelings private, previews the AI wording, and shares only the reviewed proposal', async () => {
+  vi.mocked(callEdgeFunction).mockReset();
+  vi.mocked(callEdgeFunction).mockResolvedValue({ proposed_text: '今日は帰宅が遅いので、時間を調整できると助かります。' });
+  render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
+  fireEvent.change(screen.getByLabelText('まずは気持ちも含めて入力（相手には送りません）'), { target: { value: '私ばかりで腹が立つ。今日は帰宅が遅い' } });
+  fireEvent.click(screen.getByRole('button', { name: 'AIで揉めにくい伝え方を考える' }));
+  expect(await screen.findByDisplayValue('今日は帰宅が遅いので、時間を調整できると助かります。')).toBeInTheDocument();
+  expect(callEdgeFunction).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(callEdgeFunction).mock.calls[0][0]).toBe('propose-ai-draft');
+  expect(vi.mocked(callEdgeFunction).mock.calls[0][1]).toEqual(expect.objectContaining({ target_type: 'consultation' }));
+  expect(screen.getByLabelText('相談メモ').tagName).toBe('TEXTAREA');
+  fireEvent.change(screen.getByLabelText('相談メモ'), { target: { value: '今日は帰宅が遅いです。\n18時30分なら対応できます。' } });
+  fireEvent.click(screen.getByRole('button', { name: 'この文面・条件で提案する' }));
+  await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledTimes(2));
+  const shared = vi.mocked(callEdgeFunction).mock.calls[1];
+  expect(shared[0]).toBe('negotiate-request');
+  expect(JSON.stringify(shared[1])).not.toContain('腹が立つ');
+  expect((shared[1] as Record<string,unknown>).terms).toEqual(expect.objectContaining({ candidate: '今日は帰宅が遅いです。\n18時30分なら対応できます。' }));
+});
+
+it('keeps unsent feelings private when AI is unavailable', async () => {
+  vi.mocked(callEdgeFunction).mockReset();
+  vi.mocked(callEdgeFunction).mockRejectedValueOnce(new Error('AI unavailable'));
+  render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
+  fireEvent.change(screen.getByLabelText('まずは気持ちも含めて入力（相手には送りません）'), { target: { value: '送らない気持ち' } });
+  fireEvent.click(screen.getByRole('button', { name: 'AIで揉めにくい伝え方を考える' }));
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
+  expect(screen.getByDisplayValue('玄関で引き継ぐ')).toBeInTheDocument();
+  expect(vi.mocked(callEdgeFunction).mock.calls.every(([name]) => name !== 'negotiate-request')).toBe(true);
 });

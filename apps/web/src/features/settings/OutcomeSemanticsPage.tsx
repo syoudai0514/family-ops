@@ -37,7 +37,7 @@ export function OutcomeSemanticsPage() {
         </div>
         <Link to="/settings" className="text-button">設定へ戻る</Link>
       </div>
-      <p className="page-lead">「存在が間違い」と「今回はやらなかった」を同じ削除にしません。選んだ意味をcanonical履歴として残します。</p>
+      <p className="page-lead">「存在が間違い」と「今回はやらなかった」を同じ削除にしません。選んだ意味を履歴として残します。</p>
       <section className="settings-list" aria-label="削除・結果の選択">
         {OUTCOME_CHOICES.map((choice) => (
           <Link key={choice.title} to={choice.to} className="settings-link">

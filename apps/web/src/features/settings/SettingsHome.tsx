@@ -3,13 +3,9 @@ import { Link } from 'react-router-dom';
 import { InviteSection } from '../household/InviteSection';
 import { supabase } from '../../lib/supabaseClient';
 import { CalendarIntegrationSettings } from './CalendarIntegrationSettings';
-import { useHousehold } from '../../app/HouseholdContext';
-import { callEdgeFunction } from '../../lib/apiClient';
-import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
-import { newOperationId } from '../../lib/id';
+import { FamilyRoles } from './FamilyRoles';
 
 export function SettingsHome() {
-  const { members, refresh } = useHousehold();
   const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
@@ -26,19 +22,22 @@ export function SettingsHome() {
       <h1>設定</h1>
       <p className="page-lead">いつもの担当や通知を、家族のルールとして整えます。</p>
       <section className="settings-list" aria-label="設定メニュー">
-        <Link to="/settings/routines" className="settings-link"><strong>いつもの担当</strong><span>送り・お迎え、夜の家事、朝の準備</span></Link>
-        <Link to="/settings/categories" className="settings-link"><strong>カテゴリ</strong><span>予定追加で選ぶ項目と色</span></Link>
-        <Link to="/settings/terminology" className="settings-link"><strong>家庭内用語</strong><span>LINEで使う言い回しと意味</span></Link>
-        <Link to="/settings/line-reference" className="settings-link"><strong>LINE / PWA 入力対応表</strong><span>固定入口6つと、個別結果を答える場所</span></Link>
-        <Link to="/settings/outcome-semantics" className="settings-link"><strong>削除・中止・結果の違い</strong><span>項目を消すのか、今回の結果を残すのかを選ぶ</span></Link>
-        <Link to="/shopping/anyone-owner" className="settings-link"><strong>「誰でもOK」の対応状況</strong><span>今誰が対応中か確認して、引き継ぎ・担当戻し</span></Link>
-        <Link to="/notifications" className="settings-link"><strong>通知</strong><span>LINEとアプリ内のお知らせ</span></Link>
-        <Link to="/handovers" className="settings-link"><strong>引き継ぎ</strong><span>朝・夜の共有メモ</span></Link>
-        <Link to="/planning/google-review" className="settings-link"><strong>Google予定の変更確認</strong><span>時間変更・削除・重複候補を確認</span></Link>
-        <Link to="/settings/test-simulation" className="settings-link"><strong>🧪 1人テストモード</strong><span>1アカウントでお願い→返事→完了まで安全に試す</span></Link>
+        <Link to="/settings/routines" className="settings-link"><strong>いつもの担当</strong><span>送り・お迎え、家事、朝の準備</span></Link>
+        <Link to="/notifications" className="settings-link"><strong>通知・LINE連携</strong><span>連携状態と、お知らせの頻度</span></Link>
+        <Link to="/settings/children" className="settings-link"><strong>子ども・園・学校</strong><span>おたよりの対象とクラス</span></Link>
       </section>
+      <details className="card"><summary>入力を自分たちに合わせる</summary><div className="settings-list">
+        <Link to="/settings/categories" className="settings-link">カテゴリと色</Link>
+        <Link to="/settings/terminology" className="settings-link">家庭内の言い回し</Link>
+      </div></details>
+      <details className="card"><summary>使い方・困ったとき</summary><div className="settings-list">
+        <Link to="/settings/line-reference" className="settings-link">LINEとアプリの使い方</Link>
+        <Link to="/settings/outcome-semantics" className="settings-link">削除・中止・結果の違い</Link>
+        <Link to="/planning/google-review" className="settings-link">Google予定の変更確認</Link>
+      </div></details>
+      <details className="card"><summary>安全に使い方を試す</summary><Link to="/settings/test-simulation">1人テストモード</Link></details>
       <CalendarIntegrationSettings />
-      <section className="card settings-invite"><h2>家族</h2><p className="empty-hint">P/M表示と担当色は家庭で固定します。</p><div className="family-role-rows">{members.map(member=><label key={member.user_id}>{member.profile?.display_name??member.user_id}<select value={member.family_role??''} onChange={async e=>{if(e.target.value) {await callEdgeFunction(EDGE_FUNCTIONS.setFamilyRole,{operation_id:newOperationId(),user_id:member.user_id,family_role:e.target.value});await refresh();}}}><option value="">未設定</option><option value="papa">パパ（P・緑）</option><option value="mama">ママ（M・橙）</option></select></label>)}</div><InviteSection /></section>
+      <section className="card settings-invite"><h2>家族</h2><FamilyRoles /><InviteSection /></section>
       <section className="card settings-account">
         <h2>アカウント</h2>
         <p className="empty-hint">この端末でのログインを終了します。</p>

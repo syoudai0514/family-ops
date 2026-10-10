@@ -178,6 +178,7 @@ export function DayAgendaSheet({
       onEdit={setEditingTask}
       onChanged={refreshAll}
       showTime={showTime}
+      compact
     />
   );
 
@@ -214,12 +215,10 @@ export function DayAgendaSheet({
     <section className="day-agenda-section">
     <div className="day-agenda-section-heading">
       <div>
-        <p className="eyebrow">時間順</p>
+
         <h3>予定</h3>
       </div>
-      <button type="button" className="text-button" onClick={() => setCreateKind('event')}>
-        ＋ 追加
-      </button>
+
     </div>
     {dayItems.length === 0 ? (
       <button
@@ -227,7 +226,7 @@ export function DayAgendaSheet({
         className="day-agenda-empty-action"
         onClick={() => setCreateKind('event')}
       >
-        予定はありません。＋ この日に予定を追加
+        予定はありません。予定を追加
       </button>
     ) : (
       <div className="day-agenda-timeline">
@@ -287,7 +286,7 @@ export function DayAgendaSheet({
               )}
 
 
-              {!inline && scheduleSection}
+              {scheduleSection}
 
               {(transportTasks.length > 0 || tokens.dropoff.token !== '—' || tokens.pickup.token !== '—') && (
                 <section className="day-agenda-section day-agenda-transport-section">
@@ -315,8 +314,8 @@ export function DayAgendaSheet({
               <section className="day-agenda-section day-agenda-tasks-section">
                 <div className="day-agenda-section-heading">
                   <div>
-                    <p className="eyebrow">チェックして進める</p>
-                    <h3>実績・やること</h3>
+
+                    <h3>自分のやること</h3>
                   </div>
                   {requiredTasks.length > 0 && (
                     <span className="day-agenda-progress">
@@ -330,7 +329,7 @@ export function DayAgendaSheet({
                     className="day-agenda-empty-action"
                     onClick={() => setCreateKind('task')}
                   >
-                    やることはありません。＋ 追加
+                    やることはありません。追加
                   </button>
                 ) : (
                   ownerGroups ? (
@@ -356,16 +355,9 @@ export function DayAgendaSheet({
                 )}
               </section>
 
-              {inline && scheduleSection}
 
-              <div className="day-agenda-sticky-actions" aria-label="この日に追加">
-                <button type="button" className="secondary-button" onClick={() => setCreateKind('task')}>
-                  ＋ やること
-                </button>
-                <button type="button" onClick={() => setCreateKind('event')}>
-                  ＋ 予定
-                </button>
-              </div>
+
+              <div className="day-agenda-sticky-actions" aria-label="この日に追加"><button onClick={() => setCreateKind('task')}>＋ この日に追加</button></div>
             </>
           )}
         </div>

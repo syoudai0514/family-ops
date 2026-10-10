@@ -254,7 +254,7 @@ describe('Today', () => {
   it('renders task groups and schedule supplied by DailyBrief', async () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole('heading', { name: '今日' })).toBeInTheDocument());
-    expect(await screen.findByRole('heading', { name: '今やること' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '日中にやること' })).toBeInTheDocument();
     expect(screen.getByText('保育園面談', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('次にやること')).toBeInTheDocument();
   });

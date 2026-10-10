@@ -12,7 +12,7 @@ vi.mock('./useTodayData', () => ({ useTodayData: vi.fn() }));
 vi.mock('./usePendingActions', () => ({ usePendingActions: vi.fn() }));
 vi.mock('./useTodayClock', () => ({ useTodayClock: vi.fn() }));
 vi.mock('./TodayTaskItem', () => ({ TodayTaskItem: ({ task }: { task: { title: string } }) => <li>{task.title}</li> }));
-vi.mock('./TomorrowPreparationCard', () => ({ TomorrowPreparationCard: () => null }));
+vi.mock('./TomorrowPreparationCard', () => ({ TomorrowPreparationCard: ({ children }: { children?: import('react').ReactNode }) => <section>{children}</section> }));
 vi.mock('./PendingActionCard', () => ({ PendingActionCard: ({ action }: { action: { id: string } }) => <li>{action.id}</li> }));
 vi.mock('./PendingActionEditModal', () => ({ PendingActionEditModal: () => null }));
 vi.mock('../tasks/TaskFormModal', () => ({ TaskFormModal: () => null }));
@@ -100,20 +100,18 @@ describe('Today first-flow priority contract', () => {
     const decisionSection = screen.getByRole('region', { name: 'まず確認' });
     const exceptionSection = screen.getByRole('region', { name: 'いつもと違う' });
     const handoverSection = screen.getByRole('region', { name: '引き継ぎ・共有' });
-    const morningSummary = screen.getByRole('region', { name: '朝の完了まとめ' });
+    expect(screen.queryByRole('region', { name: '朝の完了まとめ' })).not.toBeInTheDocument();
     const waitingSection = screen.getByRole('region', { name: '待ち・確認' });
-    const remainingHeading = screen.getByRole('heading', { name: 'まだ残っていること' });
-    const tomorrowSection = screen.getByRole('region', { name: '明日に影響' });
+    const remainingHeading = screen.getByLabelText('朝の残り');
+    const tomorrowSection = screen.getByLabelText('明日の予定と担当');
 
     expect(exceptionSection).toHaveTextContent('保育園が短縮');
     expect(handoverSection).toHaveTextContent('水筒を玄関へ');
-    expect(morningSummary).toHaveTextContent('朝 1/2 完了');
     expect(decisionSection.compareDocumentPosition(exceptionSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(exceptionSection.compareDocumentPosition(handoverSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(handoverSection.compareDocumentPosition(morningSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(morningSummary.compareDocumentPosition(waitingSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(waitingSection.compareDocumentPosition(remainingHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(remainingHeading.compareDocumentPosition(tomorrowSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(exceptionSection.compareDocumentPosition(remainingHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(remainingHeading.compareDocumentPosition(waitingSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(waitingSection.compareDocumentPosition(handoverSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(handoverSection.compareDocumentPosition(tomorrowSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   // Requirements §3 forbids 勝率/ポイント/ランキング, and design 04 §5 / §16.2 keep a

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
+import { NurseryValueFields } from './NurseryValueFields';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
 
 type JsonObject = Record<string, unknown>;
@@ -60,28 +61,13 @@ type DraftItem = {
 
 const ITEM_KIND_LABELS: Record<NurseryReviewItem['item_kind'], string> = {
   preparation: '準備するもの',
-  task: 'ToDo',
+  task: 'やること',
   timetable: '予定',
   shared_info: '家族への共有',
   submission: '提出物',
   url: 'URL / QR / 提出先',
   recurrence: '定例予定',
   exception: 'この日だけの変更',
-};
-
-const FIELD_LABELS: Record<string, string> = {
-  title: '内容',
-  text: '共有内容',
-  due_date: '期限・日付',
-  date: '日付',
-  location: '場所',
-  details: '詳細',
-  url: '実行先URL',
-  destination: '提出先・実行先',
-  add_to_calendar: 'Google Calendarにも表示する',
-  effective_from: '開始日',
-  effective_to: '終了日',
-  occurrence_date: '対象日',
 };
 
 const AMBIGUITY_LABELS: Record<string, string> = {
@@ -98,12 +84,6 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return '操作に失敗しました。もう一度お試しください。';
-}
-
-function primitiveInputType(key: string): 'date' | 'url' | 'text' {
-  if (key === 'date' || key === 'due_date' || key === 'effective_from' || key === 'effective_to' || key === 'occurrence_date') return 'date';
-  if (key === 'url') return 'url';
-  return 'text';
 }
 
 function originLabel(origin: NurseryReviewItem['origin']) {
@@ -137,26 +117,6 @@ function buildDrafts(items: NurseryReviewItem[]): Record<string, DraftItem> {
 }
 
 function ReviewItemEditor({ item, draft, onChange }: { item: NurseryReviewItem; draft: DraftItem; onChange: (next: DraftItem) => void }) {
-  const primitiveFields = Object.entries(draft.value).filter(([, value]) => value === null || ['string', 'number', 'boolean'].includes(typeof value));
-
-  function updatePrimitive(key: string, raw: string, original: unknown) {
-    let value: unknown = raw;
-    if (typeof original === 'number') value = Number(raw);
-    if (typeof original === 'boolean') value = raw === 'true';
-    const nextValue = { ...draft.value, [key]: value };
-    onChange({ ...draft, value: nextValue, advancedJson: JSON.stringify(nextValue, null, 2), jsonError: null });
-  }
-
-  function applyAdvancedJson() {
-    try {
-      const parsed = JSON.parse(draft.advancedJson) as unknown;
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('object required');
-      onChange({ ...draft, value: parsed as JsonObject, jsonError: null });
-    } catch {
-      onChange({ ...draft, jsonError: '詳細内容の形式を確認してください。' });
-    }
-  }
-
   return (
     <article className="card nursery-review-item">
       <div className="section-heading">
@@ -178,27 +138,7 @@ function ReviewItemEditor({ item, draft, onChange }: { item: NurseryReviewItem; 
       )}
       {item.previous_confirmed_item_id && <p className="empty-hint">前回確定した内容があります。これは上書きではなく差分候補です。</p>}
 
-      <div className="form-grid">
-        {primitiveFields.map(([key, value]) => (
-          <label key={key}>
-            <span>{FIELD_LABELS[key] ?? key}</span>
-            {typeof value === 'boolean' ? (
-              <select value={String(value)} onChange={(event) => updatePrimitive(key, event.target.value, value)}>
-                <option value="true">はい</option><option value="false">いいえ</option>
-              </select>
-            ) : (
-              <input type={primitiveInputType(key)} value={value == null ? '' : String(value)} onChange={(event) => updatePrimitive(key, event.target.value, value)} />
-            )}
-          </label>
-        ))}
-      </div>
-
-      <details>
-        <summary>詳細内容も編集する</summary>
-        <label><span>構造化された詳細</span><textarea rows={7} value={draft.advancedJson} onChange={(event) => onChange({ ...draft, advancedJson: event.target.value, jsonError: null })} /></label>
-        <button type="button" className="secondary-button" onClick={applyAdvancedJson}>詳細編集を反映</button>
-        {draft.jsonError && <p role="alert" className="error-text">{draft.jsonError}</p>}
-      </details>
+      <NurseryValueFields value={draft.value} onChange={value => onChange({ ...draft, value, jsonError: null })} />
     </article>
   );
 }
@@ -290,7 +230,7 @@ export function NurseryReviewPage() {
     return (
       <main className="app-shell">
         <div className="today-page-heading"><div><p className="eyebrow">園・Codmon画像</p><h1>おたより確認</h1></div></div>
-        <p className="empty-hint">LINEで送った画像のうち、おたよりらしいものだけがここに並びます。家族写真は解析対象から外します。</p>
+        <p className="empty-hint">LINE公式アカウント「おうちノート」のトークに、おたよりの画像を送ってください。送った画像のうち、おたよりらしいものだけがここに並びます。家族写真は解析対象から外します。</p>
         {error && <p role="alert" className="error-text">{error}</p>}
         {pending.length === 0 ? (
           <section className="card"><h2>確認待ちはありません</h2><p>新しいおたよりをLINEで送ると、解析候補がここに表示されます。</p></section>
@@ -325,7 +265,7 @@ export function NurseryReviewPage() {
       )}
 
       {(review.ambiguity_fields.length > 0 || !review.child_school_context_id) && (
-        <section className="card decision-card"><p className="eyebrow">曖昧なところだけ確認</p><h2>{review.ambiguity_fields.map((field) => AMBIGUITY_LABELS[field] ?? field).join('・') || '園・子ども・クラス'}</h2><label><span>対象</span><select value={selectedContextId} onChange={(event) => setSelectedContextId(event.target.value)}><option value="">選んでください</option>{review.available_contexts.map((context) => <option key={context.id} value={context.id}>{contextLabel(context)}</option>)}</select></label><p className="empty-hint">日付や「同じ資料か」は下の候補を確認・修正したうえで、このボタンで解消します。</p><button type="button" className="hero-primary" disabled={busy || !selectedContextId} onClick={resolveAmbiguity}>この対象・内容で曖昧点を解消</button></section>
+        <section className="card decision-card"><p className="eyebrow">曖昧なところだけ確認</p><h2>{review.ambiguity_fields.map((field) => AMBIGUITY_LABELS[field] ?? field).join('・') || '園・子ども・クラス'}</h2><label><span>対象</span><select value={selectedContextId} onChange={(event) => setSelectedContextId(event.target.value)}><option value="">選んでください</option>{review.available_contexts.map((context) => <option key={context.id} value={context.id}>{contextLabel(context)}</option>)}</select></label><Link to={`/settings/children?returnTo=${encodeURIComponent(`/nursery/reviews/${review.intake_id}`)}`}>{review.available_contexts.length === 0 ? '子ども・園・クラスを登録する' : '対象を追加・編集する'}</Link><p className="empty-hint">日付や「同じ資料か」は下の候補を確認・修正したうえで、このボタンで解消します。</p><button type="button" className="hero-primary" disabled={busy || !selectedContextId} onClick={resolveAmbiguity}>この対象・内容で曖昧点を解消</button></section>
       )}
 
       <section aria-label="登録候補">

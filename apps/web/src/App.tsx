@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import './App.css';
 import './mobileHotfix.css';
 import { SignIn } from './features/auth/SignIn';
@@ -19,10 +19,10 @@ function hasStoredSession(): boolean {
 }
 
 function App() {
-  const sessionMayExist = hasStoredSession();
-  const needsAuthenticatedRouter = sessionMayExist || window.location.pathname === '/auth/callback';
+  const [sessionMayExist, setSessionMayExist] = useState(hasStoredSession);
+  const needsAuthenticatedRouter = sessionMayExist || window.location.pathname.startsWith('/auth/');
 
-  if (!needsAuthenticatedRouter) return <SignIn />;
+  if (!needsAuthenticatedRouter) return <SignIn onSignedIn={() => setSessionMayExist(true)} />;
 
   return (
     <AppErrorBoundary>

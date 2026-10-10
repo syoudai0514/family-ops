@@ -37,8 +37,7 @@ Product Guideは技術設計の正本ではありません。仕様判断は次�
 
 ## リリース前後の更新
 
-次期canonical behaviorはPR #44/#45 source-review candidateを前提としています。production cutover完了まではCURRENT本番UIと一部異なる可能性があります。
-
+利用ガイドと3分ガイドは2026年10月10日の改善ブランチに合わせています。[変更と確認結果](../changes/2026-10-10-daily-ux.md)を参照してください。本番反映前は実画面と異なる場合があります。ユースケース手順書には、以前の設計目標を説明した項目も残っています。
 production activation後に:
 
 1. CURRENT iPhone/PWA/LINE実画面で全ユースケース確認

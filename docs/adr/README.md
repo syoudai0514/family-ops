@@ -37,6 +37,8 @@ until the reviewed proposal reaches protected `main`.
 - [0013](0013-current-detailed-design-architecture-evolution.md) — **Accepted:** canonical current detailed design
 - [0014](0014-right-sized-household-backup-recovery.md) — **Product Owner approved / pending canonical merge:** reserved `app-save-hub` namespace, actual backup/read-back/freshness, disposable restore, Auth rebind and authenticated household-access proof; R2/age is superseded only after protected merge
 
+- [0015](0015-family-daily-ux-workspace.md) — **Proposed:** authenticated family setup, invite recovery, and read-only assignment preview for user-focused daily UX
+
 ## Format
 
 Each ADR is a short Markdown file: title, status, context, decision,

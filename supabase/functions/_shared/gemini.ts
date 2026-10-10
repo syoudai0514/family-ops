@@ -18,7 +18,7 @@
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-export type AiDraftTargetType = "request" | "handover";
+export type AiDraftTargetType = "request" | "handover" | "consultation";
 
 export interface AiDraftProposal {
   sharedText: string;
@@ -290,8 +290,31 @@ function extractJsonBlock(text: string): string {
   return (fenceMatch ? fenceMatch[1] : text).trim();
 }
 
-function buildPrompt(rawText: string, targetType: AiDraftTargetType): string {
+export function buildPrompt(rawText: string, targetType: AiDraftTargetType): string {
   const jsonRule = '- 出力は必ず次のJSON形式のみ: {"shared_text": string, "warnings": string[]}';
+
+  if (targetType === "consultation") {
+    return [
+      "あなたは家庭内のお願いへの返事や条件の相談を、事実と本人の意思を保って落ち着いた文面へ整えるアシスタントです。",
+      "新しいお願いではなく、引き受けられる条件・難しい点・変更案を相手に伝える下書きです。",
+      "- 『〜お願いできますか？』という依頼へ書き換えず、本人の返事・提案として表現する",
+      "- 『18時なら』『片付けだけなら』などの条件を落とさない。条件付きの返事を無条件の承諾にしない",
+      "- 『できない』『難しい』『まだ確認が必要』などの意思を、承諾や断定に変えない",
+      "- 日付、時刻、数量、対象、否定、本人の事情を変えず、入力にない理由・担当・別案・合意を追加しない",
+      "- 非難、比較、貸し借り、皮肉、圧は取り除く。『ありがとう』『ごめん』も入力になければ追加しない",
+      "- 確定した合意として書かず、相手が確認できる短い変更案にする",
+      "例:",
+      "入力: 私ばかりで腹が立つ。明日18時30分なら迎えに行ける。",
+      "consultation: 明日のお迎えは、18時30分なら行けます。",
+      "入力: 今日の夕食は仕事で無理。片付けだけならできる。",
+      "consultation: 今日は仕事のため夕食の対応は難しいです。片付けだけならできます。",
+      "入力: まだ仕事の予定が分からない。明日確認して返す。",
+      "consultation: 仕事の予定がまだ分からないので、明日確認して返事をします。",
+      jsonRule,
+      "元のテキスト:",
+      '"""', rawText, '"""',
+    ].join("\n");
+  }
 
   if (targetType === "handover") {
     return [

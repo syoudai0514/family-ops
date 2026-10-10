@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useHousehold } from '../../app/HouseholdContext';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
+import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { newOperationId } from '../../lib/id';
 
 type TemplateKey = 'birthday' | 'school' | 'medical' | 'ceremony' | 'trip' | 'custom';
@@ -57,6 +58,7 @@ function todayIso(): string {
 
 export function EventPlanPage() {
   const navigate = useNavigate();
+  const run = useCommandAttempt();
   const { members } = useHousehold();
   const [templateKey, setTemplateKey] = useState<TemplateKey>('school');
   const [title, setTitle] = useState('');
@@ -113,14 +115,14 @@ export function EventPlanPage() {
     setBusy(true);
     setError(null);
     try {
-      await callEdgeFunction(EDGE_FUNCTIONS.confirmEventPlan, {
-        operation_id: newOperationId(),
+      const result = await run<{ family_event_id: string }>(`event-plan:${draft.draft_id}:r${draft.revision}`, EDGE_FUNCTIONS.confirmEventPlan, operation_id => ({
+        operation_id,
         draft_id: draft.draft_id,
         expected_revision: draft.revision,
         reviewed_event: { title, event_date: eventDate, location, details },
         selected_todos: selected,
-      });
-      navigate('/week');
+      }));
+      navigate(`/events/${result.family_event_id}`);
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : 'イベントを登録できませんでした。');
     } finally {

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import {
@@ -7,6 +7,7 @@ import {
   type DailyBriefScheduleItem,
   type TodayRequestAttempt,
 } from './useTodayData';
+import { IncomingRequestRow } from '../requests/Requests';
 import { usePendingActions } from './usePendingActions';
 import { TodayTaskItem } from './TodayTaskItem';
 import { TomorrowPreparationCard } from './TomorrowPreparationCard';
@@ -14,12 +15,9 @@ import { PendingActionCard } from './PendingActionCard';
 import { PendingActionEditModal } from './PendingActionEditModal';
 import { PERIOD_LABELS } from '../handovers/Handovers';
 import { TaskFormModal } from '../tasks/TaskFormModal';
-import { QuickAdd } from '../tasks/QuickAdd';
 import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
-import { formatDateTimeJa } from '../../lib/date';
-import { formatTokyoHeading } from './todayClock';
 import { useTodayClock } from './useTodayClock';
 import type { PendingAction, RequestRow, TaskInstance } from '../../lib/types';
 import { buildCodmonCompletionPrerequisite } from './codmonReadiness';
@@ -27,7 +25,6 @@ import { LoadingScreen } from '../../components/LoadingScreen';
 import { HandoverActions } from '../handovers/HandoverActions';
 import { DayAgendaSheet } from '../planning/DayAgendaSheet';
 import { tokyoIsoDate } from '../planning/dateHelpers';
-import { useSearchParams } from 'react-router-dom';
 import { useDayTaskRecording } from './useDayTaskRecording';
 import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
 
@@ -37,16 +34,6 @@ const INPUT_LABELS: Record<string, string> = {
   nonpickup_evening: '今夜の入力',
 };
 
-const REQUEST_STATE_LABELS: Record<TodayRequestAttempt['state'], string> = {
-  pending: '返事待ち',
-  checking: '確認中',
-  consulting: '相談中',
-  awaiting_confirmation: '合意確認待ち',
-  accepted: '引き受け済み',
-  declined: '見送り済み',
-  expired: '返事期限切れ',
-  cancelled: '取り消し済み',
-};
 
 export function selectNextOwnedTask(tasks: TaskInstance[], userId: string | null | undefined) {
   if (!userId) return null;
@@ -85,103 +72,8 @@ export function todayRequestTransitionPayload(requestId: string, attempt: TodayR
   };
 }
 
-function RequestQuickActions({
-  request,
-  attempt,
-  onChanged,
-}: {
-  request: RequestRow;
-  attempt?: TodayRequestAttempt;
-  onChanged: () => void | Promise<void>;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showOther, setShowOther] = useState(false);
-  const actionable = isTodayRequestAttemptActionable(attempt);
-  const runCommand = useCommandAttempt();
-
-  async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
-    if (!attempt || !isTodayRequestAttemptActionable(attempt)) {
-      setError('このお願いは最新状態を確認してから返事してください。');
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const functionName = kind === 'checking' || kind === 'consult'
-        ? EDGE_FUNCTIONS.respondRequest
-        : kind === 'accept' && request.assignment_task_instance_id
-          ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest
-          : kind === 'accept'
-            ? EDGE_FUNCTIONS.acceptRequest
-            : EDGE_FUNCTIONS.declineRequest;
-      const result = await runCommand<{ reproposal_required?: boolean }>(
-        `request:${request.id}:attempt:${attempt.id}:respond:${kind}:r${attempt.revision}:t${attempt.terms_revision}`,
-        functionName,
-        (operationId) => ({
-          operation_id: operationId,
-          ...todayRequestTransitionPayload(request.id, attempt),
-          ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}),
-        }),
-      );
-      if (result.reproposal_required) {
-        setError('返事期限を過ぎています。お願い画面から新しい条件で提案してください。');
-      }
-      await onChanged();
-    } catch (err) {
-      setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <li className="request-item">
-      <div>
-        <strong>{request.shared_title}</strong>
-        {request.shared_message && <p>{request.shared_message}</p>}
-        {attempt && (
-          <span className="task-item-meta">返事状態: {REQUEST_STATE_LABELS[attempt.state]}</span>
-        )}
-        {attempt?.reply_due_at && (
-          <span className="task-item-meta">返事期限: {formatDateTimeJa(attempt.reply_due_at)}</span>
-        )}
-        {request.due_at && (
-          <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>
-        )}
-      </div>
-      {actionable && (
-        <div className="task-item-actions">
-          <button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button>
-          <button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button>
-          <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>
-            その他の返答
-          </button>
-        </div>
-      )}
-      {actionable && showOther && attempt && (
-        <div className="request-other-actions">
-          {attempt.state === 'pending' && (
-            <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('checking')}>
-              確認してみる
-            </button>
-          )}
-          <button type="button" className="secondary-button" disabled={busy} onClick={() => respond('consult')}>
-            相談する
-          </button>
-          <p className="task-item-meta">相談では、今の条件を二人で確認してから合意します。担当はこの時点では変わりません。</p>
-        </div>
-      )}
-      {!attempt && <p className="task-item-meta">最新の返事状態を確認中です。</p>}
-      {attempt && !actionable && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && (
-        <p className="task-item-meta">相談中です。お願い画面で条件を確認してください。</p>
-      )}
-      {attempt && !actionable && !['consulting', 'awaiting_confirmation'].includes(attempt.state) && (
-        <p className="task-item-meta">このお願いはここから返事できません。お願い画面で最新状態を確認してください。</p>
-      )}
-      {error && <p role="alert" className="error-text">{error}</p>}
-    </li>
-  );
+function RequestQuickActions({ request, attempt, onChanged }: { request: RequestRow; attempt?: TodayRequestAttempt; onChanged: () => void | Promise<void> }) {
+  return <IncomingRequestRow request={request} attempt={attempt ? { ...attempt, terms: attempt.terms ?? null } : undefined} onChanged={onChanged} />;
 }
 
 function AssignmentNeededQuickAction({
@@ -318,7 +210,7 @@ export function Today() {
       <button type="button" className="secondary-button" onClick={() => move(1)} aria-label="翌日">翌日 ›</button>
       <div className="daily-recording-row">
         <span role="status" aria-label="自分の記録状況" className="daily-recording-status">
-          <span className="daily-recording-caption">家族の記録</span>
+          <span className="daily-recording-caption">自分の記録</span>
           {recording.summary ? <TaskRecordingBadge summary={recording.summary} future={date > today} /> : recording.error ? '取得できませんでした' : '確認中…'}
           {recording.error && <button type="button" className="text-button" onClick={() => void recording.refresh()}>再試行</button>}
         </span>
@@ -339,6 +231,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
   const pending = usePendingActions(household?.id ?? null, user?.id ?? null);
   const clock = useTodayClock(refreshToday);
   const navigate = useNavigate();
+  const [assignmentRequest, setAssignmentRequest] = useState<{ id: string; token: number } | null>(null);
   const [editingTask, setEditingTask] = useState<TaskInstance | null>(null);
   const [correctionTitle, setCorrectionTitle] = useState<string | null>(null);
   const [editingPendingAction, setEditingPendingAction] = useState<PendingAction | null>(null);
@@ -363,13 +256,17 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     (session) => session.can_act && session.session_type === preferredInputType,
   ) ?? reconciliationSessions.find((session) => session.can_act) ?? null;
   const currentInputId = currentInput?.id ?? currentInput?.session_id ?? null;
+  const [entryParams] = useSearchParams();
+  useEffect(() => {
+    if (entryParams.get('entry') === 'checkin' && currentInputId) navigate(`/checkin/${currentInputId}`, { replace: true });
+  }, [entryParams, currentInputId, navigate]);
 
   const phaseTasks = clock.daypart === 'morning'
     ? data.taskGroups.morning
     : clock.daypart === 'day'
       ? data.taskGroups.daytime
       : data.taskGroups.evening;
-  const nextTask = phaseTasks[0] ?? data.tasks[0] ?? null;
+  const nextTask = phaseTasks.find(task => !task.due_at || new Date(task.due_at).getTime() >= clock.now.getTime()) ?? null;
   const nonRequestUrgent = data.urgentActions.filter((item) => !item.request_id);
   const hasPendingDecisions = data.urgentActions.length > 0 || pending.pendingActions.length > 0;
 
@@ -381,7 +278,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     planned_assignee_id?: string | null;
     due_at?: string | null;
   }>;
-  const tomorrowDate = data.tomorrowImpact.local_date ?? clock.localDate;
+  const tomorrowDate = data.tomorrowImpact.local_date ?? tokyoIsoDate(new Date(clock.now.getTime() + 86400000));
   const tomorrowDropoff = tomorrowTasks.find(
     (task) => task.task_kind === 'transport' && task.category === 'dropoff',
   );
@@ -410,6 +307,9 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
             members={members}
             hasPartner={Boolean(partner)}
             currentUserId={user?.id}
+            specialToday={data.specialTaskIds?.includes(task.id)}
+            assignmentRequest={assignmentRequest?.id === task.id ? assignmentRequest.token : 0}
+            compact
             onEdit={setEditingTask}
             onChanged={refreshToday}
             completionPrerequisite={
@@ -426,10 +326,10 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
   function renderTaskSection(title: string, tasks: TaskInstance[], eyebrow?: string) {
     if (tasks.length === 0) return null;
     return (
-      <section className="card task-section">
+      <section className="card task-section" data-current={eyebrow === 'いま' || undefined}>
         <div className="section-heading">
           <div>
-            {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+
             <h2>{title}</h2>
           </div>
           <span>{tasks.length}件</span>
@@ -439,12 +339,22 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     );
   }
 
+  function renderPastWork(title: string, tasks: TaskInstance[]) {
+    if (tasks.length === 0) return null;
+    return <details className="today-past-work" aria-label={title}>
+      <summary><span>{title} {tasks.length}件（記録する）
+        <small>{tasks.map(task => task.title).join('、')}</small>
+      </span></summary>
+      {renderTaskList(tasks)}
+    </details>;
+  }
+
   function renderDecisions() {
     if (!hasPendingDecisions) return null;
     return (
       <section id="today-attention" className="card decision-card" aria-label="まず確認">
         <div className="section-heading">
-          <div><p className="eyebrow">まず確認</p><h2>先に決めること</h2></div>
+          <div><h2>先に決めること</h2></div>
           <span>{data.urgentActions.length + pending.pendingActions.length}件</span>
         </div>
         <ul className="request-list">
@@ -494,7 +404,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     return (
       <section className="card compact-section" aria-label="いつもと違う">
         <div className="section-heading">
-          <div><p className="eyebrow">いつもと違うこと</p><h2>今日の例外</h2></div>
+          <div><h2>今日の例外</h2></div>
           <span>{data.exceptions.length}件</span>
         </div>
         <ul className="today-schedule-list">
@@ -514,7 +424,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     return (
       <section id="today-waiting" className="card compact-section waiting-summary" aria-label="待ち・確認">
         <div className="section-heading">
-          <div><p className="eyebrow">待ち・確認</p><h2>確認すること</h2></div>
+          <div><h2>確認すること</h2></div>
           <span>{data.waitingTasks.length}件</span>
         </div>
         {renderTaskList(data.waitingTasks)}
@@ -527,13 +437,13 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     return (
       <section className="card" aria-label="今日の予定">
         <div className="section-heading">
-          <div><p className="eyebrow">今 / 次</p><h2>今日の予定</h2></div>
+          <div><h2>今日の予定</h2></div>
           <span>{data.briefSchedule.length}件</span>
         </div>
         <ul className="today-schedule-list">
           {data.briefSchedule.map((item) => (
             <li key={item.family_event_id ?? item.occurrence_key ?? `${item.kind}:${item.starts_at}:${item.title}`}>
-              {scheduleLabel(item)}
+              {item.family_event_id ? <Link to={`/events/${item.family_event_id}`} aria-label={`${item.title}の予定と準備を見る`}>{scheduleLabel(item)}</Link> : scheduleLabel(item)}
             </li>
           ))}
         </ul>
@@ -562,7 +472,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     if (data.unreadHandovers.length === 0) return null;
     return (
       <section className="card compact-section" aria-label="引き継ぎ・共有">
-        <div className="section-heading"><div><p className="eyebrow">引き継ぎ・共有</p><h2>{data.unreadHandovers.every((handover) => handover.author_id === user?.id) ? 'あなたが共有中' : '未読の引き継ぎ'}</h2></div></div>
+        <div className="section-heading"><div><h2>{data.unreadHandovers.every((handover) => handover.author_id === user?.id) ? 'あなたが共有中' : '未読の引き継ぎ'}</h2></div></div>
         <ul className="handover-list">
           {data.unreadHandovers.map((handover) => (
             <li key={handover.id} className="handover-item unread">
@@ -610,19 +520,15 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
   function renderTomorrowImpact() {
     if (data.tomorrowImpact.impact_count === 0) return null;
     return (
-      <section id="today-tomorrow" className="card compact-section" aria-label="明日に影響">
-        <div className="section-heading">
-          <div><p className="eyebrow">明日に影響</p><h2>明日の見通し</h2></div>
-          <span>{data.tomorrowImpact.impact_count}件</span>
-        </div>
+      <div id="today-tomorrow" aria-label="明日の予定と担当">
         <ul className="today-schedule-list">
           {tomorrowTasks.slice(0, 3).map((task) => <li key={task.task_id}>{task.title ?? 'タスク'}</li>)}
           {data.tomorrowImpact.schedule.slice(0, Math.max(0, 3 - tomorrowTasks.length)).map((item) => (
             <li key={item.family_event_id ?? item.occurrence_key ?? `${item.kind}:${item.starts_at}`}>{scheduleLabel(item)}</li>
           ))}
         </ul>
-        <button type="button" className="text-button" onClick={() => navigate('/week')}>週の予定を開く</button>
-      </section>
+        <button type="button" className="text-button" onClick={() => navigate(`/today?date=${tomorrowDate}`)}>明日の詳細を開く</button>
+      </div>
     );
   }
 
@@ -647,7 +553,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     const missed = tasks.filter((task) => task.status === 'skipped');
     const done = tasks.filter((task) => task.status !== 'skipped');
     return [
-      { label: '実施漏れ', tasks: missed },
+      { label: 'できなかった', tasks: missed },
       { label: '朝', tasks: done.filter((task) => task.routine_phase === 'morning') },
       { label: '日中・いつでも', tasks: done.filter((task) => task.routine_phase !== 'morning' && task.routine_phase !== 'evening') },
       { label: '夜', tasks: done.filter((task) => task.routine_phase === 'evening') },
@@ -665,11 +571,11 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
           className="collapsible-toggle"
           onClick={() => setCompletedCollapsed((value) => !value)}
         >
-          記録済み（{completedTasks.length}件{couldNotDoCount > 0 ? `・実施漏れ${couldNotDoCount}件` : ''}）{completedCollapsed ? '▼' : '▲'}
+          記録済み（{completedTasks.length}件{couldNotDoCount > 0 ? `・できなかった${couldNotDoCount}件` : ''}）{completedCollapsed ? '▼' : '▲'}
         </button>
         {!completedCollapsed && (
           <>
-            <p className="empty-hint">✓＝完了、−＝実施漏れ。押し間違えは各行の「•••」から戻せます。</p>
+            <p className="empty-hint">✓＝完了、−＝できなかった。押し間違えは各行の「•••」から戻せます。</p>
             {completedGroups(completedTasks).map((group) => (
               <div className="completed-group" key={group.label}>
                 <h3 className="completed-group-heading">{group.label}<span>{group.tasks.length}件</span></h3>
@@ -702,22 +608,16 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
   const daytimeResidual = data.taskGroups.daytime;
   const eveningTasks = data.taskGroups.evening;
   const optionalTasks = data.taskGroups.optional;
-  const unfinishedBeforeEvening = [...morningResidual, ...daytimeResidual];
 
   return (
-    <div className="app-shell">
-      <div className="today-header today-page-heading">
-        <div>
-          <p className="eyebrow">{formatTokyoHeading(clock.now)} · 今日の段取り</p>
-          <h1>今日</h1>
-        </div>
-        <QuickAdd label="＋ 追加" ariaLabel="追加する" onTaskSaved={refreshToday} />
-      </div>
+    <div className="app-shell today-dashboard">
+      <div className="today-header today-page-heading"><h1>今日</h1></div>
 
       {data.status === 'stale' && (
         <p role="status" className="empty-hint">通信が不安定なため、最後に取得できた内容を表示しています。</p>
       )}
-      {data.error && <p role="alert" className="error-text">{data.error}</p>}
+      {data.error && <section className="card" role="alert"><strong>今日の情報を取得できませんでした</strong><p>{data.status === 'stale' ? '最後に取得した内容です。担当や予定が変わっている可能性があります。' : '予定なし・担当未定とは限りません。通信状態を確認してください。'}</p><button onClick={() => void refreshToday()}>もう一度読み込む</button></section>}
+      {entryParams.get('entry') === 'checkin' && !currentInputId && !data.error && <section className="card" role="status"><p>今まとめて入力する項目はありません。下の作業から、終わったものを個別に記録できます。</p><button className="text-button" onClick={() => navigate('/history')}>記録を見返す</button></section>}
       {pending.error && <p role="alert" className="error-text">確認項目の取得に失敗しました: {pending.error}</p>}
 
       <section className="today-shortcuts" aria-label="よく使う操作">
@@ -731,83 +631,23 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
       </section>
 
 
-      {clock.daypart === 'morning' && (
-        <>
-          {renderDecisions()}
-          {renderExceptions()}
-          {renderTaskSection('昨夜からの持ち越し', data.carryoverTasks, 'いつもと違うこと')}
-          {renderInput()}
-          {renderTaskSection('朝やること', morningResidual, '今日やること')}
-          {renderHandovers()}
-          {renderWaiting()}
-          {renderTaskSection('このあと', [...daytimeResidual, ...eveningTasks], '先の見通し')}
-          {data.alreadyHandledTasks.length > 0 && renderTaskSection('対応済み', data.alreadyHandledTasks, '二重対応を防ぐ')}
-          {renderSchedule()}
-          {renderPartnerState()}
-        </>
-      )}
-
-      {clock.daypart === 'day' && (
-        <>
-          {renderDecisions()}
-          {renderExceptions()}
-          {renderTaskSection('持ち越し', data.carryoverTasks, 'いつもと違うこと')}
-          {nextTask && (
-            <section className="next-action-hero" aria-labelledby="next-action-title">
-              <span className="next-action-pill">次にやること</span>
-              <p className="next-action-time">
-                {nextTask.due_at
-                  ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(nextTask.due_at))
-                  : '今日中'}
-              </p>
-              <h2 id="next-action-title">{nextTask.title}</h2>
-              <p>今日のDailyBriefで、いま優先する担当項目です。</p>
-              <div className="next-action-actions">
-                <button type="button" className="hero-primary" onClick={() => setEditingTask(nextTask)}>開く →</button>
-                <button type="button" className="hero-secondary" onClick={() => navigate('/week')}>今回だけ変更</button>
-              </div>
-            </section>
-          )}
-          {renderInput()}
-          {renderTaskSection('朝の残り', morningResidual, 'まだ終わっていないこと')}
-          {renderTaskSection('今やること', daytimeResidual, '今日やること')}
-          {renderHandovers()}
-          {renderWaiting()}
-          {renderTaskSection('このあと', eveningTasks, '先の見通し')}
-          {data.alreadyHandledTasks.length > 0 && renderTaskSection('対応済み', data.alreadyHandledTasks, '二重対応を防ぐ')}
-          {renderSchedule()}
-          {renderPartnerState()}
-        </>
-      )}
-
-      {clock.daypart === 'evening' && (
-        <>
-          {renderDecisions()}
-          {renderExceptions()}
-          {renderHandovers()}
-          {data.morningSummary.totalCount > 0 && (
-            <section className="card compact-section" aria-label="朝の完了まとめ">
-              <p className="eyebrow">もう済んでいること</p>
-              <h2>朝 {data.morningSummary.completedCount}/{data.morningSummary.totalCount} 完了</h2>
-            </section>
-          )}
-          {renderWaiting()}
-          {renderSchedule()}
-          {renderTaskSection('まだ残っていること', [...data.carryoverTasks, ...unfinishedBeforeEvening], '今日をしめくくる')}
-          {renderTaskSection('夜にやること', eveningTasks, '今日やること')}
-          {renderTomorrowImpact()}
-          {renderInput()}
-          {renderPartnerState()}
-          {renderShopping()}
-          {data.reconciliation.remaining_count > 0 && !currentInput && (
-            <section className="card compact-section" aria-label="まとめ入力">
-              <p className="eyebrow">まとめ入力</p>
-              <h2>未確認 {data.reconciliation.remaining_count}件</h2>
-              <p className="empty-hint">担当者の入力待ちです。</p>
-            </section>
-          )}
-        </>
-      )}
+      {renderDecisions()}
+      {renderExceptions()}
+      {renderSchedule()}
+      {clock.daypart === 'day' && nextTask && <section className="card next-task-compact" aria-label="次にやること"><strong>次にやること</strong><p>{nextTask.title}</p><div className="button-row"><button className="text-button" onClick={() => document.getElementById(`task-${nextTask.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>作業を確認</button><button className="text-button" onClick={() => setAssignmentRequest({ id: nextTask.id, token: Date.now() })}>今回だけ変更</button></div></section>}
+      <section className="today-own-work" aria-label="自分のやること"><h2>自分のやること</h2>
+        {renderTaskSection('持ち越し', data.carryoverTasks)}
+        {clock.daypart !== 'evening' && renderTaskSection(clock.daypart === 'morning' ? '朝やること' : '朝の残り', morningResidual, clock.daypart === 'morning' ? 'いま' : undefined)}
+        {clock.daypart !== 'evening' && renderTaskSection('日中にやること', daytimeResidual, clock.daypart === 'day' ? 'いま' : undefined)}
+        {renderTaskSection('夜にやること', eveningTasks, clock.daypart === 'evening' ? 'いま' : undefined)}
+        {clock.daypart === 'evening' && renderPastWork('朝の残り', morningResidual)}
+        {clock.daypart === 'evening' && renderPastWork('日中の残り', daytimeResidual)}
+      </section>
+      {renderInput()}
+      {renderWaiting()}
+      {renderHandovers()}
+      {data.alreadyHandledTasks.some(task => task.actual_completed_by_id !== user?.id) && renderTaskSection('もう済んでいること', data.alreadyHandledTasks.filter(task => task.actual_completed_by_id !== user?.id))}
+      {renderPartnerState()}
 
       {optionalTasks.length > 0 && (
         <details className="today-optional">
@@ -820,18 +660,18 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
       )}
       {renderCompleted()}
 
-      {clock.daypart !== 'evening' && renderTomorrowImpact()}
-      {clock.daypart !== 'evening' && renderShopping()}
 
-      {tomorrowDate && (
+      {!data.error && tomorrowDate && (
         <TomorrowPreparationCard
           tomorrowDate={tomorrowDate}
           assigneeId={tomorrowAssigneeId}
           assigneeLabel={tomorrowAssigneeLabel}
           existingTitles={tomorrowPreparationTitles}
           onChanged={() => void refreshToday()}
-        />
+        >{renderTomorrowImpact()}</TomorrowPreparationCard>
       )}
+
+      {renderShopping()}
 
       {data.status === 'empty' && !pending.loading && !pending.error && !hasPendingDecisions && (
         <section className="card compact-section" aria-label="今日の空状態">

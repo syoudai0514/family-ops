@@ -14,7 +14,7 @@ describe('date-specific actuals from the top screen', () => {
     expect(screen.getByLabelText('自分の記録状況')).toHaveTextContent('すべて完了');
     fireEvent.click(screen.getByRole('button',{name:'前日'}));
     expect(screen.getByText('対象日:2026-10-01')).toBeTruthy();
-    expect(screen.getByLabelText('自分の記録状況')).toHaveTextContent('記録済み・実施漏れ 1件');
+    expect(screen.getByLabelText('自分の記録状況')).toHaveTextContent('記録済み・できなかった 1件');
     fireEvent.change(screen.getByLabelText('表示する日'),{target:{value:'2026-10-06'}});
     expect(screen.getByText('対象日:2026-10-06')).toBeTruthy();
     fireEvent.click(screen.getByRole('button',{name:'翌日'}));

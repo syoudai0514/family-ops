@@ -220,10 +220,20 @@ export async function resolveEditedConciergeCandidate(candidate: ConciergeCandid
 
 export function readOnlyDestination(intent: NonNullable<ConciergeProposal['read_only_intent']>): string {
   if (intent === 'today') return '/today';
-  if (intent === 'tomorrow') return '/week';
+  if (intent === 'tomorrow') { const tomorrow = new Date(Date.now() + 86400000); const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(tomorrow); return `/today?date=${date}`; }
   if (intent === 'week') return '/week';
   if (intent === 'input') return '/today?entry=checkin';
   if (intent === 'share') return '/handovers';
   if (intent === 'other') return '/settings';
   return '/today';
+}
+
+export function missingFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    assignee: 'お願い先', target: '対象の作業', task: '対象の作業',
+    scheduledDate: '日付', scheduled_date: '日付', date: '日付',
+    dueAt: '期限', due_at: '期限', time: '時刻', title: '内容',
+    sharedMessage: '送る文面', shared_message: '送る文面', scope: '変更する期間',
+  };
+  return labels[field] ?? '確認が必要な内容';
 }

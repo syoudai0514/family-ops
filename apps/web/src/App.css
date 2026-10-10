@@ -1479,3 +1479,50 @@ fieldset {
 .task-checklist-item.could-not-do .task-checklist-content strong {
   font-weight: 600;
 }
+
+/* Daily work keeps the same landmarks through morning, afternoon and evening. */
+.today-page-heading { margin-bottom: .65rem; }
+.today-page-heading h1 { font-size: 1.35rem; margin: 0; }
+.today-own-work > h2 { font-size: 1.1rem; margin: 1rem 0 .5rem; }
+.today-own-work .task-section { padding: .8rem; margin: .6rem 0; }
+.task-section[data-current] { border-left: 3px solid var(--accent, #167061); }
+.task-section .section-heading h2 { font-size: 1rem; margin: 0; }
+.task-compact { padding: .65rem 0; }
+.task-compact .task-checklist-main { display: flex; flex-wrap: nowrap; align-items: center; gap: .5rem; }
+.task-compact .task-checklist-content { flex: 1; min-width: 0; }
+.task-compact .task-actions { flex: 0 0 auto; width: auto; margin: 0; }
+.task-compact .task-action { min-height: 44px; padding: .4rem .55rem; font-size: .8rem; }
+.task-compact .task-overflow { flex: 0 0 auto; }
+.task-compact .task-overflow summary { min-width: 36px; min-height: 44px; display: grid; place-items: center; }
+.next-task-compact { padding: .8rem; }
+.next-task-compact p { margin: .35rem 0; }
+.concierge-commit { margin-top: 1rem; }
+.settings-list { margin-bottom: 1rem; }
+.undo-notice { position: fixed; bottom: calc(84px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 200; width: min(94vw, 560px); background: #fff; border: 2px solid var(--accent, #44715b); box-shadow: 0 5px 24px #0002; border-radius: 14px; padding: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.undo-notice span { flex: 1 1 160px; }
+.undo-notice p { flex-basis: 100%; margin: 0; }
+.transport-edit-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.shopping-batch fieldset { display: grid; gap: 8px; }
+.family-role-rows, .history-search { display: grid; gap: 12px; }
+.task-compact .task-overflow summary { min-width: 44px; }
+/* Daily information should fit near the first screen, with readable 44px actions. */
+.daily-date-nav { padding-top: 12px; padding-bottom: 6px; }
+.today-dashboard { padding-top: 6px; }
+.today-dashboard .today-shortcuts { margin: 8px 0 12px; gap: 6px; }
+.today-dashboard .today-shortcuts button { min-height: 44px; padding: 8px; }
+.today-dashboard .card { padding: 14px; margin-bottom: 12px; }
+.today-dashboard .section-heading { margin-bottom: 10px; gap: 8px; }
+.today-dashboard .section-heading h2 { margin: 0; font-size: 1.1rem; }
+.today-dashboard .today-own-work > h2 { margin: 12px 0 8px; font-size: 1.1rem; }
+.today-dashboard .decision-card .request-item { padding: 0; border: 0; background: transparent; }
+.today-dashboard .request-item p { margin: 8px 0; }
+.today-dashboard .task-item-meta { margin: 4px 0; }
+.today-dashboard .request-item .task-item-actions { margin-top: 8px; }
+.today-past-work { margin: 6px 0; }
+.today-past-work > summary { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .9rem; color: var(--color-text-muted); }
+.today-past-work > summary::before { content: '▸'; }
+.today-past-work > summary small { display: block; color: var(--color-text); }
+.today-past-work[open] > summary::before { content: '▾'; }
+.today-schedule-list a { color: inherit; text-decoration: none; }
+.today-schedule-list a:hover { text-decoration: underline; }
+.today-schedule-list a:focus-visible { outline: 2px solid var(--accent, #167061); outline-offset: 3px; border-radius: 2px; }

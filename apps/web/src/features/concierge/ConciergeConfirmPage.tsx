@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useHousehold } from '../../app/HouseholdContext';
-import { clearConciergeDraft, type ConciergeCandidate, type ConciergeRouteState } from './conciergeFlow';
+import { clearConciergeDraft, missingFieldLabel, type ConciergeCandidate, type ConciergeRouteState } from './conciergeFlow';
 import { commitConciergeCandidates, type ConciergeCommitResult, type DuplicateDecision } from './conciergeCommit';
 import { requestMessageIsReviewed } from './confirmedCommand';
 import './concierge.css';
 
-const KIND_LABEL = { task: 'ToDo', request: 'お願い', shopping: '買い物', share: '共有・引き継ぎ', actual: '実績' } as const;
+const KIND_LABEL = { task: 'やること', request: 'お願い', shopping: '買い物', share: '共有・引き継ぎ', actual: '実績' } as const;
 
 export function needsDuplicateDecision(candidate: ConciergeCandidate): boolean {
   return candidate.duplicateMatch !== null;
@@ -16,12 +16,12 @@ export function failedCandidateIds(results: ConciergeCommitResult[] | null): str
   return (results ?? []).filter((item) => !item.ok).map((item) => item.candidateId);
 }
 
-export function ConciergeConfirmPage() {
+export function ConciergeConfirmPage({ candidates: provided, routeState, embedded = false, onCommitStart }: { candidates?: ConciergeCandidate[]; routeState?: ConciergeRouteState; embedded?: boolean; onCommitStart?: () => void } = {}) {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = (location.state ?? {}) as ConciergeRouteState;
+  const state = (routeState ?? location.state ?? {}) as ConciergeRouteState;
   const { members, me, partner, household } = useHousehold();
-  const candidates = state.candidates ?? [];
+  const candidates = provided ?? state.candidates ?? [];
   const unresolved = useMemo(() => candidates.filter((candidate) => candidate.missingFields.length > 0), [candidates]);
   const duplicateCandidates = useMemo(() => candidates.filter(needsDuplicateDecision), [candidates]);
   const [duplicateDecisions, setDuplicateDecisions] = useState<Record<string, DuplicateDecision>>({});
@@ -31,6 +31,7 @@ export function ConciergeConfirmPage() {
   const unreviewedMessages = candidates.filter((candidate) => candidate.kind === 'request' && !requestMessageIsReviewed(candidate));
 
   async function commit(selectedCandidates: ConciergeCandidate[], priorResults: ConciergeCommitResult[] = []) {
+    onCommitStart?.();
     setBusy(true);
     const committed = await commitConciergeCandidates(selectedCandidates, {
       members, me, partner, timeZone: household?.timezone ?? 'Asia/Tokyo',
@@ -59,30 +60,32 @@ export function ConciergeConfirmPage() {
   const allSaved = results?.length === candidates.length && results.every((item) => item.ok);
   const hasFailures = failedCandidateIds(results).length > 0;
 
-  return <div className="app-shell concierge-page">
+  return <div className={embedded ? "concierge-commit" : "app-shell concierge-page"}>
+    {!embedded && <>
     <button type="button" className="text-button concierge-back" onClick={() => navigate(-1)}>‹ 戻る</button>
     <div className="eyebrow">最終確認</div><h1>この内容で登録</h1>
     <p className="page-lead">登録前に、日付・時刻・担当を確認してください。</p>
     {candidates.map((candidate) => <section key={candidate.candidateId} className="card concierge-candidate"><span className="badge">{KIND_LABEL[candidate.kind]}</span><b>{candidate.title}</b><small>自分の入力：{candidate.sourceText}</small>{candidate.intent?.scheduledDate && <small>対象日：{candidate.intent.scheduledDate}</small>}{candidate.intent && <small>時刻：{candidate.intent.dueLocalTime ?? (candidate.intent.daypart === 'night' ? '夜（時刻未定）' : candidate.intent.daypart === 'morning' ? '朝（時刻未定）' : candidate.intent.daypart === 'noon' ? '昼（時刻未定）' : candidate.intent.daypart === 'evening' ? '夕方（時刻未定）' : '時刻未定')}</small>}{candidate.intent?.targetRole && <small>担当：{candidate.intent.targetRole === 'papa' ? 'パパ' : 'ママ'}</small>}{candidate.kind === 'request' && candidate.intent?.sharedMessage && <small>相手に送る文面：{candidate.intent.sharedMessage}</small>}{candidate.intent?.context && <small>予定：{candidate.intent.context}</small>}{(candidate.intent?.subtasks?.length ?? 0) > 0 && <small>準備：{candidate.intent?.subtasks?.join(' / ')}</small>}</section>)}
-    {unreviewedMessages.length > 0 && <section className="card"><b>送る文面をもう一度確認してください</b><p>条件を変更したお願いがあります。候補画面へ戻って文面を確認するまで送信しません。</p><button type="button" className="secondary-button" onClick={() => navigate(-1)}>候補へ戻る</button></section>}
-    {unresolved.length > 0 && <section className="card"><b>ここだけ確認が必要です</b>{unresolved.map((candidate) => <p key={candidate.candidateId}>{candidate.title}：{candidate.missingFields.join(' / ')}</p>)}<button type="button" className="secondary-button" onClick={() => navigate(-1)}>候補へ戻る</button></section>}
+    </>}
+    {unreviewedMessages.length > 0 && <section className="card"><b>送る文面をもう一度確認してください</b><p>条件を変更したお願いがあります。文面を確認するまで送信しません。</p>{!embedded && <button type="button" className="secondary-button" onClick={() => navigate(-1)}>候補へ戻る</button>}</section>}
+    {unresolved.length > 0 && <section className="card"><b>ここだけ確認が必要です</b>{unresolved.map((candidate) => <p key={candidate.candidateId}>{candidate.title}：{candidate.missingFields.map(missingFieldLabel).join(' / ')}</p>)}{!embedded && <button type="button" className="secondary-button" onClick={() => navigate(-1)}>候補へ戻る</button>}</section>}
     {duplicateCandidates.length > 0 && <section className="card" aria-label="重複候補の確認">
       <b>既存データと一致する候補を確認</b>
       <p className="page-lead">既存を使う / 既存を更新する / 別物として追加する、のどれかを人が選ぶまで登録しません。</p>
       {duplicateCandidates.map((candidate) => <div key={candidate.candidateId} className="duplicate-review-row">
         <strong>{candidate.title}</strong>
-        {candidate.duplicateMatch && <small>一致: {candidate.duplicateMatch.evidence.matchedTitle}{candidate.duplicateMatch.evidence.matchedDate ? ` / ${candidate.duplicateMatch.evidence.matchedDate}` : ''}（rev {candidate.duplicateMatch.expectedRevision}）</small>}
+        {candidate.duplicateMatch && <small>一致: {candidate.duplicateMatch.evidence.matchedTitle}{candidate.duplicateMatch.evidence.matchedDate ? ` / ${candidate.duplicateMatch.evidence.matchedDate}` : ''}</small>}
         <div className="concierge-actions">
-          <button type="button" className={duplicateDecisions[candidate.candidateId] === 'existing' ? '' : 'secondary-button'} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'existing' }))}>既存を使う</button>
-          <button type="button" className={duplicateDecisions[candidate.candidateId] === 'update' ? '' : 'secondary-button'} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'update' }))}>既存を更新</button>
-          <button type="button" className={duplicateDecisions[candidate.candidateId] === 'separate' ? '' : 'secondary-button'} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'separate' }))}>別物として追加</button>
+          <button type="button" className={duplicateDecisions[candidate.candidateId] === 'existing' ? '' : 'secondary-button'} disabled={busy || results !== null} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'existing' }))}>既存を使う</button>
+          <button type="button" className={duplicateDecisions[candidate.candidateId] === 'update' ? '' : 'secondary-button'} disabled={busy || results !== null} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'update' }))}>既存を更新</button>
+          <button type="button" className={duplicateDecisions[candidate.candidateId] === 'separate' ? '' : 'secondary-button'} disabled={busy || results !== null} onClick={() => setDuplicateDecisions((current) => ({ ...current, [candidate.candidateId]: 'separate' }))}>別物として追加</button>
         </div>
       </div>)}
-      <p className="meta">「既存を更新」は表示中のID・revisionへCAS更新します。競合した場合は再確認が必要になり、新規作成へ切り替わりません。</p>
+      <p className="meta">家族が先に変更した場合は、最新の内容を再確認します。勝手に別の項目は作りません。</p>
     </section>}
-    {results && <section className="card"><b>{allSaved ? '登録完了' : '登録結果'}</b>{results.map((item) => <p key={item.candidateId}>{item.ok ? '✓' : '!'} {item.title}：{item.message}</p>)}{hasFailures && <><p className="empty-hint">成功した候補はそのまま保持し、失敗した候補だけ同じoperation IDで再実行できます。</p><button type="button" className="secondary-button" disabled={busy} onClick={() => void retryFailed()}>{busy ? '再試行中…' : '失敗した候補だけ再試行'}</button></>}</section>}
-    {!results && <button type="button" className="concierge-wide" disabled={busy || unresolved.length > 0 || duplicateUnresolved || unreviewedMessages.length > 0 || candidates.length === 0} onClick={() => void register()}>{busy ? '登録中…' : '登録する'}</button>}
+    {results && <section className="card"><b>{allSaved ? '登録完了' : '登録結果'}</b>{results.map((item) => <p key={item.candidateId}>{item.ok ? '✓' : '!'} {item.title}：{item.message}</p>)}{hasFailures && <><p className="empty-hint">成功した候補はそのまま保持し、失敗した候補だけ再試行できます。二重には登録しません。</p><button type="button" className="secondary-button" disabled={busy} onClick={() => void retryFailed()}>{busy ? '再試行中…' : '失敗した候補だけ再試行'}</button></>}</section>}
+    {!results && <button type="button" className="concierge-wide" disabled={busy || unresolved.length > 0 || duplicateUnresolved || unreviewedMessages.length > 0 || candidates.length === 0} onClick={() => void register()}>{busy ? '登録中…' : (candidates.some(candidate => candidate.kind === 'request') ? '確認した内容を登録・送信' : '選んだ内容を登録')}</button>}
     {allSaved && <button type="button" className="concierge-wide" onClick={() => navigate(state.originPath ?? '/today', { replace: true, state: { restoreScrollY: state.originScrollY ?? 0 } })}>元の画面へ戻る</button>}
-    {!allSaved && !results && <p className="meta">確認後の登録はcanonical Edge commandを使い、候補作成時のoperation IDを再試行でも維持します。</p>}
+    {!allSaved && !results && <p className="meta">登録するまでは、家族への送信や予定の変更は行いません。</p>}
   </div>;
 }
