@@ -277,7 +277,8 @@ info "7c. shared family setup endpoint: legacy onboarding, new actions, and hous
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/complete-onboarding-step" \
   -H 'Content-Type: application/json' -d '{"action":"read"}')
 [ "$code" = '401' ] || fail "family setup without JWT returned $code"
-for setup_input in '{"step":"connections"}' '{"action":"finish_later"}'; do
+# Deferring setup establishes the earlier steps required by the legacy ordered flow.
+for setup_input in '{"action":"finish_later"}' '{"step":"connections"}'; do
   setup_operation=$(python3 -c 'import uuid; print(uuid.uuid4())')
   setup_payload=$(jq -c --arg operation_id "$setup_operation" '. + {operation_id:$operation_id}' <<< "$setup_input")
   setup_household=$(curl -fsS -X POST "$API_URL/functions/v1/complete-onboarding-step" \
