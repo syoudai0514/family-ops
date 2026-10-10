@@ -719,12 +719,12 @@ async function main() {
     await waitForText(client, consultationRequest.shared_title);
     await waitForText(client, 'この変更案を確認する');
     const setTerms = async (value) => evaluate(client, `(() => {
-      const input = document.querySelector('input[aria-label="相談メモ"]');
+      const input = document.querySelector('textarea[aria-label="相談メモ"]');
       if (!input) return false;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
       input.dispatchEvent(new Event('input', { bubbles: true })); return true;
     })()`);
-    assert.equal(await setTerms('園で引き継ぐ'), true);
+    assert.equal(await setTerms('園で引き継ぐ\n18時30分なら対応できる'), true);
     await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この変更案を確認する')?.disabled === true`), { label: 'unsent terms cannot confirm saved version' });
     assert.equal(consultationCommands.length, 0);
     await setTerms('玄関で引き継ぐ');
