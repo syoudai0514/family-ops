@@ -250,7 +250,16 @@ export function TaskChecklistItem({
         operation_id: operationId,
         task_id: task.id,
         action: undo ? 'could_not_do_undo' : 'could_not_do',
+        expected_revision: task.revision ?? 1,
       }),
+      result => {
+        if (undo || !Number.isSafeInteger(result.revision)) return;
+        const revision = result.revision!;
+        offerUndo({ label: `${task.title}をできなかったと記録しました`, undo: async () => {
+          await runCommand(`task:${task.id}:could-not-do:undo:r${revision}`, EDGE_FUNCTIONS.completeTask, operation_id => ({ operation_id, task_id: task.id, action: 'could_not_do_undo', expected_revision: revision }));
+          await onChanged();
+        } });
+      },
     );
   }
 

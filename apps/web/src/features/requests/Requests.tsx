@@ -265,7 +265,7 @@ function ConsultationTerms({ request, attempt, busy, onAction }: { request: Requ
     if (!privateMemo.trim() || rewriting) return;
     setRewriting(true); setRewriteError(null);
     try {
-      const proposal = await callEdgeFunction<{ proposed_text: string }>(EDGE_FUNCTIONS.proposeAiDraft, { operation_id: newOperationId(), raw_text: privateMemo.trim(), target_type: 'request' });
+      const proposal = await callEdgeFunction<{ proposed_text: string }>(EDGE_FUNCTIONS.proposeAiDraft, { operation_id: newOperationId(), raw_text: privateMemo.trim(), target_type: 'consultation' });
       setMemo(proposal.proposed_text);
     } catch { setRewriteError('AIの提案を作れませんでした。入力は残っています。再試行するか、送る文面を直接入力してください。'); }
     finally { setRewriting(false); }
@@ -299,7 +299,7 @@ function ConsultationTerms({ request, attempt, busy, onAction }: { request: Requ
     <label>まずは気持ちも含めて入力（相手には送りません）<textarea value={privateMemo} disabled={busy || rewriting} onChange={event => setPrivateMemo(event.target.value)} placeholder="何が難しいか、どうなら引き受けられるか" /></label>
     <button type="button" className="secondary-button" disabled={busy || rewriting || !privateMemo.trim()} onClick={() => void softenProposal()}>{rewriting ? 'AIが伝え方を整理中…' : 'AIで揉めにくい伝え方を考える'}</button>
     {rewriteError && <p role="alert">{rewriteError}</p>}
-    <label>相手へ送る相談文（確認・編集できます）<input aria-label="相談メモ" value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：時間なら調整できそう" /></label>
+    <label>相手へ送る相談文（確認・編集できます）<textarea aria-label="相談メモ" rows={4} value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：時間なら調整できそう" /></label>
     <label>変更後の作業期限（具体条件）<input aria-label="変更後の作業期限" type="datetime-local" value={workDue} disabled={weeklyAssignment || busy || rewriting} onChange={(event) => setWorkDue(event.target.value)} /></label>
     {weeklyAssignment && <p className="task-item-meta">「今週だけ」は担当をまとめて変更します。時刻の変更は、それぞれの日の予定から相談してください。</p>}
     {request.assignment_task_instance_id && <p className="task-item-meta">担当の変更: このお願いの対象を、依頼された人へ変更します。別の作業を頼む場合は新しいお願いを作ってください。</p>}

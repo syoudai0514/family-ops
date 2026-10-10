@@ -343,6 +343,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       operation_id: expect.any(String),
       task_id: 'anyone-1',
       action: 'could_not_do',
+      expected_revision: 4,
     }));
   });
 
@@ -360,6 +361,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       operation_id: expect.any(String),
       task_id: 'anyone-1',
       action: 'could_not_do_undo',
+      expected_revision: 4,
     }));
   });
 
@@ -464,4 +466,19 @@ it('keeps immediate undo available after the completed row leaves the list, usin
   expect(screen.queryByRole('button',{name:'提出物を出すを完了にする'})).not.toBeInTheDocument();
   fireEvent.click(undo);
   await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task',expect.objectContaining({ action:'reopen',expected_revision:11 })));
+});
+
+it('keeps immediate undo available after a could-not-do row leaves the list, using the recorded revision', async () => {
+  callEdgeFunction.mockReset();
+  callEdgeFunction.mockResolvedValue({ ok: true, revision: 11 });
+  function List() {
+    const [visible, setVisible] = useState(true);
+    return <UndoNoticeProvider>{visible && <TaskChecklistItem {...props} task={makeAnyoneTask()} onChanged={() => setVisible(false)} />}</UndoNoticeProvider>;
+  }
+  render(<List />);
+  fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬をできなかったとして記録' }));
+  const undo = await screen.findByRole('button', { name: '元に戻す' });
+  expect(screen.queryByText('詩乃（便秘）の薬', { exact: true })).not.toBeInTheDocument();
+  fireEvent.click(undo);
+  await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({ action: 'could_not_do_undo', expected_revision: 11 })));
 });

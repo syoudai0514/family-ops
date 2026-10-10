@@ -8,7 +8,15 @@
 // (raw_text, proposed_rewrite, expected_valid) triples.
 //
 // Run: deno test --allow-env supabase/functions/_shared/gemini.test.ts
-import { validateInvariant } from "./gemini.ts";
+import { buildPrompt, validateInvariant } from "./gemini.ts";
+
+Deno.test('consultation drafting distinguishes a conditional reply from a new request', () => {
+  const raw = '明日18時30分なら迎えに行ける。';
+  const consultation = buildPrompt(raw, 'consultation');
+  assertEquals(consultation.includes('条件付きの返事を無条件の承諾にしない'), true);
+  assertEquals(consultation.includes(raw), true);
+  assertEquals(buildPrompt(raw, 'request') === consultation, false);
+});
 
 // Tiny dependency-free assertion helper (avoids relying on jsr.io/deno.land
 // reachability, which this environment's network policy does not guarantee

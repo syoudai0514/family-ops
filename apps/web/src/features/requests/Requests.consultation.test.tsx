@@ -63,12 +63,15 @@ it('keeps feelings private, previews the AI wording, and shares only the reviewe
   expect(await screen.findByDisplayValue('今日は帰宅が遅いので、時間を調整できると助かります。')).toBeInTheDocument();
   expect(callEdgeFunction).toHaveBeenCalledTimes(1);
   expect(vi.mocked(callEdgeFunction).mock.calls[0][0]).toBe('propose-ai-draft');
+  expect(vi.mocked(callEdgeFunction).mock.calls[0][1]).toEqual(expect.objectContaining({ target_type: 'consultation' }));
+  expect(screen.getByLabelText('相談メモ').tagName).toBe('TEXTAREA');
+  fireEvent.change(screen.getByLabelText('相談メモ'), { target: { value: '今日は帰宅が遅いです。\n18時30分なら対応できます。' } });
   fireEvent.click(screen.getByRole('button', { name: 'この文面・条件で提案する' }));
   await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledTimes(2));
   const shared = vi.mocked(callEdgeFunction).mock.calls[1];
   expect(shared[0]).toBe('negotiate-request');
   expect(JSON.stringify(shared[1])).not.toContain('腹が立つ');
-  expect((shared[1] as Record<string,unknown>).terms).toEqual(expect.objectContaining({ candidate: '今日は帰宅が遅いので、時間を調整できると助かります。' }));
+  expect((shared[1] as Record<string,unknown>).terms).toEqual(expect.objectContaining({ candidate: '今日は帰宅が遅いです。\n18時30分なら対応できます。' }));
 });
 
 it('keeps unsent feelings private when AI is unavailable', async () => {

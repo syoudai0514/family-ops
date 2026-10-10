@@ -15,11 +15,11 @@ import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.t
 import { FamilyOpsError } from "../_shared/errors.ts";
 import { proposeAiDraft, validateInvariant, type AiDraftTargetType } from "../_shared/gemini.ts";
 
-const TARGET_TYPES: AiDraftTargetType[] = ["request", "handover"];
+const TARGET_TYPES: AiDraftTargetType[] = ["request", "handover", "consultation"];
 const RAW_INPUT_TTL_HOURS = Number(Deno.env.get("RAW_INPUT_TTL_HOURS") ?? "24");
 
-function kindForTarget(targetType: AiDraftTargetType): "request_draft" | "handover_draft" {
-  return targetType === "request" ? "request_draft" : "handover_draft";
+function kindForTarget(targetType: AiDraftTargetType): "request_draft" | "handover_draft" | "natural_language" {
+  return targetType === "request" ? "request_draft" : targetType === "handover" ? "handover_draft" : "natural_language";
 }
 
 Deno.serve(withUserMutationHandler(async (req: Request) => {
@@ -33,7 +33,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
     throw new FamilyOpsError("INVALID_INPUT", "raw_text is required", 400);
   }
   if (typeof targetType !== "string" || !TARGET_TYPES.includes(targetType as AiDraftTargetType)) {
-    throw new FamilyOpsError("INVALID_INPUT", "target_type must be 'request' or 'handover'", 400);
+    throw new FamilyOpsError("INVALID_INPUT", "target_type must be 'request', 'handover', or 'consultation'", 400);
   }
 
   const serviceClient = createServiceRoleClient();
