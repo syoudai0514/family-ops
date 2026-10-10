@@ -49,19 +49,19 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import json, os, urllib.error, urllib.request
+          import json, os, subprocess
 
           endpoint = f"https://api.supabase.com/v1/projects/{os.environ['PROJECT_REF']}/config/auth"
-          headers = {"Authorization": f"Bearer {os.environ['SUPABASE_ACCESS_TOKEN']}", "Content-Type": "application/json"}
           reset_url = "https://family-ops-web.vercel.app/auth/reset"
 
           def request(method, payload=None):
-              data = None if payload is None else json.dumps(payload).encode()
-              try:
-                  with urllib.request.urlopen(urllib.request.Request(endpoint, data=data, headers=headers, method=method), timeout=30) as response:
-                      return json.load(response)
-              except urllib.error.HTTPError as error:
-                  raise SystemExit(f"Auth configuration request failed: HTTP {error.code}")
+              config = [f"url = {json.dumps(endpoint)}", f"header = {json.dumps('Authorization: Bearer ' + os.environ['SUPABASE_ACCESS_TOKEN'])}", 'header = "Content-Type: application/json"']
+              if payload is not None:
+                  config.append(f"data = {json.dumps(json.dumps(payload))}")
+              response = subprocess.run(["curl", "--silent", "--show-error", "--fail", "--max-time", "30", "--request", method, "--config", "-"], input="\n".join(config), text=True, capture_output=True)
+              if response.returncode:
+                  raise SystemExit(f"Auth configuration request failed: {response.stderr.strip()}")
+              return json.loads(response.stdout)
 
           config = request("GET")
           redirects = [url.strip() for url in config.get("uri_allow_list", "").split(",") if url.strip()]
