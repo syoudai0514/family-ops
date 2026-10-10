@@ -3,12 +3,12 @@ import { supabase } from '../../lib/supabaseClient';
 import { getAppEnv } from '../../lib/env';
 import { rememberAuthReturnTo } from './authReturnTo';
 
-export function SignIn() {
+export function SignIn({ onSignedIn }: { onSignedIn?: () => void } = {}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState<'google' | 'password' | 'signup' | null>(null);
+  const [submitting, setSubmitting] = useState<'google' | 'password' | 'signup' | 'reset' | null>(null);
 
   function rememberCurrentLocation() {
     rememberAuthReturnTo(`${window.location.pathname}${window.location.search}${window.location.hash}`);
@@ -40,16 +40,12 @@ export function SignIn() {
     setSubmitting('password');
     rememberCurrentLocation();
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    if (signInError) {
-      setError(signInError.message);
-      setSubmitting(null);
-    }
-    // AuthContext receives the new session via onAuthStateChange on success.
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (signInError) { setError('メールアドレスとパスワードを確認してください。Googleで登録した場合はGoogleからログインしてください。'); return; }
+      if (data.session) onSignedIn?.();
+    } catch { setError('ログインを確認できませんでした。通信状態を確認して再試行してください。'); }
+    finally { setSubmitting(null); }
   }
 
   async function handleSignUp() {
@@ -58,30 +54,25 @@ export function SignIn() {
     setSubmitting('signup');
     rememberCurrentLocation();
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-
-    if (signUpError) {
-      setError(signUpError.message);
-      setSubmitting(null);
-      return;
-    }
-
-    if (!data.session) {
-      setNotice('確認メールを送信しました。メール内のリンクを開くと登録が完了します。');
-      setSubmitting(null);
-      return;
-    }
-
-    setNotice('登録しました。');
-    // AuthContext receives the session and enters the authenticated app.
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: `${window.location.origin}/auth/callback` } });
+      if (signUpError) { setError(signUpError.message); return; }
+      if (!data.session) { setNotice('確認メールを送信しました。メール内のリンクを開くと登録が完了します。'); return; }
+      setNotice('登録しました。'); onSignedIn?.();
+    } catch { setError('登録を確認できませんでした。通信状態を確認して再試行してください。'); }
+    finally { setSubmitting(null); }
   }
 
+  async function resetPassword() {
+    if (!email.trim()) { setError('メールアドレスを入力してください。'); return; }
+    setSubmitting('reset'); setError(null); setNotice(null);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/auth/reset` });
+      if (error) throw error;
+      setNotice('再設定の案内をメールで送信しました。メール内のリンクを開いてください。');
+    } catch { setError('メールを送信できませんでした。少し待ってから再試行してください。'); }
+    finally { setSubmitting(null); }
+  }
   const busy = submitting !== null;
 
   return (
@@ -125,6 +116,7 @@ export function SignIn() {
         </div>
       </form>
 
+      <button type="button" className="text-button" disabled={busy} onClick={() => void resetPassword()}>パスワードを忘れた場合</button>
       <p aria-hidden="true">または</p>
 
       <button type="button" onClick={handleGoogleSignIn} disabled={busy}>

@@ -242,3 +242,6 @@ verify_jwt = false
 verify_jwt = false
 [functions.cleanup-expired-private-data]
 verify_jwt = false
+
+[functions.family-setup]
+verify_jwt = true

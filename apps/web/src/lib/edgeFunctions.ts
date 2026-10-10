@@ -1,6 +1,7 @@
 // Single source of truth for Edge Function names, so a rename on the backend
 // is a one-line fix here instead of a grep-and-replace across every screen.
 export const EDGE_FUNCTIONS = {
+  familySetup: 'family-setup',
   createHousehold: 'create-household',
   createHouseholdInvite: 'create-household-invite',
   joinHousehold: 'join-household',

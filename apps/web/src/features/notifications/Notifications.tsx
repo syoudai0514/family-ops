@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useFamilySetup } from '../settings/useFamilySetup';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
 import { supabase } from '../../lib/supabaseClient';
@@ -91,6 +92,12 @@ export function Notifications() {
 }
 
 export function LineLinkSection() {
+  const { data: familySetup, loading: statusLoading, error: statusError, refresh: refreshStatus } = useFamilySetup();
+  const { members } = useHousehold();
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 15000); return () => window.clearInterval(timer); }, []);
+  const expired = Boolean(expiresAt && new Date(expiresAt).getTime() <= now);
   const [token, setToken] = useState<string | null>(null);
   const [friendUrl, setFriendUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -101,11 +108,11 @@ export function LineLinkSection() {
     setBusy(true);
     setError(null);
     try {
-      const result = await callEdgeFunction<{ raw_token: string; line_add_friend_url?: string }>(
+      const result = await callEdgeFunction<{ raw_token: string; expires_at: string; line_add_friend_url?: string }>(
         EDGE_FUNCTIONS.createLineLinkToken,
         { operation_id: newOperationId() },
       );
-      setToken(result.raw_token);
+      setToken(result.raw_token); setExpiresAt(result.expires_at); setCopied(false); setNow(Date.now());
       setFriendUrl(result.line_add_friend_url ?? null);
     } catch (err) {
       setError(
@@ -130,13 +137,18 @@ export function LineLinkSection() {
     <section className="card">
       <h2>LINE連携</h2>
       <p>通知を受ける人ごとに、LINE公式アカウント「おうちノート」と連携します。</p>
-      {!token ? (
+      {statusLoading && <p role="status">連携状況を確認中…</p>}
+      {statusError && <p role="alert">{statusError}</p>}
+      {familySetup?.members.map(member => <p key={member.user_id} className="task-item-meta">{members.find(m => m.user_id === member.user_id)?.profile?.display_name ?? '家族'}：{member.line_linked ? 'LINE連携済み' : 'LINE未連携'}</p>)}
+      <button type="button" className="text-button" disabled={statusLoading} onClick={() => void refreshStatus()}>連携状況を再確認</button>
+      <p className="task-item-meta">連携済みでも通知が届かない場合は、LINEで公式アカウントのブロックと、下の通知設定を確認してください。</p>
+      {!token || expired ? (
         <button type="button" disabled={busy} onClick={createLinkToken}>
-          {busy ? '発行中…' : 'LINE連携コードを発行'}
+          {busy ? '発行中…' : expired ? '期限切れ：新しいコードを発行' : 'LINE連携コードを発行'}
         </button>
       ) : (
         <>
-          <p>10分以内に、次のコードを「おうちノート」のLINEトークへ送信してください。</p>
+          <p>次のコードを「おうちノート」のLINEトークへ送信してください。{expiresAt && `期限：${formatDateTimeJa(expiresAt)}`}</p>
           <div className="line-link-token">
             <code>{token}</code>
             <button type="button" className="line-link-copy" onClick={copyToken}>
@@ -148,6 +160,7 @@ export function LineLinkSection() {
               <a href={friendUrl}>LINEを開いてコードを送る</a>
             </p>
           )}
+          <button type="button" className="text-button" disabled={busy} onClick={() => void createLinkToken()}>新しいコードを発行する</button>
           {!friendUrl && (
             <p className="empty-hint">
               公式アカウントを友だち追加してから、上のコードをそのまま送信してください。

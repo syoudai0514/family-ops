@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { todayIsoDate } from '../../lib/date';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
@@ -40,9 +40,9 @@ export interface HistoryData {
 // first -- the screen opens on next December instead of yesterday.
 // Both ends are derived from the household's Asia/Tokyo date (lib/date.ts), not
 // from the device's UTC date, so the window does not shift for a travelling user.
-export function windowStartDate(today = todayIsoDate()): string {
+export function windowStartDate(today = todayIsoDate(), days = HISTORY_WINDOW_DAYS): string {
   const date = new Date(`${today}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() - HISTORY_WINDOW_DAYS);
+  date.setUTCDate(date.getUTCDate() - days);
   return date.toISOString().slice(0, 10);
 }
 
@@ -64,21 +64,25 @@ export function classifyOutcome(task: TaskInstance, nowIso: string): PlannedVsAc
   return 'upcoming';
 }
 
-export function useHistoryData(householdId: string | null, userId: string | null): HistoryData {
+export function useHistoryData(householdId: string | null, userId: string | null, start = windowStartDate(), end = todayIsoDate()): HistoryData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const loadVersion = useRef(0);
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     if (!householdId) {
+      setEntries([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const endDate = todayIsoDate();
-      const startDate = windowStartDate(endDate);
+      const endDate = end < todayIsoDate() ? end : todayIsoDate();
+      const startDate = start;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || startDate > endDate) throw new Error('期間を確認してください。');
       const nowIso = new Date().toISOString();
       const { data: taskRows, error: taskError } = await supabase
         .from('task_instances')
@@ -134,6 +138,7 @@ export function useHistoryData(householdId: string | null, userId: string | null
         }
       }
 
+      if (version !== loadVersion.current) return;
       setEntries(tasks.map((task) => {
         const events = eventsByTaskId.get(task.id) ?? [];
         return {
@@ -145,13 +150,13 @@ export function useHistoryData(householdId: string | null, userId: string | null
         };
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : '読み込みに失敗しました。');
+      if (version === loadVersion.current) setError(err instanceof Error ? err.message : '読み込みに失敗しました。');
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
-  }, [householdId]);
+  }, [householdId, start, end]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); return () => { loadVersion.current++; }; }, [load]);
   useRealtimeRefresh({ householdId, userId, onRemoteChange: load, tables: HISTORY_REALTIME_TABLES });
   return { loading, error, entries, refresh: load };
 }

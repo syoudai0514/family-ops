@@ -25,7 +25,7 @@ describe('date-specific recording', () => {
       pending: 0,
       state: 'recorded',
     });
-    expect(taskRecordingLabel(summary)).toBe('記録済み・実施漏れ 1件');
+    expect(taskRecordingLabel(summary)).toBe('記録済み・できなかった 1件');
   });
   it('only counts that day, excludes cancellations, and keeps partially checked or waiting work pending', () => {
     const summary = summarizeTaskRecording(

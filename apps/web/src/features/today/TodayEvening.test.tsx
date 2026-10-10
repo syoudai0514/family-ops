@@ -47,7 +47,8 @@ vi.mock('../../app/HouseholdContext', () => ({
 describe('Q87 evening Today compact summary', () => {
   it('keeps unfinished morning work concrete while completion history stays compact', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
-    expect(screen.getByRole('heading', { name: '朝 1/2 完了' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '朝 1/2 完了' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '朝の残り' })).toBeInTheDocument();
     expect(screen.getByText('朝の水筒')).toBeInTheDocument();
   });
 });

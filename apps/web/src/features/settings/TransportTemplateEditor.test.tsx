@@ -10,6 +10,8 @@ vi.mock('../../lib/apiClient', async () => {
 });
 vi.mock('../../lib/id', () => ({ newOperationId: () => '00000000-0000-4000-8000-000000000001' }));
 
+vi.mock('../../app/AuthContext', () => ({ useAuth: () => ({ user: { id: 'papa' } }) }));
+vi.mock('../../app/HouseholdContext', () => ({ useHousehold: () => ({ household: { id: 'household-1' } }) }));
 const api = vi.mocked(callEdgeFunction);
 const members = [
   { user_id: 'papa', profile: { display_name: 'パパ' } },
@@ -42,7 +44,9 @@ describe('TransportTemplateEditor Q50', () => {
     render(<TransportTemplateEditor members={members} />);
     expect(await screen.findByText('9/1 ～ 期限未定')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('この生活パターンを始める日'), { target: { value: '2026-10-01' } });
-    fireEvent.click(screen.getByRole('button', { name: 'この日から新しい生活パターンとして保存' }));
+    fireEvent.click(screen.getByRole('button', { name: 'この日からの担当を確認' }));
+    expect(api.mock.calls.some(([,payload]) => (payload as Record<string,unknown>).action === 'save_template')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '確認した担当で保存' }));
     await waitFor(() => {
       const saveCall = api.mock.calls.find(([, body]) => (body as Record<string, unknown>).action === 'save_template');
       expect(saveCall).toBeDefined();
@@ -63,7 +67,9 @@ describe('TransportTemplateEditor Q50', () => {
     });
     render(<TransportTemplateEditor members={members} />);
     await screen.findByText('9/1 ～ 期限未定');
-    fireEvent.click(screen.getByRole('button', { name: 'この日から新しい生活パターンとして保存' }));
+    fireEvent.click(screen.getByRole('button', { name: 'この日からの担当を確認' }));
+    expect(api.mock.calls.some(([,payload]) => (payload as Record<string,unknown>).action === 'save_template')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '確認した担当で保存' }));
     expect(await screen.findByText(/個別合意1件は変更せず、パパ・ママ双方の維持確認を待っています/)).toBeInTheDocument();
     expect(screen.getByText('2026-10-05 · お迎え')).toBeInTheDocument();
   });

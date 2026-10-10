@@ -12,6 +12,8 @@ interface InviteResult {
 export function InviteSection({ confirmWhenJoined = false }: { confirmWhenJoined?: boolean } = {}) {
   const { partner } = useHousehold();
   const [invite, setInvite] = useState<InviteResult | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inviteUrl = invite
@@ -19,6 +21,7 @@ export function InviteSection({ confirmWhenJoined = false }: { confirmWhenJoined
     : '';
   async function shareInvite() {
     if (!invite) return;
+    try {
     if (navigator.share)
       await navigator.share({
         title: 'おうちノートへ招待',
@@ -26,20 +29,22 @@ export function InviteSection({ confirmWhenJoined = false }: { confirmWhenJoined
         url: inviteUrl,
       });
     else await navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    } catch (err) { if (!(err instanceof DOMException && err.name === 'AbortError')) setError('共有できませんでした。下のリンクをコピーして共有してください。'); }
   }
 
-  async function handleGenerate() {
+  async function handleGenerate(reissue = false) {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await callEdgeFunction<InviteResult>(EDGE_FUNCTIONS.createHouseholdInvite, {
-        operation_id: newOperationId(),
+      const result = await callEdgeFunction<InviteResult>(reissue ? EDGE_FUNCTIONS.familySetup : EDGE_FUNCTIONS.createHouseholdInvite, {
+        operation_id: newOperationId(), ...(reissue ? { action: 'reissue_invite' } : {}),
       });
-      setInvite(result);
+      setInvite(result); setRecovering(false); setCopied(false);
     } catch (err) {
       if (err instanceof FamilyOpsApiError && err.code === 'INVITE_TOKEN_ALREADY_ISSUED') {
         setError(
-          'すでに発行済みの招待コードがあります。パートナーに以前共有したコードを確認してください。',
+          'すでに発行済みの招待コードがあります。パートナーに以前共有したコードを確認するか、新しい招待リンクを作り直してください。',
         );
       } else {
         setError(err instanceof FamilyOpsApiError ? err.message : '招待の作成に失敗しました。');
@@ -69,13 +74,13 @@ export function InviteSection({ confirmWhenJoined = false }: { confirmWhenJoined
     <section className="card">
       <h2>パートナーを招待</h2>
       <p>招待リンクを作って、パートナーに共有してください。</p>
-      <button type="button" onClick={handleGenerate} disabled={submitting}>
+      <button type="button" onClick={() => void handleGenerate()} disabled={submitting}>
         {submitting ? '発行中…' : '招待リンクを作る'}
       </button>
       {invite && (
         <div className="invite-result">
           <button type="button" onClick={() => void shareInvite()}>
-            招待リンクを共有
+            {copied ? '共有しました' : '招待リンクを共有'}
           </button>
           <p>
             <a href={inviteUrl}>{inviteUrl}</a>
@@ -86,6 +91,8 @@ export function InviteSection({ confirmWhenJoined = false }: { confirmWhenJoined
           <p>有効期限: {new Date(invite.expires_at).toLocaleString('ja-JP')}</p>
         </div>
       )}
+      <details><summary>以前のリンクを紛失・期限切れの場合</summary><p>招待を作り直すと、まだ使われていない以前の招待リンクは無効になります。</p><button type="button" className="secondary-button" disabled={submitting} onClick={() => setRecovering(true)}>招待を作り直す</button></details>
+      {recovering && <div className="card"><p>以前の未使用リンクを無効にして、新しいリンクを発行します。</p><button disabled={submitting} onClick={() => void handleGenerate(true)}>無効にして新しい招待を作る</button><button className="text-button" disabled={submitting} onClick={() => setRecovering(false)}>やめる</button></div>}
       {error && (
         <p role="alert" className="error-text">
           {error}

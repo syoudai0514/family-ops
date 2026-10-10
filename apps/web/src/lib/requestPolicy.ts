@@ -3,6 +3,7 @@ import { EDGE_FUNCTIONS, type EdgeFunctionName } from './edgeFunctions';
 export type RequestPolicyKind = 'read' | 'proposal' | 'mutation';
 
 export const REQUEST_POLICY = {
+  familySetup: 'mutation',
   createHousehold: 'mutation',
   createHouseholdInvite: 'mutation',
   joinHousehold: 'mutation',

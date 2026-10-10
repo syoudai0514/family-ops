@@ -132,9 +132,9 @@ describe('NurseryReviewPage', () => {
     });
     renderReview();
     expect(await screen.findByRole('heading', { name: '提出物' })).toBeInTheDocument();
-    const calendarChoice = screen.getByLabelText('Google Calendarにも表示する');
-    expect(calendarChoice).toHaveValue('false');
-    fireEvent.change(calendarChoice, { target: { value: 'true' } });
+    const calendarChoice = screen.getByLabelText('カレンダーにも表示');
+    expect(calendarChoice).not.toBeChecked();
+    fireEvent.click(calendarChoice);
     fireEvent.click(screen.getByRole('button', { name: '選んだ1件を登録' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith(
@@ -167,7 +167,7 @@ describe('NurseryReviewPage', () => {
     });
     renderReview();
     expect(await screen.findByRole('heading', { name: 'URL / QR / 提出先' })).toBeInTheDocument();
-    expect(screen.getByLabelText('提出先・実行先')).toHaveValue('園事務室の提出箱');
+    expect(screen.getByLabelText('提出先')).toHaveValue('園事務室の提出箱');
     expect(screen.getByText(/実行先の読み取りに確信がないため未選択/)).toBeInTheDocument();
     const select = screen.getByRole('checkbox', { name: '登録する' });
     expect(select).not.toBeChecked();

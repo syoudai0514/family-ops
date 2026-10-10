@@ -70,6 +70,7 @@ export interface CalendarProjectionItem {
   hasConflict: boolean;
   providerEventId: string | null;
   linkedTaskId: string | null;
+  familyEventId?: string | null;
   location: string | null;
   description: string | null;
   sourceCalendar: string | null;
@@ -238,6 +239,7 @@ export function buildCalendarProjection({
         hasConflict: event.hasConflict,
         providerEventId: event.providerEventId,
         linkedTaskId: null,
+        familyEventId: event.familyEventId ?? null,
         location: event.location ?? null,
         description: event.description ?? null,
         sourceCalendar: event.sourceCalendar ?? null,

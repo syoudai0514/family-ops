@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react';
+import { useUndoNotice } from '../../app/UndoNotice';
+import { useEffect, useState, type FormEvent } from 'react';
 import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
@@ -18,6 +19,9 @@ export interface TaskChecklistItemProps {
   onEdit: (task: TaskInstance) => void;
   onChanged: () => void | Promise<void>;
   showTime?: boolean;
+  compact?: boolean;
+  specialToday?: boolean;
+  assignmentRequest?: number;
   /** Optional per-surface key. Today uses this to restore detail state after Back. */
   expandedStorageKey?: string;
   /** Canonical read-model gate for a task whose completion depends on other household input. */
@@ -91,6 +95,9 @@ export function TaskChecklistItem({
   onEdit,
   onChanged,
   showTime = true,
+  compact = false,
+  specialToday = false,
+  assignmentRequest = 0,
   expandedStorageKey,
   completionPrerequisite,
 }: TaskChecklistItemProps) {
@@ -117,6 +124,7 @@ export function TaskChecklistItem({
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidenceSaved, setEvidenceSaved] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState(false);
+  useEffect(() => { if (assignmentRequest) setEditingAssignment(true); }, [assignmentRequest]);
   const [assignmentUserId, setAssignmentUserId] = useState(task.planned_assignee_id ?? members[0]?.user_id ?? '');
   const [assignmentDecision, setAssignmentDecision] = useState<AssignmentDecision>('request');
   const [assignmentMessage, setAssignmentMessage] = useState('');
@@ -152,15 +160,19 @@ export function TaskChecklistItem({
     });
   }
 
+  const offerUndo = useUndoNotice();
+
   async function withOperation(
     logicalKey: string,
     endpoint: Parameters<typeof runCommand>[1],
     buildPayload: (operationId: string) => Record<string, unknown>,
+    onSuccess?: (result: { revision?: number }) => void,
   ): Promise<boolean> {
     setError(null);
     setBusy(true);
     try {
-      await runCommand(logicalKey, endpoint, buildPayload);
+      const result = await runCommand<{ revision?: number }>(logicalKey, endpoint, buildPayload);
+      onSuccess?.(result);
       await onChanged();
       return true;
     } catch (err) {
@@ -206,6 +218,14 @@ export function TaskChecklistItem({
         completion_actor: completionActor,
         complete_remaining_subtasks: task.completion_mode === 'subtasks',
       }),
+      result => {
+        if (!Number.isSafeInteger(result.revision)) return;
+        const revision = result.revision!;
+        offerUndo({ label: `${task.title}を完了にしました`, undo: async () => {
+          await runCommand(`task:${task.id}:reopen:r${revision}`, EDGE_FUNCTIONS.reopenTask, operation_id => ({ operation_id, task_id: task.id, action: 'reopen', expected_revision: revision }));
+          await onChanged();
+        } });
+      },
     );
   }
 
@@ -350,9 +370,9 @@ export function TaskChecklistItem({
     }
   }
 
-  const resultLabel = completed ? '' : couldNotDo ? '実施漏れ' : finished ? '記録済み' : '';
+  const resultLabel = completed ? '' : couldNotDo ? 'できなかった' : finished ? '記録済み' : '';
   const taskContent = <>
-    <strong>{task.title}</strong>
+    <strong>{task.title}</strong>{specialToday && <span className="status-chip">⭐ 平日は毎日ないこと</span>}
     <span className="task-item-meta">
       {showTime && task.due_at ? `${localClock(task.due_at)} · ` : ''}
       {assigneeLabel(task, members)}
@@ -365,10 +385,10 @@ export function TaskChecklistItem({
   </>;
 
   return (
-    <li className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : '', partnersTask ? 'task-owner-partner' : ''].filter(Boolean).join(' ')}>
+    <li id={`task-${task.id}`} className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : '', partnersTask ? 'task-owner-partner' : '', compact ? 'task-compact' : ''].filter(Boolean).join(' ')}>
       <div className="task-checklist-main">
         <span className="task-result-icon" role="img"
-          aria-label={`${task.title}：${completed ? '完了済み' : couldNotDo ? '実施漏れ・記録済み' : finished ? '記録済み' : '未記録'}`}>
+          aria-label={`${task.title}：${completed ? '完了済み' : couldNotDo ? 'できなかった・記録済み' : finished ? '記録済み' : '未記録'}`}>
           {completed ? '✓' : finished ? '−' : '○'}
         </span>
 
@@ -388,6 +408,8 @@ export function TaskChecklistItem({
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
+            {compact && !finished && <button type="button" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${task.title}をできなかったとして記録`}>できなかった</button>}
+            {compact && hasPartner && !partnersTask && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && <button type="button" disabled={busy} onClick={() => handleComplete('partner')} aria-label={`${partnerLabel}が完了`}>{partnerLabel}がやった</button>}
             {/* A recorded task is one quiet line; undo lives here (owner 2026-10-10: a list of done
                 cards each with a button was hard to read). */}
             {couldNotDo && (
@@ -496,15 +518,15 @@ export function TaskChecklistItem({
             </button>
           )}
 
-          {!finished && (
+          {!compact && !finished && (
             <button type="button" className="task-action task-action-missed" onClick={() => handleCouldNotDo()} disabled={busy}
-              aria-label={`${task.title}を実施漏れとして記録`}
+              aria-label={`${task.title}をできなかったとして記録`}
               title="忘れた・間に合わなかった作業を、この日の記録として確定します">
-              実施漏れ
+              できなかった
             </button>
           )}
 
-          {hasPartner && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
+          {hasPartner && (!compact || partnersTask) && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && (
             <button type="button" className={`task-action ${partnersTask ? 'task-action-partner' : 'task-action-secondary'}`} disabled={busy}
               aria-label={`${partnerLabel}が完了`} title={`${partnerLabel}が実施したことを記録します`}
               onClick={() => handleComplete('partner')}>{partnerLabel}完了</button>

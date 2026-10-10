@@ -1,3 +1,4 @@
+import { UndoNoticeProvider } from './UndoNotice';
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { TodayContractPage } from '../features/today/TodayContractPage';
 import { Requests } from '../features/requests/Requests';
@@ -11,6 +12,7 @@ import { HistoryPage } from '../features/history/HistoryPage';
 import { WeekView } from '../features/planning/WeekView';
 import { MonthView } from '../features/planning/MonthView';
 import { GoogleEventReviewPage } from '../features/planning/GoogleEventReviewPage';
+import { ChildrenSettings } from '../features/settings/ChildrenSettings';
 import { SettingsHome } from '../features/settings/SettingsHome';
 import { CategorySettings } from '../features/settings/CategorySettings';
 import { HouseholdTerminology } from '../features/settings/HouseholdTerminology';
@@ -18,6 +20,7 @@ import { LineReferencePage } from '../features/settings/LineReferencePage';
 import { OutcomeSemanticsPage } from '../features/settings/OutcomeSemanticsPage';
 import { QuickAdd } from '../features/tasks/QuickAdd';
 import { TestSimulation } from '../features/testSimulation/TestSimulation';
+import { EventDetailPage } from '../features/events/EventDetailPage';
 import { EventPlanPage } from '../features/events/EventPlanPage';
 import { NurseryReviewPage } from '../features/nursery/NurseryReviewPage';
 import { ConciergePage } from '../features/concierge/ConciergePage';
@@ -60,7 +63,7 @@ function BottomNavLink({ item }: { item: (typeof PRIMARY_NAV_ITEMS)[number] }) {
 
 export function AppShell() {
   return (
-    <div className="app-root">
+    <UndoNoticeProvider><div className="app-root">
       <NavigationStateManager />
       <header className="app-nav">
         <NavLink className="app-nav-brand" to="/today"><span aria-hidden="true">⌂</span> おうちノート</NavLink>
@@ -88,6 +91,7 @@ export function AppShell() {
         <Route path="/month" element={<MonthView />} />
         <Route path="/planning/google-review" element={<GoogleEventReviewPage />} />
         <Route path="/events/new" element={<EventPlanPage />} />
+        <Route path="/events/:id" element={<EventDetailPage />} />
         <Route path="/nursery/reviews" element={<NurseryReviewPage />} />
         <Route path="/nursery/reviews/:intakeId" element={<NurseryReviewPage />} />
         <Route path="/requests" element={<Requests />} />
@@ -96,6 +100,7 @@ export function AppShell() {
         <Route path="/handovers" element={<Handovers />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/notifications" element={<Notifications />} />
+        <Route path="/settings/children" element={<ChildrenSettings />} />
         <Route path="/settings" element={<SettingsHome />} />
         <Route path="/settings/routines" element={<RoutineSettingsPage />} />
         <Route path="/settings/categories" element={<CategorySettings />} />
@@ -115,6 +120,6 @@ export function AppShell() {
         {PRIMARY_NAV_ITEMS.map((item) => <BottomNavLink key={item.to} item={item} />)}
         <QuickAdd className="bottom-nav-add" />
       </nav>
-    </div>
+    </div></UndoNoticeProvider>
   );
 }

@@ -7,7 +7,7 @@ import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { getShoppingItemActions } from './shoppingActions';
 import type { PurchaseMethod, ShoppingItem, ShoppingItemStatus } from '../../lib/types';
 import './Shopping.css';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 // A shopping list is a "what do we still need" screen. Grouping strictly by
 // lifecycle status meant that on a household where everything had been bought,
@@ -70,6 +70,22 @@ export function Shopping() {
   const { items, actorRefId, loading, error, refresh } = useShoppingItems(household?.id ?? null);
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchResults, setBatchResults] = useState<Array<{ title: string; ok: boolean; message?: string }>>([]);
+  const run = useCommandAttempt();
+  async function purchaseSelected() {
+    if (batchBusy) return;
+    setBatchBusy(true); setBatchResults([]);
+    const results: Array<{ title: string; ok: boolean; message?: string }> = [];
+    for (const item of items.filter(item => selected.includes(item.id) && getShoppingItemActions(item.status,item.purchase_method).canPurchase)) {
+      try {
+        await run(`shopping:${item.id}:batch-purchase:r${item.revision ?? 1}`, EDGE_FUNCTIONS.purchaseShoppingItem, operation_id => ({ operation_id, shopping_item_id: item.id, expected_revision: item.revision ?? 1 }));
+        results.push({ title: item.title, ok: true }); setSelected(current => current.filter(id => id !== item.id));
+      } catch (err) { results.push({ title: item.title, ok: false, message: err instanceof Error ? err.message : '購入を記録できませんでした。' }); }
+    }
+    setBatchResults(results); await refresh(); setBatchBusy(false);
+  }
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
 
@@ -102,6 +118,12 @@ export function Shopping() {
       <button type="button" className="shopping-ai-entry secondary-button" onClick={() => navigate('/concierge?kind=shopping', { state: { originPath: '/shopping', originScrollY: window.scrollY } })}>「牛乳を明日までに買いたい」など、そのまま入力</button>
       <details className="shopping-manual-entry"><summary>商品名を選んで入力</summary><button type="button" className="text-button" onClick={() => setShowForm((v) => !v)}>{showForm ? '入力を閉じる' : '入力フォームを開く'}</button></details>
 
+      <Link to="/shopping/anyone-owner">誰でもOKの対応状況を見る</Link>
+      <details className="card shopping-batch"><summary>買ったものをまとめて記録</summary><p>買えたものだけ選びます。選ばなかったものはリストに残ります。通販の到着待ちは別に記録します。</p>
+        <fieldset disabled={batchBusy}>{items.filter(item => getShoppingItemActions(item.status,item.purchase_method).canPurchase).map(item => <label className="inline-check" key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={() => setSelected(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current,item.id])} />{item.title}</label>)}</fieldset>
+        <button disabled={batchBusy || selected.length === 0} onClick={() => void purchaseSelected()}>{batchBusy ? '記録中…' : `選んだ${selected.length}件を購入済みにする`}</button>
+        {batchResults.length > 0 && <div role="status">{batchResults.map((result,index) => <p key={index}>{result.ok ? '✓ 購入済み' : '記録できませんでした'}：{result.title}{result.message && ` · ${result.message}`}</p>)}</div>}
+      </details>
       {openGroups.length === 0 ? (
         <section className="card">
           <h2>これから買うもの</h2>
@@ -189,7 +211,7 @@ function ShoppingItemRow({
 
   const assignee = members.find((m) => m.user_id === item.assignee_id);
   const assignmentMode = item.assignment_mode ?? (item.assignee_id ? 'person' : 'unassigned');
-  const primaryAction = actions.canOrder
+  const primaryAction = actions.canOrder && item.purchase_method === 'online'
     ? { label: '注文した', run: () => stable(EDGE_FUNCTIONS.orderShoppingItem, { shopping_item_id: item.id, expected_revision: revision }) }
     : actions.canPurchase
       ? { label: '購入した', run: () => stable(EDGE_FUNCTIONS.purchaseShoppingItem, { shopping_item_id: item.id, expected_revision: revision }) }

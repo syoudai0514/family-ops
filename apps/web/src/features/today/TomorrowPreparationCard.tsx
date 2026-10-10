@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
@@ -10,6 +10,7 @@ interface TomorrowPreparationCardProps {
   assigneeLabel: string;
   existingTitles: string[];
   onChanged: () => void;
+  children?: ReactNode;
 }
 
 function normalizedTitle(value: string) {
@@ -38,6 +39,7 @@ export function TomorrowPreparationCard({
   assigneeLabel,
   existingTitles,
   onChanged,
+  children,
 }: TomorrowPreparationCardProps) {
   const [customTitle, setCustomTitle] = useState('');
   const [busyTitle, setBusyTitle] = useState<string | null>(null);
@@ -87,6 +89,7 @@ export function TomorrowPreparationCard({
         <span>{formattedDate}</span>
       </div>
 
+      {children}
       <p className="page-lead">
         持ち物・提出物を明日のやることに追加。
         {assigneeLabel ? ` 朝担当：${assigneeLabel}` : ' 朝担当は未定です。'}

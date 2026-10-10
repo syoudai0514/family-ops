@@ -1,3 +1,4 @@
+import { StartToday } from '../features/household/StartToday';
 import { useHousehold } from './HouseholdContext';
 import { HouseholdSetup } from '../features/household/HouseholdSetup';
 import { DropoffPickupStep } from '../features/household/DropoffPickupStep';
@@ -47,17 +48,17 @@ export function HouseholdGate() {
         </main>
       );
     case 'dropoff-pickup-wizard':
-      return <DropoffPickupStep />;
+      return <><main className="app-shell"><StartToday /></main><DropoffPickupStep /></>;
     case 'evening-routines-wizard':
-      return <EveningRoutinesStep />;
+      return <><main className="app-shell"><StartToday /></main><EveningRoutinesStep /></>;
     case 'morning-preparation-wizard':
-      return <MorningPreparationStep />;
+      return <><main className="app-shell"><StartToday /></main><MorningPreparationStep /></>;
     case 'connections-wizard':
-      return <ConnectionsStep />;
+      return <><main className="app-shell"><StartToday /></main><ConnectionsStep /></>;
     case 'notifications-wizard':
-      return <RecommendedNotificationsStep />;
+      return <><main className="app-shell"><StartToday /></main><RecommendedNotificationsStep /></>;
     case 'week-preview-wizard':
-      return <WeekPreviewStep />;
+      return <><main className="app-shell"><StartToday /></main><WeekPreviewStep /></>;
     case 'ready':
       return <AppShell />;
     default:

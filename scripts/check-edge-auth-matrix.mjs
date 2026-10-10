@@ -17,6 +17,8 @@ function parseFunctionsBlock(tomlText) {
 }
 
 const GAP_FILL_FUNCTIONS = new Set([
+  // User-confirmed family setup and assignment previews; private identifiers never leave the RPC.
+  'family-setup',
   'configure-dropoff-pickup',
   'propose-ai-draft',
   // Issue #54 PWA Concierge proposal surface. Authenticated and read-only with

@@ -70,8 +70,8 @@ describe('HistoryPage', () => {
     expect(screen.getByText('待ち')).toBeInTheDocument();
     expect(screen.getByText(/待ち理由: 園からの回答待ち/)).toBeInTheDocument();
     expect(screen.getByText('担当変更: パパ → ママ')).toBeInTheDocument();
-    const actualRow = screen.getByText(/実績日:\s*2026-08-18/).closest('p');
-    expect(actualRow).toHaveTextContent('実績日: 2026-08-18 · パパ・ママ');
+    const actualRow = screen.getByText(/対象日:\s*2026-08-18/).closest('p');
+    expect(actualRow).toHaveTextContent('対象日: 2026-08-18 · パパ・ママ');
     expect(screen.getAllByText('記録の詳細').length).toBeGreaterThan(0);
     expect(screen.getByText(/記録した時刻:/)).toBeInTheDocument();
     expect(screen.queryByText(/スコア|ランキング|ポイント/)).not.toBeInTheDocument();

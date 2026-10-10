@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { UndoNoticeProvider } from '../../app/UndoNotice';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
@@ -335,7 +337,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
   it('records a forgotten task as できなかった, apart from an open (未記録) one', async () => {
     render(<TaskChecklistItem {...props} task={makeAnyoneTask()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬を実施漏れとして記録' }));
+    fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬をできなかったとして記録' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
       operation_id: expect.any(String),
@@ -348,10 +350,10 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     const forgotten = { ...makeAnyoneTask(), status: 'skipped', outcome_reason: 'could_not_do' } as TaskInstance;
     render(<TaskChecklistItem {...props} hasPartner task={forgotten} />);
 
-    expect(screen.getByRole('img', { name: '詩乃（便秘）の薬：実施漏れ・記録済み' })).toBeInTheDocument();
-    expect(screen.getByText(/実施漏れ$/)).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '詩乃（便秘）の薬：できなかった・記録済み' })).toBeInTheDocument();
+    expect(screen.getByText(/できなかった$/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '相手が完了' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '詩乃（便秘）の薬を実施漏れとして記録' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '詩乃（便秘）の薬をできなかったとして記録' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '記録を戻す' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
@@ -425,7 +427,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     render(<TaskChecklistItem {...props} task={unnecessary} subtasks={laundrySubtasks} />);
     expect(screen.getByRole('img', { name: '洗濯：記録済み' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '洗濯を完了にする' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '洗濯を実施漏れとして記録' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '洗濯をできなかったとして記録' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
     expect(screen.getByRole('checkbox', { name: '回す' })).toBeDisabled();
   });
@@ -447,4 +449,19 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     }));
     expect(await screen.findByText('証跡を追加しました。')).toBeInTheDocument();
   });
+});
+
+
+it('keeps immediate undo available after the completed row leaves the list, using the original revision', async () => {
+  callEdgeFunction.mockReset(); callEdgeFunction.mockResolvedValue({ ok: true, revision: 11 });
+  function List() {
+    const [visible,setVisible] = useState(true);
+    return <UndoNoticeProvider>{visible && <TaskChecklistItem {...props} task={{...makeTask('todo'),revision:4}} onChanged={() => setVisible(false)} />}</UndoNoticeProvider>;
+  }
+  render(<List />);
+  fireEvent.click(screen.getByRole('button',{name:'提出物を出すを完了にする'}));
+  const undo = await screen.findByRole('button',{name:'元に戻す'});
+  expect(screen.queryByRole('button',{name:'提出物を出すを完了にする'})).not.toBeInTheDocument();
+  fireEvent.click(undo);
+  await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task',expect.objectContaining({ action:'reopen',expected_revision:11 })));
 });

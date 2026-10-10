@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
 import { SignIn } from '../features/auth/SignIn';
+import { PasswordReset } from '../features/auth/PasswordReset';
 import { AuthCallback } from '../features/auth/AuthCallback';
 import { LoadingScreen } from '../components/LoadingScreen';
 
@@ -25,6 +26,7 @@ function AuthGateRoutes() {
     return (
       <Routes>
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/auth/reset" element={<PasswordReset />} />
         <Route path="*" element={<LoadingScreen />} />
       </Routes>
     );
@@ -46,6 +48,7 @@ function AuthGateRoutes() {
     return (
       <Routes>
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/auth/reset" element={<PasswordReset />} />
         <Route path="*" element={<SignIn />} />
       </Routes>
     );
@@ -53,7 +56,7 @@ function AuthGateRoutes() {
 
   return (
     <Suspense fallback={<LoadingScreen />}>
-      <AuthenticatedApp />
+      <Routes><Route path="/auth/reset" element={<PasswordReset />} /><Route path="*" element={<AuthenticatedApp />} /></Routes>
     </Suspense>
   );
 }

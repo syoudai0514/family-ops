@@ -1,8 +1,8 @@
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold, type HouseholdMemberWithProfile } from '../../app/HouseholdContext';
-import { formatDateTimeJa } from '../../lib/date';
+import { todayIsoDate, formatDateTimeJa } from '../../lib/date';
 import { tokyoIsoDate } from '../planning/dateHelpers';
-import { useHistoryData, type HistoryEntry, type PlannedVsActualOutcome } from './useHistoryData';
+import { useHistoryData, windowStartDate, type HistoryEntry, type PlannedVsActualOutcome } from './useHistoryData';
 import type { TaskEvent, TaskEventType } from '../../lib/types';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -113,7 +113,7 @@ function HistoryRow({
   return <li className={selected ? 'history-item card selected' : 'history-item card'} data-history-task-id={task.id} tabIndex={-1}>
     <div className="history-item-header"><strong>{task.title}</strong><span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span></div>
     <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
-    {task.status === 'completed' && <p className="task-item-meta"><strong>実績日: {task.scheduled_date}</strong> · {participantLabel}</p>}
+    {task.status === 'completed' && <p className="task-item-meta"><strong>対象日: {task.scheduled_date}</strong> · {participantLabel}</p>}
     {outcome === 'waiting' && <p className="task-item-meta">{task.waiting_note ? `待ち理由: ${task.waiting_note}` : '確認待ち'}{task.next_check_at ? ` · 次回確認 ${formatDateTimeJa(task.next_check_at)}` : ''}</p>}
     {reassignment && <p className="task-item-meta">{reassignment}</p>}
     {task.status === 'completed' && <div className="history-correction">
@@ -140,22 +140,26 @@ export function HistoryPage() {
   const { household, members } = useHousehold();
   const location = useLocation();
   const navigate = useNavigate();
-  const { loading, error, entries, refresh } = useHistoryData(household?.id ?? null, user?.id ?? null);
   const [filter, setFilter] = useState<HistoryFilter>(initialHistoryFilter);
   const [correctionDate, setCorrectionDate] = useState<string | null>(() => {
     const state = location.state as HistoryLocationState;
     return typeof state?.correctionDate === 'string' ? state.correctionDate : null;
   });
+  const [period, setPeriod] = useState('14');
+  const [start, setStart] = useState(windowStartDate());
+  const [end, setEnd] = useState(todayIsoDate());
+  const [query, setQuery] = useState('');
+  const { loading, error, entries, refresh } = useHistoryData(household?.id ?? null, user?.id ?? null, correctionDate ?? start, correctionDate ?? end);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => {
     try { return sessionStorage.getItem(HISTORY_SELECTED_KEY); } catch { return null; }
   });
   const visibleEntries = useMemo(() => entries.filter((entry) => {
-    if (!historyEntryMatchesDate(entry, correctionDate)) return false;
+    if (!historyEntryMatchesDate(entry, correctionDate) || !entry.task.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return false;
     if (filter === 'all') return true;
     if (filter === 'routine') return entry.task.routine_phase === 'morning' || entry.task.routine_phase === 'evening';
     if (filter === 'planned') return entry.task.routine_phase !== 'morning' && entry.task.routine_phase !== 'evening';
     return entry.events.some((event) => event.source === 'request');
-  }), [correctionDate, entries, filter]);
+  }), [correctionDate, entries, filter, query]);
 
   useEffect(() => {
     if (loading) return;
@@ -179,16 +183,19 @@ export function HistoryPage() {
     try { sessionStorage.setItem(HISTORY_SELECTED_KEY, taskId); } catch { /* storage unavailable */ }
   }
 
-  if (loading) return <div className="app-shell"><p role="status">読み込み中…</p></div>;
 
   return <div className="app-shell">
     <div className="today-header"><h1>履歴</h1><button type="button" className="text-button" onClick={() => navigate(-1)}>戻る</button></div>
-    <p className="task-item-meta">直近2週間の記録です。日付は実際にやった日で表示しています。</p>
-    {correctionDate && <section className="card compact-section" aria-label="修正対象日"><strong>{correctionDate} の記録を訂正</strong><p className="task-item-meta">チェックインから指定された対象日だけを表示しています。</p><button type="button" className="text-button" onClick={() => setCorrectionDate(null)}>すべての日を表示</button></section>}
+    <p className="task-item-meta">日付は「その作業の対象日」です。実際に記録した時刻は「記録の詳細」で確認できます。</p>
+    {correctionDate && <section className="card compact-section" aria-label="修正対象日"><strong>{correctionDate} の記録を訂正</strong><p className="task-item-meta">朝・夜の記録から指定された対象日だけを表示しています。</p><button type="button" className="text-button" onClick={() => setCorrectionDate(null)}>すべての日を表示</button></section>}
+    <section className="card compact-section history-search"><label>期間<select aria-label="履歴の期間" value={period} onChange={e => { setPeriod(e.target.value); setCorrectionDate(null); if (e.target.value !== 'custom') { setStart(windowStartDate(todayIsoDate(), Number(e.target.value))); setEnd(todayIsoDate()); } }}><option value="14">最近2週間</option><option value="30">最近30日</option><option value="90">最近90日</option><option value="custom">日付で指定</option></select></label>
+      {period === 'custom' && <div className="form-grid"><label>開始日<input type="date" value={start} max={end} onChange={e => setStart(e.target.value)} /></label><label>終了日<input type="date" value={end} min={start} max={todayIsoDate()} onChange={e => setEnd(e.target.value)} /></label></div>}
+      <label>名前で探す<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="例：体操着、ゴミ出し" /></label>
+    </section>
     <div className="filter-chips" aria-label="履歴の絞り込み">
       {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => chooseFilter(key)}>{label}</button>)}
     </div>
-    {error && <p role="alert" className="error-text">{error}</p>}
-    <ul className="history-list">{visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}{visibleEntries.map((entry) => <HistoryRow key={entry.task.id} entry={entry} members={members} onChanged={refresh} selected={selectedTaskId === entry.task.id} onSelected={() => selectTask(entry.task.id)} />)}</ul>
+    {error && <p role="alert" className="error-text">{error}<button onClick={() => void refresh()}>再読み込み</button></p>}{loading && <p role="status">記録を読み込み中…</p>}
+    <ul className="history-list">{!loading && !error && visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}{visibleEntries.map((entry) => <HistoryRow key={entry.task.id} entry={entry} members={members} onChanged={refresh} selected={selectedTaskId === entry.task.id} onSelected={() => selectTask(entry.task.id)} />)}</ul>
   </div>;
 }
