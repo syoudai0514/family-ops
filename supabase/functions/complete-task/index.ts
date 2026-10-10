@@ -45,7 +45,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
     }
     const result = await callServerTx<{ ok: true; task_id: string; status: string; revision: number }>(
       serviceClient,
-      expectedRevision === undefined ? "server_tx_mark_task_could_not_do_v1" : "server_tx_mark_task_could_not_do_v2",
+      "server_tx_mark_task_could_not_do_v1",
       {
         p_actor_id: actorId,
         p_operation_id: operationId,

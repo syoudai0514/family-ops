@@ -362,15 +362,15 @@ revoke all on function public.server_tx_dispatch_daily_briefs(timestamptz)
 grant execute on function public.server_tx_dispatch_daily_briefs(timestamptz)
   to service_role;
 
--- Receipt-backed compare-and-set for a recorded outcome and its immediate undo.
--- v1 remains available to older PWA and LINE callers.
-create or replace function public.server_tx_mark_task_could_not_do_v2(
+-- Single outcome implementation; expected revision is optional for legacy calls.
+-- No defaults on the six-argument overload: PostgREST resolves each input shape exactly.
+create or replace function public.server_tx_mark_task_could_not_do_v1(
   p_actor_id uuid,
   p_operation_id uuid,
   p_task_id uuid,
-  p_expected_revision bigint,
-  p_undo boolean default false,
-  p_source text default 'pwa'
+  p_undo boolean,
+  p_source text,
+  p_expected_revision bigint
 )
 returns jsonb
 language plpgsql
@@ -388,8 +388,8 @@ declare
   v_result jsonb;
 begin
   if p_actor_id is null or p_operation_id is null or p_task_id is null or p_undo is null
-     or p_expected_revision is null or p_expected_revision < 1
-     or p_source not in ('pwa','line') then
+     or (p_expected_revision is not null and p_expected_revision < 1)
+     or p_source is null or p_source not in ('pwa','line') then
     raise exception 'INVALID_INPUT';
   end if;
 
@@ -398,16 +398,17 @@ begin
   v_actor_ref:=(v_context->>'actor_ref_id')::uuid;
 
   v_request_hash:=encode(sha256(convert_to(
-    'task-could-not-do-v2|'||p_task_id::text||'|'||p_expected_revision::text||'|'||p_undo::text||'|'||p_source,'UTF8')),'hex');
+    'task-could-not-do|'||p_task_id::text||'|'||p_undo::text||'|'||p_source||
+    case when p_expected_revision is null then '' else '|expected_revision:'||p_expected_revision::text end,'UTF8')),'hex');
   loop
     insert into private.mutation_receipts(actor_id,operation_id,action_type,request_hash,actor_ref_id)
-      values(p_actor_id,p_operation_id,'task-could-not-do-v2',v_request_hash,v_actor_ref)
+      values(p_actor_id,p_operation_id,'task-could-not-do',v_request_hash,v_actor_ref)
       on conflict(actor_id,operation_id) do nothing;
     if found then exit; end if;
     select * into v_receipt from private.mutation_receipts
       where actor_id=p_actor_id and operation_id=p_operation_id for update;
     if found then
-      if v_receipt.action_type<>'task-could-not-do-v2' or v_receipt.request_hash<>v_request_hash then
+      if v_receipt.action_type<>'task-could-not-do' or v_receipt.request_hash<>v_request_hash then
         raise exception 'IDEMPOTENCY_CONFLICT';
       end if;
       if v_receipt.result_payload is null then raise exception 'IDEMPOTENCY_INCOMPLETE'; end if;
@@ -419,7 +420,7 @@ begin
   where household_id=v_household_id and id=p_task_id and test_context_id is null
   for update;
   if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
-  if v_task.revision <> p_expected_revision then raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
+  if p_expected_revision is not null and v_task.revision <> p_expected_revision then raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
 
   if not p_undo then
     if v_task.status not in ('todo','in_progress') then raise exception 'TASK_TERMINAL'; end if;
@@ -466,7 +467,30 @@ begin
 end;
 $$;
 
-revoke all on function public.server_tx_mark_task_could_not_do_v2(uuid,uuid,uuid,bigint,boolean,text)
+revoke all on function public.server_tx_mark_task_could_not_do_v1(uuid,uuid,uuid,boolean,text,bigint)
   from public,anon,authenticated;
-grant execute on function public.server_tx_mark_task_could_not_do_v2(uuid,uuid,uuid,bigint,boolean,text)
+grant execute on function public.server_tx_mark_task_could_not_do_v1(uuid,uuid,uuid,boolean,text,bigint)
+  to service_role;
+
+-- Old PWA/LINE calls keep their five-argument signature and receipt hash.
+-- Only the six-argument implementation owns the state transition and events.
+create or replace function public.server_tx_mark_task_could_not_do_v1(
+  p_actor_id uuid,
+  p_operation_id uuid,
+  p_task_id uuid,
+  p_undo boolean default false,
+  p_source text default 'pwa'
+)
+returns jsonb
+language sql
+security invoker
+set search_path=''
+as $$
+  select public.server_tx_mark_task_could_not_do_v1(
+    p_actor_id,p_operation_id,p_task_id,p_undo,p_source,null::bigint
+  );
+$$;
+revoke all on function public.server_tx_mark_task_could_not_do_v1(uuid,uuid,uuid,boolean,text)
+  from public,anon,authenticated;
+grant execute on function public.server_tx_mark_task_could_not_do_v1(uuid,uuid,uuid,boolean,text)
   to service_role;
