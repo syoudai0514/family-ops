@@ -342,7 +342,9 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
   function renderPastWork(title: string, tasks: TaskInstance[]) {
     if (tasks.length === 0) return null;
     return <details className="today-past-work" aria-label={title}>
-      <summary>{title} {tasks.length}件（記録する）</summary>
+      <summary><span>{title} {tasks.length}件（記録する）
+        <small>{tasks.map(task => task.title).join('、')}</small>
+      </span></summary>
       {renderTaskList(tasks)}
     </details>;
   }

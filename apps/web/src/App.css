@@ -1519,8 +1519,9 @@ fieldset {
 .today-dashboard .task-item-meta { margin: 4px 0; }
 .today-dashboard .request-item .task-item-actions { margin-top: 8px; }
 .today-past-work { margin: 6px 0; }
-.today-past-work > summary { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .9rem; color: var(--muted); }
+.today-past-work > summary { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .9rem; color: var(--color-text-muted); }
 .today-past-work > summary::before { content: '▸'; }
+.today-past-work > summary small { display: block; color: var(--color-text); }
 .today-past-work[open] > summary::before { content: '▾'; }
 .today-schedule-list a { color: inherit; text-decoration: none; }
 .today-schedule-list a:hover { text-decoration: underline; }

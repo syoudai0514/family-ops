@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Today } from './Today';
+
+const morningFixture = vi.hoisted(() => ({ showCodmon: false }));
 
 const morningOpen = {
   id: 'morning-open', household_id: 'household-1', title: '朝の水筒', category: 'routine', task_kind: 'morning_preparation',
@@ -9,6 +11,7 @@ const morningOpen = {
   attention_state: 'active', origin: 'routine', task_definition_id: null, recurrence_rule_id: null, due_at: null,
   actual_completed_by_id: null, completed_at: null,
 };
+const codmonSubmit = { ...morningOpen, id: 'codmon-submit', title: 'コドモン連絡帳を送信' };
 
 vi.mock('./useTodayClock', () => ({
   useTodayClock: () => ({ now: new Date('2026-09-09T08:00:00Z'), localDate: '2026-09-09', daypart: 'evening' as const }),
@@ -16,8 +19,8 @@ vi.mock('./useTodayClock', () => ({
 vi.mock('./useTodayData', () => ({
   useTodayData: () => ({
     status: 'ready', loading: false, refreshing: false, error: null, lastUpdatedAt: Date.now(),
-    urgentActions: [], urgentTasksById: new Map(), exceptions: [], tasks: [morningOpen],
-    taskGroups: { morning: [morningOpen], daytime: [], evening: [], optional: [] },
+    urgentActions: [], urgentTasksById: new Map(), exceptions: [], tasks: [morningOpen, ...(morningFixture.showCodmon ? [codmonSubmit] : [])],
+    taskGroups: { morning: [morningOpen, ...(morningFixture.showCodmon ? [codmonSubmit] : [])], daytime: [], evening: [], optional: [] },
     waitingTasks: [], waitingRefsByTaskId: new Map(), carryoverTasks: [], alreadyHandledTasks: [],
     subtasksByTaskId: new Map(), executionTargetsByTaskId: new Map(), incomingRequests: [], requestAttemptsByRequestId: new Map(),
     unreadHandovers: [], openShoppingItems: [], briefSchedule: [], partnerSummary: {},
@@ -45,12 +48,21 @@ vi.mock('../../app/HouseholdContext', () => ({
 }));
 
 describe('Q87 evening Today compact summary', () => {
+  beforeEach(() => { morningFixture.showCodmon = false; });
   it('keeps unfinished morning work concrete while completion history stays compact', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
     expect(screen.queryByRole('heading', { name: '朝 1/2 完了' })).not.toBeInTheDocument();
     expect(screen.getByText('朝の残り 1件（記録する）')).toBeInTheDocument();
     expect(screen.getByLabelText('朝の残り')).not.toHaveAttribute('open');
-    expect(screen.getByText('朝の水筒')).toBeInTheDocument();
+    expect(screen.getByText('朝の水筒', { selector: 'summary small' })).toBeVisible();
+    expect(screen.getByText('朝の水筒', { selector: 'li' })).not.toBeVisible();
+  });
+
+  it('names outstanding morning work including Codmon in the visible collapsed summary', () => {
+    morningFixture.showCodmon = true;
+    render(<MemoryRouter><Today /></MemoryRouter>);
+    expect(screen.getByLabelText('朝の残り')).not.toHaveAttribute('open');
+    expect(screen.getByText(`${morningOpen.title}、${codmonSubmit.title}`)).toBeVisible();
   });
 });
 
