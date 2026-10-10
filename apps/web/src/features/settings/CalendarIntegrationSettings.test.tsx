@@ -63,4 +63,14 @@ describe('CalendarIntegrationSettings', () => {
     expect(screen.queryByText('家族予定を書き込むカレンダーを選んでください')).not.toBeInTheDocument();
     expect(screen.getByText('Google Calendarの接続を更新しました。現在の家族カレンダーを継続して使います。')).toBeInTheDocument();
   });
+
+  it('says the connection is broken, not 接続済み, when Google withdrew the permission', async () => {
+    fixtures.rows = [
+      { id: 'family', external_calendar_id: 'family@example.com', display_name: 'Family calendar', active: true, reauth_required: true, is_family_write_target: true },
+    ];
+    render(<CalendarIntegrationSettings />);
+    expect(await screen.findByText(/接続が切れています/)).toBeInTheDocument();
+    expect(screen.queryByText('Google Calendar ✓ 接続済み')).not.toBeInTheDocument();
+    expect(screen.getByText('Google Calendarを再接続')).toBeInTheDocument();
+  });
 });
