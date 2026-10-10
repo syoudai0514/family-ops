@@ -1441,3 +1441,41 @@ fieldset {
 .today-optional[open] > summary::after {
   content: '▴';
 }
+
+/* 記録済み: grouped by time of day, each done task one quiet line. */
+.completed-group + .completed-group {
+  margin-top: 0.6rem;
+}
+
+.completed-group-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0.5rem 0 0.25rem;
+  padding-bottom: 0.15rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.completed-group-heading span {
+  font-weight: 400;
+}
+
+/* A recorded task: one line, no buttons (undo is in •••). */
+.task-checklist-item.completed,
+.task-checklist-item.could-not-do {
+  padding-top: 0.15rem;
+  padding-bottom: 0.15rem;
+}
+
+.task-checklist-item.completed .task-result-icon,
+.task-checklist-item.could-not-do .task-result-icon {
+  min-height: 1.9rem;
+}
+
+.task-checklist-item.completed .task-checklist-content strong,
+.task-checklist-item.could-not-do .task-checklist-content strong {
+  font-weight: 600;
+}
