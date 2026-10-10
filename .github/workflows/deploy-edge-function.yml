@@ -11,11 +11,6 @@ on:
         description: "Edge Function directory name under supabase/functions (e.g. complete-task)"
         required: true
         type: string
-      ensure_auth_reset_redirect:
-        description: "Allow the production Web password-reset return URL"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -44,34 +39,6 @@ jobs:
           [[ "$FUNCTION_NAME" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "::error::invalid function name"; exit 1; }
           test -f "supabase/functions/${FUNCTION_NAME}/index.ts" || { echo "::error::no such function: ${FUNCTION_NAME}"; exit 1; }
           grep -q "^\[functions\.${FUNCTION_NAME}\]" supabase/config.toml || { echo "::error::${FUNCTION_NAME} is not registered in supabase/config.toml"; exit 1; }
-      - name: Ensure production password-reset redirect
-        if: inputs.ensure_auth_reset_redirect
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import json, os, subprocess
-
-          endpoint = f"https://api.supabase.com/v1/projects/{os.environ['PROJECT_REF']}/config/auth"
-          reset_url = "https://family-ops-web.vercel.app/auth/reset"
-
-          def request(method, payload=None):
-              config = [f"url = {json.dumps(endpoint)}", f"header = {json.dumps('Authorization: Bearer ' + os.environ['SUPABASE_ACCESS_TOKEN'])}", 'header = "Content-Type: application/json"']
-              if payload is not None:
-                  config.append(f"data = {json.dumps(json.dumps(payload))}")
-              response = subprocess.run(["curl", "--silent", "--show-error", "--fail", "--max-time", "30", "--request", method, "--config", "-"], input="\n".join(config), text=True, capture_output=True)
-              if response.returncode:
-                  raise SystemExit(f"Auth configuration request failed: {response.stderr.strip()}")
-              return json.loads(response.stdout)
-
-          config = request("GET")
-          redirects = [url.strip() for url in config.get("uri_allow_list", "").split(",") if url.strip()]
-          changed = reset_url not in redirects
-          if changed:
-              request("PATCH", {"uri_allow_list": ",".join([*redirects, reset_url])})
-          verified = request("GET")
-          assert reset_url in [url.strip() for url in verified.get("uri_allow_list", "").split(",")], "Password-reset redirect was not saved"
-          print(json.dumps({"reset_redirect": reset_url, "allowed": True, "changed": changed}))
-          PY
       - name: Deploy
         shell: bash
         run: supabase functions deploy "$FUNCTION_NAME" --project-ref "$PROJECT_REF" --use-api
