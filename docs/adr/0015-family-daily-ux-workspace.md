@@ -24,10 +24,12 @@ Writes use the existing private mutation-receipt pattern and a household lock. C
 
 Assignment previews derive from saved terms, reject stale revision snapshots, and apply the same protected override/event/claim rules as canonical transport reconciliation. The final accept command still performs its canonical checks; a preview never changes assignments.
 
-AI consultation uses the existing private draft endpoint. A human reviews and sends the resulting proposal. Existing two-party confirmation semantics remain required. No new provider or automatic AI decision path is introduced.
+AI consultation uses the existing private draft endpoint with a dedicated `consultation` target type. Its prompt preserves conditional availability, refusal, and uncertainty rather than turning the reply into a new request. Raw consultation input uses the existing author-scoped `natural_language` storage kind and its 24-hour expiry. A human reviews and sends the resulting proposal. Existing two-party confirmation semantics remain required. No new provider or automatic AI decision path is introduced.
+
+Immediate could-not-do undo uses service-role-only `server_tx_mark_task_could_not_do_v2` with an expected task revision. Both recording and undo use mutation receipts. Replays return the saved response before checking the current revision; a new stale undo fails rather than erasing a partner's later result. The v1 entry point remains for existing PWA and LINE clients.
 
 The frozen v6 52-endpoint auth matrix remains unchanged. The live matrix explicitly includes `family-setup` in the authenticated gap-fill allowlist, alongside earlier extensions.
 
 ## Consequences
 
-Deploy the migration and new endpoint together before enabling the changed UI. All previous notification, calendar writer, and one-person simulation activation gates remain in force. Local SQL and mocked browser verification cannot prove email, real LINE delivery, or physical device behavior; those remain release verification work.
+Deploy the migration and `family-setup`, `complete-task`, and `propose-ai-draft` endpoints before enabling the changed UI. All previous notification, calendar writer, and one-person simulation activation gates remain in force. Local SQL and mocked browser verification cannot prove email, real LINE delivery, or physical device behavior; those remain release verification work.
