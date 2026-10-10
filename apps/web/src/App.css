@@ -1542,3 +1542,18 @@ fieldset {
 body:has(.task-bulk-bar) .undo-notice { bottom: calc(190px + env(safe-area-inset-bottom)); }
 .undo-notice { z-index: 1250; padding: 8px 12px; background: var(--color-surface, #fff); }
 .task-bulk-actions .task-action-missed { background: var(--color-surface, #fff); color: var(--color-text, #222); border: 1px dashed var(--color-border, #bbb); }
+
+/* iPhone Safari gives time/date inputs and long selects a minimum width wider than their card,
+   which pushed the whole settings page sideways (owner report 2026-10-10). Keep every form
+   control inside its container. */
+input, select, textarea { max-width: 100%; min-width: 0; box-sizing: border-box; }
+input[type="time"], input[type="date"], input[type="datetime-local"] {
+  -webkit-appearance: none; appearance: none; min-height: 2.5rem;
+}
+input[type="time"]::-webkit-date-and-time-value, input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+#routine-content label { display: grid; gap: 0.35rem; }
+#routine-content select { width: 100%; }
+.app-root { overflow-x: clip; }
+/* LINE copies: keep the line breaks the brief was written with. */
+.notification-copy summary { cursor: pointer; display: grid; gap: 2px; }
+.notification-copy p { white-space: pre-line; margin: 8px 0 0; }
