@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { withClaimantUsers } from '../../lib/claimantUsers';
 import { supabase } from '../../lib/supabaseClient';
 import { addDays, tokyoIsoDate } from './dateHelpers';
 import type { GooglePlanningOccurrence, PlanningTask } from './calendarProjection';
@@ -89,8 +90,10 @@ export function usePlanningData(householdId: string | null, start: string, end: 
       const calendarError = timedCalendarError ?? allDayCalendarError;
       if (calendarError && !/does not exist|permission/i.test(calendarError.message)) throw calendarError;
 
+      // The taker of a 誰でもOK task, as a user (the day sheet splits mine / the other adult's).
+      const claimedRows = await withClaimantUsers(householdId, (taskRows ?? []) as Array<Record<string, unknown> & { active_claimant_actor_ref_id?: string | null }>);
       setTasks(
-        (taskRows ?? []).map((row: Record<string, unknown>) => {
+        claimedRows.map((row: Record<string, unknown>) => {
           const definition = row.task_definitions as { code?: string; calendar_visibility?: PlanningTask['calendar_visibility'] } | null;
           return {
             ...row,

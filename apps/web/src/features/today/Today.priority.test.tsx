@@ -132,7 +132,7 @@ describe('Today first-flow priority contract', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /記録済み（1件）/ }));
     expect(section).toHaveTextContent('燃えるゴミのゴミ出し');
-    expect(section).toHaveTextContent('押し間違えた記録はここから戻せます');
+    expect(section).toHaveTextContent('押し間違えは各行の「•••」から戻せます');
   });
 
   it('shows the partner state without scoring their day', () => {

@@ -388,6 +388,17 @@ export function TaskChecklistItem({
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
+            {/* A recorded task is one quiet line; undo lives here (owner 2026-10-10: a list of done
+                cards each with a button was hard to read). */}
+            {couldNotDo && (
+              <button type="button" onClick={() => handleCouldNotDo(true)} disabled={busy}>記録を戻す</button>
+            )}
+            {completed && task.completion_mode === 'whole' && (
+              <button type="button" onClick={handleReopen} disabled={busy}>未完了に戻す</button>
+            )}
+            {completed && task.completion_mode === 'subtasks' && (
+              <button type="button" onClick={toggleExpanded} disabled={busy}>修正する</button>
+            )}
             {hasPartner && !anyoneTask && (
               <label>
                 実施者
@@ -449,9 +460,11 @@ export function TaskChecklistItem({
             {completed && (
               <button type="button" onClick={() => setEditingEvidence(true)} disabled={busy}>証跡を追加（任意）</button>
             )}
-            <button type="button" className="danger-button" onClick={handleCancel} disabled={busy || finished}>
-              キャンセル
-            </button>
+            {!finished && (
+              <button type="button" className="danger-button" onClick={handleCancel} disabled={busy}>
+                キャンセル
+              </button>
+            )}
           </div>
         </details>
 
@@ -497,38 +510,6 @@ export function TaskChecklistItem({
               onClick={() => handleComplete('partner')}>{partnerLabel}完了</button>
           )}
 
-          {couldNotDo && (
-            <button
-              type="button"
-              className="task-action task-action-secondary"
-              onClick={() => handleCouldNotDo(true)}
-              disabled={busy}
-            >
-              記録を戻す
-            </button>
-          )}
-
-          {completed && task.completion_mode === 'whole' && (
-            <button
-              type="button"
-              className="task-action task-action-secondary"
-              onClick={handleReopen}
-              disabled={busy}
-            >
-              未完了に戻す
-            </button>
-          )}
-
-          {completed && task.completion_mode === 'subtasks' && (
-            <button
-              type="button"
-              className="task-action task-action-secondary"
-              onClick={toggleExpanded}
-              disabled={busy}
-            >
-              修正する
-            </button>
-          )}
         </div>
       </div>
 

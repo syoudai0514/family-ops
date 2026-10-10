@@ -4,11 +4,13 @@ import { useDayTaskRecording } from './useDayTaskRecording';
 
 const read = vi.fn();
 const eq = vi.fn();
+const selected = vi.fn();
 const remoteChange = vi.hoisted(() => ({ current: () => {} }));
 vi.mock('../../lib/supabaseClient', () => ({
   supabase: {
     from: () => ({
-      select: () => {
+      select: (columns: string) => {
+        selected(columns);
         const result = read();
         const chain = {
           eq: (...args: unknown[]) => {
@@ -57,6 +59,10 @@ describe('home recording status freshness', () => {
     expect(view.result.current.summary?.pending).toBe(1);
     expect(eq).toHaveBeenCalledWith('household_id', 'hh');
     expect(eq).toHaveBeenCalledWith('scheduled_date', '2026-10-07');
+    // Only real task_instances columns: the taker is an actor ref (live 2026-10-10: selecting
+    // active_claimant_user_id failed every time and the home showed 取得できませんでした).
+    expect(selected).toHaveBeenCalledWith(expect.stringContaining('active_claimant_actor_ref_id'));
+    expect(selected).not.toHaveBeenCalledWith(expect.stringContaining('active_claimant_user_id'));
   });
   it('updates after a partner records work, and clears success on a failed refresh', async () => {
     read.mockResolvedValueOnce(result('2026-10-06', 'todo'));

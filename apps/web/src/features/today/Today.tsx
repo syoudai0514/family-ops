@@ -642,6 +642,18 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     );
   }
 
+  // Done work by time of day, missed work first (owner 2026-10-10: one long list was hard to read).
+  function completedGroups(tasks: TaskInstance[]): Array<{ label: string; tasks: TaskInstance[] }> {
+    const missed = tasks.filter((task) => task.status === 'skipped');
+    const done = tasks.filter((task) => task.status !== 'skipped');
+    return [
+      { label: '実施漏れ', tasks: missed },
+      { label: '朝', tasks: done.filter((task) => task.routine_phase === 'morning') },
+      { label: '日中・いつでも', tasks: done.filter((task) => task.routine_phase !== 'morning' && task.routine_phase !== 'evening') },
+      { label: '夜', tasks: done.filter((task) => task.routine_phase === 'evening') },
+    ].filter((group) => group.tasks.length > 0);
+  }
+
   function renderCompleted() {
     const completedTasks = data.completedTodayTasks ?? [];
     if (completedTasks.length === 0) return null;
@@ -657,8 +669,13 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
         </button>
         {!completedCollapsed && (
           <>
-            <p className="empty-hint">✓＝完了、−＝実施漏れ。押し間違えた記録はここから戻せます。</p>
-            {renderTaskList(completedTasks)}
+            <p className="empty-hint">✓＝完了、−＝実施漏れ。押し間違えは各行の「•••」から戻せます。</p>
+            {completedGroups(completedTasks).map((group) => (
+              <div className="completed-group" key={group.label}>
+                <h3 className="completed-group-heading">{group.label}<span>{group.tasks.length}件</span></h3>
+                {renderTaskList(group.tasks)}
+              </div>
+            ))}
           </>
         )}
       </section>

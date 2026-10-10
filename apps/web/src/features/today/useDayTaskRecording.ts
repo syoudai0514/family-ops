@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
 import { withTimeout } from '../../lib/withTimeout';
+import { withClaimantUsers } from '../../lib/claimantUsers';
 import { summarizeTaskRecording, type RecordingTask } from '../tasks/taskRecording';
 
 const TABLES = ['task_instances'];
@@ -21,15 +22,16 @@ export function useDayTaskRecording(householdId: string | null, date: string, us
       const { data, error } = await withTimeout(
         supabase
           .from('task_instances')
-          .select('scheduled_date,status,outcome_reason,planned_assignee_id,assignment_mode,active_claimant_user_id,expectation')
+          .select('scheduled_date,status,outcome_reason,planned_assignee_id,assignment_mode,active_claimant_actor_ref_id,expectation')
           .eq('household_id', householdId)
           .eq('scheduled_date', date),
         12_000,
         '記録状況を取得できませんでした。',
       );
       if (error) throw error;
+      const tasks = await withClaimantUsers(householdId, (data ?? []) as Array<RecordingTask & { active_claimant_actor_ref_id?: string | null }>);
       if (attempt === sequence.current)
-        setSnapshot({ key, tasks: (data ?? []) as RecordingTask[], error: false });
+        setSnapshot({ key, tasks, error: false });
     } catch {
       if (attempt === sequence.current) setSnapshot({ key, tasks: [], error: true });
     }
