@@ -42,7 +42,8 @@ function useNotifications(householdId: string | null, userId: string | null) {
       .select('*')
       .eq('household_id', householdId)
       .eq('recipient_user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(30);
     if (fetchError) setError(fetchError.message);
     else setNotifications(data ?? []);
     setLoading(false);
@@ -58,7 +59,7 @@ function useNotifications(householdId: string | null, userId: string | null) {
 export function Notifications() {
   const { user } = useAuth();
   const { household } = useHousehold();
-  const { notifications, loading, error, refresh } = useNotifications(
+  const { notifications, loading, error } = useNotifications(
     household?.id ?? null,
     user?.id ?? null,
   );
@@ -71,22 +72,23 @@ export function Notifications() {
           {error}
         </p>
       )}
+      <LineLinkSection />
+      <PreferencesSection householdId={household?.id ?? null} userId={user?.id ?? null} />
       <section className="card">
-        <h2>通知一覧</h2>
+        <h2>LINEで送った内容（控え）</h2>
+        <p className="empty-hint">LINEに届いたものと同じ内容です。読んだかどうかはLINEで分かるので、ここで既読にする必要はありません。</p>
         {loading ? (
           <p role="status">読み込み中…</p>
         ) : notifications.length === 0 ? (
-          <p className="empty-hint">通知はありません。</p>
+          <p className="empty-hint">まだ送った内容はありません。</p>
         ) : (
           <ul className="notification-list">
             {notifications.map((n) => (
-              <NotificationRow key={n.id} notification={n} onChanged={refresh} />
+              <NotificationRow key={n.id} notification={n} />
             ))}
           </ul>
         )}
       </section>
-      <LineLinkSection />
-      <PreferencesSection householdId={household?.id ?? null} userId={user?.id ?? null} />
     </div>
   );
 }
@@ -177,41 +179,21 @@ export function LineLinkSection() {
   );
 }
 
-function NotificationRow({
-  notification,
-  onChanged,
-}: {
-  notification: UserNotification;
-  onChanged: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const isRead = Boolean(notification.read_at);
-
-  async function markRead() {
-    setBusy(true);
-    try {
-      await callEdgeFunction(EDGE_FUNCTIONS.markNotificationRead, {
-        operation_id: newOperationId(),
-        notification_id: notification.id,
-      });
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
+// A copy of what was sent on LINE. Read state is not tracked here: LINE already shows it, and
+// nothing else used the in-app 既読 (owner 2026-10-10).
+function NotificationRow({ notification }: { notification: UserNotification }) {
+  const body = notification.body?.startsWith(notification.title)
+    ? notification.body.slice(notification.title.length).trimStart()
+    : notification.body;
   return (
-    <li className={isRead ? 'notification-item' : 'notification-item unread'}>
-      <div>
-        <strong>{notification.title}</strong>
-        {notification.body && <p>{notification.body}</p>}
-        <span className="task-item-meta">{formatDateTimeJa(notification.created_at)}</span>
-      </div>
-      {!isRead && (
-        <button type="button" disabled={busy} onClick={markRead}>
-          既読にする
-        </button>
-      )}
+    <li className="notification-item">
+      <details className="notification-copy">
+        <summary>
+          <strong>{notification.title}</strong>
+          <span className="task-item-meta">{formatDateTimeJa(notification.created_at)}</span>
+        </summary>
+        {body && <p>{body}</p>}
+      </details>
     </li>
   );
 }
