@@ -1538,7 +1538,7 @@ fieldset {
 .task-bulk-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .task-bulk-actions .task-action { min-height: 2.75rem; padding: 0.3rem 1rem; border-radius: 999px; }
 .task-bulk-failures p { margin: 0; font-size: .9rem; color: var(--color-danger, #a33); }
-body:has(.task-bulk-bar) .app-shell { padding-bottom: 220px; }
+.task-bulk-spacer { height: 200px; }
 body:has(.task-bulk-bar) .undo-notice { bottom: calc(190px + env(safe-area-inset-bottom)); }
 .undo-notice { z-index: 1250; padding: 8px 12px; background: var(--color-surface, #fff); }
 .task-bulk-actions .task-action-missed { background: var(--color-surface, #fff); color: var(--color-text, #222); border: 1px dashed var(--color-border, #bbb); }

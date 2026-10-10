@@ -118,6 +118,9 @@ export function TaskSelectionProvider({
   return (
     <TaskSelectionContext.Provider value={value}>
       {children}
+      {/* Room to scroll the last rows above the bar. Lives here, not as page padding: the date
+          bar shares the page container class and grew a blank gap (owner report 2026-10-10). */}
+      {(live.length > 0 || failures.length > 0) && <div className="task-bulk-spacer" aria-hidden="true" />}
       {(live.length > 0 || failures.length > 0) && (
         <aside className="task-bulk-bar" aria-label="選んだ作業をまとめて記録">
           {live.length > 0 && (

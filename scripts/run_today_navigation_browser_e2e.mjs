@@ -339,7 +339,9 @@ async function main() {
     for (const text of ['明日の着替え準備', 'お迎え', '担当している残り 2件']) await waitForText(client, text);
     for (const removedKpi of ['要対応 0', '残り 1', '待ち 0', '明日影響 1', '完了 4']) {
       assert.equal(
-        await evaluate(client, `document.body.innerText.includes(${JSON.stringify(removedKpi)})`),
+        // The removed tiles began their own line ("残り 1"). Match line starts, so a section such
+        // as "日中の残り 1件（記録する）" shown in the evening is not mistaken for the scoreboard.
+        await evaluate(client, `document.body.innerText.split('\\n').some((line) => line.trim().startsWith(${JSON.stringify(removedKpi)}))`),
         false,
         `removed dashboard/scorekeeping text must stay absent: ${removedKpi}`,
       );
