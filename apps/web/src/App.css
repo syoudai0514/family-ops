@@ -1526,3 +1526,19 @@ fieldset {
 .today-schedule-list a { color: inherit; text-decoration: none; }
 .today-schedule-list a:hover { text-decoration: underline; }
 .today-schedule-list a:focus-visible { outline: 2px solid var(--accent, #167061); outline-offset: 3px; border-radius: 2px; }
+
+/* Tick several tasks, then record them together (owner 2026-10-10). The box only selects. */
+.task-checklist-item.task-selectable .task-checklist-main { grid-template-columns: 2.25rem minmax(0, 1fr) auto; }
+.task-select { display: grid; place-items: center; width: 2.75rem; min-height: 2.75rem; margin: -0.35rem 0 0 -0.5rem; cursor: pointer; }
+.task-select input { width: 1.4rem; height: 1.4rem; margin: 0; accent-color: var(--color-accent, #1d6b5a); cursor: pointer; }
+.task-checklist-item.task-selected { border-color: var(--color-accent, #1d6b5a); box-shadow: inset 0 0 0 1px var(--color-accent, #1d6b5a); }
+.task-bulk-bar { position: fixed; z-index: 1200; left: 50%; transform: translateX(-50%); bottom: calc(68px + env(safe-area-inset-bottom)); width: min(94vw, 560px); box-sizing: border-box; background: var(--color-surface, #fff); border: 2px solid var(--color-accent, #1d6b5a); border-radius: 14px; box-shadow: 0 5px 24px #0003; padding: 10px 12px; display: grid; gap: 6px; }
+.task-bulk-count { margin: 0; font-weight: 700; }
+.task-bulk-count small { display: block; font-weight: 400; color: var(--color-text-muted); }
+.task-bulk-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.task-bulk-actions .task-action { min-height: 2.75rem; padding: 0.3rem 1rem; border-radius: 999px; }
+.task-bulk-failures p { margin: 0; font-size: .9rem; color: var(--color-danger, #a33); }
+body:has(.task-bulk-bar) .app-shell { padding-bottom: 220px; }
+body:has(.task-bulk-bar) .undo-notice { bottom: calc(190px + env(safe-area-inset-bottom)); }
+.undo-notice { z-index: 1250; padding: 8px 12px; background: var(--color-surface, #fff); }
+.task-bulk-actions .task-action-missed { background: var(--color-surface, #fff); color: var(--color-text, #222); border: 1px dashed var(--color-border, #bbb); }

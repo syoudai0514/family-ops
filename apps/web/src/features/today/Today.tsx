@@ -10,6 +10,7 @@ import {
 import { IncomingRequestRow } from '../requests/Requests';
 import { usePendingActions } from './usePendingActions';
 import { TodayTaskItem } from './TodayTaskItem';
+import { TaskSelectionProvider } from '../tasks/TaskSelection';
 import { TomorrowPreparationCard } from './TomorrowPreparationCard';
 import { PendingActionCard } from './PendingActionCard';
 import { PendingActionEditModal } from './PendingActionEditModal';
@@ -610,6 +611,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
   const optionalTasks = data.taskGroups.optional;
 
   return (
+    <TaskSelectionProvider onChanged={refreshToday} partnerLabel={partner?.family_role === 'papa' ? 'パパ' : partner?.family_role === 'mama' ? 'ママ' : undefined}>
     <div className="app-shell today-dashboard">
       <div className="today-header today-page-heading"><h1>今日</h1></div>
 
@@ -710,5 +712,6 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
         />
       )}
     </div>
+    </TaskSelectionProvider>
   );
 }
