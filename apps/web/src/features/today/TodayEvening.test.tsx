@@ -48,7 +48,8 @@ describe('Q87 evening Today compact summary', () => {
   it('keeps unfinished morning work concrete while completion history stays compact', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
     expect(screen.queryByRole('heading', { name: '朝 1/2 完了' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '朝の残り' })).toBeInTheDocument();
+    expect(screen.getByText('朝の残り 1件（記録する）')).toBeInTheDocument();
+    expect(screen.getByLabelText('朝の残り')).not.toHaveAttribute('open');
     expect(screen.getByText('朝の水筒')).toBeInTheDocument();
   });
 });

@@ -216,7 +216,7 @@ export function DayAgendaSheet({
     <div className="day-agenda-section-heading">
       <div>
 
-        <h3>今日の予定</h3>
+        <h3>予定</h3>
       </div>
 
     </div>

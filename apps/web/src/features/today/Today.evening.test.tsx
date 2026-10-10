@@ -67,15 +67,15 @@ vi.mock('./PendingActionEditModal', () => ({ PendingActionEditModal: () => null 
 vi.mock('../tasks/TaskFormModal', () => ({ TaskFormModal: () => null }));
 vi.mock('../tasks/QuickAdd', () => ({ QuickAdd: () => <button type="button">追加</button> }));
 
-// 夜も朝の残りを同じ場所に表示し、完了済みの朝作業や点数表示は再掲しない。
+// 夜は朝の残りをたたみ、完了済みの朝作業や点数表示は再掲しない。
 describe('Today Q87 evening collapse', () => {
   it('shows unresolved morning work without a completion scoreboard', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
 
     expect(screen.queryByRole('heading', { name: '朝 1/2 完了' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '朝の残り' })).toBeInTheDocument();
+    expect(screen.getByText('朝の残り 1件（記録する）')).toBeInTheDocument();
     expect(screen.queryByText('朝の洗濯')).not.toBeInTheDocument();
-    expect(screen.getByText('朝の薬を確認')).toBeInTheDocument();
+    expect(screen.getByLabelText('朝の残り')).not.toHaveAttribute('open');
   });
 });
 

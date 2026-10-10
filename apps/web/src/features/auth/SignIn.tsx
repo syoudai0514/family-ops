@@ -42,7 +42,12 @@ export function SignIn({ onSignedIn }: { onSignedIn?: () => void } = {}) {
 
     try {
       const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (signInError) { setError('メールアドレスとパスワードを確認してください。Googleで登録した場合はGoogleからログインしてください。'); return; }
+      if (signInError) {
+        setError(signInError.code === 'email_not_confirmed'
+          ? 'メールの確認がまだ完了していません。登録時の確認メールのリンクを開いてから、もう一度ログインしてください。'
+          : 'メールアドレスとパスワードを確認してください。Googleで登録した場合はGoogleからログインしてください。');
+        return;
+      }
       if (data.session) onSignedIn?.();
     } catch { setError('ログインを確認できませんでした。通信状態を確認して再試行してください。'); }
     finally { setSubmitting(null); }

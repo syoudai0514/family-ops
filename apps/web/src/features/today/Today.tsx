@@ -339,6 +339,14 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     );
   }
 
+  function renderPastWork(title: string, tasks: TaskInstance[]) {
+    if (tasks.length === 0) return null;
+    return <details className="today-past-work" aria-label={title}>
+      <summary>{title} {tasks.length}件（記録する）</summary>
+      {renderTaskList(tasks)}
+    </details>;
+  }
+
   function renderDecisions() {
     if (!hasPendingDecisions) return null;
     return (
@@ -511,10 +519,6 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     if (data.tomorrowImpact.impact_count === 0) return null;
     return (
       <div id="today-tomorrow" aria-label="明日の予定と担当">
-        <div className="section-heading">
-          <div><h2>予定と担当</h2></div>
-          <span>{data.tomorrowImpact.impact_count}件</span>
-        </div>
         <ul className="today-schedule-list">
           {tomorrowTasks.slice(0, 3).map((task) => <li key={task.task_id}>{task.title ?? 'タスク'}</li>)}
           {data.tomorrowImpact.schedule.slice(0, Math.max(0, 3 - tomorrowTasks.length)).map((item) => (
@@ -631,9 +635,11 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
       {clock.daypart === 'day' && nextTask && <section className="card next-task-compact" aria-label="次にやること"><strong>次にやること</strong><p>{nextTask.title}</p><div className="button-row"><button className="text-button" onClick={() => document.getElementById(`task-${nextTask.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>作業を確認</button><button className="text-button" onClick={() => setAssignmentRequest({ id: nextTask.id, token: Date.now() })}>今回だけ変更</button></div></section>}
       <section className="today-own-work" aria-label="自分のやること"><h2>自分のやること</h2>
         {renderTaskSection('持ち越し', data.carryoverTasks)}
-        {renderTaskSection(clock.daypart === 'morning' ? '朝やること' : '朝の残り', morningResidual, clock.daypart === 'morning' ? 'いま' : undefined)}
-        {renderTaskSection('日中にやること', daytimeResidual, clock.daypart === 'day' ? 'いま' : undefined)}
+        {clock.daypart !== 'evening' && renderTaskSection(clock.daypart === 'morning' ? '朝やること' : '朝の残り', morningResidual, clock.daypart === 'morning' ? 'いま' : undefined)}
+        {clock.daypart !== 'evening' && renderTaskSection('日中にやること', daytimeResidual, clock.daypart === 'day' ? 'いま' : undefined)}
         {renderTaskSection('夜にやること', eveningTasks, clock.daypart === 'evening' ? 'いま' : undefined)}
+        {clock.daypart === 'evening' && renderPastWork('朝の残り', morningResidual)}
+        {clock.daypart === 'evening' && renderPastWork('日中の残り', daytimeResidual)}
       </section>
       {renderInput()}
       {renderWaiting()}

@@ -75,4 +75,18 @@ describe('SignIn email/password auth', () => {
     expect(screen.getByRole('button', { name: 'メールでログイン' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新規登録' })).toBeInTheDocument();
   });
+
+  it.each([
+    ['email_not_confirmed', 'メールの確認がまだ完了していません。'],
+    ['invalid_credentials', 'メールアドレスとパスワードを確認してください。'],
+  ])('explains %s without advancing the signed-in screen', async (code, message) => {
+    signInWithPassword.mockResolvedValue({ data: { session: null }, error: { code } });
+    const signedIn = vi.fn();
+    render(<SignIn onSignedIn={signedIn} />);
+    fireEvent.change(screen.getByLabelText('メールアドレス'), { target: { value: 'mama@example.com' } });
+    fireEvent.change(screen.getByLabelText('パスワード'), { target: { value: 'secret12' } });
+    fireEvent.click(screen.getByRole('button', { name: 'メールでログイン' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(signedIn).not.toHaveBeenCalled();
+  });
 });

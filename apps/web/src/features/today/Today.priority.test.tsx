@@ -102,7 +102,7 @@ describe('Today first-flow priority contract', () => {
     const handoverSection = screen.getByRole('region', { name: '引き継ぎ・共有' });
     expect(screen.queryByRole('region', { name: '朝の完了まとめ' })).not.toBeInTheDocument();
     const waitingSection = screen.getByRole('region', { name: '待ち・確認' });
-    const remainingHeading = screen.getByRole('heading', { name: '朝の残り' });
+    const remainingHeading = screen.getByLabelText('朝の残り');
     const tomorrowSection = screen.getByLabelText('明日の予定と担当');
 
     expect(exceptionSection).toHaveTextContent('保育園が短縮');

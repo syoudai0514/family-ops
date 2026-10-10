@@ -1518,3 +1518,10 @@ fieldset {
 .today-dashboard .request-item p { margin: 8px 0; }
 .today-dashboard .task-item-meta { margin: 4px 0; }
 .today-dashboard .request-item .task-item-actions { margin-top: 8px; }
+.today-past-work { margin: 6px 0; }
+.today-past-work > summary { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .9rem; color: var(--muted); }
+.today-past-work > summary::before { content: '▸'; }
+.today-past-work[open] > summary::before { content: '▾'; }
+.today-schedule-list a { color: inherit; text-decoration: none; }
+.today-schedule-list a:hover { text-decoration: underline; }
+.today-schedule-list a:focus-visible { outline: 2px solid var(--accent, #167061); outline-offset: 3px; border-radius: 2px; }
