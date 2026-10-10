@@ -59,7 +59,7 @@ describe('assignment acceptance preview', () => {
     expect(screen.getByText('パパ → ママ')).toBeInTheDocument();
     expect(ready).toHaveBeenLastCalledWith(true);
     expect(callEdgeFunction).toHaveBeenCalledOnce();
-    expect(vi.mocked(callEdgeFunction).mock.calls[0][0]).toBe('family-setup');
+    expect(vi.mocked(callEdgeFunction).mock.calls[0][0]).toBe('complete-onboarding-step');
   });
 
   it('keeps acceptance disabled when the saved request changed', async () => {
@@ -94,7 +94,7 @@ describe('assignment acceptance preview', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: '再確認' }));
     await waitFor(() => expect(ready).toHaveBeenLastCalledWith(true));
-    expect(vi.mocked(callEdgeFunction).mock.calls.every(([name]) => name === 'family-setup')).toBe(
+    expect(vi.mocked(callEdgeFunction).mock.calls.every(([name]) => name === 'complete-onboarding-step')).toBe(
       true,
     );
   });
