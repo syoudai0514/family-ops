@@ -29,6 +29,7 @@
 // itself now lives in ./routineQuickReply.ts (all four normative top-level
 // actions, and 今回は不要 now posts a confirmation-prompt action rather than
 // mutating directly) — see that file's header for the full rationale.
+import { itemBlockText } from './blockText.ts';
 import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts';
 import { withServiceHandler, jsonResponse } from '../_shared/handler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -181,7 +182,7 @@ function buildBundledText(
           const outcome = requestOutcomeText(item);
           const title = item.title ?? '';
           const body = item.body ?? '';
-          let block = outcome ?? (body && body !== title ? `${title}\n${body}` : title);
+          let block = outcome ?? itemBlockText(title, body);
           if (type === 'routine' && item.session_id && !seenSessionIds.has(item.session_id)) {
             seenSessionIds.add(item.session_id);
             block += `\n${buildCheckinLink(item.session_id)}`;

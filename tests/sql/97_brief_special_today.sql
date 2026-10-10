@@ -99,7 +99,7 @@ begin
   -- The scheduled brief carries the block; the renderer prints it right after まず確認.
   line:=private.fn_daily_brief_for_line_v1(brief, u1, (day::text||' 07:00')::timestamp at time zone 'Asia/Tokyo', 'morning');
   text_morning:=private.fn_render_daily_brief_text_v3(line,'morning');
-  if position(E'⭐ 今日だけ（いつもと違う）\n・プラゴミのゴミ出し\n・食育の準備（すだちぐみ 食育）' in text_morning)=0 then
+  if position(E'⭐ 今日だけ（平日は毎日ないこと）\n・プラゴミのゴミ出し\n・食育の準備（すだちぐみ 食育）' in text_morning)=0 then
     raise exception 'morning brief lacks the special block: %', text_morning;
   end if;
   if text_morning !~ E'朝やること\n・朝ごはん\n?$' and text_morning !~ E'朝やること\n・朝ごはん' then
@@ -112,6 +112,18 @@ begin
   line:=private.fn_daily_brief_for_line_v1(brief, u1, (day::text||' 20:30')::timestamp at time zone 'Asia/Tokyo', 'evening');
   text_evening:=private.fn_render_daily_brief_text_v3(line,'evening');
   if position('⭐ 今日だけ' in text_evening)=0 then raise exception 'evening brief lacks the special block: %', text_evening; end if;
+
+  -- Owner 2026-10-10: on a weekend or a holiday nothing is "unusual for the day", so there is
+  -- no block and the tasks stay in their normal groups.
+  update public.task_instances set scheduled_date=date '2026-10-10' where id in (wed_t,manual_t);
+  split:=private.fn_brief_split_special_v1(brief);
+  if jsonb_array_length(split->'special_today') <> 0 then
+    raise exception 'a Saturday must have no special block: %', split->'special_today';
+  end if;
+  if jsonb_array_length(split#>'{own_task_groups,morning}') <> 3 then
+    raise exception 'on a Saturday every task stays in its group';
+  end if;
+  update public.task_instances set scheduled_date=day where id in (wed_t,manual_t);
 
   -- No special tasks -> no block (a brief without task ids, like older fixtures, is unchanged).
   line:=private.fn_daily_brief_for_line_v1('{"own_task_groups":{"morning":[{"title":"朝の片付け","category":"household"}]}}'::jsonb, u1, (day::text||' 07:00')::timestamp at time zone 'Asia/Tokyo','morning');
