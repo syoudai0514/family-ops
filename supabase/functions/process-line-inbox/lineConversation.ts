@@ -296,6 +296,21 @@ export function completionHint(text: string): string {
   return `${text}\n\n💡 次もそのまま文章でOKです。「メニュー」でできることを確認できます。`;
 }
 
+// 予定 (special) goes to the family Google Calendar without asking each time (owner 2026-10-11).
+// The reply says so and offers a one-tap opt-out, and the opt-out offers a way back.
+export function eventCalendarChoiceReply(pendingActionId: string, visibility: "special" | "hidden"): { text: string; quickReplies: LineQuickReplyAction[] } {
+  if (visibility === "special") {
+    return {
+      text: "📅 Googleカレンダーにも入れます。入れたくないときは「Googleに入れない」を押してください。",
+      quickReplies: [{ type: "postback", label: "Googleに入れない", data: `action=calendar_visibility&pending_action_id=${pendingActionId}&value=hidden`, displayText: "Googleに入れない" }],
+    };
+  }
+  return {
+    text: "✓ Googleカレンダーには入れません。おうちノートには残っています。",
+    quickReplies: [{ type: "postback", label: "やっぱり入れる", data: `action=calendar_visibility&pending_action_id=${pendingActionId}&value=special`, displayText: "やっぱりGoogleに入れる" }],
+  };
+}
+
 export function pendingConfirmationMessage(actionType: string): string {
   if (actionType === "assignment_change_request") return "✓ お願いを送りました。\n相手の返事を待っています。担当はまだ変わっていません。";
   if (actionType === "request_create") return "✓ お願いを送りました。\n相手の返事を待っています。";

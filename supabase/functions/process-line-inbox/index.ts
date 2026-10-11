@@ -98,6 +98,7 @@ import {
   menuQuickReplies,
   normalizeHiraganaMamaRole,
   pendingConfirmationMessage,
+  eventCalendarChoiceReply,
   readOnlyLineIntent,
   transportAssignmentCorrectionCode,
 } from "./lineConversation.ts";
@@ -1600,6 +1601,17 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       console.error("process-line-inbox: confirm_pending failed", error.message);
       return;
     }
+    if (pending.action_type === "task_create_once" && pending.normalized_payload?.calendar_visibility === "special") {
+      const choice = eventCalendarChoiceReply(fields.pending_action_id, "special");
+      await sendConfirmation(
+        client,
+        item,
+        actor,
+        `${pendingConfirmationMessage(pending.action_type)}\n${choice.text}`,
+        [...choice.quickReplies, ...menuQuickReplies()],
+      );
+      return;
+    }
     await sendConfirmation(
       client,
       item,
@@ -1607,6 +1619,22 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       completionHint(pendingConfirmationMessage(pending.action_type)),
       menuQuickReplies(),
     );
+    return;
+  }
+
+  if (fields.action === "calendar_visibility" && fields.pending_action_id && (fields.value === "hidden" || fields.value === "special")) {
+    const { error } = await client.rpc("server_tx_set_line_pending_calendar_visibility", {
+      p_actor_id: actor.user_id,
+      p_pending_action_id: fields.pending_action_id,
+      p_visibility: fields.value,
+    });
+    if (error) {
+      console.error("process-line-inbox: calendar_visibility failed", error.message);
+      await sendConfirmation(client, item, actor, "Googleカレンダーの設定を変えられませんでした。アプリの予定の「編集」から変更してください。");
+      return;
+    }
+    const choice = eventCalendarChoiceReply(fields.pending_action_id, fields.value);
+    await sendConfirmation(client, item, actor, fields.value === "special" ? "✓ Googleカレンダーに入れます。" : choice.text, fields.value === "special" ? menuQuickReplies() : [...choice.quickReplies, ...menuQuickReplies()]);
     return;
   }
 

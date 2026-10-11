@@ -1,6 +1,7 @@
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   conversationalScheduleLead,
+  eventCalendarChoiceReply,
   formatScheduleReply,
   isAssistantAddressCorrection,
   isLineCorrectionCue,
@@ -120,4 +121,14 @@ Deno.test("pending confirmation copy preserves request negotiation state", () =>
     "✓ お願いを送りました。\n相手の返事を待っています。",
   );
   assertEquals(pendingConfirmationMessage("task_create_once"), "✓ 登録しました。");
+});
+
+Deno.test("an event confirmation says it goes to Google and offers a one-tap opt-out and a way back", () => {
+  const on = eventCalendarChoiceReply("pa-1", "special");
+  assert(on.text.includes("Googleカレンダーにも入れます"));
+  assertEquals(on.quickReplies.map((q) => q.label), ["Googleに入れない"]);
+  assertEquals((on.quickReplies[0] as { data: string }).data, "action=calendar_visibility&pending_action_id=pa-1&value=hidden");
+  const off = eventCalendarChoiceReply("pa-1", "hidden");
+  assert(off.text.includes("入れません"));
+  assertEquals((off.quickReplies[0] as { data: string }).data, "action=calendar_visibility&pending_action_id=pa-1&value=special");
 });

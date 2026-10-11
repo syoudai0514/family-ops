@@ -492,7 +492,7 @@ async function geminiLineIntent(
     "title は80文字以内の短い行動/買い物名。『なくなった』『切れそう』等の在庫説明やメタ文言はtitleへ混ぜない。",
     "subtasks は実際にチェックできる持ち物・手順だけを最大5件。無ければ空配列。",
     "context は予定の場所・開始時刻等の短い補足だけ。無ければnull。",
-    "calendar_visibility は、病院・習い事・学校/保育園行事・特別な持ち物など家族予定として見通しとGoogle Calendarに出すべき一回限りの対応だけ special。それ以外の日常タスクは hidden。",
+    "calendar_visibility は、日時の決まった予定（通院・病院・習い事・学校/保育園行事・予約・外出・家族の約束など）と特別な持ち物は special（Google Calendarに入る）。家事・片付け・買い物・買い出し・毎日のルーティンは hidden。迷ったら、時刻と行き先や相手がある一回限りの用事は special。",
     "shared_message は request のときだけ、事実を増やさず柔らかい依頼文。それ以外null。",
     '必ずJSONのみ: {"kind":"task|request|shopping","title":"...","scheduled_date":"YYYY-MM-DD","due_local_time":"HH:MM|null","daypart":"morning|noon|evening|night|null","target_role":"papa|mama|null","shared_message":"...|null","subtasks":["..."],"context":"...|null","calendar_visibility":"special|hidden"}',
     "",
