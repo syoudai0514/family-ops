@@ -71,7 +71,14 @@ export interface SnapshotTransport {
   pickup: { who: "me" | "partner" | null; time: string | null } | null;
 }
 
-export type ScheduleRange = "today" | "tomorrow" | "week" | "yesterday";
+/** A fixed range, or one day as YYYY-MM-DD (「10/24の予定」, owner 2026-10-11). */
+export type ScheduleRange = "today" | "tomorrow" | "week" | "yesterday" | `${number}-${number}-${number}`;
+
+export function isScheduleDate(value: unknown): value is `${number}-${number}-${number}` {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
 
 export interface Snapshot {
   taskDate?: string;
@@ -229,7 +236,7 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     "",
     "## actions（refは『家庭の状況』にあるものだけ）",
     '- {"type":"show_shopping","who":"me|partner|unassigned|any"} 買い物リストを見せる。me = 話している人が買うもの（担当なしを含む）。',
-    '- {"type":"show_schedule","range":"today|tomorrow|week|yesterday"} 予定・タスクの一覧を見せる（アプリが全部を整えて出す）。「今日のタスク」「今日のは？」は today、「昨日の作業は？」「昨日の残りある？」は yesterday。',
+    '- {"type":"show_schedule","range":"today|tomorrow|week|yesterday|date","date":"YYYY-MM-DD"} 予定・タスクの一覧を見せる（アプリが全部を整えて出す）。「今日のタスク」「今日のは？」は today、「昨日の作業は？」「昨日の残りある？」は yesterday。「10/24の予定」「来週土曜の予定は？」のように特定の日なら range を date にして date にその日付（今日・明日なら today・tomorrow）。',
     "- 一覧・リンク（URL）・おうちノートの過去の返事を reply に書き写さない。一覧は show_schedule / show_shopping でアプリが出す。",
     '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。その1件の中身を全部買ったと言われたときだけ。',
     '- {"type":"buy_part","ref":"s1","bought":"食器用洗剤","remaining":"パパ用のシャンプーとリンス"} 1件に複数の品物がまとまっている買い物（例「食器用洗剤とパパ用のシャンプーとリンスの購入」）のうち、一部だけ買ったと言われたとき。bought = 買ったもの、remaining = まだ買っていないもの（元の言い方のまま、「の購入」などは付けても付けなくてもよい）。残りは買い物リストに残る。全部買ったと言われたら mark_bought。どれが買ったものか分からなければ、actions を空にして reply で聞き返す。',
@@ -338,6 +345,8 @@ function parseAction(raw: unknown): Action | Action[] | null {
     case "show_shopping":
       return { type: "show_shopping", who: (["me", "partner", "unassigned", "any"] as const).find((w) => w === a.who) ?? "any" };
     case "show_schedule":
+      if (a.range === "date" && isScheduleDate(a.date)) return { type: "show_schedule", range: a.date };
+      if (isScheduleDate(a.range)) return { type: "show_schedule", range: a.range };
       return { type: "show_schedule", range: (["today", "tomorrow", "week", "yesterday"] as const).find((r) => r === a.range) ?? "today" };
     case "buy_part": {
       const ref = str(a.ref);

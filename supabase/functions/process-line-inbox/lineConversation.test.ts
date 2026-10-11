@@ -2,6 +2,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   conversationalScheduleLead,
   eventCalendarChoiceReply,
+  scheduleDateInquiry,
   formatScheduleReply,
   isAssistantAddressCorrection,
   isLineCorrectionCue,
@@ -131,4 +132,14 @@ Deno.test("an event confirmation says it goes to Google and offers a one-tap opt
   const off = eventCalendarChoiceReply("pa-1", "hidden");
   assert(off.text.includes("入れません"));
   assertEquals((off.quickReplies[0] as { data: string }).data, "action=calendar_visibility&pending_action_id=pa-1&value=special");
+});
+
+Deno.test("「10/24の予定見せて」 asks for that day's schedule; a dated entry still creates", () => {
+  assertEquals(scheduleDateInquiry("10/24の予定見せて", "2026-10-11"), "2026-10-24");
+  assertEquals(scheduleDateInquiry("10月24日の予定は？", "2026-10-11"), "2026-10-24");
+  assertEquals(scheduleDateInquiry("10/24(土)何がある？", "2026-10-11"), "2026-10-24");
+  assertEquals(scheduleDateInquiry("１/５の予定", "2026-12-20"), "2027-01-05");
+  assertEquals(scheduleDateInquiry("10/17 9:00-詩乃の便秘通院。パパ担当", "2026-10-11"), null);
+  assertEquals(scheduleDateInquiry("10/24に運動会の予定を追加", "2026-10-11"), null);
+  assertEquals(scheduleDateInquiry("2/30の予定", "2026-10-11"), null);
 });
