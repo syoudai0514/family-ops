@@ -99,6 +99,7 @@ import {
   normalizeHiraganaMamaRole,
   pendingConfirmationMessage,
   eventCalendarChoiceReply,
+  scheduleDateInquiry,
   readOnlyLineIntent,
   transportAssignmentCorrectionCode,
 } from "./lineConversation.ts";
@@ -120,7 +121,7 @@ import {
   type CompletionContext,
 } from "./lineCompletionReport.ts";
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
-import { type DraftSpec, draftToPending, evaluateUnderstanding, makeGeminiProvider, resolveUnderstandModel, runPlan, UNDERSTAND_THINKING_LEVEL, understandLineText } from "./lineUnderstand.ts";
+import { type DraftSpec, draftToPending, isScheduleDate, type ScheduleRange, evaluateUnderstanding, makeGeminiProvider, resolveUnderstandModel, runPlan, UNDERSTAND_THINKING_LEVEL, understandLineText } from "./lineUnderstand.ts";
 import type { GeminiThinkingLevel } from "../_shared/gemini.ts";
 import { loadSnapshot, logLineTurn, markUnderstandModelBusy, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
 import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
@@ -273,9 +274,15 @@ async function sendLineSchedule(
   client: SupabaseClient,
   item: WebhookInboxItem,
   actor: LineActor,
-  kind: "today" | "tomorrow" | "week" | "yesterday",
+  requested: ScheduleRange,
   leadingText?: string,
 ): Promise<void> {
+  // One specific day (「10/24の予定」). Today and tomorrow keep their own fuller replies.
+  const day = isScheduleDate(requested) ? requested : null;
+  const kind = day === jstIsoDateOffset(0) ? "today"
+    : day === jstIsoDateOffset(1) ? "tomorrow"
+    : day === jstIsoDateOffset(-1) ? "yesterday"
+    : day ? "date" : requested as "today" | "tomorrow" | "week" | "yesterday";
   if (kind === "yesterday") {
     // "昨日の作業は？": yesterday's tasks in full, the same way as today's.
     const date = jstIsoDateOffset(-1);
@@ -337,7 +344,9 @@ async function sendLineSchedule(
 
   const range = kind === "week"
     ? jstWeekRange()
-    : { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) };
+    : kind === "date" && day
+      ? { start: day, end: day }
+      : { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) };
   const { data, error } = await client.rpc("server_tx_get_week_schedule", {
     p_actor_id: actor.user_id,
     p_start_date: range.start,
@@ -367,7 +376,7 @@ async function sendLineSchedule(
     })),
     ...(schedule.occurrences ?? []).map((entry) => ({ title: entry.title ?? "Google Calendar予定", startsAt: entry.starts_at ?? null })),
   ].sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? ""));
-  const title = kind === "tomorrow" ? "明日の予定" : "今週の予定";
+  const title = kind === "tomorrow" ? "明日の予定" : kind === "date" && day ? `${formatScheduleDate(day)}の予定` : "今週の予定";
   const scheduleText = formatScheduleReply(title, entries);
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
@@ -387,6 +396,11 @@ async function tryHandleReadOnlyText(
   actor: LineActor,
   text: string,
 ): Promise<boolean> {
+  const askedDate = scheduleDateInquiry(text, jstIsoDateOffset(0));
+  if (askedDate) {
+    await sendLineSchedule(client, item, actor, askedDate as ScheduleRange, `${formatScheduleDate(askedDate)}の予定を見てみたよ👇`);
+    return true;
+  }
   const intent = readOnlyLineIntent(text);
   if (!intent) return false;
 

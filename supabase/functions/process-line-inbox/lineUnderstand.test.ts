@@ -563,3 +563,11 @@ Deno.test("model: the household setting wins when it is a valid Gemini id, else 
     Deno.env.delete("GEMINI_MODEL_LINE_UNDERSTAND");
   }
 });
+
+Deno.test("a specific day's schedule is shown for that day, not today (owner 2026-10-11)", () => {
+  assertEquals(parsePlan('{"reply":"10/24の予定はこれだよ👇","actions":[{"type":"show_schedule","range":"date","date":"2026-10-24"}],"confidence":"high"}')?.actions,
+    [{ type: "show_schedule", range: "2026-10-24" }]);
+  // A malformed date does not become a different day.
+  assertEquals(parsePlan('{"reply":"","actions":[{"type":"show_schedule","range":"date","date":"2026-02-30"}],"confidence":"high"}')?.actions,
+    [{ type: "show_schedule", range: "today" }]);
+});

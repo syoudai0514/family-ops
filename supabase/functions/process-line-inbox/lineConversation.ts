@@ -241,6 +241,29 @@ function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | n
   return null;
 }
 
+/**
+ * 「10/24の予定見せて」「10月24日の予定は？」: one day's schedule. Returns YYYY-MM-DD, or null
+ * when the text is not a plain question about one date (so 「10/17 9:00 通院」 still creates).
+ * Before 2026-10-11 these fell back to today's list (owner report).
+ */
+export function scheduleDateInquiry(text: string, todayIso: string): string | null {
+  const value = normalized(text).replace(/[。.!！?？]+$/g, "");
+  const match = value.match(/^(\d{1,2})(?:\/|月)(\d{1,2})日?(?:\([月火水木金土日]\)|（[月火水木金土日]）)?(?:の|は)?(.*)$/u);
+  if (!match) return null;
+  const rest = match[3];
+  if (!/^(?:(?:なんか|何か))?(?:予定|タスク|やること)(?:は|を|が)?(?:見せて|教えて|知りたい|見たい|確認したい|何(?:が)?ある|何だっけ|なんだっけ|ある|あるの|あるっけ|どう|どうなってる)?$|^(?:なんか|何か)?(?:何(?:が)?ある|ある(?:の|っけ)?)$/u.test(rest)) return null;
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const year = Number(todayIso.slice(0, 4));
+  const iso = (y: number) => `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const candidate = new Date(`${iso(year)}T00:00:00Z`);
+  if (Number.isNaN(candidate.getTime()) || candidate.toISOString().slice(0, 10) !== iso(year)) return null;
+  // Asked in December about 1/5: next year. More than two months back is taken as next year.
+  const today = new Date(`${todayIso}T00:00:00Z`);
+  return candidate.getTime() < today.getTime() - 60 * 86400_000 ? iso(year + 1) : iso(year);
+}
+
 export function conversationalScheduleLead(text: string, intent: "today" | "tomorrow" | "week", correction = false): string | null {
   const value = normalized(text).replace(/[。.!！?？]+$/g, "");
   if ((intent === "today" && value === "今日") || (intent === "tomorrow" && value === "明日") || (intent === "week" && value === "今週")) return null;
