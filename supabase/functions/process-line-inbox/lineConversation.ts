@@ -252,16 +252,33 @@ export function scheduleDateInquiry(text: string, todayIso: string): string | nu
   if (!match) return null;
   const rest = match[3];
   if (!/^(?:(?:なんか|何か))?(?:予定|タスク|やること)(?:は|を|が)?(?:見せて|教えて|知りたい|見たい|確認したい|何(?:が)?ある|何だっけ|なんだっけ|ある|あるの|あるっけ|どう|どうなってる)?$|^(?:なんか|何か)?(?:何(?:が)?ある|ある(?:の|っけ)?)$/u.test(rest)) return null;
-  const month = Number(match[1]);
-  const day = Number(match[2]);
+  return monthDayNearToday(Number(match[1]), Number(match[2]), todayIso);
+}
+
+/**
+ * The year a family means by a bare month/day: this year, or next year when the day is more
+ * than two months back (asked in December about 1/5). Null for an impossible date.
+ */
+export function monthDayNearToday(month: number, day: number, todayIso: string): string | null {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   const year = Number(todayIso.slice(0, 4));
   const iso = (y: number) => `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const candidate = new Date(`${iso(year)}T00:00:00Z`);
   if (Number.isNaN(candidate.getTime()) || candidate.toISOString().slice(0, 10) !== iso(year)) return null;
-  // Asked in December about 1/5: next year. More than two months back is taken as next year.
   const today = new Date(`${todayIso}T00:00:00Z`);
   return candidate.getTime() < today.getTime() - 60 * 86400_000 ? iso(year + 1) : iso(year);
+}
+
+/**
+ * A date the model returned for 「10/24の予定」. The model sometimes picks the wrong year
+ * (owner report 2026-10-11: 2024-10-24 shown as 10/24(木) with nothing on it), so a date that is
+ * not this year or next is moved to the year the family means.
+ */
+export function anchorAskedScheduleDate(iso: string, todayIso: string): string {
+  const year = Number(iso.slice(0, 4));
+  const thisYear = Number(todayIso.slice(0, 4));
+  if (year === thisYear || year === thisYear + 1) return iso;
+  return monthDayNearToday(Number(iso.slice(5, 7)), Number(iso.slice(8, 10)), todayIso) ?? iso;
 }
 
 export function conversationalScheduleLead(text: string, intent: "today" | "tomorrow" | "week", correction = false): string | null {
