@@ -1,5 +1,5 @@
-import { RoutineContentEditor } from './RoutineContentEditor';
 import { useHousehold } from '../../app/HouseholdContext';
+import { RoutineRoleEditor } from './RoutineRoleEditor';
 import { RoutineSchedule } from './RoutineSchedule';
 import { TransportTemplateEditor } from './TransportTemplateEditor';
 
@@ -10,11 +10,11 @@ export function RoutineSettingsPage() {
       <main className="app-shell">
         <h1>いつもの担当</h1>
         <p className="page-lead">
-          送り迎えは生活パターンごとに1週間まとめて設定します。今日だけの変更は、その日の詳細から変更します。
+          送り迎えは生活パターンごとに1週間まとめて設定します。そのほかの定例は、誰がやるかでまとめた一覧から直せます。今日だけの変更は、その日の詳細から変更します。
         </p>
-        <nav className="filter-chips" aria-label="定例の編集"><a href="#routine-content">名前・チェック項目</a><a href="#custom-routines">朝・夜の項目を追加</a><a href="#morning-preparation">朝の準備</a></nav>
-        <RoutineContentEditor />
+        <nav className="filter-chips" aria-label="いつもの担当の中身"><a href="#custom-routines">定例</a><a href="#routine-notifications">通知</a></nav>
         <TransportTemplateEditor members={members} />
+        <RoutineRoleEditor />
       </main>
       <RoutineSchedule />
     </>
