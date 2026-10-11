@@ -99,6 +99,7 @@ import {
   normalizeHiraganaMamaRole,
   pendingConfirmationMessage,
   eventCalendarChoiceReply,
+  anchorAskedScheduleDate,
   scheduleDateInquiry,
   readOnlyLineIntent,
   transportAssignmentCorrectionCode,
@@ -278,7 +279,7 @@ async function sendLineSchedule(
   leadingText?: string,
 ): Promise<void> {
   // One specific day (「10/24の予定」). Today and tomorrow keep their own fuller replies.
-  const day = isScheduleDate(requested) ? requested : null;
+  const day = isScheduleDate(requested) ? anchorAskedScheduleDate(requested, jstIsoDateOffset(0)) : null;
   const kind = day === jstIsoDateOffset(0) ? "today"
     : day === jstIsoDateOffset(1) ? "tomorrow"
     : day === jstIsoDateOffset(-1) ? "yesterday"
@@ -2090,6 +2091,14 @@ async function handleText(
     eventId: item.provider_event_id,
     reply: (replyText, quickReplies) => sendConfirmation(client, item, actor, replyText, quickReplies),
   }, text)) return;
+
+  // 「10/24の予定見せて」 is answered from the date as written, before the model is asked: the
+  // model sometimes returned the wrong year (owner report 2026-10-11).
+  const askedDate = scheduleDateInquiry(text, jstIsoDateOffset(0));
+  if (askedDate) {
+    await sendLineSchedule(client, item, actor, askedDate as ScheduleRange, `${formatScheduleDate(askedDate)}の予定を見てみたよ👇`);
+    return;
+  }
 
   // Owner instruction 2026-09-30: the AI decides FIRST what the message means and what
   // to do, with the conversation and the household in front of it. The phrase-pattern

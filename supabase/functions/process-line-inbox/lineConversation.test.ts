@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   conversationalScheduleLead,
+  anchorAskedScheduleDate,
   eventCalendarChoiceReply,
   scheduleDateInquiry,
   formatScheduleReply,
@@ -142,4 +143,12 @@ Deno.test("「10/24の予定見せて」 asks for that day's schedule; a dated e
   assertEquals(scheduleDateInquiry("10/17 9:00-詩乃の便秘通院。パパ担当", "2026-10-11"), null);
   assertEquals(scheduleDateInquiry("10/24に運動会の予定を追加", "2026-10-11"), null);
   assertEquals(scheduleDateInquiry("2/30の予定", "2026-10-11"), null);
+});
+
+Deno.test("a schedule date the model returned in the wrong year is moved to the year meant", () => {
+  // Owner report 2026-10-11: the model answered 2024-10-24, shown as 10/24(木) with nothing on it.
+  assertEquals(anchorAskedScheduleDate("2024-10-24", "2026-10-11"), "2026-10-24");
+  assertEquals(anchorAskedScheduleDate("2025-01-05", "2026-12-20"), "2027-01-05");
+  assertEquals(anchorAskedScheduleDate("2026-10-24", "2026-10-11"), "2026-10-24");
+  assertEquals(anchorAskedScheduleDate("2027-01-05", "2026-12-20"), "2027-01-05");
 });
