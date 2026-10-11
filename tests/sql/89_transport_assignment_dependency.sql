@@ -57,6 +57,11 @@ begin
     raise exception 'FAIL transport dependency: seeded task definitions missing';
   end if;
 
+  -- Use the next working day: no transport/role tasks are made on weekends or holidays, so a
+  -- run on the day before a holiday (e.g. 2026-10-11, before スポーツの日) used to fail.
+  while private.fn_is_nonworkday(chosen_date) loop
+    chosen_date := chosen_date + 1;
+  end loop;
   dow:=extract(isodow from chosen_date)::int;
 
   -- Current transport occurrences are owned by u1.
