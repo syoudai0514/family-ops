@@ -734,7 +734,7 @@ async function geminiSemanticProvider(text: string, now: Date): Promise<string |
     "source_textは必ず入力中の連続した原文部分をそのまま返す。役割や訂正が候補の意味に必要なら、それらも含む連続範囲をsource_textにする。",
     "不明なのが1項目だけなら他の候補/項目を保持し、その項目だけmissing_fields/ambiguous_fieldsへ入れる。",
     "task/request/shoppingは scheduled_date(YYYY-MM-DD), due_local_time, daypart, target_role, shared_message, subtasks, context, calendar_visibility を返す。",
-    "calendar_visibility は特別な家族予定/病院/園学校行事ならspecial、日常家事・買い物はhidden。",
+    "calendar_visibility は日時の決まった予定（通院・習い事・園学校行事・予約・外出・家族の約束）と特別な持ち物ならspecial、家事・買い物・買い出し・毎日のルーティンはhidden。",
     "confidenceは0〜1。",
     'JSONのみ: {"candidates":[{"kind":"task|request|shopping|share|actual","title":"...","source_text":"入力中の連続原文","scheduled_date":"YYYY-MM-DD","due_local_time":null,"daypart":null,"target_role":null,"shared_message":null,"subtasks":[],"context":null,"calendar_visibility":"hidden","missing_fields":[],"ambiguous_fields":[],"confidence":0.9}]}',
     `入力: ${JSON.stringify(text)}`,
