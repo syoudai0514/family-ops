@@ -20,6 +20,7 @@
 - Google の429・5xxなど一時的な書き込み失敗を恒久失敗として保存する。同じ操作IDで再試行可能にする。
 - 同一Google予定の複数回の更新が、操作台帳の接続・予定IDの一意制約に拒否される。操作IDによる冪等性を保持し、予定IDの索引を非一意にする。
 - 復元時に取り消し済みの過去の実施者を現在の実施者と一致させようとして失敗する。過去の記録を保持し、現在の有効な記録と再有効化時の一致は引き続き検証する。
+- 復元した過去のタスクを新規作成として再分類・再割り当てし、履歴の担当・revision・時刻を上書きする。空の復元先に限り、3つの純導出triggerを同じtransaction内で抑止して必ず復帰する。FK・check・identity・compatibility guardsと全source fieldの厳密照合は維持し、全public trigger状態の一致も検証する。
 - 既に削除された適用ワークフローを呼び出す `Kick LINE UX v5` がmainのCI成功後に毎回失敗する。古いワークフローを削除する（Issue #51）。
 - 手動の復元訓練が指定したブランチを無視してmainを検証する。実行対象のコミットをcheckoutする。
 
@@ -45,7 +46,8 @@ Web、Edge、SQL、実Supabase CLIスタック、スマホ幅の実Chrome、バ�
 
 - Web: 92ファイル / 336テスト、型チェック、lint、production build成功。lintの既存警告は残る。
 - Edge: Deno 539テストと5つのHTTPシナリオ、全100エントリーポイントの型チェック、lint成功。Google APIの応答・タイムアウトを実handlerへ渡す回帰を含む。
-- SQL: 242マイグレーションからの構築、133 assertion SQL files、別Postgres接続による並列12ケース成功。修正前のコードでデッドロック・停止後の誤生成・大文字UUID一括更新の競合が再現し、修正後に通過することを確認。
+- SQL: 242マイグレーションからの構築、134 assertion SQL files、別Postgres接続による並列12ケース成功。修正前のコードでデッドロック・停止後の誤生成・大文字UUID一括更新の競合が再現し、修正後に通過することを確認。
+- 復元: 実snapshotの50テーブル・タスク1213件・チェック1206件を、全source field一致でlocal scratchへ復元。FK・check・actor・compatibility拒否時のtransaction rollbackとtrigger復帰も検証。
 - 実Chromeスマホ幅: CF-14の6シナリオとToday/navigationの4シナリオ成功。
 - npm production依存監査: 脆弱性0件。
 - 本番権限監査: 世帯RLS、業務テーブル直接書込禁止、private schema非公開、関数実行権限を確認。
