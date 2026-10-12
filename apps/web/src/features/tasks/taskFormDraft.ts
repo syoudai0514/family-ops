@@ -15,11 +15,20 @@ export type TaskFormDraft = {
   schedulerDetails?: ScheduleDetails;
 };
 
-export const TASK_FORM_DRAFT_KEY = 'family-ops:task-form-draft:v1';
+export type TaskFormDraftScope = { userId: string; householdId: string };
 
-export function readTaskFormDraft(): TaskFormDraft | null {
+export const TASK_FORM_DRAFT_KEY = 'family-ops:task-form-draft:v2';
+
+function draftKey(scope: TaskFormDraftScope): string {
+  return `${TASK_FORM_DRAFT_KEY}:${encodeURIComponent(scope.userId)}:${encodeURIComponent(scope.householdId)}`;
+}
+
+export function readTaskFormDraft(scope: TaskFormDraftScope | null): TaskFormDraft | null {
+  if (!scope) return null;
   try {
-    const raw = sessionStorage.getItem(TASK_FORM_DRAFT_KEY);
+    // Unscoped v1 drafts have no trustworthy owner and must never be restored
+    // into another account or household on a shared device.
+    const raw = sessionStorage.getItem(draftKey(scope));
     if (!raw) return null;
     const value = JSON.parse(raw) as Partial<TaskFormDraft>;
     if (typeof value.title !== 'string' || typeof value.scheduledDate !== 'string') return null;
@@ -52,17 +61,19 @@ export function readTaskFormDraft(): TaskFormDraft | null {
   }
 }
 
-export function saveTaskFormDraft(draft: TaskFormDraft): void {
+export function saveTaskFormDraft(draft: TaskFormDraft, scope: TaskFormDraftScope | null): void {
+  if (!scope) return;
   try {
-    sessionStorage.setItem(TASK_FORM_DRAFT_KEY, JSON.stringify(draft));
+    sessionStorage.setItem(draftKey(scope), JSON.stringify(draft));
   } catch {
     /* unavailable */
   }
 }
 
-export function clearTaskFormDraft(): void {
+export function clearTaskFormDraft(scope: TaskFormDraftScope | null): void {
+  if (!scope) return;
   try {
-    sessionStorage.removeItem(TASK_FORM_DRAFT_KEY);
+    sessionStorage.removeItem(draftKey(scope));
   } catch {
     /* unavailable */
   }

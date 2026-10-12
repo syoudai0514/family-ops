@@ -374,6 +374,17 @@ export type GoogleEventGetResult =
   | { status: 404; body: null; etag: null }
   | { status: 200; body: Record<string, unknown>; etag: string };
 
+// These responses do not prove that a write is permanently invalid. Keep
+// its operation claim pending so the caller can safely retry the same id.
+export function isRetryableGoogleWriteStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+export function googleEventMatchesOperation(event: Record<string, unknown>, operationId: string): boolean {
+  const properties = event.extendedProperties as { private?: Record<string, string> } | undefined;
+  return properties?.private?.familyOpsOperationId === operationId;
+}
+
 export async function getEvent(opts: { accessToken: string; calendarId: string; eventId: string }): Promise<GoogleEventGetResult> {
   const res = await fetch(`${GOOGLE_CALENDAR_API_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events/${encodeURIComponent(opts.eventId)}`, {
     headers: { Authorization: `Bearer ${opts.accessToken}` },

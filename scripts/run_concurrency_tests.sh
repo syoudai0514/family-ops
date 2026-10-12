@@ -72,13 +72,14 @@ echo "== concurrency: create-household double-tap same operation_id (M-01 style)
 ACTOR=$(uuidgen)
 psql_svc "insert into auth.users (id) values ('$ACTOR');" >/dev/null
 OP_ID=$(psql -v ON_ERROR_STOP=1 -d "$TEST_DB" -q -t -A -c "select gen_random_uuid();")
+DOUBLE_TAP_NAME="Double Tap HH $OP_ID"
 
 run_create() {
   local outfile="$1"
   psql -v ON_ERROR_STOP=1 -d "$TEST_DB" -q -t -A <<SQL > "$outfile" 2>&1 &
 set role service_role;
 select pg_sleep(random() * 0.2);
-select public.server_tx_create_household('$ACTOR', '$OP_ID', 'Double Tap HH', 'Actor')::text;
+select public.server_tx_create_household('$ACTOR', '$OP_ID', '$DOUBLE_TAP_NAME', 'Actor')::text;
 SQL
 }
 
@@ -87,7 +88,7 @@ run_create "$OUT_C"
 run_create "$OUT_D"
 wait
 
-HH_COUNT=$(psql_svc "select count(*) from public.households where name = 'Double Tap HH';")
+HH_COUNT=$(psql_svc "select count(*) from public.households where name = '$DOUBLE_TAP_NAME';")
 [ "$HH_COUNT" -eq 1 ] || fail "double-tap create-household with the same operation_id must create exactly one household, got $HH_COUNT"
 
 ID_C=$(grep -o '"household_id": "[a-f0-9-]*"' "$OUT_C" | head -1 || true)
@@ -287,5 +288,7 @@ CR_ACTIVE_COUNT=$(psql_svc "select count(*) from public.recurrence_rules where h
 [ "$CR_ACTIVE_COUNT" -eq 1 ] || fail "expected exactly 1 active recurrence_rules row to survive the change-recurrence race, got $CR_ACTIVE_COUNT"
 
 echo "OK: exactly one concurrent change-recurrence call for the same tuple won the exclusion constraint race, the other surfaced RECURRENCE_OVERLAP"
+
+bash "$REPO_ROOT/scripts/run_routine_concurrency_tests.sh" "$TEST_DB"
 
 echo "== all concurrency tests passed =="

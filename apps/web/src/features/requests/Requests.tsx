@@ -139,6 +139,8 @@ export function Requests() {
 
   useEffect(() => {
     let cancelled = false;
+    setPendingAction(null);
+    setPendingLoadError(null);
     if (!pendingId) { setPendingAction(null); return () => { cancelled = true; }; }
     void (async () => {
       try {
@@ -175,7 +177,8 @@ export function Requests() {
       </div>
       {error && <section className="card state-card" role="alert"><b>お願いを読み込めませんでした</b><p>{error}</p><button type="button" onClick={() => void refresh()}>再読み込み</button></section>}
       {pendingLoadError && <p role="alert" className="error-text">{pendingLoadError}</p>}
-      {showForm && partner && <SendRequestForm recipientId={partner.user_id} initialRawMessage={String(pendingAction?.normalized_payload.raw_text ?? pendingActionRawText)} initialMessage={String(pendingAction?.normalized_payload.shared_message ?? '')} initialTitle={String(pendingAction?.normalized_payload.title ?? '')} initialDueDate={pendingAction ? toDateTimeLocal(pendingAction.normalized_payload.due_at) : ''} pendingActionId={pendingAction?.id ?? null} onSent={() => { setShowForm(false); clearPrivatePrefill(); void rowRefresh(); }} />}
+      {showForm && pendingId && pendingAction?.id !== pendingId && !pendingLoadError && <p role="status">LINEの下書きを読み込み中…</p>}
+      {showForm && partner && (!pendingId || pendingAction?.id === pendingId) && <SendRequestForm key={pendingId ?? 'direct'} recipientId={partner.user_id} initialRawMessage={String(pendingAction?.normalized_payload.raw_text ?? pendingActionRawText)} initialMessage={String(pendingAction?.normalized_payload.shared_message ?? '')} initialTitle={String(pendingAction?.normalized_payload.title ?? '')} initialDueDate={pendingAction ? toDateTimeLocal(pendingAction.normalized_payload.due_at) : ''} pendingActionId={pendingAction?.id ?? null} onSent={() => { setShowForm(false); clearPrivatePrefill(); void rowRefresh(); }} />}
 
       <section className="card">
         <h2>受け取ったお願い</h2>

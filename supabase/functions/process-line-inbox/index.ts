@@ -279,7 +279,9 @@ async function sendLineSchedule(
   leadingText?: string,
 ): Promise<void> {
   // One specific day (「10/24の予定」). Today and tomorrow keep their own fuller replies.
-  const day = isScheduleDate(requested) ? anchorAskedScheduleDate(requested, jstIsoDateOffset(0)) : null;
+  const day = isScheduleDate(requested)
+    ? anchorAskedScheduleDate(requested, jstIsoDateOffset(0), item.payload.message?.text ?? "")
+    : null;
   const kind = day === jstIsoDateOffset(0) ? "today"
     : day === jstIsoDateOffset(1) ? "tomorrow"
     : day === jstIsoDateOffset(-1) ? "yesterday"

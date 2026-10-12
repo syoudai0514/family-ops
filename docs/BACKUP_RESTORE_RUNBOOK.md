@@ -117,7 +117,16 @@ For a same-repository PR changing CF-11 controls,
 9. Discover identity columns from target FK catalog (`auth.users.id` or
    `household_members.user_id` parents), never by guessed names.
 10. Rewrite only those FK positions and typed-restore every allowlisted table
-    with normal constraints active.
+    with normal constraints and identity/scope/compatibility guards active.
+    For the empty target's task INSERT only, suspend the three reviewed
+    derivation triggers (`task_instances_copy_calendar_visibility`,
+    `task_instances_review_fix_domain`, `task_transport_role_reconcile_insert`)
+    inside the same transaction. They apply current definitions and transport
+    assignments to new work and would overwrite historical snapshots. Verify
+    each trigger's function identity and enabled state first, re-enable all
+    three before commit, and require the entire public trigger-state catalog
+    to match afterward. An INSERT failure rolls back the trigger changes too.
+    Never disable all triggers or use replication mode to bypass guards.
 11. Require exact per-table counts, exact preservation of every source field
     after UUID rebinding, zero identity/task linkage orphans and no old
     production UUID remaining in identity-FK positions.

@@ -7,7 +7,11 @@ Deno.serve(withUserMutationHandler(async (req) => {
   const actorId = await requireUserActor(req); const body = await readJsonBody(req);
   const id = body.task_definition_id;
   if (typeof id !== 'string' || typeof body.enabled !== 'boolean' || typeof body.include_in_routine_line !== 'boolean') throw new FamilyOpsError('INVALID_INPUT', 'routine options are required', 400);
+  // 「余裕があれば」: optional; leave it out to keep the routine's current setting.
+  const expectation = body.default_expectation;
+  if (expectation !== undefined && expectation !== 'optional' && expectation !== 'required') throw new FamilyOpsError('INVALID_INPUT', 'default_expectation must be optional or required', 400);
   return jsonResponse(await callServerTx(createServiceRoleClient(), 'server_tx_set_routine_definition_options', {
     p_actor_id: actorId, p_operation_id: requireOperationId(body), p_task_definition_id: id, p_enabled: body.enabled, p_include_in_routine_line: body.include_in_routine_line,
+    ...(expectation === undefined ? {} : { p_default_expectation: expectation }),
   }));
 }));

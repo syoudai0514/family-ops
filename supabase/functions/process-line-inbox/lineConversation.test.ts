@@ -147,8 +147,35 @@ Deno.test("「10/24の予定見せて」 asks for that day's schedule; a dated e
 
 Deno.test("a schedule date the model returned in the wrong year is moved to the year meant", () => {
   // Owner report 2026-10-11: the model answered 2024-10-24, shown as 10/24(木) with nothing on it.
-  assertEquals(anchorAskedScheduleDate("2024-10-24", "2026-10-11"), "2026-10-24");
-  assertEquals(anchorAskedScheduleDate("2025-01-05", "2026-12-20"), "2027-01-05");
-  assertEquals(anchorAskedScheduleDate("2026-10-24", "2026-10-11"), "2026-10-24");
-  assertEquals(anchorAskedScheduleDate("2027-01-05", "2026-12-20"), "2027-01-05");
+  assertEquals(anchorAskedScheduleDate("2024-10-24", "2026-10-11", "10/24の予定見せて"), "2026-10-24");
+  assertEquals(anchorAskedScheduleDate("2025-01-05", "2026-12-20", "1月5日の予定"), "2027-01-05");
+  assertEquals(anchorAskedScheduleDate("2026-10-24", "2026-10-11", "10/24何がある？"), "2026-10-24");
+  assertEquals(anchorAskedScheduleDate("2027-01-05", "2026-12-20", "１/５の予定"), "2027-01-05");
+  assertEquals(anchorAskedScheduleDate("2027-10-24", "2026-10-11", "10月24日の予定は？"), "2026-10-24");
+});
+
+Deno.test("schedule anchoring preserves explicit years and dates inferred without a month/day", () => {
+  assertEquals(anchorAskedScheduleDate("2024-10-24", "2026-10-11", "2024/10/24の予定見せて"), "2024-10-24");
+  assertEquals(anchorAskedScheduleDate("2028-01-05", "2026-12-20", "2028年1月5日の予定"), "2028-01-05");
+  assertEquals(anchorAskedScheduleDate("2028-01-05", "2026-12-20", "2028の1/5の予定"), "2028-01-05");
+  assertEquals(anchorAskedScheduleDate("2025-10-24", "2026-10-11", "去年10/24の予定"), "2025-10-24");
+  assertEquals(anchorAskedScheduleDate("2027-10-24", "2026-10-11", "らいねん10/24の予定"), "2027-10-24");
+  assertEquals(anchorAskedScheduleDate("2028-01-05", "2026-12-20", "再来年1/5は何がある？"), "2028-01-05");
+  assertEquals(anchorAskedScheduleDate("2027-01-05", "2026-12-31", "来週火曜日の予定教えて"), "2027-01-05");
+  assertEquals(anchorAskedScheduleDate("2024-10-24", "2026-10-11", "その日の予定も見せて"), "2024-10-24");
+  assertEquals(anchorAskedScheduleDate("2024-10-24", "2026-10-11", "10/25の予定"), "2024-10-24");
+});
+
+Deno.test("explicit dated inquiries retain historical and future years without becoming mutations", () => {
+  assertEquals(scheduleDateInquiry("2024/10/24の予定見せて", "2026-10-11"), "2024-10-24");
+  assertEquals(scheduleDateInquiry("2028年1月5日の予定は？", "2026-12-20"), "2028-01-05");
+  assertEquals(scheduleDateInquiry("２０２８-０１-０５の予定", "2026-12-20"), "2028-01-05");
+  assertEquals(scheduleDateInquiry("2028/1/5に通院の予定を追加", "2026-12-20"), null);
+  assertEquals(scheduleDateInquiry("2027年2月29日の予定", "2026-12-20"), null);
+});
+
+Deno.test("bare leap-day inquiries are validated in the selected year", () => {
+  assertEquals(scheduleDateInquiry("2/29の予定", "2027-12-20"), "2028-02-29");
+  assertEquals(scheduleDateInquiry("2/29の予定", "2028-12-20"), null);
+  assertEquals(scheduleDateInquiry("2/30の予定", "2027-12-20"), null);
 });

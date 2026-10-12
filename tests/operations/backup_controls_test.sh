@@ -145,6 +145,14 @@ grep -Fq "parent.relname='household_members'" "$RESTORE" || fail "household memb
 grep -Fq 'jsonb_populate_recordset' "$RESTORE" || fail "typed restore missing"
 grep -Fq 'row-count mismatch' "$RESTORE" || fail "exact row-count validation missing"
 grep -Fq 'source-field content mismatch' "$RESTORE" || fail "restored source-field equality proof missing"
+grep -Fq 'public trigger states changed during recovery restore' "$RESTORE" || fail "restored trigger-state equality proof missing"
+grep -Fq 'RECOVERY_TARGET_HAS_INACTIVE_TRIGGERS' "$RESTORE" || fail "restore must reject targets with inactive FK/security triggers"
+grep -Fq 'RECOVERY_TASK_TARGET_NOT_EMPTY' "$RESTORE" || fail "task derivation suppression must require an empty restore target"
+grep -Fq 'RECOVERY_DERIVATION_TRIGGER_CONTRACT_MISMATCH' "$RESTORE" || fail "reviewed derivation-trigger contract missing"
+grep -Fq 'command psql -v VERBOSITY=terse' "$RESTORE" || fail "recovery SQL errors must suppress private row DETAIL/CONTEXT"
+if grep -Eiq 'disable[[:space:]]+trigger[[:space:]]+(all|user)([[:space:];]|$)|session_replication_role' "$RESTORE"; then
+  fail "restore must preserve FK/security guards rather than broadly disabling triggers"
+fi
 grep -Fq 'migration identifiers differ' "$RESTORE" || fail "migration-id drift handling is not explicit"
 grep -Fq 'stale production user UUID remains' "$RESTORE" || fail "old UUID elimination proof missing"
 grep -Fq 'profiles?user_id=eq.' "$VERIFY_ACCESS" || fail "profile RLS proof missing"

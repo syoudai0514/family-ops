@@ -248,11 +248,19 @@ function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | n
  */
 export function scheduleDateInquiry(text: string, todayIso: string): string | null {
   const value = normalized(text).replace(/[。.!！?？]+$/g, "");
-  const match = value.match(/^(\d{1,2})(?:\/|月)(\d{1,2})日?(?:\([月火水木金土日]\)|（[月火水木金土日]）)?(?:の|は)?(.*)$/u);
+  const match = value.match(/^(?:(\d{4})(?:\/|-|年))?(\d{1,2})(?:\/|-|月)(\d{1,2})日?(?:\([月火水木金土日]\)|（[月火水木金土日]）)?(?:の|は)?(.*)$/u);
   if (!match) return null;
-  const rest = match[3];
+  const rest = match[4];
   if (!/^(?:(?:なんか|何か))?(?:予定|タスク|やること)(?:は|を|が)?(?:見せて|教えて|知りたい|見たい|確認したい|何(?:が)?ある|何だっけ|なんだっけ|ある|あるの|あるっけ|どう|どうなってる)?$|^(?:なんか|何か)?(?:何(?:が)?ある|ある(?:の|っけ)?)$/u.test(rest)) return null;
-  return monthDayNearToday(Number(match[1]), Number(match[2]), todayIso);
+  return match[1]
+    ? validScheduleDate(Number(match[1]), Number(match[2]), Number(match[3]))
+    : monthDayNearToday(Number(match[2]), Number(match[3]), todayIso);
+}
+
+function validScheduleDate(year: number, month: number, day: number): string | null {
+  const iso = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const date = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === iso ? iso : null;
 }
 
 /**
@@ -264,21 +272,29 @@ export function monthDayNearToday(month: number, day: number, todayIso: string):
   const year = Number(todayIso.slice(0, 4));
   const iso = (y: number) => `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const candidate = new Date(`${iso(year)}T00:00:00Z`);
-  if (Number.isNaN(candidate.getTime()) || candidate.toISOString().slice(0, 10) !== iso(year)) return null;
   const today = new Date(`${todayIso}T00:00:00Z`);
-  return candidate.getTime() < today.getTime() - 60 * 86400_000 ? iso(year + 1) : iso(year);
+  if (Number.isNaN(candidate.getTime()) || Number.isNaN(today.getTime())) return null;
+  const intendedYear = candidate.getTime() < today.getTime() - 60 * 86400_000 ? year + 1 : year;
+  return validScheduleDate(intendedYear, month, day);
 }
 
 /**
- * A date the model returned for 「10/24の予定」. The model sometimes picks the wrong year
- * (owner report 2026-10-11: 2024-10-24 shown as 10/24(木) with nothing on it), so a date that is
- * not this year or next is moved to the year the family means.
+ * Anchor a model date only when the user wrote its bare month/day. Explicit years and
+ * dates inferred from other wording (such as 「来週」) remain the model's responsibility.
  */
-export function anchorAskedScheduleDate(iso: string, todayIso: string): string {
-  const year = Number(iso.slice(0, 4));
-  const thisYear = Number(todayIso.slice(0, 4));
-  if (year === thisYear || year === thisYear + 1) return iso;
-  return monthDayNearToday(Number(iso.slice(5, 7)), Number(iso.slice(8, 10)), todayIso) ?? iso;
+export function anchorAskedScheduleDate(iso: string, todayIso: string, sourceText: string): string {
+  const value = normalized(sourceText);
+  // A stated year, including relative/era years, must never be replaced by this heuristic.
+  if (/年|(?:^|[^\d])\d{4}(?=$|[^\d])|ことし|らいねん|きょねん|おととし|year/iu.test(value)) return iso;
+  const month = Number(iso.slice(5, 7));
+  const day = Number(iso.slice(8, 10));
+  const dates = value.matchAll(/(?:^|[^\d])(\d{1,2})(?:\/|-|月)(\d{1,2})(?=$|[^\d])/gu);
+  for (const date of dates) {
+    if (Number(date[1]) === month && Number(date[2]) === day) {
+      return monthDayNearToday(month, day, todayIso) ?? iso;
+    }
+  }
+  return iso;
 }
 
 export function conversationalScheduleLead(text: string, intent: "today" | "tomorrow" | "week", correction = false): string | null {

@@ -57,6 +57,11 @@ for cmd in jq psql base64 cmp; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: required command '$cmd' is missing" >&2; exit 2; }
 done
 
+# PostgreSQL DETAIL/CONTEXT may include household row values when a constraint
+# rejects the snapshot. Keep failures useful without putting recovery data in
+# CI logs. Field mismatch diagnostics below report only column names/counts.
+psql() { command psql -v VERBOSITY=terse "$@"; }
+
 WORKDIR="$(mktemp -d)"
 cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
@@ -126,6 +131,19 @@ done
   echo "ERROR: scratch target already contains household data; refusing restore" >&2; exit 1;
 }
 
+TRIGGER_STATES_SQL="select n.nspname||'.'||c.relname,t.tgname,t.tgenabled
+from pg_trigger t join pg_class c on c.oid=t.tgrelid
+join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public'
+order by 1,2;"
+psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -F $'\t' -c "$TRIGGER_STATES_SQL" > "$WORKDIR/trigger-states-before.tsv"
+[ "$(psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -c "
+select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid
+join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public' and t.tgenabled not in ('O','A');")" = "0" ] || {
+  echo "ERROR: RECOVERY_TARGET_HAS_INACTIVE_TRIGGERS" >&2; exit 1;
+}
+
 # Validate exact old -> new Auth identity mapping and that each NEW Auth row has
 # the same verified recovery email reference as the snapshot.
 jq '.auth_user_refs' "$SNAPSHOT" > "$WORKDIR/auth-refs.json"
@@ -167,7 +185,14 @@ order by 1,2;" > "$IDENTITY_COLUMNS"
 [ -s "$IDENTITY_COLUMNS" ] || { echo "ERROR: no schema-declared user FK columns were discovered" >&2; exit 1; }
 jq 'map({key:.old_id,value:.new_id}) | from_entries' "$WORKDIR/id-map.json" > "$WORKDIR/map-object.json"
 
-# Restore parents before children with normal FK/check/trigger behavior active.
+# Restore parents before children with FK/check/security guards active.
+# The task INSERT's three pure derivation triggers are temporarily suspended
+# inside that INSERT's transaction: they classify NEW work from today's
+# definition and reproject transport dependencies, which would rewrite the
+# historical snapshots we are recovering. All identity/scope/compatibility
+# guards remain enabled. Transactional DDL rolls back on any INSERT failure;
+# successful restores re-enable the derivation triggers before commit. The
+# complete public trigger-state catalog is compared after the restore.
 # household_members legitimately fires the CURRENT trigger that creates a
 # minimal real-user domain_actor_ref for a brand-new member. During recovery the
 # snapshot's canonical actor_ref must win (its id is referenced by later domain
@@ -190,8 +215,46 @@ for table in "${TABLES[@]}"; do
   expected="$(jq 'length' "$TABLE_JSON")"
   if [ "$expected" != "0" ]; then
     TABLE_B64="$(base64 -w0 "$TABLE_JSON")"
-    printf "insert into %s select * from jsonb_populate_recordset(null::%s, convert_from(decode('%s','base64'),'UTF8')::jsonb);\n" \
-      "$table" "$table" "$TABLE_B64" > "$WORKDIR/restore-${table_name}.sql"
+    {
+      if [ "$table" = "public.task_instances" ]; then
+        cat <<'SQL'
+begin;
+lock table public.task_instances in access exclusive mode;
+do $recovery_contract$
+begin
+  if exists(select 1 from public.task_instances) then
+    raise exception 'RECOVERY_TASK_TARGET_NOT_EMPTY';
+  end if;
+  if (select count(*) from pg_trigger t
+      join pg_proc p on p.oid=t.tgfoid
+      join pg_namespace n on n.oid=p.pronamespace
+      where t.tgrelid='public.task_instances'::regclass
+        and not t.tgisinternal and t.tgenabled='O' and n.nspname='private'
+        and (t.tgname,p.proname) in (
+          ('task_instances_copy_calendar_visibility','fn_copy_task_calendar_visibility'),
+          ('task_instances_review_fix_domain','fn_review_fix_task_instance_domain'),
+          ('task_transport_role_reconcile_insert','fn_transport_role_anchor_reconcile_trigger_v1')
+        )) <> 3 then
+    raise exception 'RECOVERY_DERIVATION_TRIGGER_CONTRACT_MISMATCH';
+  end if;
+end;
+$recovery_contract$;
+alter table public.task_instances disable trigger task_instances_copy_calendar_visibility;
+alter table public.task_instances disable trigger task_instances_review_fix_domain;
+alter table public.task_instances disable trigger task_transport_role_reconcile_insert;
+SQL
+      fi
+      printf "insert into %s select * from jsonb_populate_recordset(null::%s, convert_from(decode('%s','base64'),'UTF8')::jsonb);\n" \
+        "$table" "$table" "$TABLE_B64"
+      if [ "$table" = "public.task_instances" ]; then
+        cat <<'SQL'
+alter table public.task_instances enable trigger task_instances_copy_calendar_visibility;
+alter table public.task_instances enable trigger task_instances_review_fix_domain;
+alter table public.task_instances enable trigger task_transport_role_reconcile_insert;
+commit;
+SQL
+      fi
+    } > "$WORKDIR/restore-${table_name}.sql"
     psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -q -f "$WORKDIR/restore-${table_name}.sql"
   fi
 
@@ -226,6 +289,11 @@ where hm.user_id is null
   fi
 done
 
+psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -F $'\t' -c "$TRIGGER_STATES_SQL" > "$WORKDIR/trigger-states-after.tsv"
+cmp -s "$WORKDIR/trigger-states-before.tsv" "$WORKDIR/trigger-states-after.tsv" || {
+  echo "ERROR: public trigger states changed during recovery restore" >&2; exit 1;
+}
+
 # Count equality is not enough. For every non-empty table compare every source
 # field (after UUID rebinding) against restored JSON. Target-only fields may
 # exist, but no field present in the recovery payload may be silently lost.
@@ -251,7 +319,28 @@ select coalesce(jsonb_agg(row_json order by row_json::text),'[]'::jsonb)::text f
   jq -S 'sort_by(to_entries | sort_by(.key) | map([.key,.value]) | tostring)' "$TABLE_JSON" > "$WORKDIR/source-canonical-${table_name}.json"
   jq -S 'sort_by(to_entries | sort_by(.key) | map([.key,.value]) | tostring)' "$WORKDIR/restored-${table_name}.json" > "$WORKDIR/target-canonical-${table_name}.json"
   cmp -s "$WORKDIR/source-canonical-${table_name}.json" "$WORKDIR/target-canonical-${table_name}.json" || {
-    echo "ERROR: restored source-field content mismatch for $table" >&2; exit 1;
+    echo "ERROR: restored source-field content mismatch for $table" >&2;
+    # Match source rows by the target's declared primary key, then emit only
+    # mismatching column names/counts. Never print identities or field values.
+    TABLE_B64="$(base64 -w0 "$TABLE_JSON")"
+    cat > "$WORKDIR/mismatch-${table_name}.sql" <<SQL
+with primary_keys as (
+  select a.attname as key from pg_constraint c
+  join unnest(c.conkey) as k(attnum) on true
+  join pg_attribute a on a.attrelid=c.conrelid and a.attnum=k.attnum
+  where c.contype='p' and c.conrelid='${table}'::regclass
+), source as (
+  select value as row_json from jsonb_array_elements(convert_from(decode('${TABLE_B64}','base64'),'UTF8')::jsonb)
+)
+select f.key,count(*)
+from source s join ${table} t on exists(select 1 from primary_keys)
+  and not exists(select 1 from primary_keys k where s.row_json->k.key is distinct from to_jsonb(t)->k.key)
+cross join lateral jsonb_each(s.row_json) f
+where f.value is distinct from to_jsonb(t)->f.key
+group by f.key order by f.key;
+SQL
+    psql "$SCRATCH_DB_URL" -v ON_ERROR_STOP=1 -Atq -F $'\t' -f "$WORKDIR/mismatch-${table_name}.sql" >&2
+    exit 1;
   }
 done
 

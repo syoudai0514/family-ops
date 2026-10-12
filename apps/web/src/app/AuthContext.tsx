@@ -19,29 +19,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    let authEventReceived = false;
 
     void withTimeout(
       supabase.auth.getSession(),
       12_000,
       'サインイン状態の確認に時間がかかっています。',
-    ).then(({ data, error }) => {
-      if (cancelled) return;
-      if (error) {
-        setLoadError(error.message);
+    )
+      .then(({ data, error }) => {
+        // An auth event is newer than the bootstrap read. A delayed read (or
+        // timeout) must not restore a signed-out session or hide a fresh login.
+        if (cancelled || authEventReceived) return;
+        if (error) {
+          setLoadError(error.message);
+          setLoading(false);
+          return;
+        }
+        setSession(data.session);
+        setLoadError(null);
         setLoading(false);
-        return;
-      }
-      setSession(data.session);
-      setLoadError(null);
-      setLoading(false);
-    }).catch((error: unknown) => {
-      if (cancelled) return;
-      setLoadError(error instanceof Error ? error.message : 'サインイン状態を確認できませんでした。');
-      setLoading(false);
-    });
+      })
+      .catch((error: unknown) => {
+        if (cancelled || authEventReceived) return;
+        setLoadError(
+          error instanceof Error ? error.message : 'サインイン状態を確認できませんでした。',
+        );
+        setLoading(false);
+      });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (cancelled) return;
+      authEventReceived = true;
       setSession(nextSession);
       setLoadError(null);
       setLoading(false);

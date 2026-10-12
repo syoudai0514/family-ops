@@ -7,15 +7,12 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { InviteSection } from '../household/InviteSection';
 import {
-  EVENING_ROUTINE_TASK_CODES,
   ROUTINE_SCHEDULE_KINDS,
   type HouseholdRoutineSchedule,
   type RoutineScheduleKind,
 } from '../../lib/types';
 import { WEEKDAYS } from '../../lib/weekdays';
-import { groupRecurrencePatterns } from './routineRuleHelpers';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
-import { CustomRoutineEditor } from './CustomRoutineEditor';
 
 const SCHEDULE_LABELS: Record<RoutineScheduleKind, string> = {
   daily_assignment: '今日の担当のお知らせ',
@@ -141,16 +138,8 @@ export function RoutineSchedule() {
 
   return (
     <div className="app-shell">
-      <h1>いつもの担当</h1>
-      <p className="page-lead">
-        毎週くり返す担当を変えます。今日だけの交代は、週の予定から相談してください。
-      </p>
       <DropoffPickupMatrix householdId={household?.id ?? null} members={members} />
-      <div id="custom-routines" tabIndex={-1}><CustomRoutineEditor householdId={household?.id ?? null} members={members} kind="morning_chore" /></div>
-      <EveningRoutineEditor householdId={household?.id ?? null} members={members} />
-      <CustomRoutineEditor householdId={household?.id ?? null} members={members} kind="evening_chore" />
-      <MorningPreparationEditor householdId={household?.id ?? null} members={members} />
-      <section className="card">
+      <section className="card" id="routine-notifications">
         <h2>通知</h2>
         {loading && <p role="status">読み込み中…</p>}
         {error && (
@@ -217,16 +206,6 @@ type EditableRule = {
   originalWeekdays?: number[];
 };
 
-const EVENING_LABELS: Record<string, string> = {
-  dinner: '夕食',
-  bath: 'お風呂',
-  laundry: '洗濯',
-  dishes: '食器',
-  cleaning: '掃除',
-  smile_zemi: 'スマイルゼミ',
-  media_30min: 'TV / ゲーム30分',
-};
-
 function weekdayChecks(row: EditableRule, onToggle: (weekday: number) => void) {
   return (
     <div className="weekday-picker" aria-label={`${row.title}の曜日`}>
@@ -241,262 +220,6 @@ function weekdayChecks(row: EditableRule, onToggle: (weekday: number) => void) {
         </label>
       ))}
     </div>
-  );
-}
-
-function EveningRoutineEditor({
-  householdId,
-  members,
-}: {
-  householdId: string | null;
-  members: HouseholdMemberWithProfile[];
-}) {
-  const [rows, setRows] = useState<EditableRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    if (!householdId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    const [{ data: definitions, error: definitionError }, { data: rules, error: ruleError }] =
-      await Promise.all([
-        supabase
-          .from('task_definitions')
-          .select('id, code, title')
-          .eq('household_id', householdId)
-          .in('code', [...EVENING_ROUTINE_TASK_CODES]),
-        supabase
-          .from('recurrence_rules')
-          .select(
-            'task_definition_id, weekday, assignee_strategy, planned_assignee_id, fallback_assignee_id, scheduled_local_time',
-          )
-          .eq('household_id', householdId)
-          .eq('active', true),
-      ]);
-    if (definitionError || ruleError) {
-      setError(
-        definitionError?.message ?? ruleError?.message ?? '夜の家事を読み込めませんでした。',
-      );
-      setLoading(false);
-      return;
-    }
-    setRows(
-      EVENING_ROUTINE_TASK_CODES.flatMap<EditableRule>((code) => {
-        const definition = (definitions ?? []).find(
-          (item: { code: string }) => item.code === code,
-        ) as { id: string; title: string } | undefined;
-        const matched = (rules ?? []).filter(
-          (item: { task_definition_id: string }) => item.task_definition_id === definition?.id,
-        ) as Array<{
-          weekday: number;
-          assignee_strategy: EditableRule['strategy'];
-          planned_assignee_id: string | null;
-          fallback_assignee_id: string | null;
-          scheduled_local_time: string | null;
-        }>;
-        const groups = groupRecurrencePatterns(matched);
-        if (groups.length === 0)
-          return [
-            {
-              id: definition?.id ?? '',
-              code,
-              taskCode: code,
-              title: definition?.title ?? EVENING_LABELS[code],
-              enabled: false,
-              weekdays: [],
-              originalWeekdays: [],
-              strategy: 'pickup_assignee',
-              fixedAssigneeId: '',
-              fallbackAssigneeId: '',
-              localTime: '20:00',
-            },
-          ];
-        return groups.map((group, index) => ({
-          id: definition?.id ?? '',
-          code: `${code}:${index}`,
-          taskCode: code,
-          title: `${definition?.title ?? EVENING_LABELS[code]}${groups.length > 1 ? `（設定${index + 1}）` : ''}`,
-          enabled: true,
-          weekdays: group.map((item) => item.weekday),
-          originalWeekdays: group.map((item) => item.weekday),
-          strategy: group[0].assignee_strategy,
-          fixedAssigneeId: group[0].planned_assignee_id ?? '',
-          fallbackAssigneeId: group[0].fallback_assignee_id ?? '',
-          localTime: group[0].scheduled_local_time?.slice(0, 5) ?? '20:00',
-        }));
-      }),
-    );
-    setLoading(false);
-  }, [householdId]);
-  useEffect(() => {
-    load();
-  }, [load]);
-  const update = (code: string, patch: Partial<EditableRule>) =>
-    setRows((current) => current.map((row) => (row.code === code ? { ...row, ...patch } : row)));
-  const toggleDay = (code: string, weekday: number) => {
-    const row = rows.find((item) => item.code === code);
-    if (!row) return;
-    const removing = row.weekdays.includes(weekday);
-    setRows((current) =>
-      current.map((item) => {
-        if (item.code === code)
-          return {
-            ...item,
-            weekdays: removing
-              ? item.weekdays.filter((day) => day !== weekday)
-              : [...item.weekdays, weekday],
-          };
-        if (!removing && item.taskCode === row.taskCode)
-          return { ...item, weekdays: item.weekdays.filter((day) => day !== weekday) };
-        return item;
-      }),
-    );
-  };
-  const save = async () => {
-    if (rows.some((row) => !row.id)) {
-      setError('夜の家事ルールが見つかりません。初期設定を完了してください。');
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const replacements = [...new Set(rows.map((row) => row.id))].map((taskDefinitionId) => ({
-        task_definition_id: taskDefinitionId,
-        rules: rows
-          .filter((row) => row.id === taskDefinitionId && row.enabled)
-          .flatMap((row) =>
-            row.weekdays.map((weekday) => ({
-              weekday,
-              assignee_strategy: row.strategy,
-              planned_assignee_user_id: row.strategy === 'fixed'
-                ? row.fixedAssigneeId
-                : row.fallbackAssigneeId || undefined,
-              scheduled_local_time: row.localTime,
-            })),
-          ),
-      }));
-      await callEdgeFunction(EDGE_FUNCTIONS.replaceRecurrenceSchedule, {
-        operation_id: newOperationId(),
-        replacements,
-      });
-      setNotice('夜の家事ルールを保存しました。次回以降の毎日に反映されます。');
-      await load();
-    } catch (err) {
-      setError(err instanceof FamilyOpsApiError ? err.message : '夜の家事を保存できませんでした。');
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <section className="card routine-editor">
-      <div className="section-heading">
-        <div>
-          <h2>夜の家事</h2>
-          <p className="empty-hint">
-            誰が・いつ・どの曜日にやるかを、これから毎回のルールとして決めます。
-          </p>
-        </div>
-      </div>
-      {loading ? (
-        <p role="status">読み込み中…</p>
-      ) : (
-        <div className="routine-rule-list">
-          {rows.map((row) => (
-            <article className="routine-rule" key={row.code}>
-              <div className="routine-rule-top">
-                <label className="inline-check">
-                  <input
-                    type="checkbox"
-                    checked={row.enabled}
-                    onChange={(event) => update(row.code, { enabled: event.target.checked })}
-                  />
-                  {row.title}
-                </label>
-                <input
-                  type="time"
-                  aria-label={`${row.title}の時刻`}
-                  value={row.localTime}
-                  disabled={!row.enabled}
-                  onChange={(event) => update(row.code, { localTime: event.target.value })}
-                />
-              </div>
-              {row.enabled && (
-                <>
-                  <label>
-                    担当
-                    <select
-                      value={row.strategy}
-                      onChange={(event) =>
-                        update(row.code, {
-                          strategy: event.target.value as EditableRule['strategy'],
-                        })
-                      }
-                    >
-                      <option value="pickup_assignee">お迎えした人</option>
-                      <option value="nonpickup_adult">お迎えしていない人</option>
-                      <option value="fixed">固定する</option>
-                    </select>
-                  </label>
-                  {row.strategy === 'fixed' && (
-                    <label>
-                      固定の担当
-                      <select
-                        value={row.fixedAssigneeId}
-                        onChange={(event) =>
-                          update(row.code, { fixedAssigneeId: event.target.value })
-                        }
-                      >
-                        <option value="">選択してください</option>
-                        {members.map((member) => (
-                          <option key={member.user_id} value={member.user_id}>
-                            {member.profile?.display_name ?? '家族'}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  {row.strategy !== 'fixed' && (
-                    <label>
-                      平日に送迎がない日の担当（任意）
-                      <select
-                        value={row.fallbackAssigneeId}
-                        onChange={(event) =>
-                          update(row.code, { fallbackAssigneeId: event.target.value })
-                        }
-                      >
-                        <option value="">未設定のまま</option>
-                        {members.map((member) => (
-                          <option key={member.user_id} value={member.user_id}>
-                            {member.profile?.display_name ?? '家族'}
-                          </option>
-                        ))}
-                      </select>
-                      <small className="empty-hint">土日は送迎がなければ「誰でもOK」になります。平日に送迎担当がいない場合だけこの担当を使います。</small>
-                    </label>
-                  )}
-                  {weekdayChecks(row, (weekday) => toggleDay(row.code, weekday))}
-                </>
-              )}
-            </article>
-          ))}
-        </div>
-      )}
-      {error && (
-        <p role="alert" className="error-text">
-          {error}
-        </p>
-      )}
-      {notice && <p role="status">{notice}</p>}
-      <button type="button" onClick={save} disabled={saving || loading}>
-        {saving ? '保存中…' : 'これから毎回に保存'}
-      </button>
-    </section>
   );
 }
 

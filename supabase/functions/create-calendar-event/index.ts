@@ -15,6 +15,8 @@ import {
   getAccessTokenForConnection,
   getEvent,
   GoogleInvalidGrantError,
+  googleEventMatchesOperation,
+  isRetryableGoogleWriteStatus,
   insertEvent,
   toGoogleErrorResponse,
 } from "../_shared/googleCalendar.ts";
@@ -160,7 +162,7 @@ Deno.serve(async (req: Request) => {
       // (timeout/network error, not a structured HTTP error response).
       // Reconcile by GET before deciding anything.
       const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: claim.google_event_id });
-      if (existing.status === 200 && existing.body) {
+      if (existing.status === 200 && googleEventMatchesOperation(existing.body, operationId)) {
         await callGoogleServerTx(serviceClient, "server_tx_finalize_google_write", {
           p_operation_id: operationId,
           p_status: "succeeded",
@@ -192,10 +194,7 @@ Deno.serve(async (req: Request) => {
     if (insertStatus === 409) {
       // #11 "409 duplicate": GET the same id and verify the operation marker.
       const existing = await getEvent({ accessToken, calendarId: externalCalendarId, eventId: claim.google_event_id });
-      const remoteOperationId = existing.body
-        ? ((existing.body["extendedProperties"] as { private?: Record<string, string> } | undefined)?.private?.["familyOpsOperationId"])
-        : undefined;
-      if (existing.status === 200 && remoteOperationId === operationId) {
+      if (existing.status === 200 && googleEventMatchesOperation(existing.body, operationId)) {
         await callGoogleServerTx(serviceClient, "server_tx_finalize_google_write", {
           p_operation_id: operationId,
           p_status: "succeeded",
@@ -211,6 +210,10 @@ Deno.serve(async (req: Request) => {
         p_last_error: "409 duplicate with mismatched or missing operation marker",
       });
       throw new FamilyOpsError("IDEMPOTENCY_CONFLICT", "同じ予定IDが既に別内容で存在します", 409);
+    }
+
+    if (isRetryableGoogleWriteStatus(insertStatus)) {
+      throw new FamilyOpsError("CALENDAR_UNAVAILABLE", "カレンダーへの接続が一時的に失敗しました。もう一度お試しください", 503);
     }
 
     await callGoogleServerTx(serviceClient, "server_tx_finalize_google_write", {

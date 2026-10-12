@@ -2,12 +2,26 @@ import { assertEquals } from 'jsr:@std/assert@1';
 import {
   GOOGLE_CALENDAR_SCOPES,
   GoogleCalendarApiError,
+  googleEventMatchesOperation,
+  isRetryableGoogleWriteStatus,
   isLiveCalendarEligible,
   isGoogleCalendarForbiddenError,
   listEligibleCalendarCandidates,
   projectionWindow,
   revalidateCalendarEligibilityAfterForbidden,
 } from './googleCalendar.ts';
+
+Deno.test('write reconciliation requires the original operation marker', () => {
+  assertEquals(googleEventMatchesOperation({ extendedProperties: { private: { familyOpsOperationId: 'operation-1' } } }, 'operation-1'), true);
+  assertEquals(googleEventMatchesOperation({ extendedProperties: { private: { familyOpsOperationId: 'other-operation' } } }, 'operation-1'), false);
+  assertEquals(googleEventMatchesOperation({ summary: 'Same title', extendedProperties: null }, 'operation-1'), false);
+  assertEquals(googleEventMatchesOperation({}, 'operation-1'), false);
+});
+
+Deno.test('temporary write HTTP failures can retry without a terminal dead receipt', () => {
+  for (const status of [408, 429, 500, 502, 503, 504]) assertEquals(isRetryableGoogleWriteStatus(status), true);
+  for (const status of [200, 201, 400, 401, 403, 404, 409, 412]) assertEquals(isRetryableGoogleWriteStatus(status), false);
+});
 
 Deno.test('projection window uses Tokyo midnight boundaries and matching local dates', () => {
   assertEquals(projectionWindow(new Date('2026-10-03T02:30:00Z')), {

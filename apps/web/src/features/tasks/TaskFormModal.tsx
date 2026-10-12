@@ -30,7 +30,19 @@ interface TaskFormModalProps {
   onSaved: () => void;
 }
 
-export function TaskFormModal({
+export function TaskFormModal(props: TaskFormModalProps) {
+  const { household, me } = useHousehold();
+  // Scope the live form as well as its stored draft. If auth/membership changes
+  // while it is open, old fields must not be saved into the new owner's draft.
+  return (
+    <TaskFormModalContent
+      key={`${me?.user_id ?? ''}:${household?.id ?? ''}:${props.task?.id ?? 'create'}`}
+      {...props}
+    />
+  );
+}
+
+function TaskFormModalContent({
   mode,
   task,
   initialTitle,
@@ -39,10 +51,19 @@ export function TaskFormModal({
   onClose,
   onSaved,
 }: TaskFormModalProps) {
-  const { members, household } = useHousehold();
+  const { members, household, me } = useHousehold();
   const runCommand = useCommandAttempt();
   const { categories } = useTaskCategories();
-  const draft = useMemo(() => (mode === 'create' ? readTaskFormDraft() : null), [mode]);
+  const userId = me?.user_id;
+  const householdId = household?.id;
+  const draftScope = useMemo(
+    () => (userId && householdId ? { userId, householdId } : null),
+    [userId, householdId],
+  );
+  const draft = useMemo(
+    () => (mode === 'create' ? readTaskFormDraft(draftScope) : null),
+    [mode, draftScope],
+  );
   const [title, setTitle] = useState(task?.title ?? initialTitle ?? draft?.title ?? '');
   const [category, setCategory] = useState(task?.category ?? draft?.category ?? 'other');
   const [scheduledDate, setScheduledDate] = useState(
@@ -105,28 +126,32 @@ export function TaskFormModal({
     mode === 'edit' ? '予定・やることを編集' : isCalendarEvent ? '予定を追加' : 'やることを追加';
   function closeForm() {
     if (savedTaskId) {
-      if (mode === 'create') clearTaskFormDraft();
+      if (mode === 'create') clearTaskFormDraft(draftScope);
       onSaved();
     } else onClose();
   }
 
   useEffect(() => {
     if (mode !== 'create') return;
-    saveTaskFormDraft({
-      title,
-      category,
-      scheduledDate,
-      dueLocalTime,
-      calendarEndLocalTime,
-      calendarVisibility,
-      assigneeId,
-      completionMode,
-      routinePhase,
-      subtasks,
-      schedulerDetails: details,
-    });
+    saveTaskFormDraft(
+      {
+        title,
+        category,
+        scheduledDate,
+        dueLocalTime,
+        calendarEndLocalTime,
+        calendarVisibility,
+        assigneeId,
+        completionMode,
+        routinePhase,
+        subtasks,
+        schedulerDetails: details,
+      },
+      draftScope,
+    );
   }, [
     mode,
+    draftScope,
     title,
     category,
     scheduledDate,
@@ -253,7 +278,7 @@ export function TaskFormModal({
           await uploadScheduleAttachment(household.id, persistedId, file);
           setFiles((current) => current.filter((item) => item !== file));
         }
-      if (mode === 'create') clearTaskFormDraft();
+      if (mode === 'create') clearTaskFormDraft(draftScope);
       onSaved();
     } catch (err) {
       if (err instanceof FamilyOpsApiError && err.code === 'TASK_TERMINAL') {
