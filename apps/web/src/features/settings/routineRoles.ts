@@ -34,6 +34,7 @@ export interface RoutineRule {
   fallbackAssigneeId: string | null;
   localTime: string | null;
   slotKey: string;
+  conflictWindowMinutes?: number;
 }
 
 export interface RoutineSubtask { id?: string; title: string; required: boolean }
@@ -55,7 +56,7 @@ export interface RoutineGroup { key: string; title: string; hint?: string; ancho
 
 /** Codmon rules live in their own slot; the generic weekly editor only owns the default slot. */
 export function hasLockedSchedule(item: RoutineItem): boolean {
-  return item.rules.some((rule) => rule.slotKey !== 'default');
+  return item.code.startsWith('codmon_') || item.rules.some((rule) => rule.slotKey !== 'default');
 }
 
 export function routineGroupKey(item: RoutineItem): string {
@@ -122,9 +123,9 @@ export function weekdaySummary(weekdays: number[]): string {
 
 /** 「夜 · 月〜金 20:00」, plus the rule per day when it changes by weekday. */
 export function routineSummary(item: RoutineItem, memberLabel: (userId: string) => string): string {
-  const times = [...new Set(item.rules.map((rule) => rule.localTime).filter(Boolean))] as string[];
+  const times = [...new Set(item.rules.map((rule) => rule.localTime))];
   const parts = [PHASE_LABELS[item.phase] ?? '', weekdaySummary(item.rules.map((rule) => rule.weekday))];
-  if (times.length === 1) parts.push(times[0]);
+  if (times.length === 1 && times[0]) parts.push(times[0]);
   else if (times.length > 1) parts.push('時刻は曜日ごと');
   const key = routineGroupKey(item);
   if (key === 'mixed' || key === 'optional' || key === 'stopped') {

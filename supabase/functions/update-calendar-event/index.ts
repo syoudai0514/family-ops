@@ -13,22 +13,12 @@ import {
   getAccessTokenForConnection,
   getEvent,
   GoogleInvalidGrantError,
-  mergePrivateExtendedProperties,
+  isRetryableGoogleWriteStatus,
   patchEvent,
   toGoogleErrorResponse,
 } from "../_shared/googleCalendar.ts";
 import { decryptRefreshToken, sha256Hex } from "../_shared/cryptoHelper.ts";
-
-interface PatchFields {
-  title?: string | null;
-  description?: string | null;
-  location?: string | null;
-  start_date_time?: string;
-  end_date_time?: string;
-  start_date?: string;
-  end_date?: string;
-  busy_member_user_ids?: string[];
-}
+import { alreadyMatches, buildPatchBody, parsePatchFields } from "./patchFields.ts";
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
@@ -37,87 +27,6 @@ function stableStringify(value: unknown): string {
     return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`).join(",")}}`;
   }
   return JSON.stringify(value);
-}
-
-function parsePatchFields(body: Record<string, unknown>): PatchFields {
-  const out: PatchFields = {};
-  if ("title" in body) {
-    const v = body["title"];
-    if (v !== null && typeof v !== "string") throw new FamilyOpsError("INVALID_INPUT", "title must be a string or null", 400);
-    out.title = v as string | null;
-  }
-  if ("description" in body) {
-    const v = body["description"];
-    if (v !== null && typeof v !== "string") throw new FamilyOpsError("INVALID_INPUT", "description must be a string or null", 400);
-    out.description = v as string | null;
-  }
-  if ("location" in body) {
-    const v = body["location"];
-    if (v !== null && typeof v !== "string") throw new FamilyOpsError("INVALID_INPUT", "location must be a string or null", 400);
-    out.location = v as string | null;
-  }
-  const hasTimed = typeof body["start_date_time"] === "string" && typeof body["end_date_time"] === "string";
-  const hasAllDay = typeof body["start_date"] === "string" && typeof body["end_date"] === "string";
-  if (hasTimed) {
-    out.start_date_time = body["start_date_time"] as string;
-    out.end_date_time = body["end_date_time"] as string;
-  }
-  if (hasAllDay) {
-    out.start_date = body["start_date"] as string;
-    out.end_date = body["end_date"] as string;
-  }
-  if ("busy_member_user_ids" in body) {
-    const v = body["busy_member_user_ids"];
-    if (!Array.isArray(v) || v.some((m) => typeof m !== "string")) {
-      throw new FamilyOpsError("INVALID_INPUT", "busy_member_user_ids must be an array of strings", 400);
-    }
-    out.busy_member_user_ids = v as string[];
-  }
-  return out;
-}
-
-function buildPatchBody(fields: PatchFields, existingPrivate: Record<string, string> | undefined): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-  if ("title" in fields) body.summary = fields.title ?? null;
-  if ("description" in fields) body.description = fields.description ?? null;
-  if ("location" in fields) body.location = fields.location ?? null;
-  if (fields.start_date_time && fields.end_date_time) {
-    body.start = { dateTime: fields.start_date_time, timeZone: "Asia/Tokyo" };
-    body.end = { dateTime: fields.end_date_time, timeZone: "Asia/Tokyo" };
-  } else if (fields.start_date && fields.end_date) {
-    body.start = { date: fields.start_date };
-    body.end = { date: fields.end_date };
-  }
-  if (fields.busy_member_user_ids) {
-    body.extendedProperties = {
-      private: mergePrivateExtendedProperties(existingPrivate, {
-        familyOpsBusyMemberIds: fields.busy_member_user_ids.join(","),
-      }),
-    };
-  }
-  return body;
-}
-
-// #12 step 6 "already desired owned fields => success": only compares the
-// fields this call actually intended to change, per "PATCH only for
-// Family-Ops-owned/explicitly edited fields".
-function alreadyMatches(fields: PatchFields, remote: Record<string, unknown>): boolean {
-  if ("title" in fields && (remote["summary"] ?? null) !== (fields.title ?? null)) return false;
-  if ("description" in fields && (remote["description"] ?? null) !== (fields.description ?? null)) return false;
-  if ("location" in fields && (remote["location"] ?? null) !== (fields.location ?? null)) return false;
-  if (fields.start_date_time) {
-    const remoteStart = (remote["start"] as { dateTime?: string } | undefined)?.dateTime;
-    if (remoteStart !== fields.start_date_time) return false;
-  }
-  if (fields.start_date) {
-    const remoteStart = (remote["start"] as { date?: string } | undefined)?.date;
-    if (remoteStart !== fields.start_date) return false;
-  }
-  if (fields.busy_member_user_ids) {
-    const remoteBusy = (remote["extendedProperties"] as { private?: Record<string, string> } | undefined)?.private?.["familyOpsBusyMemberIds"];
-    if (remoteBusy !== fields.busy_member_user_ids.join(",")) return false;
-  }
-  return true;
 }
 
 Deno.serve(async (req: Request) => {
@@ -256,6 +165,12 @@ Deno.serve(async (req: Request) => {
         p_last_error: "412 etag conflict",
       });
       throw new FamilyOpsError("CALENDAR_ETAG_CONFLICT", "予定が他の場所で更新されています。最新の内容を確認してください", 409);
+    }
+
+    if (isRetryableGoogleWriteStatus(patchStatus)) {
+      // Leave the claimed operation pending so retrying the same operation_id
+      // can recover from a provider outage or rate limit.
+      throw new FamilyOpsError("CALENDAR_UNAVAILABLE", "カレンダーへの接続が一時的に失敗しました。もう一度お試しください", 503);
     }
 
     await callGoogleServerTx(serviceClient, "server_tx_finalize_google_write", {
