@@ -80,6 +80,9 @@ export interface TaskInstance {
   title: string;
   category: string;
   routine_phase: RoutinePhase | null;
+  /** Read-model wording; the original title and assignment remain unchanged. */
+  display_title?: string | null;
+  responsibility_hint?: string | null;
   /** 'optional': 余裕があれば (not required, never counted as left to do). */
   expectation?: string | null;
   scheduled_date: string;
@@ -95,6 +98,8 @@ export interface TaskInstance {
   completion_mode: CompletionMode;
   status: TaskInstanceStatus;
   actual_completed_by_id: string | null;
+  /** Known completed-result contributors from the canonical participant records. */
+  actual_participant_user_ids?: string[];
   completed_at: string | null;
   outcome_reason?: TaskOutcomeReason;
   rescheduled_to?: string | null;

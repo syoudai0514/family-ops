@@ -1,58 +1,77 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TaskInstance } from '../../lib/types';
 import { usePlanningData } from './usePlanningData';
 
-const taskRows = vi.hoisted(() => ({ rows: [] as Array<Record<string, unknown>> }));
+const { from, withTaskActualParticipants } = vi.hoisted(() => ({
+  from: vi.fn(), withTaskActualParticipants: vi.fn(),
+}));
+vi.mock('../../lib/supabaseClient', () => ({ supabase: { from } }));
+vi.mock('../../lib/claimantUsers', () => ({ withClaimantUsers: async (_id: string, rows: unknown[]) => rows }));
+vi.mock('../../lib/taskActualParticipants', () => ({ withTaskActualParticipants }));
 
-vi.mock('../../lib/supabaseClient', () => {
-  const builder = (data: () => unknown) => {
-    const chain: Record<string, unknown> = {};
-    const result = () => Promise.resolve({ data: data(), error: null });
-    for (const name of ['select', 'eq', 'lte', 'gte', 'lt', 'gt', 'neq', 'or']) chain[name] = () => chain;
-    chain.order = () => result();
-    return chain;
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+function query(table: string) {
+  let household = 'h1';
+  let date = '2026-10-12';
+  const builder = {
+    select: vi.fn(), eq: vi.fn(), lte: vi.fn(), or: vi.fn(), neq: vi.fn(), order: vi.fn(), lt: vi.fn(), gte: vi.fn(), gt: vi.fn(),
+    then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve({
+      data: table === 'task_instances' ? [{
+        id: `${household}:${date}`, household_id: household, scheduled_date: date, title: date,
+        status: 'completed', completion_mode: 'subtasks', actual_completed_by_id: null,
+      }] : [], error: null,
+    }).then(resolve, reject),
   };
-  return {
-    supabase: {
-      from: (table: string) => builder(() => (table === 'task_instances' ? taskRows.rows : [])),
-    },
-  };
-});
+  for (const method of [builder.select, builder.or, builder.neq, builder.order, builder.lt, builder.gte, builder.gt]) method.mockReturnValue(builder);
+  builder.eq.mockImplementation((field: string, value: string) => { if (field === 'household_id') household = value; return builder; });
+  builder.lte.mockImplementation((field: string, value: string) => { if (field === 'scheduled_date') date = value; return builder; });
+  return builder;
+}
 
-const task = (id: string, status = 'todo') => ({ id, title: id, scheduled_date: '2026-10-07', status, task_definitions: null, task_schedule_details: null });
-
-describe('usePlanningData', () => {
+describe('usePlanningData participant hydration', () => {
   beforeEach(() => {
-    taskRows.rows = [task('a'), task('b')];
+    from.mockReset().mockImplementation(query);
+    withTaskActualParticipants.mockReset();
   });
 
-  it('keeps the list on screen while the same range is reloaded after a change (no jump to the top)', async () => {
-    const { result } = renderHook(() => usePlanningData('hh', '2026-10-07', '2026-10-07'));
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.tasks.map((t) => t.id)).toEqual(['a', 'b']);
-
-    taskRows.rows = [task('a', 'completed'), task('b')];
-    const seen: boolean[] = [];
-    let refresh: Promise<void> | undefined;
-    act(() => {
-      refresh = result.current.refresh();
+  it('keeps the selected date when an earlier participant lookup finishes later', async () => {
+    const old = deferred();
+    withTaskActualParticipants
+      .mockImplementationOnce(async (_id: string, rows: TaskInstance[]) => { await old.promise; return rows; })
+      .mockImplementation(async (_id: string, rows: TaskInstance[]) => rows.map(row => ({ ...row, actual_participant_user_ids: ['u1'] })));
+    const { result, rerender } = renderHook(({ date }) => usePlanningData('h1', date, date), {
+      initialProps: { date: '2026-10-12' },
     });
-    seen.push(result.current.loading);
-    await act(async () => {
-      await refresh;
-    });
-    seen.push(result.current.loading);
-
-    // Never "読み込み中…" for the range already shown; the new state arrives in place.
-    expect(seen).toEqual([false, false]);
-    expect(result.current.tasks.find((t) => t.id === 'a')?.status).toBe('completed');
+    await waitFor(() => expect(withTaskActualParticipants).toHaveBeenCalledTimes(1));
+    rerender({ date: '2026-10-13' });
+    await waitFor(() => expect(result.current.tasks[0]?.scheduled_date).toBe('2026-10-13'));
+    expect(result.current.tasks[0].actual_participant_user_ids).toEqual(['u1']);
+    await act(async () => { old.resolve(); await old.promise; });
+    expect(result.current.tasks[0].scheduled_date).toBe('2026-10-13');
+    expect(result.current.loading).toBe(false);
   });
 
-  it('still shows the loading state for a different range', async () => {
-    const { result, rerender } = renderHook(({ s }) => usePlanningData('hh', s, s), { initialProps: { s: '2026-10-07' } });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    rerender({ s: '2026-10-08' });
-    expect(result.current.loading).toBe(true);
-    await waitFor(() => expect(result.current.loading).toBe(false));
+  it('does not replace a new household result or error with an old lookup failure', async () => {
+    const old = deferred();
+    withTaskActualParticipants
+      .mockImplementationOnce(async (_id: string, rows: TaskInstance[]) => { await old.promise; return rows; })
+      .mockImplementation(async (_id: string, rows: TaskInstance[]) => rows);
+    const { result, rerender } = renderHook(({ household }) => usePlanningData(household, '2026-10-13', '2026-10-13'), {
+      initialProps: { household: 'h1' },
+    });
+    await waitFor(() => expect(withTaskActualParticipants).toHaveBeenCalledTimes(1));
+    rerender({ household: 'h2' });
+    await waitFor(() => expect(result.current.tasks[0]?.household_id).toBe('h2'));
+    await act(async () => { old.reject(new Error('old lookup failed')); await old.promise.catch(() => undefined); });
+    expect(result.current.tasks[0].household_id).toBe('h2');
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
   });
 });

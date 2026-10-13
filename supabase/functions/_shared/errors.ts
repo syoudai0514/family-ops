@@ -33,6 +33,9 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   INTERNAL_ERROR: 500,
   // WP2 additions (task/request/shopping mutation boundary):
   TASK_TERMINAL: 409,
+  TASK_CLAIMED_BY_OTHER: 409,
+  INFO_ACK_NOT_ACTIONABLE: 409,
+  INFO_NOT_FOUND: 404,
   TASK_NOT_COMPLETED: 409,
   TASK_REOPEN_USE_SUBTASKS: 409,
   TASK_NOT_COULD_NOT_DO: 409,
@@ -123,6 +126,9 @@ const KNOWN_CODES = new Set([
   "INVITE_USED",
   "INVITE_TOKEN_ALREADY_ISSUED",
   "TASK_TERMINAL",
+  "TASK_CLAIMED_BY_OTHER",
+  "INFO_ACK_NOT_ACTIONABLE",
+  "INFO_NOT_FOUND",
   "TASK_NOT_COMPLETED",
   "TASK_REOPEN_USE_SUBTASKS",
   "TASK_NOT_COULD_NOT_DO",
@@ -198,6 +204,12 @@ export function describeCode(code: string): string {
       return "入力内容が不正です";
     case "TASK_TERMINAL":
       return "このタスクは既に完了・キャンセル・スキップされています";
+    case "TASK_CLAIMED_BY_OTHER":
+      return "ほかの人が対応中です。担当状況を確認してから引き継いでください";
+    case "INFO_ACK_NOT_ACTIONABLE":
+      return "この共有は期限や状態が変わっています。最新の共有を開き直してください";
+    case "INFO_NOT_FOUND":
+      return "共有が見つかりません。最新の共有を開き直してください";
     case "TASK_NOT_COMPLETED":
       return "この項目はすでに未完了です。最新の状態を確認してください";
     case "TASK_REOPEN_USE_SUBTASKS":

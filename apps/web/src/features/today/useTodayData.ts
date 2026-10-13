@@ -10,6 +10,7 @@ import type {
 } from '../../lib/types';
 import { tokyoLocalDate } from './todayClock';
 import { withTimeout } from '../../lib/withTimeout';
+import { withTaskActualParticipants } from '../../lib/taskActualParticipants';
 import type { CodmonReadiness } from './codmonReadiness';
 
 export interface TaskExecutionTarget {
@@ -88,6 +89,8 @@ export interface DailyBriefWaitingRef {
 interface DailyBriefTaskRef {
   task_id: string;
   title?: string | null;
+  display_title?: string | null;
+  responsibility_hint?: string | null;
   due_at?: string | null;
 }
 
@@ -101,6 +104,7 @@ interface DailyBriefTaskGroups {
 export interface DailyBriefPartnerCriticalItem {
   task_id: string;
   title: string;
+  display_title?: string | null;
   task_kind?: string;
   due_at?: string | null;
   revision?: number;
@@ -373,17 +377,17 @@ export function useTodayData(householdId: string | null, userId: string | null):
           // unlike an open (未記録) todo.
           (task.status === 'completed' || (task.status === 'skipped' && task.outcome_reason === 'could_not_do'))
           && task.scheduled_date === localDate
-          && (
-            task.assignment_mode === 'anyone'
-            || task.planned_assignee_id === userId
-            || task.actual_completed_by_id === userId
-          ),
         );
       const rawTaskById = new Map<string, TodayTaskInstance>();
       for (const task of [...((taskRes.data ?? []) as TodayTaskInstance[]), ...completedCandidateRows]) {
         rawTaskById.set(task.id, task);
       }
       const rawTaskRows = [...rawTaskById.values()];
+      const displayRefs = new Map([
+        ...(brief.tasks ?? []), ...carryoverRefs, ...(brief.already_handled ?? []),
+        ...(groupRefs.morning ?? []), ...(groupRefs.daytime ?? []), ...(groupRefs.evening ?? []),
+        ...(groupRefs.optional ?? []), ...(brief.special_today ?? []),
+      ].map(item => [item.task_id, item]));
       const completedCandidateIds = completedCandidateRows.map((task) => task.id);
       const claimantActorRefIds = unique(rawTaskRows.map((task) => task.active_claimant_actor_ref_id ?? undefined));
       const claimantRefRes = claimantActorRefIds.length
@@ -402,12 +406,14 @@ export function useTodayData(householdId: string | null, userId: string | null):
       for (const row of claimantRefRes.data ?? []) {
         if (row.real_user_id) claimantUserByActorRef.set(row.id, row.real_user_id);
       }
-      const taskRows: TodayTaskInstance[] = rawTaskRows.map((task): TodayTaskInstance => ({
+      const taskRows: TodayTaskInstance[] = await withTaskActualParticipants(householdId, rawTaskRows.map((task): TodayTaskInstance => ({
         ...task,
+        display_title: displayRefs.get(task.id)?.display_title ?? task.display_title,
+        responsibility_hint: displayRefs.get(task.id)?.responsibility_hint ?? task.responsibility_hint,
         active_claimant_user_id: task.active_claimant_actor_ref_id
           ? claimantUserByActorRef.get(task.active_claimant_actor_ref_id) ?? null
           : null,
-      }));
+      })));
       const taskById = new Map<string, TodayTaskInstance>(
         taskRows.map((task) => [task.id, task] as const),
       );
@@ -432,10 +438,11 @@ export function useTodayData(householdId: string | null, userId: string | null):
         current.push(row);
         groupedSubtasks.set(row.task_instance_id, current);
       }
-      const completedTodayIds = completedCandidateRows
+      const completedTodayIds = completedCandidateRows.map(task => taskById.get(task.id) ?? task)
         .filter((task) =>
           task.planned_assignee_id === userId
           || task.actual_completed_by_id === userId
+          || task.actual_participant_user_ids?.includes(userId)
           || (
             task.assignment_mode === 'anyone'
             && (groupedSubtasks.get(task.id) ?? []).some((item) => item.completed_by === userId)

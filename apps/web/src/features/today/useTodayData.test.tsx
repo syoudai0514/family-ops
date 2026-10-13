@@ -62,6 +62,8 @@ describe('useTodayData canonical snapshot states', () => {
     rows.task_execution_targets = [];
     rows.requests = [];
     rows.handovers = [];
+    rows.task_actual_participants = [];
+    rows.domain_actor_refs = [];
     rows.shopping_items = [];
   });
 
@@ -142,6 +144,22 @@ describe('useTodayData canonical snapshot states', () => {
     await waitFor(() => expect(result.current.status).toBe('empty'));
 
     expect(result.current.completedTodayTasks.map((item) => item.id)).toEqual(['done-1']);
+  });
+
+  it('keeps my contribution to the other adults checklist in my completed work', async () => {
+    rows.task_instances = [{ ...task, id: 'mixed-preparation', planned_assignee_id: 'user-2',
+      completion_mode: 'subtasks', status: 'completed', actual_completed_by_id: null,
+      scheduled_date: tokyoLocalDate(new Date()), completed_at: new Date().toISOString() }];
+    rows.task_actual_participants = [{ household_id: 'household-1', task_instance_id: 'mixed-preparation',
+      actor_ref_id: 'actor-1', removed_at: null, test_context_id: null }];
+    rows.domain_actor_refs = [{ id: 'actor-1', household_id: 'household-1', actor_kind: 'real_user',
+      real_user_id: 'user-1', test_context_id: null }];
+    rpc.mockResolvedValueOnce({ data: emptyBrief, error: null });
+    const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.completedTodayTasks.map(item => item.id)).toEqual(['mixed-preparation']);
+    expect(result.current.completedTodayTasks[0].actual_participant_user_ids).toEqual(['user-1']);
+    expect(result.current.completedTodayTasks[0].planned_assignee_id).toBe('user-2');
   });
 
   it('replaces a stale/ready snapshot atomically when a later successful resync returns empty', async () => {

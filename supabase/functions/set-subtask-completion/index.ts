@@ -13,14 +13,19 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   const subtaskInstanceId = body["subtask_instance_id"];
   const completed = body["completed"];
   const completionActor = body["completion_actor"];
+  const expectedRevision = body["expected_revision"];
   if (typeof subtaskInstanceId !== "string" || subtaskInstanceId.length === 0) {
     throw new FamilyOpsError("INVALID_INPUT", "subtask_instance_id is required", 400);
   }
   if (typeof completed !== "boolean") {
     throw new FamilyOpsError("INVALID_INPUT", "completed must be a boolean", 400);
   }
-  if (completionActor !== "self" && completionActor !== "partner") {
-    throw new FamilyOpsError("INVALID_INPUT", "completion_actor must be 'self' or 'partner'", 400);
+  if (completionActor !== "self" && completionActor !== "partner" && completionActor !== "unknown") {
+    throw new FamilyOpsError("INVALID_INPUT", "completion_actor must be 'self', 'partner', or 'unknown'", 400);
+  }
+  if (expectedRevision !== undefined &&
+    (typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1)) {
+    throw new FamilyOpsError("INVALID_INPUT", "expected_revision must be a positive integer", 400);
   }
 
   const serviceClient = createServiceRoleClient();
@@ -33,6 +38,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
       p_subtask_instance_id: subtaskInstanceId,
       p_completed: completed,
       p_completion_actor: completionActor,
+      ...(expectedRevision === undefined ? {} : { p_expected_revision: expectedRevision }),
     },
   );
 

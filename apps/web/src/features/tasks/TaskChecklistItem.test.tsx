@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { UndoNoticeProvider } from '../../app/UndoNotice';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
@@ -205,6 +205,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       subtask_instance_id: 'st-1',
       completed: true,
       completion_actor: 'self',
+      expected_revision: 1,
     }));
   });
 
@@ -291,6 +292,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       subtask_instance_id: 'st-1',
       completed: true,
       completion_actor: 'self',
+      expected_revision: 5,
     }));
   });
 
@@ -384,6 +386,144 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({ task_id: 'theirs-1', completion_actor: 'self' })));
   });
 
+  it('records the explicit self action as self even after selecting the partner elsewhere', async () => {
+    const members = [
+      { user_id: 'user-1', family_role: 'papa', profile: null },
+      { user_id: 'user-2', family_role: 'mama', profile: null },
+    ] as never;
+    const theirs = { ...makeTask('todo'), planned_assignee_id: 'user-2', assignment_mode: 'person' } as TaskInstance;
+    render(<TaskChecklistItem {...props} hasPartner members={members} currentUserId="user-1" task={theirs} />);
+    fireEvent.change(screen.getByRole('combobox', { name: '実施者' }), { target: { value: 'partner' } });
+    fireEvent.click(screen.getByRole('button', { name: '提出物を出すを自分がやったことにする' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({
+      completion_actor: 'self',
+    })));
+  });
+
+  it('makes the remaining contribution explicit while preserving the already-recorded contributor', async () => {
+    const members = [
+      { user_id: 'user-1', family_role: 'papa', profile: null },
+      { user_id: 'user-2', family_role: 'mama', profile: null },
+    ] as never;
+    const partly = laundrySubtasks.map((item, index) => index === 0 ? {
+      ...item, is_completed: true, completed_by: 'user-2', completed_at: '2026-09-05T21:00:00+09:00',
+    } : item);
+    const theirs = { ...makeSubtaskTask(), planned_assignee_id: 'user-2', assignment_mode: 'person', revision: 6 } as TaskInstance;
+    const { container } = render(<TaskChecklistItem {...props} hasPartner members={members} currentUserId="user-1" task={theirs} subtasks={partly} />);
+    expect(screen.getByRole('combobox', { name: 'チェックする項目の実施者' })).toBeInTheDocument();
+    expect(within(container.querySelector('.subtask-checklist li') as HTMLElement).getByText(/実施: ママ.*記録: 9\/5 21:00/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'チェックする項目の実施者' }), { target: { value: 'partner' } });
+    fireEvent.click(screen.getByRole('button', { name: '洗濯を自分がやったことにする' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({
+      task_id: 'laundry-1', completion_actor: 'self', complete_remaining_subtasks: true,
+    })));
+  });
+
+  it('shows both checklist contributors even when the parent names only the last contributor', () => {
+    const members = [
+      { user_id: 'user-1', family_role: 'papa', profile: null },
+      { user_id: 'user-2', family_role: 'mama', profile: null },
+    ] as never;
+    const completedTask = { ...makeSubtaskTask(), status: 'completed', actual_completed_by_id: 'user-1' } as TaskInstance;
+    const done = laundrySubtasks.map((item, index) => ({
+      ...item, is_completed: true, completed_by: index === 0 ? 'user-2' : index === 1 ? 'user-1' : null,
+      completed_at: '2026-09-05T21:00:00+09:00',
+    }));
+    const { container } = render(<TaskChecklistItem {...props} hasPartner members={members} currentUserId="user-1" task={completedTask} subtasks={done} />);
+    const summary = container.querySelector('.task-checklist-content .task-item-meta')!;
+    expect(summary).toHaveTextContent('実施: パパ・ママ・実施者未確認');
+    fireEvent.click(screen.getByRole('button', { name: '修正する' }));
+    const rows = container.querySelectorAll('.subtask-checklist > li');
+    expect(within(rows[0] as HTMLElement).getByText(/実施: ママ/)).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText(/実施: パパ/)).toBeInTheDocument();
+    expect(within(rows[2] as HTMLElement).getByText(/実施: 実施者未確認/)).toBeInTheDocument();
+    expect(callEdgeFunction).not.toHaveBeenCalled();
+  });
+
+  it('shows the canonical contributor for an explicitly completed optional-only checklist', () => {
+    const members = [{ user_id: 'user-1', family_role: 'papa', profile: null }] as never;
+    const completed = {
+      ...makeSubtaskTask(), status: 'completed', actual_completed_by_id: null,
+      actual_participant_user_ids: ['user-1'],
+    } as TaskInstance;
+    const optional = laundrySubtasks.map(item => ({ ...item, required: false }));
+    const { container } = render(<TaskChecklistItem {...props} members={members} currentUserId="user-1" task={completed} subtasks={optional} />);
+    expect(container.querySelector('.task-checklist-content .task-item-meta')).toHaveTextContent('実施: パパ');
+    expect(screen.queryByText(/実施者未確認/)).not.toBeInTheDocument();
+  });
+
+  it('keeps unknown observed items visible alongside canonical contributors', () => {
+    const members = [{ user_id: 'user-1', family_role: 'papa', profile: null }] as never;
+    const completed = {
+      ...makeSubtaskTask(), status: 'completed', actual_completed_by_id: null,
+      actual_participant_user_ids: ['user-1'],
+    } as TaskInstance;
+    const mixed = laundrySubtasks.map((item, index) => ({
+      ...item, is_completed: true, completed_by: index === 0 ? null : 'user-1',
+    }));
+    const { container } = render(<TaskChecklistItem {...props} members={members} currentUserId="user-1" task={completed} subtasks={mixed} />);
+    expect(container.querySelector('.task-checklist-content .task-item-meta')).toHaveTextContent('実施: パパ・実施者未確認');
+  });
+
+  it('can record an individual shared checklist item for the explicitly chosen partner with its revision', async () => {
+    const members = [
+      { user_id: 'user-1', family_role: 'papa', profile: null },
+      { user_id: 'user-2', family_role: 'mama', profile: null },
+    ] as never;
+    const shared = { ...makeSubtaskTask(), assignment_mode: 'anyone', revision: 8 } as TaskInstance;
+    render(<TaskChecklistItem {...props} hasPartner members={members} currentUserId="user-1" task={shared} subtasks={laundrySubtasks} />);
+    fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'チェックする項目の実施者' }), { target: { value: 'partner' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: '回す' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', expect.objectContaining({
+      subtask_instance_id: 'st-1', completion_actor: 'partner', completed: true, expected_revision: 8,
+    })));
+  });
+
+  it('records an already-prepared item without guessing who prepared it', async () => {
+    const task = { ...makeSubtaskTask(), revision: 8 } as TaskInstance;
+    render(<TaskChecklistItem {...props} currentUserId="user-1" task={task} subtasks={laundrySubtasks} />);
+    fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'チェックする項目の実施者' }), { target: { value: 'unknown' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: '回す' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('set-subtask-completion', expect.objectContaining({
+      subtask_instance_id: 'st-1', completion_actor: 'unknown', completed: true, expected_revision: 8,
+    })));
+  });
+
+  it('keeps remaining whole completion as self when an individual unknown performer is selected', async () => {
+    const partly = laundrySubtasks.map((item, index) => index === 0 ? {
+      ...item, is_completed: true, completed_by: null, completed_at: '2026-09-05T21:00:00+09:00',
+    } : item);
+    render(<TaskChecklistItem {...props} currentUserId="user-1" task={makeSubtaskTask()} subtasks={partly} />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'チェックする項目の実施者' }), { target: { value: 'unknown' } });
+    const complete = screen.getByRole('button', { name: '洗濯を完了にする' });
+    expect(complete).toHaveTextContent('残りを自分がやった');
+    fireEvent.click(complete);
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({
+      completion_actor: 'self', complete_remaining_subtasks: true,
+    })));
+  });
+
+  it('uses the readable title and first-departure hint without a second anyone label', () => {
+    const task = {
+      ...makeAnyoneTask(), title: '食洗機を空ける（先に家を出る人）',
+      display_title: '食洗機を空ける', responsibility_hint: '先に家を出る人',
+    } as TaskInstance;
+    render(<TaskChecklistItem {...props} task={task} />);
+    expect(screen.getByText('食洗機を空ける', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('先に家を出る人', { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText('誰でもOK')).not.toBeInTheDocument();
+  });
+
+  it('prioritizes the current claimant over a responsibility hint', () => {
+    const task = { ...makeAnyoneTask('user-1'), responsibility_hint: '先に家を出る人' } as TaskInstance;
+    const members = [{ user_id: 'user-1', family_role: 'papa', profile: null }] as never;
+    render(<TaskChecklistItem {...props} currentUserId="user-1" members={members} task={task} />);
+    expect(screen.getByText('パパ対応中')).toBeInTheDocument();
+    expect(screen.queryByText('先に家を出る人')).not.toBeInTheDocument();
+  });
+
   it('keeps the one-tap completion on my own task', () => {
     const members = [
       { user_id: 'user-1', family_role: 'papa', profile: { display_name: 'パパ' } },
@@ -421,6 +561,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
       subtask_instance_id: 'st-1',
       completed: false,
       completion_actor: 'self',
+      expected_revision: 9,
     }));
   });
 

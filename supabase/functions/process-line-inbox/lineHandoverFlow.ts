@@ -80,6 +80,19 @@ export function isHandoverReviewText(text: string): boolean {
   return /^(共有確認|引き継ぎ確認|確認が必要な共有)$/u.test(text.normalize("NFKC").trim());
 }
 
+function isCurrentRecipientNote(
+  row: Record<string, unknown>,
+  actorId: string,
+  actorRef: string,
+  now: number,
+): boolean {
+  const from = typeof row.valid_from === "string" ? Date.parse(row.valid_from) : NaN;
+  const until = row.valid_until === null ? Infinity :
+    typeof row.valid_until === "string" ? Date.parse(row.valid_until) : NaN;
+  return Number.isFinite(from) && from <= now && until > now &&
+    row.author_actor_ref_id !== actorRef && row.author_id !== actorId;
+}
+
 export async function openHandoverReview(ctx: Context): Promise<void> {
   const actorRef = await actorRefId(ctx);
   if (!actorRef) {
@@ -87,14 +100,22 @@ export async function openHandoverReview(ctx: Context): Promise<void> {
     return;
   }
 
+  const now = new Date().toISOString();
   const { data: rows, error } = await ctx.client
     .from("handovers")
-    .select("id,shared_text,info_kind,revision,created_at,author_actor_ref_id,author_id")
+    .select("id,shared_text,info_kind,revision,created_at,author_actor_ref_id,author_id,valid_from,valid_until,my_acknowledgements:info_acknowledgements(handover_id)")
     .eq("household_id", ctx.householdId)
     .eq("status", "active")
     .eq("visibility", "household")
     .eq("ack_policy", "required")
     .is("test_context_id", null)
+    .lte("valid_from", now)
+    .or(`and(or(valid_until.is.null,valid_until.gt.${now}),or(author_actor_ref_id.is.null,author_actor_ref_id.neq.${actorRef}),or(author_id.is.null,author_id.neq.${ctx.actorId}))`)
+    // A filtered left anti-join removes this recipient's acknowledged notes
+    // before limit. Ten recent read notes cannot hide an older pending note.
+    .eq("my_acknowledgements.actor_ref_id", actorRef)
+    .is("my_acknowledgements.test_context_id", null)
+    .is("my_acknowledgements", null)
     .order("created_at", { ascending: false })
     .limit(10);
   if (error) {
@@ -102,20 +123,8 @@ export async function openHandoverReview(ctx: Context): Promise<void> {
     return;
   }
 
-  const ids = (rows ?? []).map((row) => row.id).filter((id): id is string => typeof id === "string");
-  if (ids.length === 0) {
-    await ctx.reply("いま「確認した」が必要な引き継ぎ・共有はありません。通常の共有は確認操作不要です。");
-    return;
-  }
-
-  const { data: acknowledged } = await ctx.client
-    .from("info_acknowledgements")
-    .select("handover_id")
-    .eq("actor_ref_id", actorRef)
-    .in("handover_id", ids)
-    .is("test_context_id", null);
-  const done = new Set((acknowledged ?? []).map((row) => row.handover_id));
-  const target = (rows ?? []).find((row) => !done.has(row.id));
+  const target = (rows ?? []).find((row) => typeof row.id === "string" &&
+    isCurrentRecipientNote(row, ctx.actorId, actorRef, Date.now()));
   if (!target) {
     await ctx.reply("いま「確認した」が必要な引き継ぎ・共有はありません。");
     return;
