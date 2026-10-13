@@ -11,6 +11,7 @@ import type {
 import { tokyoLocalDate } from './todayClock';
 import { withTimeout } from '../../lib/withTimeout';
 import { withTaskActualParticipants } from '../../lib/taskActualParticipants';
+import { TASK_PROGRESS_SELECT } from '../../lib/taskProgress';
 import type { CodmonReadiness } from './codmonReadiness';
 
 export interface TaskExecutionTarget {
@@ -344,14 +345,22 @@ export function useTodayData(householdId: string | null, userId: string | null):
 
       const [taskRes, completedRes, requestRes, handoverRes, shoppingRes, attemptsRes] = await withTimeout(Promise.all([
         allTaskIds.length
-          ? supabase.from('task_instances').select('*').in('id', allTaskIds)
+          ? supabase.from('task_instances').select(`*, ${TASK_PROGRESS_SELECT}`).eq('household_id', householdId).in('id', allTaskIds)
+              .eq('latest_work_progress.event_type', 'work_progress_recorded')
+              .order('created_at', { referencedTable: 'latest_work_progress', ascending: false })
+              .order('id', { referencedTable: 'latest_work_progress', ascending: false })
+              .limit(1, { referencedTable: 'latest_work_progress' })
           : Promise.resolve({ data: [] as TodayTaskInstance[], error: null }),
         supabase
           .from('task_instances')
-          .select('*')
+          .select(`*, ${TASK_PROGRESS_SELECT}`)
           .eq('household_id', householdId)
           .eq('scheduled_date', localDate)
           .in('status', ['completed', 'skipped'])
+          .eq('latest_work_progress.event_type', 'work_progress_recorded')
+          .order('created_at', { referencedTable: 'latest_work_progress', ascending: false })
+          .order('id', { referencedTable: 'latest_work_progress', ascending: false })
+          .limit(1, { referencedTable: 'latest_work_progress' })
           .order('completed_at', { ascending: false }),
         requestIds.length
           ? supabase.from('requests').select('*').in('id', requestIds)

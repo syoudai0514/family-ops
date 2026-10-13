@@ -11,7 +11,7 @@ type QueryResult = { data: Array<Record<string, unknown>>; error: null };
 function query(table: string) {
   const result: QueryResult = { data: rows[table] ?? [], error: null };
   const chain: Record<string, unknown> = {};
-  for (const method of ['select', 'in', 'eq', 'order', 'is']) {
+  for (const method of ['select', 'in', 'eq', 'order', 'is', 'limit']) {
     chain[method] = vi.fn(() => chain);
   }
   chain.then = (resolve: (queryResult: QueryResult) => unknown, reject?: (reason: unknown) => unknown) =>

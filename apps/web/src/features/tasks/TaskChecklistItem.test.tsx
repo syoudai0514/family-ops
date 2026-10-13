@@ -72,6 +72,15 @@ const props = {
 };
 
 describe('TaskChecklistItem Q54/Q64/Q106', () => {
+  it('shows a durable saved-note indicator without claiming that the task is completed', () => {
+    render(<TaskChecklistItem {...props} task={{ ...makeTask('todo'), latest_work_progress: [
+      { id: 'saved-progress', actor_id: 'user-1', created_at: '2026-10-13T07:34:20Z', payload: { work_done_note: '洗浄を開始した' } },
+    ] }} />);
+    expect(screen.getByRole('button', { name: '状況メモあり · 保存した内容を見る' })).toBeVisible();
+    expect(screen.getByText(/作業は未完了/)).toBeVisible();
+    expect(screen.getByRole('button', { name: '提出物を出すを完了にする' })).toBeEnabled();
+    expect(callEdgeFunction).not.toHaveBeenCalled();
+  });
   it.each([
     ['papa-user', 'ママ'],
     ['mama-user', 'パパ'],

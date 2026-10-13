@@ -175,7 +175,7 @@ async function fulfillRequest(client, { requestId, request }) {
   } else if (pathname === '/rest/v1/task_instances') {
     response = url.searchParams.getAll('status').some((value) => value === 'eq.completed')
       ? jsonResponse([])
-      : jsonResponse([task]);
+      : jsonResponse([{ ...task, latest_work_progress: state.progressEvents.slice(0, 1) }]);
   } else if (pathname === '/rest/v1/task_subtask_instances' || pathname === '/rest/v1/task_execution_targets') {
     response = jsonResponse([]);
   } else if (pathname === '/rest/v1/task_events') {
@@ -439,6 +439,8 @@ async function main() {
     assert.equal(task.status, 'todo');
     assert.equal(state.handovers.length, 0);
     await waitFor(() => evaluate(client, '!document.querySelector(".task-work-update")'), { label: 'progress form closes after refresh' });
+    await waitForText(client, '状況メモあり · 保存した内容を見る');
+    await waitForText(client, '作業は未完了');
 
     await evaluate(client, `(() => {
       const row = document.getElementById('task-${task.id}');
@@ -446,6 +448,8 @@ async function main() {
       [...row.querySelectorAll('button')].find(button => button.textContent === '状況・引き継ぎを記録').click();
     })()`);
     await waitForText(client, 'これまでの状況メモ');
+    assert.equal(await evaluate(client, `document.querySelector('.task-progress-history')?.open && document.querySelector('.task-progress-history')?.innerText.includes('朝の食器を追加して洗浄を開始した')`), true, 'saved note is visible immediately without expanding anything');
+    scenarios.push({ id: 'progress-visible-after-save', assertion: 'Saving leaves a durable note indicator on the open task; reopening shows the saved body by default and clearly separates new blank inputs', screenshot: await screenshot(client, 'task-progress-saved-visible.png') });
     await setProgressField('次の作業への影響', '洗浄が終わってから食器を取り出してください');
     await evaluate(client, `document.querySelector('.task-work-update input[type="checkbox"]').click()`);
     await evaluate(client, `document.querySelectorAll('.task-work-update input[type="checkbox"]')[1].click()`);

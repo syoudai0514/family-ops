@@ -21,7 +21,7 @@ function query(table: string) {
   let household = 'h1';
   let date = '2026-10-12';
   const builder = {
-    select: vi.fn(), eq: vi.fn(), lte: vi.fn(), or: vi.fn(), neq: vi.fn(), order: vi.fn(), lt: vi.fn(), gte: vi.fn(), gt: vi.fn(),
+    select: vi.fn(), eq: vi.fn(), lte: vi.fn(), or: vi.fn(), neq: vi.fn(), order: vi.fn(), lt: vi.fn(), gte: vi.fn(), gt: vi.fn(), limit: vi.fn(),
     then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve({
       data: table === 'task_instances' ? [{
         id: `${household}:${date}`, household_id: household, scheduled_date: date, title: date,
@@ -29,7 +29,7 @@ function query(table: string) {
       }] : [], error: null,
     }).then(resolve, reject),
   };
-  for (const method of [builder.select, builder.or, builder.neq, builder.order, builder.lt, builder.gte, builder.gt]) method.mockReturnValue(builder);
+  for (const method of [builder.select, builder.or, builder.neq, builder.order, builder.lt, builder.gte, builder.gt, builder.limit]) method.mockReturnValue(builder);
   builder.eq.mockImplementation((field: string, value: string) => { if (field === 'household_id') household = value; return builder; });
   builder.lte.mockImplementation((field: string, value: string) => { if (field === 'scheduled_date') date = value; return builder; });
   return builder;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { withClaimantUsers } from '../../lib/claimantUsers';
 import { withTaskActualParticipants } from '../../lib/taskActualParticipants';
+import { TASK_PROGRESS_SELECT } from '../../lib/taskProgress';
 import { supabase } from '../../lib/supabaseClient';
 import { addDays, tokyoIsoDate } from './dateHelpers';
 import type { GooglePlanningOccurrence, PlanningTask } from './calendarProjection';
@@ -43,11 +44,15 @@ export function usePlanningData(householdId: string | null, start: string, end: 
       ] = await Promise.all([
         supabase
           .from('task_instances')
-          .select('*, task_definitions(code, calendar_visibility), task_schedule_details(details)')
+          .select(`*, task_definitions(code, calendar_visibility), task_schedule_details(details), ${TASK_PROGRESS_SELECT}`)
           .eq('household_id', householdId)
           .lte('scheduled_date', end)
           .or(`scheduled_date.gte.${start},calendar_ends_at.gte.${rangeStart}`)
           .neq('status', 'cancelled')
+          .eq('latest_work_progress.event_type', 'work_progress_recorded')
+          .order('created_at', { referencedTable: 'latest_work_progress', ascending: false })
+          .order('id', { referencedTable: 'latest_work_progress', ascending: false })
+          .limit(1, { referencedTable: 'latest_work_progress' })
           .order('scheduled_date'),
         supabase
           .from('calendar_event_occurrences')

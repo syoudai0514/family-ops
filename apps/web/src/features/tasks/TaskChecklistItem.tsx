@@ -708,6 +708,10 @@ export function TaskChecklistItem({
         </>
       )}
 
+      {Boolean(task.latest_work_progress?.length) && !editingWorkUpdate && <p className="task-item-meta">
+        <button type="button" className="text-button" style={{ minHeight: 44 }} disabled={busy} onClick={() => setEditingWorkUpdate(true)}>状況メモあり · 保存した内容を見る</button>
+        {!finished && ' · 作業は未完了'}
+      </p>}
       {editingWorkUpdate && <TaskWorkUpdate task={task} members={members} currentUserId={currentUserId} onSaved={async () => {
         await onChanged();
         setEditingWorkUpdate(false);

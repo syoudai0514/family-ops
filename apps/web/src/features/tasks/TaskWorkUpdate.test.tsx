@@ -3,9 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FamilyOpsApiError } from '../../lib/apiClient';
 import { TaskWorkUpdate } from './TaskWorkUpdate';
 import type { TaskInstance } from '../../lib/types';
+import type { TaskWorkProgressRecord } from '../../lib/taskProgress';
 
 const invoke = vi.fn();
 let actorId = 'progress-user';
+let historyRows: TaskWorkProgressRecord[] = [];
+let historyError: { message: string } | null = null;
 vi.mock('../../app/AuthContext', () => ({ useAuth: () => ({ user: { id: actorId } }) }));
 vi.mock('../../app/HouseholdContext', () => ({ useHousehold: () => ({ household: { id: 'progress-household' } }) }));
 vi.mock('../../lib/apiClient', async () => ({
@@ -13,7 +16,7 @@ vi.mock('../../lib/apiClient', async () => ({
   callEdgeFunction: (...args: unknown[]) => invoke(...args),
 }));
 vi.mock('../../lib/supabaseClient', () => ({ supabase: { from: () => {
-  const query = { select: () => query, eq: () => query, order: () => query, limit: () => Promise.resolve({ data: [], error: null }) };
+  const query = { select: () => query, eq: () => query, order: () => query, limit: () => Promise.resolve({ data: historyRows, error: historyError }) };
   return query;
 } } }));
 
@@ -27,7 +30,32 @@ function fill() {
 }
 
 describe('task work updates', () => {
-  beforeEach(() => { sessionStorage.clear(); actorId = 'progress-user'; invoke.mockReset(); invoke.mockResolvedValue({ revision: 5 }); });
+  beforeEach(() => { sessionStorage.clear(); actorId = 'progress-user'; historyRows = []; historyError = null; invoke.mockReset(); invoke.mockResolvedValue({ revision: 5 }); });
+
+  it('reopens with the saved body already visible and separates the blank fields for a new entry', async () => {
+    historyRows = [{ id: 'saved-note', actor_id: actorId, created_at: '2026-10-13T07:34:20Z',
+      payload: { observed_note: '昨日の分が未洗浄だった', work_done_note: '朝の食器を追加して洗浄開始', share_with_household: false } }];
+    const { container, unmount } = render(<TaskWorkUpdate task={task} members={[]} currentUserId={actorId} onSaved={() => {}} />);
+    await screen.findByText('行ったこと: 朝の食器を追加して洗浄開始');
+    expect(container.querySelector('details.task-progress-history')).toHaveAttribute('open');
+    expect(screen.getByText('状況メモとして保存（引き継ぎの送信なし）')).toBeVisible();
+    expect(screen.getByText('新しく追記する')).toBeVisible();
+    expect(screen.getByLabelText('自分が行ったこと（任意）')).toHaveValue('');
+    unmount();
+    const reopened = render(<TaskWorkUpdate task={task} members={[]} currentUserId={actorId} onSaved={() => {}} />);
+    await screen.findByText('見つけた状況: 昨日の分が未洗浄だった');
+    expect(reopened.container.querySelector('details.task-progress-history')).toHaveAttribute('open');
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('keeps the saved latest note visible when loading older notes fails', async () => {
+    historyError = { message: 'offline' };
+    const latest = { id: 'saved-note', actor_id: actorId, created_at: '2026-10-13T07:34:20Z', payload: { remaining_note: '取り出しはまだ' } };
+    render(<TaskWorkUpdate task={{ ...task, latest_work_progress: [latest] }} members={[]} currentUserId={actorId} onSaved={() => {}} />);
+    expect(screen.getByText('今の状態・残り: 取り出しはまだ')).toBeVisible();
+    expect(await screen.findByRole('alert')).toHaveTextContent('保存済みの最新メモを表示しています');
+    expect(screen.queryByText(/まだ状況メモがありません/)).not.toBeInTheDocument();
+  });
 
   it('records the original task day and ongoing state without a completion or assignment command', async () => {
     const onSaved = vi.fn();

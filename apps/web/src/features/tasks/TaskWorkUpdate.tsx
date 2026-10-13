@@ -9,6 +9,7 @@ import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { supabase } from '../../lib/supabaseClient';
 import { withTimeout } from '../../lib/withTimeout';
 import { getTaskDisplay } from './taskDisplay';
+import type { TaskWorkProgressRecord } from '../../lib/taskProgress';
 
 type Props = {
   task: TaskInstance;
@@ -128,6 +129,8 @@ function WorkUpdateForm({ task, members, onSaved, onCancel, userId, householdId 
     <strong>状況・引き継ぎを記録</strong>
     <p className="task-item-meta">{getTaskDisplay(task).displayTitle} · 対象日 {task.scheduled_date}</p>
     <WorkUpdateHistory task={task} members={members} />
+    <strong>新しく追記する</strong>
+    <p className="empty-hint">下の入力欄は新しい記録用です。保存済みの内容は上の「これまでの状況メモ」に表示します。</p>
     <label>見つけた状況（任意）<textarea rows={2} maxLength={2000} disabled={disabled} value={draft.observed_note} onChange={event => change('observed_note', event.target.value)} placeholder="例: 昨日の分がまだ洗えていなかった" /></label>
     <label>自分が行ったこと（任意）<textarea rows={2} maxLength={2000} disabled={disabled} value={draft.work_done_note} onChange={event => change('work_done_note', event.target.value)} placeholder="例: 朝の食器を追加し、洗浄を開始した" /></label>
     <label>今の状態・残りの作業（任意）<textarea rows={2} maxLength={2000} disabled={disabled} value={draft.remaining_note} onChange={event => change('remaining_note', event.target.value)} placeholder="例: 洗浄中。食器の取り出しはまだ" /></label>
@@ -143,7 +146,7 @@ function WorkUpdateForm({ task, members, onSaved, onCancel, userId, householdId 
       {expiryMode === 'custom' && <label>引き継ぎの期限<input type="datetime-local" required disabled={disabled} value={dateTimeLocal(draft.valid_until)} onChange={event => change('valid_until', event.target.value ? new Date(event.target.value).toISOString() : null)} /></label>}
       <p className="empty-hint">状況が変わったら、共有の「この共有を終える」で終了できます。記録は履歴に残ります。</p>
     </>}
-    <p className="empty-hint">この記録は作業の完了とは別です。済んだ準備はチェック項目で記録できます。</p>
+    <p className="empty-hint">メモを保存しても作業は完了になりません。作業そのものが済んだら「完了」、一部が済んだらチェック項目で記録してください。</p>
     {pendingPayload && <p role="status" className="empty-hint">保存結果を確認するまで、内容を保持しています。</p>}
     {error && <p role="alert" className="error-text">{error}</p>}
     {saved && <p role="status">記録を保存しました。</p>}
@@ -152,19 +155,20 @@ function WorkUpdateForm({ task, members, onSaved, onCancel, userId, householdId 
   </form>;
 }
 
-type ProgressEvent = { id: string; actor_id: string | null; created_at: string; payload: Record<string, unknown> };
 const HISTORY_FIELDS = [
   ['observed_note', '見つけた状況'], ['work_done_note', '行ったこと'],
   ['remaining_note', '今の状態・残り'], ['next_step_note', '次の作業へ'],
 ] as const;
 
 function WorkUpdateHistory({ task, members }: Pick<Props, 'task' | 'members'>) {
-  const [events, setEvents] = useState<ProgressEvent[]>([]);
+  const [events, setEvents] = useState<TaskWorkProgressRecord[]>(task.latest_work_progress ?? []);
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let current = true;
-    setEvents([]);
+    setEvents(task.latest_work_progress ?? []);
     setError(false);
+    setLoading(true);
     void (async () => {
       try {
         const result = await withTimeout(supabase.from('task_events')
@@ -172,15 +176,16 @@ function WorkUpdateHistory({ task, members }: Pick<Props, 'task' | 'members'>) {
           .eq('task_instance_id', task.id).eq('event_type', 'work_progress_recorded')
           .order('created_at', { ascending: false }).limit(5), 12_000, '記録履歴を読み込めませんでした。');
         if (result.error) throw result.error;
-        if (current) setEvents((result.data ?? []) as ProgressEvent[]);
+        if (current) setEvents((result.data ?? []) as TaskWorkProgressRecord[]);
       } catch { if (current) setError(true); }
+      finally { if (current) setLoading(false); }
     })();
     return () => { current = false; };
   }, [task.id, task.household_id, task.revision]);
-  if (error) return <p className="empty-hint">前の状況メモを読み込めませんでした。</p>;
-  if (!events.length) return null;
-  return <details className="task-progress-history">
-    <summary>これまでの状況メモ</summary>
+  if (!events.length) return <p className="empty-hint" role={error ? 'alert' : 'status'}>{error ? '保存済みの状況メモを読み込めませんでした。入力内容が消えたとは限りません。閉じて開き直してください。' : loading ? '保存済みの状況メモを読み込み中…' : 'この作業には、まだ状況メモがありません。'}</p>;
+  return <details className="task-progress-history" open>
+    <summary>これまでの状況メモ（保存済み）</summary>
+    {error && <p role="alert" className="empty-hint">過去の記録をすべて読み込めませんでした。保存済みの最新メモを表示しています。</p>}
     <ul className="subtask-list">{events.map(event => {
       const member = members.find(candidate => candidate.user_id === event.actor_id);
       const author = member?.family_role === 'papa' ? 'パパ' : member?.family_role === 'mama' ? 'ママ' : member?.profile?.display_name ?? '家族';
@@ -189,7 +194,7 @@ function WorkUpdateHistory({ task, members }: Pick<Props, 'task' | 'members'>) {
       return <li key={event.id}>
         <p className="task-item-meta">{author} · 記録 {recordedAt}</p>
         {HISTORY_FIELDS.map(([key, label]) => typeof event.payload?.[key] === 'string' && event.payload[key] ? <p key={key}>{label}: {String(event.payload[key])}</p> : null)}
-        {event.payload?.share_with_household === true && <p className="task-item-meta">家族への引き継ぎあり</p>}
+        <p className="task-item-meta">{event.payload?.share_with_household === true ? '家族への引き継ぎあり' : '状況メモとして保存（引き継ぎの送信なし）'}</p>
       </li>;
     })}</ul>
   </details>;
