@@ -244,6 +244,43 @@ CROSS_HOUSEHOLD_READ=$(curl -sS "$API_URL/rest/v1/task_instances?select=id&id=eq
 
 info "OK: create-task -> Data API read -> complete-task -> Data API read round-trips correctly, and stays RLS-isolated from household B"
 
+# Saved progress must survive reopening through the same embedded query as Today/planning.
+info "7a. progress save -> latest embedded note read, open task state and household isolation"
+PROGRESS_CREATE_OP=$(python3 -c 'import uuid; print(uuid.uuid4())')
+PROGRESS_TASK_ID=$(curl -fsS -X POST "$API_URL/functions/v1/create-task" \
+  -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+  -d "{\"operation_id\":\"$PROGRESS_CREATE_OP\",\"title\":\"Progress visibility\",\"scheduled_date\":\"$(date +%Y-%m-%d)\",\"completion_mode\":\"whole\"}" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["task_id"])')
+for progress_revision in 1 2; do
+  progress_operation=$(python3 -c 'import uuid; print(uuid.uuid4())')
+  curl -fsS -X POST "$API_URL/functions/v1/edit-task" \
+    -H "Authorization: Bearer $JWT_A" -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+    -d "{\"action\":\"record_progress\",\"operation_id\":\"$progress_operation\",\"task_id\":\"$PROGRESS_TASK_ID\",\"expected_revision\":$progress_revision,\"observed_note\":\"saved-$progress_revision\",\"work_done_note\":\"started washing\",\"remaining_note\":\"unloading remains\",\"share_with_household\":false,\"ack_policy\":\"none\"}" \
+    | python3 -c 'import json,sys; assert json.load(sys.stdin)["revision"] >= 2'
+done
+for progress_reader in A B; do
+  progress_jwt_name="JWT_$progress_reader"
+  progress_rows=$(curl -fsS --get "$API_URL/rest/v1/task_instances" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer ${!progress_jwt_name}" \
+    --data-urlencode 'select=id,status,latest_work_progress:task_events!task_events_household_id_task_instance_id_fkey(id,payload)' \
+    --data-urlencode "household_id=eq.$HH_A" --data-urlencode "id=in.($PROGRESS_TASK_ID,$TASK_ID)" \
+    --data-urlencode 'latest_work_progress.event_type=eq.work_progress_recorded' \
+    --data-urlencode 'latest_work_progress.order=created_at.desc,id.desc' \
+    --data-urlencode 'latest_work_progress.limit=1')
+  python3 -c 'import json,sys; rows=json.load(sys.stdin)
+if sys.argv[1]=="B":
+ assert rows==[], "progress notes leaked across households"
+else:
+ assert len(rows)==2, "embedding removed a task without progress"
+ task=next(row for row in rows if row["id"]==sys.argv[2])
+ assert task["status"]=="todo", "note save changed the completion state"
+ assert len(task["latest_work_progress"])==1, "per-task note limit failed"
+ assert task["latest_work_progress"][0]["payload"]["observed_note"]=="saved-2", "latest saved note was not restored"
+ assert next(row for row in rows if row["id"]!=sys.argv[2])["latest_work_progress"]==[], "unrelated audit events became progress notes"
+' "$progress_reader" "$PROGRESS_TASK_ID" <<< "$progress_rows"
+done
+info "OK: progress body survives save/read, latest note embedding preserves empty tasks, completion state and household RLS"
+
 # 7b. Both input shapes must resolve to the shared outcome implementation via PostgREST.
 info "7b. could-not-do and undo with current and legacy Edge input shapes"
 OP_OUTCOME_CREATE=$(python3 -c 'import uuid; print(uuid.uuid4())')

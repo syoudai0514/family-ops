@@ -100,6 +100,8 @@ export interface TaskInstance {
   actual_completed_by_id: string | null;
   /** Known completed-result contributors from the canonical participant records. */
   actual_participant_user_ids?: string[];
+  /** Latest saved situation note; this does not change the task's completion state. */
+  latest_work_progress?: import('./taskProgress').TaskWorkProgressRecord[];
   completed_at: string | null;
   outcome_reason?: TaskOutcomeReason;
   rescheduled_to?: string | null;
