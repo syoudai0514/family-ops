@@ -36,7 +36,8 @@ describe('task work updates', () => {
     fireEvent.click(screen.getByRole('button', { name: '記録を保存' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(invoke).toHaveBeenCalledOnce();
-    expect(invoke).toHaveBeenCalledWith('record-task-progress', expect.objectContaining({
+    expect(invoke).toHaveBeenCalledWith('edit-task', expect.objectContaining({
+      action: 'record_progress',
       task_id: task.id, expected_revision: 4,
       observed_note: '昨日の分が未洗浄だった', work_done_note: '朝の食器を追加して洗浄開始',
       remaining_note: '洗浄中。取り出しはまだ', share_with_household: false, ack_policy: 'none',

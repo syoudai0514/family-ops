@@ -104,7 +104,7 @@ function WorkUpdateForm({ task, members, onSaved, onCancel, userId, householdId 
     setBusy(true);
     setError(null);
     try {
-      await runCommand(logicalKey, EDGE_FUNCTIONS.recordTaskProgress, operationId => ({ operation_id: operationId, ...payload }));
+      await runCommand(logicalKey, EDGE_FUNCTIONS.recordTaskProgress, operationId => ({ operation_id: operationId, ...payload, action: 'record_progress' }));
       if (!mounted.current || liveIdentity.current.userId !== userId || liveIdentity.current.householdId !== householdId) return;
       setSaved(true);
       setPendingPayload(null);

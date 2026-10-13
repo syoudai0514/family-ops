@@ -28,8 +28,6 @@ const GAP_FILL_FUNCTIONS = new Set([
   // Issue #54 human-confirmed unplanned actual. Authenticated and atomic; the
   // Edge adapter delegates to one service-role-only transactional RPC.
   'record-unplanned-actual',
-  // Optional task-linked progress with canonical receipt, actor scope and CAS.
-  'record-task-progress',
   'confirm-request-draft',
   'confirm-handover-draft',
   'propose-event-plan',

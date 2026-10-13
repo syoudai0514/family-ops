@@ -1,9 +1,9 @@
 // Optional progress never completes a task or changes its planned performer.
-// verify_jwt=true; actor identity comes exclusively from auth.getUser().
-import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
-import { FamilyOpsError } from "../_shared/errors.ts";
-import { jsonResponse, withUserMutationHandler } from "../_shared/handler.ts";
-import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.ts";
+// The authenticated adapter supplies the verified actor; client actor fields
+// are never forwarded to the transactional RPC.
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { FamilyOpsError } from "./errors.ts";
+import { callServerTx } from "./rpc.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NOTE_FIELDS = ["observed_note", "work_done_note", "remaining_note", "next_step_note"] as const;
@@ -19,10 +19,12 @@ function isIsoDateTime(value: unknown): value is string {
   return Number.isFinite(midnight.getTime()) && midnight.toISOString().slice(0, 10) === date;
 }
 
-Deno.serve(withUserMutationHandler(async (req) => {
-  const actorId = await requireUserActor(req);
-  const body = await readJsonBody(req);
-  const operationId = requireOperationId(body);
+export async function recordTaskProgress(
+  client: SupabaseClient,
+  actorId: string,
+  operationId: string,
+  body: Record<string, unknown>,
+): Promise<unknown> {
   if (!UUID.test(operationId) || typeof body.task_id !== "string" || !UUID.test(body.task_id) ||
     !Number.isSafeInteger(body.expected_revision) || Number(body.expected_revision) < 1 ||
     typeof body.share_with_household !== "boolean" ||
@@ -45,7 +47,7 @@ Deno.serve(withUserMutationHandler(async (req) => {
     (!body.share_with_household && (body.ack_policy !== "none" || validUntil != null))) {
     throw new FamilyOpsError("INVALID_INPUT", "記録内容と共有の設定を確認してください", 400);
   }
-  return jsonResponse(await callServerTx(createServiceRoleClient(), "server_tx_record_task_progress", {
+  return await callServerTx(client, "server_tx_record_task_progress", {
     p_actor_id: actorId,
     p_operation_id: operationId,
     p_task_id: body.task_id,
@@ -54,5 +56,5 @@ Deno.serve(withUserMutationHandler(async (req) => {
     p_share_with_household: body.share_with_household,
     p_ack_policy: body.ack_policy,
     p_valid_until: validUntil ?? null,
-  }));
-}));
+  });
+}

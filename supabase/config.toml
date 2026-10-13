@@ -54,8 +54,6 @@ verify_jwt = true
 
 [functions.record-unplanned-actual]
 verify_jwt = true
-[functions.record-task-progress]
-verify_jwt = true
 [functions.add-task-completion-evidence]
 verify_jwt = true
 [functions.set-subtask-completion]

@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1";
 
 type Handler = (req: Request) => Promise<Response>;
 
-Deno.test("task progress endpoint authenticates first and forwards only bounded self records", async (t) => {
+Deno.test("edit-task routes authenticated progress without changing existing task edits", async (t) => {
   const originalServe = Object.getOwnPropertyDescriptor(Deno, "serve")!;
   let handler: Handler | undefined;
   Object.defineProperty(Deno, "serve", { configurable: true, value: (value: Handler) => { handler = value; } });
@@ -15,6 +15,7 @@ Deno.test("task progress endpoint authenticates first and forwards only bounded 
   const originalFetch = globalThis.fetch;
   let args: Record<string, unknown> | undefined;
   let calls = 0;
+  const otherCalls: { rpc: string; args: Record<string, unknown> }[] = [];
   let rpcError: string | null = null;
   globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -26,12 +27,18 @@ Deno.test("task progress endpoint authenticates first and forwards only bounded 
         ? Response.json({ message: rpcError, code: "P0001" }, { status: 400 })
         : Response.json({ task_id: args?.p_task_id, task_event_id: "event", revision: 5, handover_id: null }));
     }
+    for (const rpc of ["server_tx_edit_task_with_calendar", "server_tx_save_scheduled_task", "server_tx_mutate_schedule_sharing"]) {
+      if (url.pathname.endsWith(`/${rpc}`)) {
+        otherCalls.push({ rpc, args: JSON.parse(String((init as { body?: unknown } | undefined)?.body)) });
+        return Promise.resolve(Response.json({ ok: true }));
+      }
+    }
     throw new Error(`Unexpected fetch: ${url.pathname}`);
   };
-  const body = { operation_id: "10000000-0000-4000-8000-000000000001", task_id: "30000000-0000-4000-8000-000000000001", expected_revision: 4,
+  const body = { action: "record_progress", operation_id: "10000000-0000-4000-8000-000000000001", task_id: "30000000-0000-4000-8000-000000000001", expected_revision: 4,
     observed_note: " 昨日の分が未洗浄だった ", work_done_note: "朝の食器を追加して洗浄開始", remaining_note: "洗浄中", next_step_note: "終了後に取り出し",
     share_with_household: false, ack_policy: "none" };
-  const request = (value: unknown = body, authenticated = true) => new Request("https://edge.example.com", {
+  const request = (value: unknown = body, authenticated = true) => new Request("https://edge.example.com/edit-task", {
     method: "POST", headers: { ...(authenticated ? { Authorization: "Bearer test-user" } : {}), "Content-Type": "application/json" }, body: JSON.stringify(value),
   });
   try {
@@ -77,6 +84,35 @@ Deno.test("task progress endpoint authenticates first and forwards only bounded 
       assertEquals(args?.p_share_with_household, true);
       assertEquals(args?.p_ack_policy, "required");
       assertEquals(args?.p_valid_until, expiry);
+    });
+    await t.step("progress fields without its action never capture classic edits, which still reject missing tasks", async () => {
+      const beforeProgress = calls;
+      const legacy = { ...body, action: undefined, title: "食洗機を空ける", expected_revision: 0, work_done_note: 123 };
+      assertEquals((await endpoint(request(legacy))).status, 200);
+      assertEquals(calls, beforeProgress);
+      assertEquals(otherCalls, [{ rpc: "server_tx_edit_task_with_calendar", args: {
+        p_actor_id: "20000000-0000-4000-8000-000000000001", p_operation_id: body.operation_id,
+        p_task_id: body.task_id, p_title: legacy.title, p_scheduled_date: null, p_due_local_time: null,
+        p_calendar_end_local_time: null, p_category: null, p_planned_assignee_user_id: null, p_calendar_visibility: null,
+      } }]);
+      assertEquals((await endpoint(request({ ...legacy, task_id: "" }))).status, 400);
+      assertEquals(otherCalls.length, 1);
+    });
+    await t.step("scheduler and schedule-sharing edits retain their distinct scoped RPCs", async () => {
+      const scheduler = { operation_id: body.operation_id, task_id: body.task_id, expected_revision: 4, scheduler_details: {} };
+      assertEquals((await endpoint(request(scheduler))).status, 200);
+      assertEquals(otherCalls[1], { rpc: "server_tx_save_scheduled_task", args: {
+        p_actor_id: "20000000-0000-4000-8000-000000000001", p_operation_id: body.operation_id,
+        p_task_id: body.task_id, p_expected_revision: 4, p_payload: scheduler,
+      } });
+      const sharing = { operation_id: body.operation_id, task_id: body.task_id, sharing_action: "add_comment", comment: "共有メモ" };
+      assertEquals((await endpoint(request(sharing))).status, 200);
+      assertEquals(otherCalls[2], { rpc: "server_tx_mutate_schedule_sharing", args: {
+        p_actor_id: "20000000-0000-4000-8000-000000000001", p_operation_id: body.operation_id,
+        p_task_id: body.task_id, p_action: "add_comment", p_payload: sharing,
+      } });
+      assertEquals((await endpoint(request({ ...sharing, sharing_action: "invalid" }))).status, 400);
+      assertEquals(otherCalls.length, 3);
     });
   } finally {
     globalThis.fetch = originalFetch;

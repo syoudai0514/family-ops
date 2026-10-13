@@ -5,11 +5,16 @@ import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { withUserMutationHandler, jsonResponse } from "../_shared/handler.ts";
 import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.ts";
 import { FamilyOpsError } from "../_shared/errors.ts";
+import { recordTaskProgress } from "../_shared/taskProgress.ts";
 
 Deno.serve(withUserMutationHandler(async (req: Request) => {
   const actorId = await requireUserActor(req);
   const body = await readJsonBody(req);
   const operationId = requireOperationId(body);
+
+  if (body["action"] === "record_progress") {
+    return jsonResponse(await recordTaskProgress(createServiceRoleClient(), actorId, operationId, body));
+  }
 
   const taskId = body["task_id"];
   if (typeof taskId !== "string" || taskId.length === 0) {

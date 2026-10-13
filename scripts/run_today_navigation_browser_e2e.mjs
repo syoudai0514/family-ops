@@ -182,9 +182,10 @@ async function fulfillRequest(client, { requestId, request }) {
     response = jsonResponse(state.progressEvents);
   } else if (pathname === '/rest/v1/handovers') {
     response = jsonResponse(state.handovers);
-  } else if (pathname === '/functions/v1/record-task-progress') {
+  } else if (pathname === '/functions/v1/edit-task' && JSON.parse(request.postData || '{}').action === 'record_progress') {
     const body = JSON.parse(request.postData || '{}');
     assert.equal(body.task_id, task.id);
+    assert.equal(body.action, 'record_progress');
     assert.equal(body.expected_revision, task.revision);
     state.progressCommands.push(body);
     task.revision++;

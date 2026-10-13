@@ -17,7 +17,7 @@
 
 - Web 94ファイル／359テスト、型チェック、lint、production build。追加の最終フォーム操作39テストも成功。
 - SQL 246マイグレーション／138 assertion files／実Postgresの並列12ケースが成功。
-- Deno 554テスト＋10 HTTP steps、全101エントリーポイントの型チェック、lint、auth matrix成功。
+- Deno 554テスト＋12 HTTP steps、型チェック、lint、auth matrix成功。記録の入口は既存の認証済み `edit-task` に追加し、既存100関数の範囲で運用する。
 - 実Chromeスマホ幅のCF-14 6ケースとToday 6ケースが成功。Todayには状況記録だけの保存、明示した引き継ぎ、履歴の再表示を追加。
 - 独立レビューで複数人実績の取り消し・古い世帯receipt・期限付き共有のPWA入口・HTTP拒否コードの漏れを検出し修正。LINEの文字数／Unicode／リンク保持は別の600ケースでも検証。
 
@@ -25,4 +25,6 @@
 
 ## 反映
 
-保護対象CIとバックアップ／復元訓練の成功後、4つの新マイグレーション、Edgeの `process-line-inbox`、`send-notifications`、`set-subtask-completion`、`complete-task`、`mark-handover-read`、`record-task-progress`、Webを順に反映する。既存の適用済みマイグレーションは書き換えない。実機2アカウントの全製品F2を自動検証でPASSにはしない。
+保護対象CIとバックアップ／復元訓練の成功後、4つの新マイグレーション、Edgeの `process-line-inbox`、`send-notifications`、`set-subtask-completion`、`complete-task`、`mark-handover-read`、`edit-task`、Webを順に反映する。既存の適用済みマイグレーションは書き換えない。実機2アカウントの全製品F2を自動検証でPASSにはしない。
+
+最初の単独記録APIのデプロイは本番の関数数上限で402を受けた。既存 `edit-task` へ明示した `record_progress` 操作として組み込み、旧編集・予定・添付操作を維持した。プランや既存の本番関数数は変更しない。DBの4マイグレーションは変更せず、入口を再検証して反映する。

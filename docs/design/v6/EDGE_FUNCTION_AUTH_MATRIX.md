@@ -16,7 +16,6 @@
 - edit-task
 - cancel-task
 - complete-task
-- record-task-progress
 - set-subtask-completion
 - reassign-task-once
 - create-task-definition
@@ -62,6 +61,10 @@
 - unlink-line-account
 
 No/malformed JWT => platform 401 before business handler.
+
+`edit-task` also accepts `action: "record_progress"` for task-linked work notes.
+It uses the same verified user actor and delegates bounded notes, sharing,
+expiry and revision checks to the service-role-only progress transaction.
 
 ## External provider — verify_jwt=false
 
