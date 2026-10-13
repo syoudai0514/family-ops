@@ -29,11 +29,11 @@
 // itself now lives in ./routineQuickReply.ts (all four normative top-level
 // actions, and 今回は不要 now posts a confirmation-prompt action rather than
 // mutating directly) — see that file's header for the full rationale.
-import { itemBlockText } from './blockText.ts';
+import { buildBundledText } from './bundledText.ts';
 import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts';
 import { withServiceHandler, jsonResponse } from '../_shared/handler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { buildCheckinLink, buildTodayLinkFooter } from '../_shared/lineMessaging.ts';
+import { buildLinePushMessages } from '../_shared/lineMessaging.ts';
 import { buildRoutineQuickReply } from './routineQuickReply.ts';
 import { buildBriefQuickReply } from './briefQuickReply.ts';
 import { loadPreviousDayReminder } from './previousDayReminder.ts';
@@ -42,7 +42,7 @@ import {
   buildAssignmentRequestFlex,
   buildGeneralRequestFlex,
 } from '../_shared/lineMessageBuilders.ts';
-import { findRequestReceivedItem, requestOutcomeText } from './requestNotificationPayload.ts';
+import { findRequestReceivedItem } from './requestNotificationPayload.ts';
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -57,7 +57,6 @@ const RETRY_DELAY_SECONDS = 60;
 // server_tx_fail_notification_outbox_item /
 // server_tx_get_line_quota_refresh_state) — nothing to duplicate here.
 const FETCH_TIMEOUT_MS = 10_000;
-const LINE_TEXT_MAX_CHARS = 5000;
 
 const LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
 const LINE_QUOTA_URL = 'https://api.line.me/v2/bot/message/quota';
@@ -154,49 +153,6 @@ async function enrichRequestOutcomeItems(
       recipient_label: recipientLabel,
     };
   }
-}
-
-// Builds one LINE text message per outbox row, folding every bundled item
-// (docs/design/v6/06_LINE_INTEGRATION.md #11 "same recipient + same
-// scheduled local minute ... one message"; the WP9 bridge trigger in
-// 20260819000070 appends bundled items into a single row's payload) into
-// one envelope, truncated to LINE's text-message length limit.
-//
-// P1-3 fix (docs/adr/0009): for type === 'routine' items, also appends the
-// PWA deep link ({APP_BASE_URL}/checkin/{session_id}) once per distinct
-// session_id referenced by the bundle (06_LINE_INTEGRATION.md #8 "Every
-// checklist/check-in message includes deep link") and returns those
-// distinct session ids so the caller can decide whether to attach
-// quick-reply postback buttons.
-function buildBundledText(
-  payload: ClaimedNotification['payload'],
-  type: string,
-  recipientUserId?: string | null,
-  lead?: string | null,
-): { text: string; sessionIds: string[] } {
-  const items = payload?.items ?? [];
-  const seenSessionIds = new Set<string>();
-  const blocks =
-    items.length > 0
-      ? items.map((item) => {
-          const outcome = requestOutcomeText(item);
-          const title = item.title ?? '';
-          const body = item.body ?? '';
-          let block = outcome ?? itemBlockText(title, body);
-          if (type === 'routine' && item.session_id && !seenSessionIds.has(item.session_id)) {
-            seenSessionIds.add(item.session_id);
-            block += `\n${buildCheckinLink(item.session_id)}`;
-          }
-          return block;
-        })
-      : [`Family Ops: ${type}`];
-  const footer = buildTodayLinkFooter(type, recipientUserId);
-  const body = [lead, ...blocks].filter((b) => b && b.length > 0).join('\n\n');
-  // The footer is reserved space: a long brief is cut before the link, never the link itself.
-  const room = LINE_TEXT_MAX_CHARS - (footer ? footer.length + 2 : 0);
-  const clipped = body.length <= room ? body : body.slice(0, room - 1) + '…';
-  const truncated = footer ? `${clipped}\n\n${footer}` : clipped;
-  return { text: truncated, sessionIds: Array.from(seenSessionIds) };
 }
 
 function buildRichRequestMessage(
@@ -447,13 +403,10 @@ async function sendOne(
   const quickReply = item.type === 'routine'
     ? buildRoutineQuickReply(sessionIds)
     : buildBriefQuickReply(item.type, { evening, previousDay: Boolean(previousDay) });
-  const message: Record<string, unknown> = { type: 'text', text };
-  if (quickReply && message.type === 'text')
-    message.quickReply = { items: quickReply.map((action) => ({ type: 'action', action })) };
   // LINE allows up to five messages per push. Keep routine/handover content
   // and append the Flex action card, rather than losing its buttons when an
   // outbox row was bundled with another notification.
-  const messages = richMessage ? [message, richMessage] : [message];
+  const messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
   let response: Response;
   try {
     response = await fetchWithTimeout(LINE_PUSH_URL, {

@@ -22,16 +22,19 @@ const rows: TodayTaskRow[] = [
 Deno.test("today: every one of my tasks is listed (done, できなかった, open), the partner's are summarised", () => {
   const text = formatTodayTasks(rows, ME, "パパ", "ママ");
   assertEquals(text, [
-    "パパのタスク（5件・残り3）",
+    "パパの担当（4件・残り2件）",
     "",
     "朝",
     "✓ 7:00 朝ごはん",
     "− 7:00 詩乃（便秘）の薬（できなかった）",
-    "・ 7:00 食洗機を空ける（誰でもOK）",
     "・ 7:20 送り",
     "",
     "夜",
     "・ 21:00 明日の保育園準備",
+    "",
+    "2人で分担（誰でもOK）",
+    "朝",
+    "・ 7:00 食洗機を空ける",
     "",
     "ママの今日（残り5件・済み1件）",
     "・お迎え、お風呂、寝かしつけ ほか2件",
@@ -54,7 +57,7 @@ Deno.test("today: an optional task (掃除) is listed apart as 余裕があれ�
     { title: "partner optional", status: "todo", routine_phase: "evening", planned_assignee_id: PARTNER, expectation: "optional" },
   ];
   assertEquals(formatTodayTasks(rows, ME, "パパ", "ママ"), [
-    "パパのタスク（1件・残り1）",
+    "パパの担当（1件・残り1件）",
     "",
     "朝",
     "・ 8:00 送り",
@@ -67,5 +70,34 @@ Deno.test("today: an optional task (掃除) is listed apart as 余裕があれ�
   ].join("\n"));
   // Done optional work is shown as done.
   const done = formatTodayTasks([{ ...rows[1], status: "completed" }], ME, "パパ", "ママ");
-  assertEquals(done.includes("✓ 掃除（ルンバのほかにやったら）") && done.includes("パパのタスク（0件・残り0）"), true);
+  assertEquals(done.includes("✓ 掃除（ルンバのほかにやったら）") && done.includes("パパの担当（0件・残り0件）"), true);
+});
+
+Deno.test("today: first departure and unrestricted sharing are distinct, without repeated 誰でもOK", () => {
+  const text = formatTodayTasks([
+    { title: "食洗機を空ける（先に家を出る人）", display_title: "食洗機を空ける", responsibility_hint: "先に家を出る人", status: "todo", routine_phase: "morning", assignment_mode: "anyone" },
+    { title: "コープ申し込み", display_title: "コープ申し込み", responsibility_hint: "2人で分担（誰でもOK）", status: "todo", routine_phase: "evening", assignment_mode: "anyone" },
+  ], ME, "パパ", "ママ");
+  assertEquals(text.includes("先に家を出る人\n朝\n・ 食洗機を空ける"), true);
+  assertEquals(text.includes("2人で分担（誰でもOK）\n夜\n・ コープ申し込み"), true);
+  assertEquals(text.match(/誰でもOK/g)?.length, 1);
+  assertEquals(text.includes("食洗機を空ける（先に家を出る人）"), false);
+});
+
+Deno.test("today: claimed shared work follows the current taker, and display dates are preserved", () => {
+  const text = formatTodayTasks([
+    { title: "自分が始めた作業", status: "in_progress", routine_phase: "morning", assignment_mode: "anyone", active_claimant_user_id: ME, active_claimant_label: "パパ" },
+    { title: "相手が始めた作業", status: "in_progress", routine_phase: "morning", assignment_mode: "anyone", active_claimant_user_id: PARTNER, active_claimant_label: "ママ" },
+    { title: "明日の保育園準備", display_title: "10/15(木)の保育園準備", status: "todo", routine_phase: "evening", planned_assignee_id: ME, due_at: at("21:00") },
+  ], ME, "パパ", "ママ");
+  const mine = text.split("ママの今日")[0];
+  assertEquals(mine.includes("自分が始めた作業（パパ対応中）"), true);
+  assertEquals(mine.includes("相手が始めた作業"), false);
+  assertEquals(text.includes("ママの今日（残り1件・済み0件）\n・相手が始めた作業（ママ対応中）"), true);
+  assertEquals(text.includes("21:00 10/15(木)の保育園準備"), true);
+});
+
+Deno.test("today: full task list replaces special, shared and optional sections without duplication", () => {
+  const brief = "朝のおうちノート\n\n⭐ 今日、忘れずに\n・ゴミ出し\n\n朝やること\n先に家を出る人\n・食洗機\n\n余裕があれば\n◦掃除\n\n相手の担当で確認したいこと\n・お迎え\n\n明日 10/14(水)の予定・作業\n・10/15(木)の準備";
+  assertEquals(mergeTodayBrief(brief, "TASKS"), "朝のおうちノート\n\nTASKS\n\n明日 10/14(水)の予定・作業\n・10/15(木)の準備");
 });

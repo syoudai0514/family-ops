@@ -274,6 +274,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
   const tomorrowTasks = data.tomorrowImpact.tasks as Array<{
     task_id: string;
     title?: string | null;
+    display_title?: string | null;
     task_kind?: string;
     category?: string;
     planned_assignee_id?: string | null;
@@ -335,9 +336,21 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
           </div>
           <span>{tasks.length}件</span>
         </div>
-        {renderTaskList(tasks)}
+        {renderTasksByResponsibility(tasks)}
       </section>
     );
+  }
+
+  function renderTasksByResponsibility(tasks: TaskInstance[]) {
+    const firstDeparture = tasks.filter(task => task.assignment_mode === 'anyone' && !task.active_claimant_actor_ref_id
+      && (task.responsibility_hint === '先に家を出る人' || task.title === '食洗機を空ける（先に家を出る人）'));
+    const shared = tasks.filter(task => task.assignment_mode === 'anyone' && !task.active_claimant_actor_ref_id && !firstDeparture.includes(task));
+    const mine = tasks.filter(task => !firstDeparture.includes(task) && !shared.includes(task));
+    return <>
+      {renderTaskList(mine)}
+      {firstDeparture.length > 0 && <div className="task-responsibility-group"><h3>先に家を出る人</h3>{renderTaskList(firstDeparture)}</div>}
+      {shared.length > 0 && <div className="task-responsibility-group"><h3>2人で分担（誰でもOK）</h3>{renderTaskList(shared)}</div>}
+    </>;
   }
 
   function renderPastWork(title: string, tasks: TaskInstance[]) {
@@ -346,7 +359,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
       <summary><span>{title} {tasks.length}件（記録する）
         <small>{tasks.map(task => task.title).join('、')}</small>
       </span></summary>
-      {renderTaskList(tasks)}
+      {renderTasksByResponsibility(tasks)}
     </details>;
   }
 
@@ -508,7 +521,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
         <p className="eyebrow">相手の今日</p>
         {items.length > 0 ? (
           <ul className="today-schedule-list">
-            {items.slice(0, 3).map((item) => <li key={item.task_id}>{item.title}</li>)}
+            {items.slice(0, 3).map((item) => <li key={item.task_id}>{item.display_title ?? item.title}</li>)}
           </ul>
         ) : (
           <p className="task-item-meta">こちらに関係する予定はありません。</p>
@@ -523,7 +536,8 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     return (
       <div id="today-tomorrow" aria-label="明日の予定と担当">
         <ul className="today-schedule-list">
-          {tomorrowTasks.slice(0, 3).map((task) => <li key={task.task_id}>{task.title ?? 'タスク'}</li>)}
+          <li className="task-item-meta">明日行う予定・作業</li>
+          {tomorrowTasks.slice(0, 3).map((task) => <li key={task.task_id}>{task.display_title ?? task.title ?? 'タスク'}</li>)}
           {data.tomorrowImpact.schedule.slice(0, Math.max(0, 3 - tomorrowTasks.length)).map((item) => (
             <li key={item.family_event_id ?? item.occurrence_key ?? `${item.kind}:${item.starts_at}`}>{scheduleLabel(item)}</li>
           ))}

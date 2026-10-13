@@ -37,7 +37,7 @@ const task = {
   actual_completed_by_id: null, completed_at: null, attention_state: 'active', waiting_note: null,
   next_check_at: null, revision: 1, task_definitions: null,
 };
-const state = { initialBriefDelayMs: 800, requests: [], browserEvents: [], networkEvents: [] };
+const state = { initialBriefDelayMs: 800, requests: [], browserEvents: [], networkEvents: [], progressEvents: [], progressCommands: [], handovers: [] };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -135,7 +135,7 @@ function dailyBrief() {
     tasks: [{ task_id: task.id, title: task.title }],
     own_task_groups: { morning: [], daytime: [{ task_id: task.id, title: task.title }], evening: [], optional: [] },
     urgent_actions: [], exceptions: [], waiting_checks: [], carryovers: [], carryover: [], already_handled: [],
-    active_infos: [], handovers: [], shopping: [],
+    active_infos: state.handovers.map(row => ({ handover_id: row.id })), handovers: [], shopping: [],
     schedule: [{
       kind: 'family_event', family_event_id: 'event-lane-d', occurrence_key: null, title: '15時 保育園面談',
       is_all_day: false, starts_at: `${TODAY}T06:00:00Z`, ends_at: `${TODAY}T06:30:00Z`,
@@ -178,7 +178,24 @@ async function fulfillRequest(client, { requestId, request }) {
       : jsonResponse([task]);
   } else if (pathname === '/rest/v1/task_subtask_instances' || pathname === '/rest/v1/task_execution_targets') {
     response = jsonResponse([]);
-  } else if (pathname === '/rest/v1/requests' || pathname === '/rest/v1/handovers' || pathname === '/rest/v1/shopping_items') {
+  } else if (pathname === '/rest/v1/task_events') {
+    response = jsonResponse(state.progressEvents);
+  } else if (pathname === '/rest/v1/handovers') {
+    response = jsonResponse(state.handovers);
+  } else if (pathname === '/functions/v1/record-task-progress') {
+    const body = JSON.parse(request.postData || '{}');
+    assert.equal(body.task_id, task.id);
+    assert.equal(body.expected_revision, task.revision);
+    state.progressCommands.push(body);
+    task.revision++;
+    const handoverId = body.share_with_household ? 'progress-handover-browser' : null;
+    state.progressEvents.unshift({ id: `progress-${state.progressEvents.length + 1}`, actor_id: membership.user_id,
+      created_at: new Date().toISOString(), payload: { ...body, handover_id: handoverId, task_date: TODAY } });
+    if (handoverId) state.handovers.push({ id: handoverId, household_id: household.id, author_id: membership.user_id,
+      shared_text: body.next_step_note, occurred_on: TODAY, period: 'day', categories: [], status: 'active',
+      visibility: 'household', info_kind: 'handover', ack_policy: body.ack_policy, revision: 1, valid_until: null });
+    response = jsonResponse({ revision: task.revision, task_event_id: state.progressEvents[0].id, handover_id: handoverId });
+  } else if (pathname === '/rest/v1/requests' || pathname === '/rest/v1/shopping_items') {
     response = jsonResponse([]);
   } else if (pathname === '/functions/v1/list-pending-actions') {
     response = jsonResponse([]);
@@ -393,10 +410,56 @@ async function main() {
       screenshot: await screenshot(client, 'today-after-browser-back.png'),
     });
 
+    // Progress records keep the original task open. The family receives a
+    // handover only through the explicit sharing choice, never from a check.
+    await waitForText(client, task.title);
+    await evaluate(client, `(() => {
+      const row = document.getElementById('task-${task.id}');
+      row.querySelector('details.task-overflow').open = true;
+      [...row.querySelectorAll('button')].find(button => button.textContent === '状況・引き継ぎを記録').click();
+    })()`);
+    await waitForText(client, '見つけた状況（任意）');
+    const setProgressField = async (label, value) => {
+      await evaluate(client, `(() => {
+        const label = [...document.querySelectorAll('.task-work-update label')].find(node => node.textContent.includes(${JSON.stringify(label)}));
+        const field = label.querySelector('textarea');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, ${JSON.stringify(value)});
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+    };
+    await setProgressField('見つけた状況', '前の分がまだ洗えていなかった');
+    await setProgressField('自分が行ったこと', '朝の食器を追加して洗浄を開始した');
+    await setProgressField('今の状態', '洗浄中。取り出しはまだ');
+    assert.equal(await evaluate(client, 'document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile progress form must fit the viewport');
+    scenarios.push({ id: 'progress-open-task', assertion: 'The task card opens an optional structured progress form on mobile without marking a machine cycle completed', screenshot: await screenshot(client, 'task-progress-form.png') });
+    await evaluate(client, `document.querySelector('.task-work-update button[type="submit"]').click()`);
+    await waitFor(() => state.progressCommands.length === 1, { label: 'record-only progress HTTP request' });
+    assert.equal(state.progressCommands[0].share_with_household, false);
+    assert.equal(task.status, 'todo');
+    assert.equal(state.handovers.length, 0);
+    await waitFor(() => evaluate(client, '!document.querySelector(".task-work-update")'), { label: 'progress form closes after refresh' });
+
+    await evaluate(client, `(() => {
+      const row = document.getElementById('task-${task.id}');
+      row.querySelector('details.task-overflow').open = true;
+      [...row.querySelectorAll('button')].find(button => button.textContent === '状況・引き継ぎを記録').click();
+    })()`);
+    await waitForText(client, 'これまでの状況メモ');
+    await setProgressField('次の作業への影響', '洗浄が終わってから食器を取り出してください');
+    await evaluate(client, `document.querySelector('.task-work-update input[type="checkbox"]').click()`);
+    await evaluate(client, `document.querySelectorAll('.task-work-update input[type="checkbox"]')[1].click()`);
+    await evaluate(client, `document.querySelector('.task-work-update button[type="submit"]').click()`);
+    await waitFor(() => state.progressCommands.length === 2, { label: 'explicit handover progress HTTP request' });
+    assert.equal(state.progressCommands[1].share_with_household, true);
+    assert.equal(state.progressCommands[1].ack_policy, 'required');
+    assert.equal(task.status, 'todo');
+    await waitForText(client, '洗浄が終わってから食器を取り出してください');
+    scenarios.push({ id: 'progress-explicit-handover', assertion: 'Record-only work stays private to the task log; selecting sharing creates a visible handover, keeps task outcome open, and retains the earlier history', screenshot: await screenshot(client, 'task-progress-handover.png') });
+
     const evidence = {
       status: 'PASS', sourceHead: SOURCE_HEAD, capturedAt: new Date().toISOString(),
       browser: { product: browserVersion.product, userAgent: browserVersion.userAgent, viewport: '393x852', executable: chrome.chromePath },
-      scenarios, requestCount: state.requests.length,
+      scenarios, requestCount: state.requests.length, progressCommands: state.progressCommands,
     };
     await writeFile(path.join(ARTIFACT_DIR, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
     console.log(`[today-browser] PASS ${scenarios.length} scenarios on ${browserVersion.product}`);

@@ -14,6 +14,7 @@ export const EDGE_FUNCTIONS = {
   completeTask: 'complete-task',
   reopenTask: 'complete-task',
   recordUnplannedActual: 'record-unplanned-actual',
+  recordTaskProgress: 'record-task-progress',
   addTaskCompletionEvidence: 'add-task-completion-evidence',
   setTaskWaiting: 'set-task-waiting',
   correctTaskActual: 'correct-task-actual',

@@ -367,12 +367,12 @@ async function sendLineSchedule(
     if (member.family_role === "mama") roles.set(member.user_id, "M");
   }
   const schedule = (data ?? {}) as {
-    assignments?: Array<{ title?: string; due_at?: string | null; planned_assignee_id?: string | null; has_conflict?: boolean }>;
+    assignments?: Array<{ title?: string; display_title?: string | null; due_at?: string | null; planned_assignee_id?: string | null; has_conflict?: boolean }>;
     occurrences?: Array<{ title?: string; starts_at?: string | null }>;
   };
   const entries: CompactScheduleEntry[] = [
     ...(schedule.assignments ?? []).map((entry) => ({
-      title: entry.title ?? "タスク",
+      title: entry.display_title || entry.title || "タスク",
       startsAt: entry.due_at ?? null,
       roleLabel: entry.planned_assignee_id ? (roles.get(entry.planned_assignee_id) ?? null) : null,
       conflict: Boolean(entry.has_conflict),

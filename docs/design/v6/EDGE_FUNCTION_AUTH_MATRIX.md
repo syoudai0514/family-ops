@@ -16,6 +16,7 @@
 - edit-task
 - cancel-task
 - complete-task
+- record-task-progress
 - set-subtask-completion
 - reassign-task-once
 - create-task-definition

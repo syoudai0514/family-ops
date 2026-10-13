@@ -16,6 +16,7 @@ export const REQUEST_POLICY = {
   completeTask: 'mutation',
   reopenTask: 'mutation',
   recordUnplannedActual: 'mutation',
+  recordTaskProgress: 'mutation',
   addTaskCompletionEvidence: 'mutation',
   setTaskWaiting: 'mutation',
   correctTaskActual: 'mutation',

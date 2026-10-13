@@ -10,6 +10,8 @@ import { assignmentDecisionCommand, type AssignmentDecision } from './assignment
 import type { TaskCompletionPrerequisite } from '../today/codmonReadiness';
 import { isTaskRecorded } from './taskRecording';
 import { isPartnersTask } from './taskOwnerGroups';
+import { TaskWorkUpdate } from './TaskWorkUpdate';
+import { getTaskDisplay } from './taskDisplay';
 
 export interface TaskChecklistItemProps {
   task: TaskInstance;
@@ -34,7 +36,7 @@ const EVIDENCE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 function assigneeLabel(task: TaskInstance, members: HouseholdMemberWithProfile[]): string {
   if (task.assignment_mode === 'anyone') {
-    if (!task.active_claimant_user_id) return '誰でもOK';
+    if (!task.active_claimant_actor_ref_id && !task.active_claimant_user_id) return getTaskDisplay(task).responsibilityHint || '誰でもOK';
     const claimant = members.find((m) => m.user_id === task.active_claimant_user_id);
     if (claimant?.family_role === 'papa') return 'パパ対応中';
     if (claimant?.family_role === 'mama') return 'ママ対応中';
@@ -55,6 +57,28 @@ function localClock(value: string | null) {
     minute: '2-digit',
     hour12: false,
   }).format(new Date(value));
+}
+
+function performerName(userId: string | null, members: HouseholdMemberWithProfile[]): string {
+  if (!userId) return '実施者未確認';
+  const member = members.find((item) => item.user_id === userId);
+  if (member?.family_role === 'papa') return 'パパ';
+  if (member?.family_role === 'mama') return 'ママ';
+  return member?.profile?.display_name ?? '実施者未確認';
+}
+
+function recordedAt(value: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
 }
 
 function storedExpanded(key: string | undefined, fallback: boolean): boolean {
@@ -102,6 +126,7 @@ export function TaskChecklistItem({
   expandedStorageKey,
   completionPrerequisite,
 }: TaskChecklistItemProps) {
+  const taskTitle = getTaskDisplay(task).displayTitle;
   const completed = task.status === 'completed';
   // An explicit missed result closes the occurrence without claiming completion.
   const couldNotDo = task.status === 'skipped' && task.outcome_reason === 'could_not_do';
@@ -117,6 +142,7 @@ export function TaskChecklistItem({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actor, setActor] = useState<'self' | 'partner'>('self');
+  const [checklistActor, setChecklistActor] = useState<'self' | 'partner' | 'unknown'>('self');
   const [editingWaiting, setEditingWaiting] = useState(false);
   const [waitingNote, setWaitingNote] = useState(task.waiting_note ?? '');
   const [nextCheckAt, setNextCheckAt] = useState(() => toDateTimeLocal(task.next_check_at));
@@ -125,6 +151,7 @@ export function TaskChecklistItem({
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidenceSaved, setEvidenceSaved] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState(false);
+  const [editingWorkUpdate, setEditingWorkUpdate] = useState(false);
   useEffect(() => { if (assignmentRequest) setEditingAssignment(true); }, [assignmentRequest]);
   const [assignmentUserId, setAssignmentUserId] = useState(task.planned_assignee_id ?? members[0]?.user_id ?? '');
   const [assignmentDecision, setAssignmentDecision] = useState<AssignmentDecision>('request');
@@ -150,8 +177,15 @@ export function TaskChecklistItem({
   const partnersTask = isPartnersTask(task, currentUserId);
   const partnerRole = otherMembers.length === 1 ? otherMembers[0].family_role : null;
   const partnerLabel = partnerRole === 'papa' ? 'パパ' : partnerRole === 'mama' ? 'ママ' : '相手';
-  const performers = completed ? [...new Set(task.actual_completed_by_id ? [task.actual_completed_by_id] : subtasks.filter((item) => item.is_completed && item.completed_by).map((item) => item.completed_by!))] : [];
-  const performerLabel = performers.map((id) => members.find((member) => member.user_id === id)?.profile?.display_name ?? '家族').join('・');
+  const completedSubtasks = subtasks.filter((item) => item.is_completed);
+  const canonicalParticipants = completed ? task.actual_participant_user_ids : undefined;
+  const performers = [...new Set([
+    ...(canonicalParticipants !== undefined ? canonicalParticipants
+      : completed && task.actual_completed_by_id ? [task.actual_completed_by_id] : []),
+    ...completedSubtasks.map((item) => item.completed_by),
+  ])];
+  const performerLabel = performers.map((id) => performerName(id, members)).join('・')
+    || (completed ? '実施者未確認' : '');
 
   function toggleExpanded() {
     setExpanded((value) => {
@@ -202,7 +236,7 @@ export function TaskChecklistItem({
     return null;
   }
   const bulkRunner = useRef<BulkTaskRunner | null>(null);
-  bulkRunner.current = { title: task.title, recordsPartner: partnersTask, blockedReason: bulkBlockedReason, run: runBulk };
+  bulkRunner.current = { title: taskTitle, recordsPartner: partnersTask, blockedReason: bulkBlockedReason, run: runBulk };
   useEffect(() => {
     if (!selection || finished) return;
     return selection.register(task.id, {
@@ -272,7 +306,7 @@ export function TaskChecklistItem({
       result => {
         if (!Number.isSafeInteger(result.revision)) return;
         const revision = result.revision!;
-        offerUndo({ label: `${task.title}を完了にしました`, undo: async () => {
+        offerUndo({ label: `${taskTitle}を完了にしました`, undo: async () => {
           await runCommand(`task:${task.id}:reopen:r${revision}`, EDGE_FUNCTIONS.reopenTask, operation_id => ({ operation_id, task_id: task.id, action: 'reopen', expected_revision: revision }));
           await onChanged();
         } });
@@ -306,7 +340,7 @@ export function TaskChecklistItem({
       result => {
         if (undo || !Number.isSafeInteger(result.revision)) return;
         const revision = result.revision!;
-        offerUndo({ label: `${task.title}をできなかったと記録しました`, undo: async () => {
+        offerUndo({ label: `${taskTitle}をできなかったと記録しました`, undo: async () => {
           await runCommand(`task:${task.id}:could-not-do:undo:r${revision}`, EDGE_FUNCTIONS.completeTask, operation_id => ({ operation_id, task_id: task.id, action: 'could_not_do_undo', expected_revision: revision }));
           await onChanged();
         } });
@@ -323,14 +357,16 @@ export function TaskChecklistItem({
   }
 
   function handleToggleSubtask(subtask: TaskSubtaskInstance) {
+    const completionActor = subtask.is_completed ? 'self' : checklistActor;
     void withOperation(
-      `subtask:${subtask.id}:complete:${!subtask.is_completed}:${actor}`,
+      `subtask:${subtask.id}:complete:${!subtask.is_completed}:${completionActor}:r${task.revision ?? 1}`,
       EDGE_FUNCTIONS.setSubtaskCompletion,
       (operationId) => ({
         operation_id: operationId,
         subtask_instance_id: subtask.id,
         completed: !subtask.is_completed,
-        completion_actor: actor,
+        completion_actor: completionActor,
+        expected_revision: task.revision ?? 1,
       }),
     );
   }
@@ -432,7 +468,7 @@ export function TaskChecklistItem({
 
   const resultLabel = completed ? '' : couldNotDo ? 'できなかった' : finished ? '記録済み' : '';
   const taskContent = <>
-    <strong>{task.title}</strong>{specialToday && <span className="status-chip">⭐ 平日は毎日ないこと</span>}
+    <strong>{taskTitle}</strong>{specialToday && <span className="status-chip">⭐ 今日、忘れずに</span>}
     <span className="task-item-meta">
       {showTime && task.due_at ? `${localClock(task.due_at)} · ` : ''}
       {assigneeLabel(task, members)}
@@ -454,12 +490,12 @@ export function TaskChecklistItem({
               checked={selected}
               disabled={busy}
               onChange={() => selection?.toggle(task.id)}
-              aria-label={`${task.title}を選ぶ`}
+              aria-label={`${taskTitle}を選ぶ`}
             />
           </label>
         ) : (
           <span className="task-result-icon" role="img"
-            aria-label={`${task.title}：${completed ? '完了済み' : couldNotDo ? 'できなかった・記録済み' : finished ? '記録済み' : '未記録'}`}>
+            aria-label={`${taskTitle}：${completed ? '完了済み' : couldNotDo ? 'できなかった・記録済み' : finished ? '記録済み' : '未記録'}`}>
             {completed ? '✓' : finished ? '−' : '○'}
           </span>
         )}
@@ -468,7 +504,7 @@ export function TaskChecklistItem({
           <button
             type="button"
             className="task-checklist-content"
-            aria-label={`${task.title}のチェック項目を${expanded ? '閉じる' : '開く'}`}
+            aria-label={`${taskTitle}のチェック項目を${expanded ? '閉じる' : '開く'}`}
             aria-expanded={expanded}
             onClick={toggleExpanded}
             disabled={busy}
@@ -480,7 +516,7 @@ export function TaskChecklistItem({
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
-            {compact && !finished && <button type="button" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${task.title}をできなかったとして記録`}>できなかった</button>}
+            {compact && !finished && <button type="button" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${taskTitle}をできなかったとして記録`}>できなかった</button>}
             {compact && hasPartner && !partnersTask && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && <button type="button" disabled={busy} onClick={() => handleComplete('partner')} aria-label={`${partnerLabel}が完了`}>{partnerLabel}がやった</button>}
             {/* A recorded task is one quiet line; undo lives here (owner 2026-10-10: a list of done
                 cards each with a button was hard to read). */}
@@ -493,7 +529,7 @@ export function TaskChecklistItem({
             {completed && task.completion_mode === 'subtasks' && (
               <button type="button" onClick={toggleExpanded} disabled={busy}>修正する</button>
             )}
-            {hasPartner && !anyoneTask && (
+            {hasPartner && !anyoneTask && task.completion_mode !== 'subtasks' && (
               <label>
                 実施者
                 <select
@@ -508,9 +544,9 @@ export function TaskChecklistItem({
               </label>
             )}
             {partnersTask && !finished && !completionPrerequisite?.actionLabel && !completionPrerequisite?.blocking && (
-              <button type="button" onClick={() => handleComplete()} disabled={busy || !canExecute}
-                aria-label={`${task.title}を自分がやったことにする`}>
-                自分がやった（代わりに）
+              <button type="button" onClick={() => handleComplete('self')} disabled={busy || !canExecute}
+                aria-label={`${taskTitle}を自分がやったことにする`}>
+                {task.completion_mode === 'subtasks' && subtaskDone > 0 ? '残りを自分がやった' : '自分がやった（代わりに）'}
               </button>
             )}
             {!finished && members.length > 0 && !anyoneTask && (
@@ -554,6 +590,12 @@ export function TaskChecklistItem({
             {completed && (
               <button type="button" onClick={() => setEditingEvidence(true)} disabled={busy}>証跡を追加（任意）</button>
             )}
+            {['todo', 'in_progress', 'completed'].includes(task.status) && <button type="button" onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              setEditingWorkUpdate((value) => !value);
+            }} disabled={busy}>
+              状況・引き継ぎを記録
+            </button>}
             {!finished && (
               <button type="button" className="danger-button" onClick={handleCancel} disabled={busy}>
                 キャンセル
@@ -583,16 +625,16 @@ export function TaskChecklistItem({
               className="task-action task-action-primary"
               onClick={() => handleComplete()}
               disabled={busy || !canExecute || Boolean(completionPrerequisite?.blocking) || (task.completion_mode === 'subtasks' && subtasks.length === 0)}
-              aria-label={`${task.title}を完了にする`}
-              title={task.completion_mode === 'subtasks' ? '残りのチェック項目もまとめて完了します' : undefined}
+              aria-label={`${taskTitle}を完了にする`}
+              title={task.completion_mode === 'subtasks' ? '未完了の項目だけを記録します。すでに済んだ項目の実施者は変えません。' : undefined}
             >
-              ✓ 完了
+              {task.completion_mode === 'subtasks' && subtaskDone > 0 ? `残りを${actor === 'self' ? '自分' : partnerLabel}がやった` : '✓ 完了'}
             </button>
           )}
 
           {!compact && !finished && (
             <button type="button" className="task-action task-action-missed" onClick={() => handleCouldNotDo()} disabled={busy}
-              aria-label={`${task.title}をできなかったとして記録`}
+              aria-label={`${taskTitle}をできなかったとして記録`}
               title="忘れた・間に合わなかった作業を、この日の記録として確定します">
               できなかった
             </button>
@@ -620,6 +662,16 @@ export function TaskChecklistItem({
       )}
 
       {expanded && task.completion_mode === 'subtasks' && (
+        <>
+        {!finished && <label className="task-item-meta">
+          チェックする項目の実施者
+          <select aria-label="チェックする項目の実施者" value={checklistActor} onChange={(event) => setChecklistActor(event.target.value as 'self' | 'partner' | 'unknown')} disabled={busy || !canExecute}>
+            <option value="self">自分</option>
+            {hasPartner && <option value="partner">{partnerLabel}</option>}
+            <option value="unknown">済んでいた（実施者不明）</option>
+          </select>
+        </label>}
+        {!finished && <p className="empty-hint">済んだ項目だけチェックします。誰がやったか分からない項目は「済んでいた」を選びます。すでに記録された実施者は変えません。</p>}
         <ul className="subtask-list subtask-checklist">
           {subtasks.length === 0 ? (
             <li className="empty-hint">チェック項目が設定されていません。</li>
@@ -632,12 +684,17 @@ export function TaskChecklistItem({
                     checked={subtask.is_completed}
                     disabled={busy || (finished && !completed) || (!completed && !canExecute)}
                     onChange={() => handleToggleSubtask(subtask)}
+                    aria-label={`${subtask.title}${!subtask.required ? ' 任意' : ''}`}
                   />
                   <span className={subtask.is_completed ? 'checked' : ''}>
                     {subtask.title}
                     {!subtask.required && <small> 任意</small>}
                   </span>
                 </label>
+                {subtask.is_completed && <p className="task-item-meta">
+                  実施: {performerName(subtask.completed_by, members)}
+                  {recordedAt(subtask.completed_at) ? ` · 記録: ${recordedAt(subtask.completed_at)}` : ''}
+                </p>}
               </li>
             ))
           )}
@@ -648,7 +705,13 @@ export function TaskChecklistItem({
             <li className="empty-hint">押し間違えた項目のチェックを外すと、未完了に戻ります。</li>
           )}
         </ul>
+        </>
       )}
+
+      {editingWorkUpdate && <TaskWorkUpdate task={task} members={members} currentUserId={currentUserId} onSaved={async () => {
+        await onChanged();
+        setEditingWorkUpdate(false);
+      }} onCancel={() => setEditingWorkUpdate(false)} />}
 
       {editingAssignment && !finished && (
         <form className="task-waiting-editor" onSubmit={handleAssignmentSubmit}>

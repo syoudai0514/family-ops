@@ -1248,6 +1248,11 @@ fieldset {
   background: #f7f9fd;
 }
 .task-waiting-editor label { display: grid; gap: .25rem; color: var(--color-text-muted); font-size: .85rem; }
+.task-work-update textarea { min-width: 0; width: 100%; box-sizing: border-box; }
+.task-work-update .task-work-share-choice { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
+.task-work-share-choice input { flex: 0 0 auto; width: 1rem; height: 1rem; }
+.task-progress-history p { white-space: pre-line; overflow-wrap: anywhere; }
+.task-responsibility-group h3 { margin: .9rem 0 .35rem; font-size: .9rem; color: var(--color-text-muted); }
 .success-text { color: #13794c; font-weight: 650; }
 .checkin-back-link { display: inline-flex; margin-top: 1rem; }
 .history-correction { margin-top: .45rem; }

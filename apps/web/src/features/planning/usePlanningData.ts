@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { withClaimantUsers } from '../../lib/claimantUsers';
+import { withTaskActualParticipants } from '../../lib/taskActualParticipants';
 import { supabase } from '../../lib/supabaseClient';
 import { addDays, tokyoIsoDate } from './dateHelpers';
 import type { GooglePlanningOccurrence, PlanningTask } from './calendarProjection';
@@ -15,9 +16,14 @@ export function usePlanningData(householdId: string | null, start: string, end: 
   // the top after every tap, so recording a day's tasks one by one meant scrolling down again
   // each time (2026-10-09). A different range (next month) still shows the loading state.
   const shownRange = useRef<string | null>(null);
+  const sequence = useRef(0);
 
   const load = useCallback(async () => {
+    const attempt = ++sequence.current;
     if (!householdId) {
+      setTasks([]);
+      setOccurrences([]);
+      shownRange.current = null;
       setLoading(false);
       return;
     }
@@ -92,17 +98,18 @@ export function usePlanningData(householdId: string | null, start: string, end: 
 
       // The taker of a 誰でもOK task, as a user (the day sheet splits mine / the other adult's).
       const claimedRows = await withClaimantUsers(householdId, (taskRows ?? []) as Array<Record<string, unknown> & { active_claimant_actor_ref_id?: string | null }>);
-      setTasks(
-        claimedRows.map((row: Record<string, unknown>) => {
-          const definition = row.task_definitions as { code?: string; calendar_visibility?: PlanningTask['calendar_visibility'] } | null;
-          return {
-            ...row,
-            definition_code: definition?.code ?? null,
-            calendar_visibility: (row.calendar_visibility as PlanningTask['calendar_visibility']) ?? definition?.calendar_visibility ?? null,
-            scheduler_details: readScheduleDetails(row.task_schedule_details, String(row.scheduled_date)),
-          } as PlanningTask;
-        }),
-      );
+      const planningTasks = claimedRows.map((row: Record<string, unknown>) => {
+        const definition = row.task_definitions as { code?: string; calendar_visibility?: PlanningTask['calendar_visibility'] } | null;
+        return {
+          ...row,
+          definition_code: definition?.code ?? null,
+          calendar_visibility: (row.calendar_visibility as PlanningTask['calendar_visibility']) ?? definition?.calendar_visibility ?? null,
+          scheduler_details: readScheduleDetails(row.task_schedule_details, String(row.scheduled_date)),
+        } as PlanningTask;
+      });
+      const tasksWithParticipants = await withTaskActualParticipants(householdId, planningTasks);
+      if (attempt !== sequence.current) return;
+      setTasks(tasksWithParticipants);
 
       const googleOccurrences = [...(timedCalendarRows ?? []), ...(allDayCalendarRows ?? [])].map((row: Record<string, unknown>) => {
         const startsAt = typeof row.starts_at === 'string' ? row.starts_at : null;
@@ -163,14 +170,15 @@ export function usePlanningData(householdId: string | null, start: string, end: 
       setOccurrences([...googleOccurrences, ...familyOccurrences]);
       shownRange.current = rangeKey;
     } catch (err) {
-      setError(err instanceof Error ? err.message : '予定を読み込めませんでした。');
+      if (attempt === sequence.current) setError(err instanceof Error ? err.message : '予定を読み込めませんでした。');
     } finally {
-      setLoading(false);
+      if (attempt === sequence.current) setLoading(false);
     }
   }, [end, householdId, start]);
 
   useEffect(() => {
-    load();
+    void load();
+    return () => { sequence.current++; };
   }, [load]);
   return { loading, error, tasks, occurrences, refresh: load };
 }

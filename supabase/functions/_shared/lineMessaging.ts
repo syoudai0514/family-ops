@@ -26,6 +26,7 @@
 // through its own existing quota-reserve/push logic exactly like any other
 // queued LINE message.
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { LINE_MAX_MESSAGES, LINE_TEXT_MAX_CHARS, splitLineText } from './lineTextMessages.ts';
 
 const LINE_REPLY_URL = 'https://api.line.me/v2/bot/message/reply';
 // Matches the FETCH_TIMEOUT_MS constant/style already used for provider
@@ -79,26 +80,45 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   return await fetch(url, { ...init, signal: AbortSignal.timeout(REPLY_FETCH_TIMEOUT_MS) });
 }
 
-function buildLineMessages(
+function addQuickReply(messages: Record<string, unknown>[], quickReplyItems?: LineQuickReplyAction[]) {
+  if (quickReplyItems?.length && messages.length) {
+    messages[messages.length - 1].quickReply = { items: quickReplyItems.map((action) => ({ type: 'action', action })) };
+  }
+  return messages;
+}
+
+export function buildLineMessages(
   text: string,
   quickReplyItems?: LineQuickReplyAction[],
   richMessage?: Record<string, unknown>,
   leadingText?: string,
 ) {
-  const messages: Record<string, unknown>[] = [];
-  if (leadingText?.trim()) messages.push({ type: 'text', text: leadingText.trim() });
-
+  const lead = leadingText?.trim();
+  const fallbackFooter = buildTodayLinkFooter('daily_brief.v2');
   if (richMessage) {
-    messages.push(richMessage);
-    return messages;
+    const messages: Record<string, unknown>[] = lead
+      ? splitLineText(lead, LINE_MAX_MESSAGES - 1, fallbackFooter).map((part) => ({ type: 'text', text: part })) : [];
+    messages.push({ ...richMessage });
+    return addQuickReply(messages, quickReplyItems);
   }
+  let messages: Record<string, unknown>[];
+  // Keep the conversational lead as its own bubble when there is room. For a
+  // long list, sharing its first bubble avoids wasting a whole message slot.
+  if (lead && lead.length <= LINE_TEXT_MAX_CHARS && text.length <= (LINE_MAX_MESSAGES - 1) * LINE_TEXT_MAX_CHARS) {
+    messages = [{ type: 'text', text: lead }, ...splitLineText(text, LINE_MAX_MESSAGES - 1, fallbackFooter).map((part) => ({ type: 'text', text: part }))];
+  } else {
+    messages = splitLineText(lead ? `${lead}\n\n${text}` : text, LINE_MAX_MESSAGES, fallbackFooter)
+      .map((part) => ({ type: 'text', text: part }));
+  }
+  return addQuickReply(messages, quickReplyItems);
+}
 
-  const message: Record<string, unknown> = { type: 'text', text };
-  if (quickReplyItems && quickReplyItems.length > 0) {
-    message.quickReply = { items: quickReplyItems.map((action) => ({ type: 'action', action })) };
-  }
-  messages.push(message);
-  return messages;
+/** A durable push keeps its text and action card in the same counted send. */
+export function buildLinePushMessages(text: string, quickReplyItems?: LineQuickReplyAction[], richMessage?: Record<string, unknown> | null) {
+  const messages: Record<string, unknown>[] = splitLineText(text, LINE_MAX_MESSAGES - (richMessage ? 1 : 0), buildTodayLinkFooter('daily_brief.v2'))
+    .map((part) => ({ type: 'text', text: part }));
+  if (richMessage) messages.push({ ...richMessage });
+  return addQuickReply(messages, quickReplyItems);
 }
 
 /** {APP_BASE_URL}/checkin/{session_id} -- 06_LINE_INTEGRATION.md #8 "No bearer credential in URL". */

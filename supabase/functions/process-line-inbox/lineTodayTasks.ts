@@ -9,12 +9,16 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 export interface TodayTaskRow {
   title: string;
+  display_title?: string | null;
+  responsibility_hint?: string | null;
   status: string;
   outcome_reason?: string | null;
   routine_phase?: string | null;
   due_at?: string | null;
   planned_assignee_id?: string | null;
   assignment_mode?: string | null;
+  active_claimant_user_id?: string | null;
+  active_claimant_label?: string | null;
   /** "optional": 余裕があれば (e.g. 掃除 -- the Roomba does it). Never counted as left to do. */
   expectation?: string | null;
 }
@@ -26,7 +30,7 @@ const PHASES: Array<{ label: string; match: (phase: string | null | undefined) =
 ];
 
 /** Sections of the brief that list tasks; they are replaced by the full list. */
-const TASK_SECTIONS = /^(?:朝やること|日中にやること|夜にやること|今やること|相手の今日)$/u;
+const TASK_SECTIONS = /^(?:朝やること|朝の残り|日中にやること|日中の残り|夜にやること|今やること|このあと（夜）|まだ残っていること|相手の今日|相手の担当で確認したいこと|余裕があれば|先に家を出る人|2人で分担（誰でもOK）|⭐ 今日、忘れずに)$/u;
 
 function jstClock(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -52,7 +56,7 @@ function mark(row: TodayTaskRow, quiet: boolean): string {
 function line(row: TodayTaskRow, note = "", quiet = false): string {
   const time = jstClock(row.due_at);
   const tail = row.status === "skipped" ? "（できなかった）" : note;
-  return `${mark(row, quiet)} ${time ? `${time} ` : ""}${row.title}${tail}`;
+  return `${mark(row, quiet)} ${time ? `${time} ` : ""}${row.display_title || row.title}${tail}`;
 }
 
 function byTime(a: TodayTaskRow, b: TodayTaskRow): number {
@@ -62,25 +66,39 @@ function byTime(a: TodayTaskRow, b: TodayTaskRow): number {
 export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel: string, partnerLabel: string, isToday = true): string {
   const visible = rows.filter(shown);
   const isOptional = (r: TodayTaskRow) => r.expectation === "optional";
-  const mineAll = visible.filter((r) =>
-    r.assignment_mode === "anyone" || !r.planned_assignee_id || r.planned_assignee_id === actorId
-  );
+  const isShared = (r: TodayTaskRow) => r.assignment_mode === "anyone" && !r.active_claimant_user_id;
+  const mineAll = visible.filter((r) => r.assignment_mode === "anyone"
+    ? r.active_claimant_user_id === actorId
+    : !r.planned_assignee_id || r.planned_assignee_id === actorId);
   const mine = mineAll.filter((r) => !isOptional(r));
-  const mineOptional = mineAll.filter(isOptional);
-  const theirs = visible.filter((r) => !mineAll.includes(r) && !isOptional(r));
+  const shared = visible.filter((r) => isShared(r) && !isOptional(r));
+  const mineOptional = visible.filter((r) => isOptional(r) && (mineAll.includes(r) || isShared(r)));
+  const theirs = visible.filter((r) => !mineAll.includes(r) && !isShared(r) && !isOptional(r));
   const open = (list: TodayTaskRow[]) => list.filter((r) => r.status === "todo" || r.status === "in_progress");
 
   const lines: string[] = [];
   const myOpen = open(mine).length;
-  lines.push(`${meLabel}のタスク（${mine.length}件・残り${myOpen}）`);
+  lines.push(`${meLabel}の担当（${mine.length}件・残り${myOpen}件）`);
   if (mine.length === 0) lines.push("・今日の担当はありません");
   for (const phase of PHASES) {
     const list = mine.filter((r) => phase.match(r.routine_phase)).sort(byTime);
     if (!list.length) continue;
     lines.push("", phase.label);
     for (const r of list) {
-      const note = r.assignment_mode === "anyone" ? "（誰でもOK）" : !r.planned_assignee_id ? "（担当未定）" : "";
+      const note = r.active_claimant_user_id ? `（${r.active_claimant_label || meLabel}対応中）`
+        : !r.planned_assignee_id ? "（担当未定）" : "";
       lines.push(line(r, note));
+    }
+  }
+  for (const instruction of ["先に家を出る人", "2人で分担（誰でもOK）"]) {
+    const list = shared.filter((r) => (r.responsibility_hint || "2人で分担（誰でもOK）") === instruction);
+    if (!list.length) continue;
+    lines.push("", instruction);
+    for (const phase of PHASES) {
+      const phaseRows = list.filter((r) => phase.match(r.routine_phase)).sort(byTime);
+      if (!phaseRows.length) continue;
+      lines.push(phase.label);
+      for (const r of phaseRows) lines.push(line(r));
     }
   }
   // Not required: shown so it can be recorded, never counted as left.
@@ -92,7 +110,7 @@ export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel:
   const theirOpen = open(theirs).sort(byTime);
   lines.push("", `${partnerLabel}の${isToday ? "今日" : "分"}（残り${theirOpen.length}件・済み${theirs.length - theirOpen.length}件）`);
   if (theirOpen.length) {
-    const names = theirOpen.slice(0, 3).map((r) => r.title);
+    const names = theirOpen.slice(0, 3).map((r) => `${r.display_title || r.title}${r.active_claimant_user_id ? `（${r.active_claimant_label || partnerLabel}対応中）` : ""}`);
     lines.push(`・${names.join("、")}${theirOpen.length > 3 ? ` ほか${theirOpen.length - 3}件` : ""}`);
   }
   return lines.join("\n");
@@ -129,13 +147,7 @@ export async function loadTodayTaskBlock(
   isToday = true,
 ): Promise<string | null> {
   const [tasks, members] = await Promise.all([
-    client.from("task_instances")
-      .select("title,status,outcome_reason,routine_phase,due_at,planned_assignee_id,assignment_mode,expectation")
-      .eq("household_id", householdId)
-      .eq("scheduled_date", today)
-      .is("test_context_id", null)
-      .in("status", ["todo", "in_progress", "completed", "skipped"])
-      .limit(120),
+    client.rpc("server_read_line_tasks_display", { p_actor_id: actorId, p_local_date: today }),
     client.from("household_members")
       .select("user_id,family_role")
       .eq("household_id", householdId),
