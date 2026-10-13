@@ -279,6 +279,8 @@ export type TaskEventType =
   | 'cancelled'
   | 'completed'
   | 'subtask_completed'
+  | 'subtask_completion_reverted'
+  | 'work_progress_recorded'
   | 'reassigned_once'
   | 'skipped';
 

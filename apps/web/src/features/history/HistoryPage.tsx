@@ -9,6 +9,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
+import { getTaskDisplay } from '../tasks/taskDisplay';
 
 const OUTCOME_LABELS: Record<PlannedVsActualOutcome, string> = {
   completed_on_time: '完了（期限内）', completed_late: '完了（期限超過）', not_needed: '今回は不要',
@@ -25,7 +26,13 @@ const OUTCOME_CLASS: Record<PlannedVsActualOutcome, string> = {
 const EVENT_TYPE_LABELS: Record<TaskEventType, string> = {
   created: '作成', edited: '編集', cancelled: 'キャンセル', completed: '完了',
   subtask_completed: 'サブタスク完了', reassigned_once: '再割り当て', skipped: 'スキップ',
+  subtask_completion_reverted: 'チェックを取り消し', work_progress_recorded: '状況・補完の記録',
 };
+
+const WORK_PROGRESS_FIELDS = [
+  ['observed_note', '見つけた状況'], ['work_done_note', '行ったこと'],
+  ['remaining_note', '今の状態・残り'], ['next_step_note', '次の作業へ'],
+] as const;
 
 type HistoryFilter = 'all' | 'routine' | 'planned' | 'request';
 type HistoryLocationState = { correctionDate?: string } | null;
@@ -49,9 +56,25 @@ function memberLabel(userId: string | null, members: HouseholdMemberWithProfile[
   return member?.profile?.display_name ?? userId;
 }
 
-function EventTrail({ events, members }: { events: TaskEvent[]; members: HouseholdMemberWithProfile[] }) {
+function payloadString(payload: TaskEvent['payload'], key: string): string | null {
+  const value = payload[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+export function EventTrail({ events, members }: { events: TaskEvent[]; members: HouseholdMemberWithProfile[] }) {
   if (events.length === 0) return null;
-  return <ul className="history-event-trail">{events.map((event) => <li key={event.id}><span className="task-item-meta">{formatDateTimeJa(event.created_at)} · {EVENT_TYPE_LABELS[event.event_type] ?? event.event_type} · {memberLabel(event.actor_id, members)}</span></li>)}</ul>;
+  return <ul className="history-event-trail">{events.map((event) => {
+    const observedReady = event.event_type === 'subtask_completed' && event.payload.completion_basis === 'observed_ready';
+    const isProgress = event.event_type === 'work_progress_recorded';
+    const label = observedReady ? '準備済みを確認（実施者不明）' : EVENT_TYPE_LABELS[event.event_type] ?? '記録の変更';
+    return <li key={event.id}>
+      <span className="task-item-meta">{formatDateTimeJa(event.created_at)} · {label} · {isProgress || observedReady ? '記録した人: ' : ''}{memberLabel(event.actor_id, members)}</span>
+      {isProgress && WORK_PROGRESS_FIELDS.map(([key, fieldLabel]) => {
+        const text = payloadString(event.payload, key);
+        return text ? <p key={key} style={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>{fieldLabel}: {text}</p> : null;
+      })}
+    </li>;
+  })}</ul>;
 }
 
 export function reassignmentSummary(events: TaskEvent[], members: HouseholdMemberWithProfile[]): string | null {
@@ -85,6 +108,9 @@ function HistoryRow({
   onSelected: () => void;
 }) {
   const { task, outcome, events, wasReassigned, actualParticipantUserIds } = entry;
+  const display = getTaskDisplay(task);
+  const plannedLabel = task.assignment_mode === 'anyone'
+    ? display.responsibilityHint ?? '誰でもOK' : memberLabel(task.planned_assignee_id, members);
   const reassignment = wasReassigned ? reassignmentSummary(events, members) : null;
   const [editingActual, setEditingActual] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(actualParticipantUserIds);
@@ -111,8 +137,8 @@ function HistoryRow({
   const participantLabel = actualParticipantUserIds.map((id) => memberLabel(id, members)).join('・') || '未記録';
 
   return <li className={selected ? 'history-item card selected' : 'history-item card'} data-history-task-id={task.id} tabIndex={-1}>
-    <div className="history-item-header"><strong>{task.title}</strong><span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span></div>
-    <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {memberLabel(task.planned_assignee_id, members)}</p>
+    <div className="history-item-header"><strong>{display.displayTitle}</strong><span className={OUTCOME_CLASS[outcome]}>{OUTCOME_LABELS[outcome]}</span></div>
+    <p className="task-item-meta">予定: {task.due_at ? formatDateTimeJa(task.due_at) : task.scheduled_date} {plannedLabel}</p>
     {task.status === 'completed' && <p className="task-item-meta"><strong>対象日: {task.scheduled_date}</strong> · {participantLabel}</p>}
     {outcome === 'waiting' && <p className="task-item-meta">{task.waiting_note ? `待ち理由: ${task.waiting_note}` : '確認待ち'}{task.next_check_at ? ` · 次回確認 ${formatDateTimeJa(task.next_check_at)}` : ''}</p>}
     {reassignment && <p className="task-item-meta">{reassignment}</p>}
