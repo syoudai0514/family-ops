@@ -72,6 +72,20 @@ const props = {
 };
 
 describe('TaskChecklistItem Q54/Q64/Q106', () => {
+  it('also blocks requests to oneself when assignment adjustment is opened manually', () => {
+    const members: HouseholdMemberWithProfile[] = [
+      { household_id: 'household-1', user_id: 'user-1', member_role: 'adult', family_role: 'papa', joined_at: '2026-09-01', profile: null },
+      { household_id: 'household-1', user_id: 'user-2', member_role: 'adult', family_role: 'mama', joined_at: '2026-09-01', profile: null },
+    ];
+    render(<TaskChecklistItem {...props} hasPartner members={members} currentUserId="user-1"
+      task={{ ...makeTask('todo'), planned_assignee_id: 'user-2', assignment_mode: 'person' }} />);
+    fireEvent.click(screen.getByRole('button', { name: '担当を調整' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '担当する人' }), { target: { value: 'user-1' } });
+    expect(screen.getByRole('button', { name: 'お願いを送る' })).toBeDisabled();
+    fireEvent.submit(screen.getByText('担当をどう変える？').closest('form')!);
+    expect(callEdgeFunction).not.toHaveBeenCalled();
+    expect(screen.getByRole('radio', { name: /すでに話し合い済み/ })).not.toBeChecked();
+  });
   it('shows a durable saved-note indicator without claiming that the task is completed', () => {
     render(<TaskChecklistItem {...props} task={{ ...makeTask('todo'), latest_work_progress: [
       { id: 'saved-progress', actor_id: 'user-1', created_at: '2026-10-13T07:34:20Z', payload: { work_done_note: '洗浄を開始した' } },

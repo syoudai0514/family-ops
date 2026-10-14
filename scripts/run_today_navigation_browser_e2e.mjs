@@ -37,7 +37,19 @@ const task = {
   actual_completed_by_id: null, completed_at: null, attention_state: 'active', waiting_note: null,
   next_check_at: null, revision: 1, task_definitions: null,
 };
-const state = { initialBriefDelayMs: 800, requests: [], browserEvents: [], networkEvents: [], progressEvents: [], progressCommands: [], handovers: [] };
+const transportPapa = { ...membership, user_id: '10000000-0000-4000-8000-000000000001' };
+const transportMama = { ...membership, user_id: '10000000-0000-4000-8000-000000000002', family_role: 'mama' };
+const transportTask = {
+  ...task, id: '20000000-0000-4000-8000-000000000001', origin: 'recurring',
+  title: '送り', category: 'dropoff', routine_phase: 'morning', task_kind: 'transport',
+  scheduled_date: TOMORROW, due_at: `${TOMORROW}T08:00:00+09:00`, calendar_visibility: 'transport',
+  planned_assignee_id: transportMama.user_id, revision: 7,
+};
+const state = {
+  initialBriefDelayMs: 800, requests: [], browserEvents: [], networkEvents: [],
+  progressEvents: [], progressCommands: [], handovers: [],
+  transportNavigation: false, transportTaskReads: 0, assignmentCommands: [], mutations: [],
+};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -160,22 +172,34 @@ async function fulfillRequest(client, { requestId, request }) {
   }
 
   const pathname = url.pathname;
+  const viewer = state.transportNavigation ? transportPapa : membership;
+  const members = state.transportNavigation ? [transportPapa, transportMama] : [membership];
+  if ((pathname.startsWith('/functions/v1/') && request.method === 'POST' && pathname !== '/functions/v1/list-pending-actions')
+    || (pathname.startsWith('/rest/v1/') && !pathname.startsWith('/rest/v1/rpc/') && ['POST', 'PATCH', 'DELETE'].includes(request.method))) {
+    state.mutations.push({ method: request.method, pathname });
+  }
   let response;
   if (pathname === '/rest/v1/household_members') {
     response = url.searchParams.has('user_id') && !url.searchParams.has('household_id')
-      ? jsonResponse(membership)
-      : jsonResponse([membership]);
+      ? jsonResponse(viewer)
+      : jsonResponse(members);
   } else if (pathname === '/rest/v1/households') {
     response = jsonResponse(household);
   } else if (pathname === '/rest/v1/profiles') {
-    response = jsonResponse([{ user_id: membership.user_id, display_name: 'パパ' }]);
+    response = jsonResponse(members.map((member) => ({ user_id: member.user_id, display_name: member.family_role === 'mama' ? 'ママ' : 'パパ' })));
   } else if (pathname === '/rest/v1/rpc/get_my_daily_brief') {
     if (state.initialBriefDelayMs) await sleep(state.initialBriefDelayMs);
     response = jsonResponse(dailyBrief());
   } else if (pathname === '/rest/v1/task_instances') {
-    response = url.searchParams.getAll('status').some((value) => value === 'eq.completed')
-      ? jsonResponse([])
-      : jsonResponse([{ ...task, latest_work_progress: state.progressEvents.slice(0, 1) }]);
+    if (state.transportNavigation) {
+      state.transportTaskReads++;
+      response = url.searchParams.getAll('status').some((value) => value === 'eq.completed' || value === 'in.(completed,skipped)')
+        ? jsonResponse([]) : jsonResponse([transportTask]);
+    } else {
+      response = url.searchParams.getAll('status').some((value) => value === 'eq.completed')
+        ? jsonResponse([])
+        : jsonResponse([{ ...task, latest_work_progress: state.progressEvents.slice(0, 1) }]);
+    }
   } else if (pathname === '/rest/v1/task_subtask_instances' || pathname === '/rest/v1/task_execution_targets') {
     response = jsonResponse([]);
   } else if (pathname === '/rest/v1/task_events') {
@@ -200,8 +224,19 @@ async function fulfillRequest(client, { requestId, request }) {
     response = jsonResponse([]);
   } else if (pathname === '/functions/v1/list-pending-actions') {
     response = jsonResponse([]);
+  } else if (pathname === '/functions/v1/change-task-assignment' && state.transportNavigation) {
+    assert.equal(request.method, 'POST');
+    const body = JSON.parse(request.postData || '{}');
+    assert.equal(body.task_id, transportTask.id);
+    assert.equal(body.assignee_user_id, transportPapa.user_id);
+    assert.equal(body.already_agreed, true);
+    assert.equal(body.expected_revision, transportTask.revision);
+    state.assignmentCommands.push(body);
+    transportTask.planned_assignee_id = body.assignee_user_id;
+    transportTask.revision++;
+    response = jsonResponse({ revision: transportTask.revision });
   } else if (pathname === '/auth/v1/user') {
-    response = jsonResponse({ id: membership.user_id, aud: 'authenticated', role: 'authenticated' });
+    response = jsonResponse({ id: viewer.user_id, aud: 'authenticated', role: 'authenticated' });
   } else if (pathname.startsWith('/rest/v1/')) {
     response = jsonResponse([]);
   } else if (pathname.startsWith('/functions/v1/')) {
@@ -341,7 +376,7 @@ async function main() {
         app_metadata: { provider: 'email', providers: ['email'] }, user_metadata: {}, created_at: '2026-01-01T00:00:00Z',
       },
     };
-    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+    const sessionScript = await client.send('Page.addScriptToEvaluateOnNewDocument', {
       source: `localStorage.setItem('sb-127-auth-token', ${JSON.stringify(JSON.stringify(session))});`,
     });
 
@@ -416,6 +451,9 @@ async function main() {
     await waitForText(client, task.title);
     await evaluate(client, `(() => {
       const row = document.getElementById('task-${task.id}');
+      for (let parent = row.parentElement; parent; parent = parent.parentElement) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+      }
       row.querySelector('details.task-overflow').open = true;
       [...row.querySelectorAll('button')].find(button => button.textContent === '状況・引き継ぎを記録').click();
     })()`);
@@ -444,6 +482,9 @@ async function main() {
 
     await evaluate(client, `(() => {
       const row = document.getElementById('task-${task.id}');
+      for (let parent = row.parentElement; parent; parent = parent.parentElement) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+      }
       row.querySelector('details.task-overflow').open = true;
       [...row.querySelectorAll('button')].find(button => button.textContent === '状況・引き継ぎを記録').click();
     })()`);
@@ -461,10 +502,75 @@ async function main() {
     await waitForText(client, '洗浄が終わってから食器を取り出してください');
     scenarios.push({ id: 'progress-explicit-handover', assertion: 'Record-only work stays private to the task log; selecting sharing creates a visible handover, keeps task outcome open, and retains the earlier history', screenshot: await screenshot(client, 'task-progress-handover.png') });
 
+    // The LINE destination is navigation to the existing transport occurrence.
+    // It may preselect a parent, but it cannot manufacture consent or a request
+    // to oneself. All household identities and command responses remain stubs.
+    state.transportNavigation = true;
+    state.initialBriefDelayMs = 0;
+    const mutationsBeforeNavigation = state.mutations.length;
+    const transportSession = { ...session, user: { ...session.user, id: transportPapa.user_id } };
+    await client.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: sessionScript.identifier });
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `localStorage.setItem('sb-127-auth-token', ${JSON.stringify(JSON.stringify(transportSession))});`,
+    });
+    const assignmentParams = new URLSearchParams({
+      date: TOMORROW, for: transportPapa.user_id,
+      assignment_task: transportTask.id, assignment_to: transportPapa.user_id,
+    });
+    await navigate(client, `${APP_URL}?${assignmentParams}`);
+    await waitForText(client, '担当をどう変える？');
+    assert.deepEqual(await evaluate(client, `(() => {
+      const row = document.getElementById('task-${transportTask.id}');
+      const form = row?.querySelector('.task-waiting-editor');
+      return { currentMama: row?.innerText.includes('ママ'), selected: form?.querySelector('select')?.value,
+        requestChecked: form?.querySelector('input[value="request"]')?.checked,
+        agreedChecked: form?.querySelector('input[value="agreed"]')?.checked,
+        submitDisabled: form?.querySelector('button[type="submit"]')?.disabled };
+    })()`), {
+      currentMama: true, selected: transportPapa.user_id,
+      requestChecked: true, agreedChecked: false, submitDisabled: true,
+    });
+    assert.equal(state.mutations.length, mutationsBeforeNavigation, 'following a LINE link must not mutate any task or create a request');
+    assert.equal(state.assignmentCommands.length, 0);
+    assert.ok(state.transportTaskReads > 0, 'the actual dated task is fetched before the assignment editor opens');
+    scenarios.push({
+      id: 'line-transport-navigation-no-consent',
+      assertion: 'A LINE deep link opens tomorrow’s real mama-owned dropoff and preselects papa; request remains selected, a self-request is disabled, and navigation sends zero mutation commands',
+      screenshot: await screenshot(client, 'line-transport-navigation.png'),
+    });
+
+    const readsBeforeAssignment = state.transportTaskReads;
+    await evaluate(client, `(() => {
+      const form = document.getElementById('task-${transportTask.id}').querySelector('.task-waiting-editor');
+      form.querySelector('input[value="agreed"]').click();
+    })()`);
+    assert.equal(await evaluate(client, `document.getElementById('task-${transportTask.id}').querySelector('.task-waiting-editor button[type="submit"]').disabled`), false);
+    await evaluate(client, `document.getElementById('task-${transportTask.id}').querySelector('.task-waiting-editor button[type="submit"]').click()`);
+    await waitFor(() => state.assignmentCommands.length === 1 && state.transportTaskReads > readsBeforeAssignment, { label: 'agreed assignment command and canonical task reread' });
+    await waitFor(() => evaluate(client, `(() => {
+      const row = document.getElementById('task-${transportTask.id}');
+      return row?.innerText.includes('パパ') && !row?.innerText.includes('ママ') && !row?.querySelector('.task-waiting-editor');
+    })()`), { label: 'reread dropoff shows papa and closes the editor' });
+    assert.equal(state.assignmentCommands.length, 1, 'one explicit confirmation sends exactly one canonical command');
+    assert.equal(state.mutations.length, mutationsBeforeNavigation + 1);
+    assert.deepEqual(state.assignmentCommands[0], {
+      operation_id: state.assignmentCommands[0].operation_id,
+      task_id: transportTask.id, assignee_user_id: transportPapa.user_id,
+      already_agreed: true, expected_revision: 7,
+    });
+    assert.match(state.assignmentCommands[0].operation_id, /^[0-9a-f-]{36}$/i);
+    assert.equal(transportTask.planned_assignee_id, transportPapa.user_id);
+    scenarios.push({
+      id: 'line-transport-explicit-agreement',
+      assertion: 'Only explicitly selecting prior agreement enables the canonical assignment POST with task ID, papa target, expected revision and already_agreed; exactly one command is sent and the reread shows papa as the dropoff owner',
+      screenshot: await screenshot(client, 'line-transport-assignment-agreed.png'),
+    });
+
     const evidence = {
       status: 'PASS', sourceHead: SOURCE_HEAD, capturedAt: new Date().toISOString(),
       browser: { product: browserVersion.product, userAgent: browserVersion.userAgent, viewport: '393x852', executable: chrome.chromePath },
       scenarios, requestCount: state.requests.length, progressCommands: state.progressCommands,
+      assignmentCommands: state.assignmentCommands, transportTaskReads: state.transportTaskReads,
     };
     await writeFile(path.join(ARTIFACT_DIR, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
     console.log(`[today-browser] PASS ${scenarios.length} scenarios on ${browserVersion.product}`);

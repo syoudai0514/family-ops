@@ -29,6 +29,7 @@ export function assignmentDecisionCommand(input: {
       task_id: input.taskId,
       recipient_user_id: input.assigneeUserId,
       scope: 'once',
+      expected_task_revision: input.expectedRevision,
       shared_message: input.sharedMessage?.trim() || undefined,
     },
   } as const;

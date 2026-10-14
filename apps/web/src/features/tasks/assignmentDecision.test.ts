@@ -20,7 +20,7 @@ describe('assignment decision semantics', () => {
     })).toEqual({
       endpoint: EDGE_FUNCTIONS.createAssignmentChangeRequest,
       body: {
-        operation_id: 'op-2', task_id: 'task-1', recipient_user_id: 'user-2', scope: 'once', shared_message: 'お願いできますか？',
+        operation_id: 'op-2', task_id: 'task-1', recipient_user_id: 'user-2', scope: 'once', expected_task_revision: 7, shared_message: 'お願いできますか？',
       },
     });
   });

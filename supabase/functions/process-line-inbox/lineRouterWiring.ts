@@ -55,10 +55,10 @@ const DRAFT_KIND: Record<string, string> = { request_create: "request", shopping
 
 /** The waiting draft with its fields, so an edit can keep what is already there. */
 export function describePendingDraft(
-  pending: { action_type?: string; normalized_payload?: Record<string, unknown> } | null,
+  pending: { status?: string; action_type?: string; normalized_payload?: Record<string, unknown> } | null,
   actorId: string,
 ): SnapshotDraft | null {
-  if (!pending) return null;
+  if (!pending || pending.status !== "draft") return null;
   const p = pending.normalized_payload ?? {};
   const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
   const kind = p.explicit_kind === "event" || p.calendar_visibility === "special"
@@ -146,7 +146,7 @@ export async function loadSnapshot(
     actorId: string;
     householdId: string;
     today: string;
-    pending: { action_type?: string; normalized_payload?: Record<string, unknown> } | null;
+    pending: { status?: string; action_type?: string; normalized_payload?: Record<string, unknown> } | null;
   },
 ): Promise<Snapshot> {
   const { actorId, householdId, today } = opts;

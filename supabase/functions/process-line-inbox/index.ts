@@ -95,6 +95,7 @@ import {
   lineLinkWelcomeText,
   lineNonMutationDisposition,
   linePendingFollowUpKind,
+  linePendingFollowUpKindForContext,
   menuQuickReplies,
   normalizeHiraganaMamaRole,
   pendingConfirmationMessage,
@@ -128,6 +129,7 @@ import { loadSnapshot, logLineTurn, markUnderstandModelBusy, reserveAiCall, unde
 import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
 import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import { loadTodayTaskBlock, mergeTodayBrief } from "./lineTodayTasks.ts";
+import { resolveLineTransportAssignment } from "./lineTransportAssignment.ts";
 import {
   purchaseAllAndReply,
   purchaseShoppingItemAndReply,
@@ -606,10 +608,12 @@ async function tryHandlePendingReferent(
   item: WebhookInboxItem,
   actor: LineActor,
   text: string,
+  knownPending?: EditablePendingAction,
 ): Promise<boolean> {
   if (!isPendingReferentQuestion(text) && !isPendingCorrection(text)) return false;
-  const pending = await getLineConversationPending(client, actor, item.source_external_user_id);
+  const pending = knownPending ?? await getLineConversationPending(client, actor, item.source_external_user_id);
   if (!pending) return false;
+  if (!linePendingFollowUpKindForContext(text, { status: pending.status, title: pendingTitle(pending) })) return false;
 
   if (isPendingReferentQuestion(text)) {
     await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」の件です。${pendingStateLabel(pending.status)}です。`);
@@ -1613,6 +1617,23 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       await sendConfirmation(client, item, actor, "この下書きはすでに確定・期限切れです。");
       return;
     }
+    // Old generic cards must not create a new ToDo that only says to change
+    // transport. Keep their original target date when reviewing an old 明日.
+    if (["request_create", "task_create_once"].includes(pending.action_type)) {
+      const rawText = typeof pending.normalized_payload.raw_text === "string" && pending.normalized_payload.raw_text.trim()
+        ? pending.normalized_payload.raw_text : pendingTitle(pending);
+      const transport = await resolveLineTransportAssignment({
+        client, actorId: actor.user_id, householdId: actor.household_id,
+        appBaseUrl: Deno.env.get("APP_BASE_URL") ?? "",
+        scheduledDateOverride: typeof pending.normalized_payload.scheduled_date === "string"
+          ? pending.normalized_payload.scheduled_date : undefined,
+        forceReview: true,
+      }, rawText);
+      if (transport.kind === "reply") {
+        await sendConfirmation(client, item, actor, `このカードからは送り・お迎えの担当を変更できないため、送信していません。\n\n${transport.text}`);
+        return;
+      }
+    }
     const { error } = await client.rpc("server_tx_confirm_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: fields.pending_action_id });
     if (error) {
       console.error("process-line-inbox: confirm_pending failed", error.message);
@@ -2071,11 +2092,29 @@ async function handleText(
   }
   if (!actor) return;
 
+  // Explicit transport changes bind to the actual occurrence, before either an
+  // old draft or a model-generated light request can capture the same sentence.
+  const transport = await resolveLineTransportAssignment({
+    client, actorId: actor.user_id, householdId: actor.household_id,
+    appBaseUrl: Deno.env.get("APP_BASE_URL") ?? "",
+  }, text);
+  if (transport.kind === "reply") {
+    await logLineTurn(client, actor.user_id, "user", text);
+    await sendConfirmation(client, item, actor, transport.text);
+    return;
+  }
+  const canonicalPickupRequest = transport.kind === "legacy_pickup";
+
   // The conversation so far is read BEFORE this message is stored, so the model sees
   // "what was said before" and the new message separately (lineUnderstand.ts).
   const pendingDraft = await getLineConversationPending(client, actor, item.source_external_user_id);
+  if (!canonicalPickupRequest && pendingDraft && pendingDraft.status !== "draft" &&
+    linePendingFollowUpKindForContext(text, { status: pendingDraft.status, title: pendingTitle(pendingDraft) })) {
+    await logLineTurn(client, actor.user_id, "user", text);
+    if (await tryHandlePendingReferent(client, item, actor, text, pendingDraft)) return;
+  }
   const reportedDate = completionDate(text, jstIsoDateOffset(0));
-  const snapshot = isFixedShortcutText(text) || !(await understandEnabled(client))
+  const snapshot = canonicalPickupRequest || isFixedShortcutText(text) || !(await understandEnabled(client))
     ? null
     : await loadSnapshot(client, {
       actorId: actor.user_id,
@@ -2106,7 +2145,7 @@ async function handleText(
   // to do, with the conversation and the household in front of it. The phrase-pattern
   // chain further down is only the fallback (model unavailable, unusable answer, or an
   // operation the model hands back).
-  let routedCreate = false;
+  let routedCreate = canonicalPickupRequest;
   if (snapshot) {
     // A dated bulk report ("昨日のは全部やった") is handled before the model is asked, so
     // it does not spend one of the per-minute AI calls on an answer that is never used.
@@ -2238,7 +2277,7 @@ async function handleText(
   }
 
   const starterKind = lineCreationStarterKind(text);
-  const semanticCandidates = starterKind
+  const semanticCandidates = starterKind || canonicalPickupRequest
     ? []
     : await buildMultiIntentPendingCandidates(client, item, actor, text);
 
@@ -2377,7 +2416,7 @@ async function applyUnderstoodDraft(
   };
   if (opts.mode === "edit") {
     const pending = opts.pending;
-    if (!pending || !DRAFT_EDITABLE_TYPES.has(pending.action_type)) return false;
+    if (!pending || pending.status !== "draft" || !DRAFT_EDITABLE_TYPES.has(pending.action_type)) return false;
     const built = draftToPending(opts.draft, ctx, pending.normalized_payload);
     if (!built) return false;
     const updated = await updateEditablePending(client, actor, pending.id, built.actionType, built.payload);

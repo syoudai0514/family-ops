@@ -28,6 +28,7 @@ import { DayAgendaSheet } from '../planning/DayAgendaSheet';
 import { tokyoIsoDate } from '../planning/dateHelpers';
 import { useDayTaskRecording } from './useDayTaskRecording';
 import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
+import { readAssignmentEntry } from '../tasks/assignmentEntry';
 
 const INPUT_LABELS: Record<string, string> = {
   dropoff: '朝の入力',
@@ -187,15 +188,20 @@ function scheduleLabel(item: DailyBriefScheduleItem): string {
 
 export function Today() {
   const [params, setParams] = useSearchParams();
-  const { household, me } = useHousehold();
+  const { user } = useAuth();
+  const { household, me, members } = useHousehold();
   const currentClock = useTodayClock(() => {});
   const today = tokyoIsoDate(currentClock.now);
   const value = params.get('date') ?? today;
   const parsed = new Date(`${value}T00:00:00Z`);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : today;
+  const assignmentEntry = readAssignmentEntry(params, date, household?.id,
+    user?.id === me?.user_id ? user?.id : undefined, members ?? []);
   const recording = useDayTaskRecording(household?.id ?? null, date, me?.user_id ?? null);
   function selectDate(next: string) {
     const copy = new URLSearchParams(params);
+    copy.delete('assignment_task');
+    copy.delete('assignment_to');
     if (next === today) copy.delete('date'); else copy.set('date', next);
     setParams(copy);
   }
@@ -218,7 +224,10 @@ export function Today() {
         {date !== today && <button type="button" className="text-button" onClick={() => selectDate(today)}>今日に戻る</button>}
       </div>
     </nav>
-    {date === today ? <TodayDashboard onRecordingChanged={recording.refresh} /> : <div className="app-shell daily-date-content"><DayAgendaSheet key={date} date={date} inline onClose={() => selectDate(today)} onChanged={recording.refresh} /></div>}
+    {date === today && !assignmentEntry ? <TodayDashboard onRecordingChanged={recording.refresh} /> : <div className="app-shell daily-date-content">
+      {assignmentEntry && <button type="button" className="text-button" onClick={() => selectDate(date)}>担当変更を閉じる</button>}
+      <DayAgendaSheet key={`${date}:${household?.id}:${me?.user_id}`} date={date} inline assignmentEntry={assignmentEntry} onClose={() => selectDate(today)} onChanged={recording.refresh} />
+    </div>}
   </>;
 }
 

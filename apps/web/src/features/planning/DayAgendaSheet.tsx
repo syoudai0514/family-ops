@@ -21,6 +21,7 @@ import { groupTasksByOwner } from '../tasks/taskOwnerGroups';
 import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
 import { RemoveDayTransport } from './RemoveDayTransport';
 import { tokyoIsoDate } from './dateHelpers';
+import { matchesAssignmentEntry, type AssignmentEntry } from '../tasks/assignmentEntry';
 
 function dayTitle(date: string) {
   const parsed = new Date(`${date}T00:00:00+09:00`);
@@ -77,11 +78,13 @@ export function DayAgendaSheet({
   onClose,
   onChanged,
   inline = false,
+  assignmentEntry,
 }: {
   date: string;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
   inline?: boolean;
+  assignmentEntry?: AssignmentEntry;
 }) {
   const { household, members, partner, me } = useHousehold();
   const planning = usePlanningData(household?.id ?? null, date, date);
@@ -167,6 +170,12 @@ export function DayAgendaSheet({
   const requiredTasks = operationalTasks.filter((task) => task.expectation !== 'optional');
   const recordedOperational = requiredTasks.filter(isTaskRecorded).length;
   const recording = summarizeTaskRecording(planning.tasks, date, { userId: me?.user_id });
+  const entryInScope = assignmentEntry?.householdId === household?.id
+    && assignmentEntry?.requestedByUserId === me?.user_id && assignmentEntry?.date === date
+    && members.some((member) => member.household_id === household?.id
+      && member.user_id === assignmentEntry?.assigneeUserId && member.member_role === 'adult')
+    ? assignmentEntry : undefined;
+  const entryTask = planning.tasks.find((task) => matchesAssignmentEntry(task, entryInScope));
 
   const renderTask = (task: PlanningTask, showTime = true) => (
     <TaskChecklistItem
@@ -180,6 +189,8 @@ export function DayAgendaSheet({
       onChanged={refreshAll}
       showTime={showTime}
       compact
+      assignmentRequest={entryTask?.id === task.id ? 1 : 0}
+      assignmentRequestedUserId={entryTask?.id === task.id ? entryInScope?.assigneeUserId : undefined}
     />
   );
 
@@ -285,6 +296,8 @@ export function DayAgendaSheet({
                   {planning.error ?? subtaskError}
                 </p>
               )}
+
+              {assignmentEntry && !planning.error && !entryTask && <p role="status" className="empty-hint">担当を変更する送迎が見つかりませんでした。日付や最新の記録を確認してください。</p>}
 
 
               {scheduleSection}

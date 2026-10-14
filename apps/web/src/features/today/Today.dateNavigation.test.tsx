@@ -5,6 +5,7 @@ import { Today } from './Today';
 import { summarizeTaskRecording } from '../tasks/taskRecording';
 
 vi.mock('./useTodayClock', () => ({ useTodayClock: () => ({now:new Date('2026-10-03T03:00:00Z'),localDate:'2026-10-03',daypart:'morning'}) }));
+vi.mock('../../app/AuthContext', () => ({ useAuth: () => ({ user: { id: 'papa' } }) }));
 vi.mock('../planning/DayAgendaSheet', () => ({ DayAgendaSheet: ({date}:{date:string}) => <p>対象日:{date}</p> }));
 function Location() { return <output data-testid="location">{useLocation().search}</output>; }
 describe('date-specific actuals from the top screen', () => {

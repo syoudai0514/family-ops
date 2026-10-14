@@ -341,6 +341,47 @@ for setup_actor in A B; do
 done
 info "OK: shared family setup keeps legacy inputs and household isolation over real Edge/PostgREST"
 
+# Old LINE previews are also visible in PWA. Their confirmation must use the
+# same intent boundary, while ordinary confirmations retain successful replay.
+info "7d. PWA confirmation rejects a generic transport draft and preserves ordinary replay"
+PENDING_ACTOR_ID=$(curl -fsS "$API_URL/auth/v1/user" -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+for pending_kind in transport ordinary; do
+  pending_operation=$(python3 -c 'import uuid; print(uuid.uuid4())')
+  pending_title='CI ordinary task'
+  pending_raw='明日、普通の用事を追加して'
+  if [ "$pending_kind" = transport ]; then
+    pending_title='明日の送り担当をパパに変更'
+    pending_raw='明日の送りは私に変更してください'
+  fi
+  pending_create=$(jq -nc --arg actor "$PENDING_ACTOR_ID" --arg household "$HH_A" --arg op "$pending_operation" \
+    --arg title "$pending_title" --arg raw "$pending_raw" --arg day "$(date +%Y-%m-%d)" \
+    '{p_actor_id:$actor,p_household_id:$household,p_operation_id:$op,p_source:"line",p_action_type:"task_create_once",p_normalized_payload:{title:$title,raw_text:$raw,scheduled_date:$day,planned_assignee_user_id:$actor},p_ttl_minutes:30}')
+  pending_id=$(curl -fsS -X POST "$API_URL/rest/v1/rpc/server_tx_create_pending_action" \
+    -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' \
+    -d "$pending_create" | python3 -c 'import json,sys; print(json.load(sys.stdin)["pending_action_id"])')
+  pending_confirm=$(jq -nc --arg id "$pending_id" '{pending_action_id:$id}')
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/confirm-pending-action" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H 'Content-Type: application/json' -d "$pending_confirm")
+  if [ "$pending_kind" = transport ]; then
+    [ "$code" = 400 ] || fail "generic transport draft must not confirm: $code"
+    pending_state=$(curl -fsS -X POST "$API_URL/rest/v1/rpc/server_tx_get_pending_action" \
+      -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' \
+      -d "{\"p_actor_id\":\"$PENDING_ACTOR_ID\",\"p_pending_action_id\":\"$pending_id\"}" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+    [ "$pending_state" = draft ] || fail "rejected transport preview changed state"
+  else
+    [ "$code" = 200 ] || fail "ordinary draft confirmation failed: $code"
+    code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/confirm-pending-action" \
+      -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A" -H 'Content-Type: application/json' -d "$pending_confirm")
+    [ "$code" = 200 ] || fail "ordinary confirmed replay failed: $code"
+  fi
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/functions/v1/confirm-pending-action" \
+    -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" -H 'Content-Type: application/json' -d "$pending_confirm")
+  [ "$code" != 200 ] || fail "different household confirmed another actor's draft"
+done
+info "OK: real PWA confirmation keeps transport drafts open, ordinary replay idempotent, and household boundaries intact"
+
 # 8. Rich schedule save, real private file upload/download and household isolation.
 info "8. scheduler metadata and private attachments over real Storage + Data API"
 OP_SCHEDULE=$(python3 -c 'import uuid; print(uuid.uuid4())')
