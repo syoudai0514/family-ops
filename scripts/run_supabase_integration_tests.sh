@@ -382,6 +382,86 @@ for pending_kind in transport ordinary; do
 done
 info "OK: real PWA confirmation keeps transport drafts open, ordinary replay idempotent, and household boundaries intact"
 
+# Native LINE previews use real PostgREST RPC calls and the canonical task row.
+# The fixture stays in this disposable CI stack; no LINE provider is called.
+info "7e. native LINE transport preview -> explicit confirm -> actual assignment and replay"
+TRANSPORT_TASK_ID=$(psql "$DB_URL" -v ON_ERROR_STOP=1 -Atq \
+  -v actor_id="$PENDING_ACTOR_ID" -v household_id="$HH_A" <<'SQL'
+insert into public.task_instances(
+  household_id,task_definition_id,origin,title,category,task_kind,routine_phase,
+  scheduled_date,due_at,completion_mode,status,source,created_by,assignment_mode
+)
+select :'household_id'::uuid,id,'manual','CI LINE transport','dropoff','transport','morning',
+  (now() at time zone 'Asia/Tokyo')::date+1,
+  (((now() at time zone 'Asia/Tokyo')::date+1)::text||' 08:10')::timestamp at time zone 'Asia/Tokyo',
+  'whole','todo','test',:'actor_id'::uuid,'anyone'
+from public.task_definitions where household_id=:'household_id'::uuid and code='dropoff'
+returning id;
+SQL
+)
+[[ "$TRANSPORT_TASK_ID" =~ ^[0-9a-f-]{36}$ ]] || fail "native transport fixture missing"
+TRANSPORT_OPERATION=$(python3 -c 'import uuid; print(uuid.uuid4())')
+TRANSPORT_PREPARE=$(jq -nc --arg actor "$PENDING_ACTOR_ID" --arg op "$TRANSPORT_OPERATION" --arg task "$TRANSPORT_TASK_ID" \
+  '{p_actor_id:$actor,p_operation_id:$op,p_task_id:$task,p_assignee_user_id:$actor,p_expected_revision:1}')
+TRANSPORT_READ=$(jq -nc --arg actor "$PENDING_ACTOR_ID" '{p_actor_id:$actor}')
+TRANSPORT_SNAPSHOT=$(curl -fsS -X POST "$API_URL/rest/v1/rpc/server_tx_prepare_line_transport_assignment_v1" \
+  -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' \
+  -d "$TRANSPORT_PREPARE" | jq -ce --arg task "$TRANSPORT_TASK_ID" --arg actor "$PENDING_ACTOR_ID" \
+  'select(.status=="draft" and .task_id==$task and .actor_id==$actor and .assignee_user_id==$actor and .expected_revision==1 and .code=="dropoff")')
+TRANSPORT_PREVIEW_ID=$(jq -er '.id' <<<"$TRANSPORT_SNAPSHOT")
+TRANSPORT_DECIDE=$(jq -nc --arg actor "$PENDING_ACTOR_ID" --arg id "$TRANSPORT_PREVIEW_ID" \
+  '{p_actor_id:$actor,p_preview_id:$id,p_action:"confirm_agreed"}')
+
+# Valid bodies ensure denial comes from grants, rather than malformed arguments.
+for transport_rpc in server_tx_prepare_line_transport_assignment_v1 server_read_line_transport_assignment_preview_v1 server_tx_decide_line_transport_assignment_v1; do
+  case "$transport_rpc" in
+    server_tx_prepare*) transport_body="$TRANSPORT_PREPARE" ;;
+    server_read*) transport_body="$TRANSPORT_READ" ;;
+    server_tx_decide*) transport_body="$TRANSPORT_DECIDE" ;;
+  esac
+  for transport_token_name in ANON_KEY JWT_A; do
+    code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/rest/v1/rpc/$transport_rpc" \
+      -H "apikey: $ANON_KEY" -H "Authorization: Bearer ${!transport_token_name}" -H 'Content-Type: application/json' -d "$transport_body")
+    case "$code" in 401|403|404) ;; *) fail "$transport_rpc exposed to $transport_token_name: $code" ;; esac
+  done
+done
+TRANSPORT_READ_BACK=$(curl -fsS -X POST "$API_URL/rest/v1/rpc/server_read_line_transport_assignment_preview_v1" \
+  -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d "$TRANSPORT_READ")
+[ "$(jq -cS . <<<"$TRANSPORT_READ_BACK")" = "$(jq -cS . <<<"$TRANSPORT_SNAPSHOT")" ] || fail "native preview read changed snapshot"
+TRANSPORT_BEFORE=$(curl -fsS "$API_URL/rest/v1/task_instances?id=eq.$TRANSPORT_TASK_ID&select=revision,assignment_mode,planned_assignee_id" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A")
+jq -e 'length==1 and .[0].revision==1 and .[0].assignment_mode=="anyone" and .[0].planned_assignee_id==null' \
+  <<<"$TRANSPORT_BEFORE" >/dev/null || fail "native preview changed task before explicit confirm"
+TRANSPORT_OTHER_ACTOR=$(curl -fsS "$API_URL/auth/v1/user" -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_B" | jq -er '.id')
+TRANSPORT_OTHER_READ=$(jq -nc --arg actor "$TRANSPORT_OTHER_ACTOR" '{p_actor_id:$actor}')
+TRANSPORT_OTHER_SNAPSHOT=$(curl -fsS -X POST "$API_URL/rest/v1/rpc/server_read_line_transport_assignment_preview_v1" \
+  -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d "$TRANSPORT_OTHER_READ")
+[ "$TRANSPORT_OTHER_SNAPSHOT" = null ] || fail "another actor read native preview"
+code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API_URL/rest/v1/rpc/server_tx_decide_line_transport_assignment_v1" \
+  -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' \
+  -d "$(jq --arg actor "$TRANSPORT_OTHER_ACTOR" '.p_actor_id=$actor' <<<"$TRANSPORT_DECIDE")")
+[ "$code" = 400 ] || fail "another actor's native confirm was not rejected: $code"
+for transport_attempt in 1 2; do
+  TRANSPORT_RESULT=$(curl -fsS -X POST "$API_URL/rest/v1/rpc/server_tx_decide_line_transport_assignment_v1" \
+    -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d "$TRANSPORT_DECIDE")
+  jq -e --arg task "$TRANSPORT_TASK_ID" '.status=="succeeded" and .result.task_id==$task and .result.revision==2' \
+    <<<"$TRANSPORT_RESULT" >/dev/null || fail "native confirm/replay failed on attempt $transport_attempt"
+  if [ "$transport_attempt" = 1 ]; then
+    TRANSPORT_FIRST_RESULT=$(jq -cS . <<<"$TRANSPORT_RESULT")
+  else
+    [ "$(jq -cS . <<<"$TRANSPORT_RESULT")" = "$TRANSPORT_FIRST_RESULT" ] || fail "native replay changed saved result"
+  fi
+done
+TRANSPORT_AFTER=$(curl -fsS "$API_URL/rest/v1/task_instances?id=eq.$TRANSPORT_TASK_ID&select=revision,assignment_mode,planned_assignee_id,assignment_source" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A")
+jq -e --arg actor "$PENDING_ACTOR_ID" 'length==1 and .[0].revision==2 and .[0].assignment_mode=="person" and .[0].planned_assignee_id==$actor and .[0].assignment_source=="agreement"' \
+  <<<"$TRANSPORT_AFTER" >/dev/null || fail "native confirm did not update actual transport task"
+TRANSPORT_EVENTS=$(curl -fsS "$API_URL/rest/v1/task_events?task_instance_id=eq.$TRANSPORT_TASK_ID&select=event_type,source,actor_id" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $JWT_A")
+jq -e --arg actor "$PENDING_ACTOR_ID" 'length==1 and .[0].event_type=="assignment_agreed" and .[0].source=="line" and .[0].actor_id==$actor' \
+  <<<"$TRANSPORT_EVENTS" >/dev/null || fail "native confirm/replay event missing, duplicated, or wrong source"
+info "OK: native preview stays inert until explicit confirmation; actual assignment changes once and RPCs remain service-only"
+
 # 8. Rich schedule save, real private file upload/download and household isolation.
 info "8. scheduler metadata and private attachments over real Storage + Data API"
 OP_SCHEDULE=$(python3 -c 'import uuid; print(uuid.uuid4())')

@@ -131,6 +131,11 @@ import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import { loadTodayTaskBlock, mergeTodayBrief } from "./lineTodayTasks.ts";
 import { resolveLineTransportAssignment } from "./lineTransportAssignment.ts";
 import {
+  handleLineTransportPreviewPostback,
+  handleLineTransportPreviewText,
+  openLineTransportPreview,
+} from "./lineTransportPreviewFlow.ts";
+import {
   purchaseAllAndReply,
   purchaseShoppingItemAndReply,
   buyPartOfShoppingItemAndReply,
@@ -166,6 +171,7 @@ interface WebhookInboxItem {
   source_external_user_id: string | null;
   payload: {
     type?: string;
+    timestamp?: number;
     message?: { type?: string; text?: string };
     postback?: { data?: string };
     replyToken?: string;
@@ -1472,6 +1478,8 @@ async function handlePostback(
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
 
+  if (await handleLineTransportPreviewPostback(completionContext(client, item, actor), fields)) return;
+
   if (await tryHandleLineMustCompletePostback({
     client,
     actorId: actor.user_id,
@@ -2097,13 +2105,41 @@ async function handleText(
   const transport = await resolveLineTransportAssignment({
     client, actorId: actor.user_id, householdId: actor.household_id,
     appBaseUrl: Deno.env.get("APP_BASE_URL") ?? "",
+    nativePreview: true,
+    // Relative dates name the sender's day, even if a queued webhook is first
+    // processed after midnight. Confirmation stores that absolute occurrence.
+    now: Number.isSafeInteger(item.payload.timestamp) && (item.payload.timestamp ?? 0) > 0 &&
+        (item.payload.timestamp ?? 0) <= Date.now() + 60_000
+      ? new Date(item.payload.timestamp!)
+      : undefined,
   }, text);
+  if (transport.kind === "review") {
+    await logLineTurn(client, actor.user_id, "user", text);
+    await openLineTransportPreview(completionContext(client, item, actor), transport);
+    return;
+  }
   if (transport.kind === "reply") {
     await logLineTurn(client, actor.user_id, "user", text);
     await sendConfirmation(client, item, actor, transport.text);
     return;
   }
   const canonicalPickupRequest = transport.kind === "legacy_pickup";
+
+  // Short agreement reports refer only to a server-issued transport preview.
+  // Read context before logging this new user turn; preserve user/assistant order
+  // when a handled response is emitted. The language model cannot replace this
+  // confirmation with a conversational "了解".
+  let transportFollowUpLogged = false;
+  if (!canonicalPickupRequest && await handleLineTransportPreviewText({
+    ...completionContext(client, item, actor),
+    reply: async (replyText, quickReplies) => {
+      if (!transportFollowUpLogged) {
+        await logLineTurn(client, actor.user_id, "user", text);
+        transportFollowUpLogged = true;
+      }
+      await sendConfirmation(client, item, actor, replyText, quickReplies);
+    },
+  }, text)) return;
 
   // The conversation so far is read BEFORE this message is stored, so the model sees
   // "what was said before" and the new message separately (lineUnderstand.ts).

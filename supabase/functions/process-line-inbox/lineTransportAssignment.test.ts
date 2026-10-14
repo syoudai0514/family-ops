@@ -130,6 +130,7 @@ function task(overrides: Record<string, unknown> = {}) {
     test_context_id: null,
     planned_assignee_id: "mama-id",
     status: "todo",
+    revision: 7,
     due_at: "2026-10-14T22:30:00Z",
     ...overrides,
   };
@@ -246,6 +247,21 @@ Deno.test("missing transport time is never replaced by a fabricated 08:00", asyn
     assertStringIncludes(result.text, "10/15(木) 送り");
     assertEquals(result.text.includes("08:00"), false);
   }
+});
+
+Deno.test("fresh LINE input resolves a reviewed occurrence and revision for native confirmation without writing", async () => {
+  const { ctx, requests } = setup();
+  assertEquals(await resolveLineTransportAssignment({ ...ctx, nativePreview: true }, "明日の送りは私に変更してください"), {
+    kind: "review", taskId: "dropoff-oct15", assigneeUserId: "papa-id", expectedRevision: 7,
+  });
+  assertEquals(requests.every(({ method }) => method === "GET"), true);
+});
+
+Deno.test("a missing task revision cannot produce a native confirmation", async () => {
+  const { ctx } = setup({ rows: [task({ revision: undefined })] });
+  const result = await resolveLineTransportAssignment({ ...ctx, nativePreview: true }, "明日の送りは私に変更してください");
+  assertEquals(result.kind, "reply");
+  if (result.kind === "reply") assertStringIncludes(result.text, "最新の担当状態を確認できませんでした");
 });
 
 Deno.test("existing self-to-partner pickup request retains its canonical legacy flow", async () => {
