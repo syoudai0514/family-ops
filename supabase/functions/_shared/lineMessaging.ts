@@ -115,9 +115,14 @@ export function buildLineMessages(
 
 /** A durable push keeps its text and action card in the same counted send. */
 export function buildLinePushMessages(text: string, quickReplyItems?: LineQuickReplyAction[], richMessage?: Record<string, unknown> | null) {
-  const messages: Record<string, unknown>[] = splitLineText(text, LINE_MAX_MESSAGES - (richMessage ? 1 : 0), buildTodayLinkFooter('daily_brief.v2'))
+  // Text-only reply fallbacks store just quickReply metadata in rich_message.
+  // Restore it onto the final text bubble instead of appending a duplicate
+  // copy of the potentially long text (or an invalid message without a type).
+  const card = richMessage && typeof richMessage.type === 'string' ? richMessage : null;
+  const messages: Record<string, unknown>[] = splitLineText(text, LINE_MAX_MESSAGES - (card ? 1 : 0), buildTodayLinkFooter('daily_brief.v2'))
     .map((part) => ({ type: 'text', text: part }));
-  if (richMessage) messages.push({ ...richMessage });
+  if (card) messages.push({ ...card });
+  else if (richMessage?.quickReply && messages.length) messages[messages.length - 1].quickReply = richMessage.quickReply;
   return addQuickReply(messages, quickReplyItems);
 }
 
@@ -186,12 +191,19 @@ export async function replyOrEnqueuePush(
     return 'no_channel'; // no reply token attempted/available AND no linked LINE user to push to
   }
 
+  // The durable outbox has one existing rich_message field. Keep the same
+  // quick replies used by Reply API there, copying any caller-owned card.
+  // Without a card this is metadata only; the push builder attaches it to
+  // the final text message without repeating the body.
+  const fallbackMessage = args.quickReplyItems?.length
+    ? addQuickReply([{ ...(args.message ?? {}) }], args.quickReplyItems)[0]
+    : args.message ?? null;
   const { error } = await serviceClient.rpc('server_tx_enqueue_immediate_line_push', {
     p_household_id: args.householdId,
     p_recipient_user_id: args.recipientUserId,
     p_text: args.leadingText?.trim() ? `${args.leadingText.trim()}\n\n${args.text}` : args.text,
     p_dedup_key: args.dedupKey ?? null,
-    p_rich_message: args.message ?? null,
+    p_rich_message: fallbackMessage,
   });
   if (error) {
     console.error('lineMessaging: push-fallback enqueue failed', error.message);

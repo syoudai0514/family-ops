@@ -1,6 +1,5 @@
-// Read-only boundary for transport reassignment that cannot use the existing
-// self -> partner pickup request flow. Never turn this intent into a light
-// request: accepting one would create a new ToDo instead of changing transport.
+// Resolve a transport directive to an actual occurrence. Generic old cards keep
+// their read-only PWA recovery; new LINE input can open a server-bound preview.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { parseTransportAssignmentText } from "../_shared/transportAssignmentIntent.ts";
 import { isPickupAssignmentChangeText } from "./lineIntent.ts";
@@ -14,6 +13,7 @@ export type LineTransportAssignmentResult =
   // The caller must continue to its existing canonical pickup request path;
   // it must not build an AI task/request draft first.
   | { kind: "legacy_pickup" }
+  | { kind: "review"; taskId: string; assigneeUserId: string; expectedRevision: number }
   // Handled, including every failure. Do not fall through to generic creation.
   | { kind: "reply"; text: string };
 
@@ -27,6 +27,8 @@ type Context = {
   scheduledDateOverride?: string;
   /** A generic pending card must not be confirmed through the legacy route. */
   forceReview?: boolean;
+  /** Only fresh text may prepare the native explicit-agreement confirmation. */
+  nativePreview?: boolean;
 };
 
 type Member = {
@@ -43,6 +45,7 @@ type Task = {
   planned_assignee_id: string | null;
   status: string;
   due_at: string | null;
+  revision: number;
 };
 
 function roleLabel(member: Member | undefined, actorId: string): string {
@@ -184,7 +187,7 @@ export async function resolveLineTransportAssignment(
       "task_instances",
     )
       .select(
-        "id,household_id,task_definition_id,scheduled_date,test_context_id,planned_assignee_id,status,due_at",
+        "id,household_id,task_definition_id,scheduled_date,test_context_id,planned_assignee_id,status,due_at,revision",
       )
       .eq("household_id", ctx.householdId).eq(
         "task_definition_id",
@@ -242,6 +245,17 @@ export async function resolveLineTransportAssignment(
         date,
         `${title}\nすでに${roleLabel(target, ctx.actorId)}担当です。`,
       );
+    }
+    if (ctx.nativePreview && !ctx.forceReview) {
+      if (!Number.isSafeInteger(task.revision) || task.revision < 1) {
+        return safeReply(ctx, date, "最新の担当状態を確認できませんでした。");
+      }
+      return {
+        kind: "review",
+        taskId: task.id,
+        assigneeUserId: target.user_id,
+        expectedRevision: task.revision,
+      };
     }
     const url = link(ctx, date, task.id, target.user_id);
     return {

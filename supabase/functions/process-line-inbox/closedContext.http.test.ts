@@ -79,6 +79,13 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
           case "server_read_line_turns": data = [{ role: "assistant", text: "✓ 登録しました。" }]; break;
           case "server_tx_get_line_pending_text_edit": data = null; break;
           case "server_tx_create_pending_action": data = { pending_action_id: "40000000-0000-4000-8000-000000000002" }; break;
+          case "server_tx_prepare_line_transport_assignment_v1": data = {
+            id: "50000000-0000-4000-8000-000000000001", status: "draft", household_id: householdId, actor_id: actorId,
+            task_id: "60000000-0000-4000-8000-000000000001", scheduled_date: transportDate, due_at: `${transportDate}T08:00:00+09:00`,
+            title: "送り", code: "dropoff", current_assignee_user_id: partnerId, assignee_user_id: actorId,
+            current_label: "ママ", target_label: "パパ", expected_revision: 1,
+            expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+          }; break;
           case "server_tx_get_pending_action":
             if (genericConfirm) {
               data = { id: closedId, status: "draft", action_type: genericActionType, revision: 0,
@@ -104,8 +111,8 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       }
       if (table === "task_instances" && url.searchParams.get("task_definition_id") === "eq.transport-definition") {
         taskReadDates.push(url.searchParams.get("scheduled_date") ?? "");
-        return Promise.resolve(Response.json([{ id: "transport-task", household_id: householdId, task_definition_id: "transport-definition",
-          scheduled_date: transportDate, planned_assignee_id: transportAssignee, status: "todo", due_at: `${transportDate}T08:00:00+09:00`, test_context_id: null }]));
+        return Promise.resolve(Response.json([{ id: "60000000-0000-4000-8000-000000000001", household_id: householdId, task_definition_id: "transport-definition",
+          scheduled_date: transportDate, planned_assignee_id: transportAssignee, status: "todo", revision: 1, due_at: `${transportDate}T08:00:00+09:00`, test_context_id: null }]));
       }
       if (["task_instances", "task_definitions", "shopping_items", "child_school_contexts", "handovers"].includes(table ?? "")) {
         return Promise.resolve(Response.json([]));
@@ -160,10 +167,11 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       assertEquals(pendingCalls().length, 0);
       assertEquals(rendered().includes("登録済み"), false);
       assertStringIncludes(rendered(), "送り");
-      assertStringIncludes(rendered(), "現在: ママ → 変更希望: パパ");
+      assertStringIncludes(rendered(), "ママ");
+      assertStringIncludes(rendered(), "パパ");
       assertStringIncludes(rendered(), "今回だけ");
-      assertStringIncludes(rendered(), "担当を調整");
-      assertStringIncludes(rendered(), "family-test.example.com");
+      assertStringIncludes(rendered(), "調整済み");
+      assertStringIncludes(rendered(), "lt_agreed_confirm");
     });
     await t.step("a genuine correction of the registered input stays a safe historical response", async () => {
       aiEnabled = false;

@@ -111,12 +111,74 @@ Deno.test('reply-first sends one valid request; an expired token durably retains
     status = 400;
     assertEquals(await replyOrEnqueuePush(client, args), 'push_fallback');
     assertEquals(saved?.p_text, text);
+    assertEquals(saved?.p_rich_message, { quickReply: { items: quick.map((action) => ({ type: 'action', action })) } });
     const bundle = buildBundledText({ items: [{ title: saved?.p_text as string }] }, 'line_reply_fallback');
-    const messages = buildLinePushMessages(bundle.text);
+    const messages = buildLinePushMessages(bundle.text, undefined, saved?.p_rich_message as Record<string, unknown>);
     assertValid(messages);
     assertEquals(joinedText(messages), text);
+    assertEquals(messages.at(-1)?.quickReply, { items: quick.map((action) => ({ type: 'action', action })) });
+    assertEquals(messages.slice(0, -1).some((message) => Boolean(message.quickReply)), false);
+    assertEquals(messages.some((message) => message.type !== 'text'), false);
+    assertEquals(messages.length, splitLineText(text).length);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldToken === undefined) Deno.env.delete('LINE_CHANNEL_ACCESS_TOKEN'); else Deno.env.set('LINE_CHANNEL_ACCESS_TOKEN', oldToken);
   }
+});
+
+Deno.test('an expired rich reply retains its confirmation buttons through enqueue and the push builder without mutating inputs', async () => {
+  const oldFetch = globalThis.fetch;
+  const oldToken = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN');
+  Deno.env.set('LINE_CHANNEL_ACCESS_TOKEN', 'test-channel-token');
+  const actions: LineQuickReplyAction[] = [{ type: 'postback', label: 'この担当に変更', data: 'transport:confirm:test' }];
+  Object.freeze(actions[0]);
+  Object.freeze(actions);
+  const rich = {
+    type: 'flex', altText: '送りの担当変更',
+    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [] } },
+  };
+  Object.freeze(rich);
+  const original = JSON.stringify({ rich, actions });
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  globalThis.fetch = () => Promise.resolve(new Response('{}', { status: 400 }));
+  const client = { rpc: (name: string, args: Record<string, unknown>) => {
+    calls.push({ name, args });
+    return Promise.resolve({ error: null });
+  } } as unknown as SupabaseClient;
+  try {
+    assertEquals(await replyOrEnqueuePush(client, {
+      replyToken: 'expired-reply', lineUserId: 'test-line-user', householdId: 'test-household',
+      recipientUserId: 'test-papa', text: '現在はママ、変更希望はパパです。', leadingText: '内容を確認してください。',
+      message: rich, quickReplyItems: actions, dedupKey: 'provider-event:transport:confirm',
+    }), 'push_fallback');
+    assertEquals(calls.length, 1);
+    assertEquals(calls[0].name, 'server_tx_enqueue_immediate_line_push');
+    assertEquals(calls[0].args.p_dedup_key, 'provider-event:transport:confirm');
+    assertEquals(calls[0].args.p_household_id, 'test-household');
+    assertEquals(calls[0].args.p_recipient_user_id, 'test-papa');
+    const saved = calls[0].args;
+    const bundle = buildBundledText({ items: [{ title: saved.p_text as string }] }, 'line_reply_fallback');
+    const messages = buildLinePushMessages(bundle.text, undefined, saved.p_rich_message as Record<string, unknown>);
+    assertValid(messages);
+    assertEquals(messages.length, 2);
+    assertEquals(joinedText(messages), '内容を確認してください。\n\n現在はママ、変更希望はパパです。');
+    assertEquals(messages.at(-1), { ...rich, quickReply: { items: actions.map((action) => ({ type: 'action', action })) } });
+    assertEquals(JSON.stringify({ rich, actions }), original);
+    assertEquals('quickReply' in rich, false);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldToken === undefined) Deno.env.delete('LINE_CHANNEL_ACCESS_TOKEN'); else Deno.env.set('LINE_CHANNEL_ACCESS_TOKEN', oldToken);
+  }
+});
+
+Deno.test('quick-reply metadata alone uses all five text slots without duplicating a giant body', () => {
+  const text = '作業'.repeat(12499);
+  const metadata = Object.freeze({ quickReply: { items: quick.map((action) => ({ type: 'action', action })) } });
+  const messages = buildLinePushMessages(text, undefined, metadata);
+  assertValid(messages);
+  assertEquals(messages.length, 5);
+  assertEquals(joinedText(messages), text);
+  assertEquals(messages.at(-1)?.quickReply, metadata.quickReply);
+  assertEquals(messages.slice(0, -1).some((message) => Boolean(message.quickReply)), false);
+  assertEquals(Object.keys(metadata), ['quickReply']);
 });
