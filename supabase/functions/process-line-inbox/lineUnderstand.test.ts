@@ -467,10 +467,24 @@ Deno.test("prompt: tomorrow's dropoff person and the draft's fields reach the mo
 });
 
 Deno.test("snapshot: the waiting draft is described with its fields", () => {
-  assertEquals(describePendingDraft({ action_type: "request_create", normalized_payload: { title: "下着", scheduled_date: "2026-10-01", recipient_user_id: "mama-id", daypart: "morning", due_local_time: "08:00" } }, "papa-id"),
+  assertEquals(describePendingDraft({ status: "draft", action_type: "request_create", normalized_payload: { title: "下着", scheduled_date: "2026-10-01", recipient_user_id: "mama-id", daypart: "morning", due_local_time: "08:00" } }, "papa-id"),
     { kind: "request", title: "下着", date: "2026-10-01", time: "08:00", daypart: "morning", who: "partner" });
-  assertEquals(describePendingDraft({ action_type: "task_create_once", normalized_payload: { title: "皮膚科", calendar_visibility: "special", planned_assignee_user_id: "papa-id" } }, "papa-id")?.kind, "event");
+  assertEquals(describePendingDraft({ status: "draft", action_type: "task_create_once", normalized_payload: { title: "皮膚科", calendar_visibility: "special", planned_assignee_user_id: "papa-id" } }, "papa-id")?.kind, "event");
   assertEquals(describePendingDraft(null, "papa-id"), null);
+});
+
+Deno.test("snapshot: completed and otherwise closed inputs never become a waiting draft", () => {
+  const pending = { action_type: "task_create_once", normalized_payload: { title: "詩乃の検尿チャレンジ", scheduled_date: "2026-10-15" } };
+  for (const status of ["confirmed", "queued", "executing", "succeeded", "cancelled", "expired", "failed", undefined]) {
+    const described = describePendingDraft({ ...pending, status }, "papa-id");
+    assertEquals(described, null, String(status));
+    const snapshot = snap({ pendingDraft: described });
+    assertEquals(guardPlan({ understanding: "", reply: "了解", confidence: "high", actions: [{ type: "edit_draft", text: "明日の送りは私に変更してください" }] }, snapshot), null);
+    assertEquals(guardPlan({ understanding: "", reply: "了解", confidence: "high", actions: [{ type: "cancel_draft" }] }, snapshot), null);
+    const prompt = buildUnderstandPrompt(snapshot, "明日の送りは私に変更してください");
+    assertEquals(prompt.includes('"確認待ちの下書き":null'), true);
+    assertEquals(prompt.includes("詩乃の検尿チャレンジ"), false);
+  }
 });
 
 Deno.test("run: the draft rides along with the hand-off", async () => {

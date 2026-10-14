@@ -179,6 +179,40 @@ export function linePendingFollowUpKind(text: string): LinePendingFollowUpKind {
   return null;
 }
 
+/**
+ * A closed input remains available for questions about it, but must not capture a
+ * new, self-contained request just because that request says 「に変更」. Draft
+ * corrections keep the existing behavior; closed-input corrections need either
+ * an explicit reference or a short field-only patch.
+ */
+export function linePendingFollowUpKindForContext(
+  text: string,
+  pending: { status: string; title: string },
+): LinePendingFollowUpKind {
+  const kind = linePendingFollowUpKind(text);
+  if (!kind || pending.status === "draft") return kind;
+  if (kind === "referent_question" || kind === "assistant_repair") return kind;
+
+  const value = semanticNormalized(text);
+  const title = semanticNormalized(pending.title);
+  if ((title && value.includes(title)) || isLineCorrectionCue(text) ||
+    /(?:さっき|先ほど|直前|今の|(?:この|その)(?:件|予定|お願い|下書き|タスク|入力|登録)|^(?:これ|それ)(?:を|は|の|、|,|$))/u.test(value)) return kind;
+
+  // Naming the title field itself is an explicit edit of the preceding input.
+  if (/^(?:タイトル|題名)(?:だけ)?(?:は|を|が|:)/u.test(value)) return kind;
+  if (kind === "cancel") {
+    return /^(?:取り消し(?:て|てください)?|取り消して(?:ください)?|キャンセル(?:して(?:ください)?)?|やめて(?:ください)?|やっぱ(?:り)?なし(?:で)?)$/u.test(value) ? kind : null;
+  }
+
+  const role = "(?:パパ|ぱぱ|ママ|まま|父|母|お父さん|お母さん|自分|私|わたし|僕|ぼく|俺|おれ)";
+  const date = "(?:今日|きょう|明日|あした|明後日|あさって|(?:来週|今週|再来週)?[月火水木金土日](?:曜日|曜)|(?:\\d{4}[/-])?\\d{1,2}[/-]\\d{1,2}|(?:\\d{4}年)?\\d{1,2}月\\d{1,2}日)";
+  const time = "(?:(?:午前|午後)?\\d{1,2}(?::\\d{2}|時(?:半|\\d{1,2}分)?)|朝|昼|夕方|夜)";
+  const atom = `(?:${role}|${date}|${time})`;
+  const field = "(?:(?:担当|相手|日付|日にち|日時|時間|時刻|期限|締切)(?:だけ)?(?:は|を|が)?)?";
+  const ending = "(?:に変更(?:して(?:ください)?)?|にして(?:ください)?|だった(?:よ)?|で(?:お願い(?:します)?)?)";
+  return new RegExp(`^${field}(?:${atom}(?:の|は|を|じゃなくて|ではなくて)?)+${ending}$`, "u").test(value) ? kind : null;
+}
+
 export function transportAssignmentCorrectionCode(title: string): "pickup" | "dropoff" | null {
   const value = semanticNormalized(title);
   if (/^(?:お?迎え|むかえ)$/u.test(value)) return "pickup";

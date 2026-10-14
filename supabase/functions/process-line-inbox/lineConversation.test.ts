@@ -8,6 +8,7 @@ import {
   isAssistantAddressCorrection,
   isLineCorrectionCue,
   lineCreationStarterKind,
+  linePendingFollowUpKindForContext,
   lineLinkWelcomeText,
   menuQuickReplies,
   pendingConfirmationMessage,
@@ -47,6 +48,55 @@ Deno.test("conversation correction cues distinguish assistant-address repair fro
   assertEquals(isAssistantAddressCorrection("あなたに言っているよ"), true);
   assertEquals(isAssistantAddressCorrection("おうちノートに聞いてるんだよ"), true);
   assertEquals(isAssistantAddressCorrection("ママにお願いして"), false);
+});
+
+Deno.test("closed LINE inputs do not capture independent new requests containing change wording", () => {
+  for (const status of ["confirmed", "queued", "executing", "succeeded", "cancelled", "expired", "failed"]) {
+    const pending = { status, title: "詩乃の検尿チャレンジ" };
+    for (const text of [
+      "明日の送りは私に変更してください",
+      "明日の送りは私に変更してください。",
+      "別の話です。明日の送りは私に変更してください",
+      "別件で、明日のお迎えはパパにして",
+      "明日の洗濯はママに変更して",
+      "明日の朝食の担当を私に変更してください",
+      "担当を明日の送りに変更してください",
+      "明日の送りをキャンセルして",
+    ]) assertEquals(linePendingFollowUpKindForContext(text, pending), null, `${status}: ${text}`);
+  }
+});
+
+Deno.test("closed LINE inputs retain explicit references and field-only corrections without making a new draft", () => {
+  const pending = { status: "succeeded", title: "詩乃の検尿チャレンジ" };
+  for (const text of [
+    "さっきのを明日8時に変更して",
+    "詩乃の検尿チャレンジを明日に変更してください",
+    "その予定は明日にして",
+    "それを明日にして",
+    "違う、送り",
+    "担当はパパに変更して",
+    "相手はママにして",
+    "ママじゃなくてパパにして",
+    "時間だけ8時にして",
+    "明日8時にして",
+    "明日じゃなくて明後日にして",
+    "10月15日8時に変更してください",
+  ]) assertEquals(linePendingFollowUpKindForContext(text, pending), "edit", text);
+  for (const text of ["さっきのなし", "取り消して", "キャンセルして", "そのお願いをキャンセルして", "詩乃の検尿チャレンジを取り消して"]) {
+    assertEquals(linePendingFollowUpKindForContext(text, pending), "cancel", text);
+  }
+  assertEquals(linePendingFollowUpKindForContext("何を受け付けたの？", pending), "referent_question");
+  assertEquals(linePendingFollowUpKindForContext("違う、あなたに聞いてる", pending), "assistant_repair");
+});
+
+Deno.test("draft LINE inputs retain the existing role, date, time and cancellation follow-up behavior", () => {
+  const pending = { status: "draft", title: "詩乃の検尿チャレンジ" };
+  for (const text of ["パパじゃなくてママにして", "明日8時にして", "時間だけ8時にして", "違う、送り"]) {
+    assertEquals(linePendingFollowUpKindForContext(text, pending), "edit", text);
+  }
+  assertEquals(linePendingFollowUpKindForContext("やっぱさっきのなし", pending), "cancel");
+  assertEquals(linePendingFollowUpKindForContext("それ？", pending), "referent_question");
+  assertEquals(linePendingFollowUpKindForContext("妻じゃなくてAIに聞いてる", pending), "assistant_repair");
 });
 
 Deno.test("natural schedule questions get a separate conversational lead while literal shortcuts stay compact", () => {

@@ -25,6 +25,8 @@ export interface TaskChecklistItemProps {
   compact?: boolean;
   specialToday?: boolean;
   assignmentRequest?: number;
+  /** A validated navigation preference, never an agreement to change ownership. */
+  assignmentRequestedUserId?: string;
   /** Optional per-surface key. Today uses this to restore detail state after Back. */
   expandedStorageKey?: string;
   /** Canonical read-model gate for a task whose completion depends on other household input. */
@@ -123,6 +125,7 @@ export function TaskChecklistItem({
   compact = false,
   specialToday = false,
   assignmentRequest = 0,
+  assignmentRequestedUserId,
   expandedStorageKey,
   completionPrerequisite,
 }: TaskChecklistItemProps) {
@@ -152,10 +155,29 @@ export function TaskChecklistItem({
   const [evidenceSaved, setEvidenceSaved] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState(false);
   const [editingWorkUpdate, setEditingWorkUpdate] = useState(false);
-  useEffect(() => { if (assignmentRequest) setEditingAssignment(true); }, [assignmentRequest]);
   const [assignmentUserId, setAssignmentUserId] = useState(task.planned_assignee_id ?? members[0]?.user_id ?? '');
   const [assignmentDecision, setAssignmentDecision] = useState<AssignmentDecision>('request');
   const [assignmentMessage, setAssignmentMessage] = useState('');
+  const assignmentForm = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (!assignmentRequest) return;
+    if (assignmentRequestedUserId) setAssignmentUserId(assignmentRequestedUserId);
+    setAssignmentDecision('request');
+    setEditingAssignment(true);
+  }, [assignmentRequest, assignmentRequestedUserId]);
+  useEffect(() => {
+    if (!editingAssignment) return;
+    const form = assignmentForm.current;
+    for (let parent = form?.parentElement; parent; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+    }
+    form?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+  }, [editingAssignment]);
+  const assignmentRequestBlocked = assignmentDecision === 'request'
+    && (!currentUserId || task.planned_assignee_id !== currentUserId || assignmentUserId === currentUserId);
+  const assignmentRequestHelp = task.planned_assignee_id === currentUserId
+    ? '相手にお願いする場合は、担当する人に相手を選んでください。自分宛てのお願いは送れません。'
+    : '現在の担当が自分ではないため、ここからお願いは送れません。先に相手と調整してください。話し合いが済んだら「すでに話し合い済み」を選んで変更できます。自分宛てのお願いは送れません。';
   const runCommand = useCommandAttempt();
   const doneSubtasks = subtasks.filter((item) => item.is_completed).length;
   const requiredSubtasks = subtasks.filter((item) => item.required);
@@ -406,6 +428,14 @@ export function TaskChecklistItem({
       setError('担当する人を選んでください。');
       return;
     }
+    if (!members.some((member) => member.user_id === assignmentUserId && member.household_id === task.household_id)) {
+      setError('この家族の担当する人を選んでください。');
+      return;
+    }
+    if (assignmentRequestBlocked) {
+      setError('先に相手と担当を調整してください。話し合いが済んだら「すでに話し合い済み」を選んで変更できます。');
+      return;
+    }
     const template = assignmentDecisionCommand({
       decision: assignmentDecision,
       operationId: '00000000-0000-4000-8000-000000000000',
@@ -550,7 +580,11 @@ export function TaskChecklistItem({
               </button>
             )}
             {!finished && members.length > 0 && !anyoneTask && (
-              <button type="button" onClick={() => setEditingAssignment(true)} disabled={busy}>担当を調整</button>
+              <button type="button" onClick={() => {
+                setAssignmentUserId(task.planned_assignee_id ?? members[0]?.user_id ?? '');
+                setAssignmentDecision('request');
+                setEditingAssignment(true);
+              }} disabled={busy}>担当を調整</button>
             )}
             {anyoneUnclaimed && !finished && (
               <button
@@ -718,14 +752,15 @@ export function TaskChecklistItem({
       }} onCancel={() => setEditingWorkUpdate(false)} />}
 
       {editingAssignment && !finished && (
-        <form className="task-waiting-editor" onSubmit={handleAssignmentSubmit}>
+        <form ref={assignmentForm} className="task-waiting-editor" onSubmit={handleAssignmentSubmit}>
           <strong>担当をどう変える？</strong>
           <label>担当する人<select value={assignmentUserId} onChange={(event) => setAssignmentUserId(event.target.value)} required>{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.family_role === 'papa' ? 'パパ' : member.family_role === 'mama' ? 'ママ' : member.profile?.display_name ?? member.user_id}</option>)}</select></label>
           <label><input type="radio" name={`assignment-${task.id}`} value="request" checked={assignmentDecision === 'request'} onChange={() => setAssignmentDecision('request')} /> まだ合意していないので、お願いを送る</label>
           <label><input type="radio" name={`assignment-${task.id}`} value="agreed" checked={assignmentDecision === 'agreed'} onChange={() => setAssignmentDecision('agreed')} /> すでに話し合い済みなので、そのまま担当を変更</label>
           {assignmentDecision === 'request' && <label>相手に見せる一言（任意）<input value={assignmentMessage} onChange={(event) => setAssignmentMessage(event.target.value)} placeholder="例: 今日だけお願いできますか？" /></label>}
           <p className="empty-hint">お願いを選んだ場合は相手が承認するまで担当を勝手に変えません。話し合い済みを選んだ場合だけ直接変更します。</p>
-          <div className="task-item-actions"><button type="submit" disabled={busy}>{assignmentDecision === 'request' ? 'お願いを送る' : '担当を変更'}</button><button type="button" className="text-button" onClick={() => setEditingAssignment(false)} disabled={busy}>やめる</button></div>
+          {assignmentRequestBlocked && <p className="empty-hint">{assignmentRequestHelp}</p>}
+          <div className="task-item-actions"><button type="submit" disabled={busy || assignmentRequestBlocked}>{assignmentDecision === 'request' ? 'お願いを送る' : '担当を変更'}</button><button type="button" className="text-button" onClick={() => setEditingAssignment(false)} disabled={busy}>やめる</button></div>
         </form>
       )}
 
