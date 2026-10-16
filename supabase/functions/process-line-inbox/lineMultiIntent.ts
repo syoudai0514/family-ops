@@ -1,4 +1,5 @@
 import { callGemini } from "../_shared/gemini.ts";
+import { resolveJapaneseDate } from "../_shared/jpDate.ts";
 import { inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
 import {
   deterministicLineIntent,
@@ -97,6 +98,8 @@ function dateFromToken(token: string, now: Date): string {
 }
 
 function explicitDate(clause: string, now: Date): string {
+  const resolved = resolveJapaneseDate(clause, now);
+  if (resolved) return resolved;
   const absolute = clause.match(/(?:^|[^\d])(?:(\d{4})[年/])?(\d{1,2})[月/](\d{1,2})日?/u);
   if (absolute) {
     const year = Number(absolute[1] ?? new Date(now.getTime() + JST_OFFSET_MS).getUTCFullYear());

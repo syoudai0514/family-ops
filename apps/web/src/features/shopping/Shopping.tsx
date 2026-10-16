@@ -8,6 +8,10 @@ import { getShoppingItemActions } from './shoppingActions';
 import type { PurchaseMethod, ShoppingItem, ShoppingItemStatus } from '../../lib/types';
 import './Shopping.css';
 import { Link, useNavigate } from 'react-router-dom';
+import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
+import { shoppingTitleKey, splitShoppingInput } from './quickAdd';
+
+const SHOPPING_REALTIME_TABLES = ['shopping_items'];
 
 // A shopping list is a "what do we still need" screen. Grouping strictly by
 // lifecycle status meant that on a household where everything had been bought,
@@ -31,8 +35,10 @@ const PURCHASE_METHOD_LABELS: Record<PurchaseMethod, string> = {
   undecided: '未定',
 };
 
-function useShoppingItems(householdId: string | null) {
+function useShoppingItems(householdId: string | null, userId: string | null) {
   const [items, setItems] = useState<ShoppingItem[]>([]);
+  // Only the first load blanks the screen. Refreshing after every 購入した used to
+  // replace the list with 読み込み中… and jump back to the top while in the store.
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actorRefId, setActorRefId] = useState<string | null>(null);
@@ -42,10 +48,10 @@ function useShoppingItems(householdId: string | null) {
       setLoading(false);
       return;
     }
-    setLoading(true);
     const { data, error: fetchError } = await supabase.rpc('get_my_shopping_workspace');
     if (fetchError) setError(fetchError.message);
     else {
+      setError(null);
       const workspace = (data ?? {}) as { actor_ref_id?: string; active?: Array<Record<string, unknown>>; history?: Array<Record<string, unknown>> };
       const rows = [...(workspace.active ?? []), ...(workspace.history ?? [])].map((row) => ({
         ...row,
@@ -61,13 +67,19 @@ function useShoppingItems(householdId: string | null) {
     load();
   }, [load]);
 
+  // The partner adding milk at home shows up while you are in the store.
+  useRealtimeRefresh({ householdId, userId, onRemoteChange: load, tables: SHOPPING_REALTIME_TABLES });
+
   return { items, actorRefId, loading, error, refresh: load };
 }
 
 export function Shopping() {
   const navigate = useNavigate();
-  const { household, members } = useHousehold();
-  const { items, actorRefId, loading, error, refresh } = useShoppingItems(household?.id ?? null);
+  const { household, members, me } = useHousehold();
+  const { items, actorRefId, loading, error, refresh } = useShoppingItems(
+    household?.id ?? null,
+    me?.user_id ?? null,
+  );
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -115,8 +127,12 @@ export function Shopping() {
           }}
         />
       )}
-      <button type="button" className="shopping-ai-entry secondary-button" onClick={() => navigate('/concierge?kind=shopping', { state: { originPath: '/shopping', originScrollY: window.scrollY } })}>「牛乳を明日までに買いたい」など、そのまま入力</button>
-      <details className="shopping-manual-entry"><summary>商品名を選んで入力</summary><button type="button" className="text-button" onClick={() => setShowForm((v) => !v)}>{showForm ? '入力を閉じる' : '入力フォームを開く'}</button></details>
+      <QuickAddShopping
+        openTitles={items.filter((item) => OPEN_STATUSES.includes(item.status)).map((item) => item.title)}
+        onAdded={refresh}
+      />
+      <button type="button" className="shopping-ai-entry secondary-button" onClick={() => navigate('/concierge?kind=shopping', { state: { originPath: '/shopping', originScrollY: window.scrollY } })}>AIで入力（「牛乳を明日までに買いたい」など期限や担当も）</button>
+      <details className="shopping-manual-entry"><summary>購入方法・担当・期限を指定して追加</summary><button type="button" className="text-button" onClick={() => setShowForm((v) => !v)}>{showForm ? '入力を閉じる' : '入力フォームを開く'}</button></details>
 
       <Link to="/shopping/anyone-owner">誰でもOKの対応状況を見る</Link>
       <details className="card shopping-batch"><summary>買ったものをまとめて記録</summary><p>買えたものだけ選びます。選ばなかったものはリストに残ります。通販の到着待ちは別に記録します。</p>
@@ -382,7 +398,7 @@ function ShoppingItemRow({
               )
             }
           >
-            キャンセル
+            リストから削除
           </button>
         )}
         {['ordered', 'purchased', 'arrived'].includes(item.status) && (
@@ -405,6 +421,82 @@ function ShoppingItemRow({
         </p>
       )}
     </li>
+  );
+}
+
+function QuickAddShopping({ openTitles, onAdded }: { openTitles: string[]; onAdded: () => void }) {
+  const runCommand = useCommandAttempt();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    const openKeys = new Set(openTitles.map(shoppingTitleKey));
+    const titles = splitShoppingInput(text);
+    const fresh = titles.filter((title) => !openKeys.has(shoppingTitleKey(title)));
+    const already = titles.filter((title) => openKeys.has(shoppingTitleKey(title)));
+    if (titles.length === 0) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const failed: Array<{ title: string; reason: string }> = [];
+    for (const title of fresh) {
+      try {
+        await runCommand(`shopping:quick-add:${shoppingTitleKey(title)}`, EDGE_FUNCTIONS.addShoppingItem, (operationId) => ({
+          operation_id: operationId,
+          title,
+          purchase_method: 'undecided',
+          assignment_mode: 'unassigned',
+          duplicate_sensitivity: 'avoid_duplicate',
+        }));
+      } catch (err) {
+        failed.push({ title, reason: err instanceof FamilyOpsApiError ? err.message : '追加できませんでした' });
+      }
+    }
+    // Keep what failed in the box so nothing typed is lost.
+    setText(failed.map((item) => item.title).join('、'));
+    const added = fresh.length - failed.length;
+    setMessage(
+      [
+        added > 0 ? `${added}件追加しました。` : '',
+        already.length > 0 ? `${already.join('・')}はもうリストにあります。` : '',
+      ].join(''),
+    );
+    if (failed.length > 0)
+      setError(`追加できなかったもの: ${failed.map((item) => `${item.title}（${item.reason}）`).join('、')}`);
+    setBusy(false);
+    if (added > 0) onAdded();
+  }
+
+  return (
+    <form className="shopping-quick-add" onSubmit={(event) => void handleSubmit(event)}>
+      <label className="shopping-quick-add-field">
+        <input
+          aria-label="買うものを追加"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          placeholder="牛乳、卵 など（、で区切ると複数）"
+          enterKeyHint="done"
+          disabled={busy}
+        />
+      </label>
+      <button type="submit" disabled={busy || !text.trim()}>
+        {busy ? '追加中…' : '追加'}
+      </button>
+      {message && (
+        <p role="status" className="shopping-quick-add-status">
+          {message}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="error-text">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 

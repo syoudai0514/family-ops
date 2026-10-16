@@ -371,6 +371,13 @@ export function TaskChecklistItem({
   }
 
   function handleCancel() {
+    // Deleting cannot be undone (unlike 完了/できなかった), so ask once.
+    if (
+      !window.confirm(
+        `「${taskTitle}」を削除しますか？\n削除すると元に戻せません。予定ならカレンダーからも消えます。`,
+      )
+    )
+      return;
     void withOperation(
       `task:${task.id}:cancel:r${task.revision ?? 1}`,
       EDGE_FUNCTIONS.cancelTask,
@@ -632,7 +639,7 @@ export function TaskChecklistItem({
             </button>}
             {!finished && (
               <button type="button" className="danger-button" onClick={handleCancel} disabled={busy}>
-                キャンセル
+                削除
               </button>
             )}
           </div>

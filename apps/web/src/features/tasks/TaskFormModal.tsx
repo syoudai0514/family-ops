@@ -9,7 +9,13 @@ import type { CompletionMode, RoutinePhase, TaskInstance } from '../../lib/types
 import { useTaskCategories } from './useTaskCategories';
 import { clearTaskFormDraft, readTaskFormDraft, saveTaskFormDraft } from './taskFormDraft';
 import {
+  ALL_DAY_REMINDER_OPTIONS,
+  defaultReminders,
   emptyScheduleDetails,
+  MAX_REMINDERS,
+  reminderLabel,
+  reminderOffsets,
+  TIMED_REMINDER_OPTIONS,
   validateScheduleFiles,
   type ScheduleDetails,
 } from '../planning/scheduleDetails';
@@ -107,8 +113,13 @@ function TaskFormModalContent({
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<ScheduleDetails>(() =>
     task?.scheduler_details
-      ? { ...emptyScheduleDetails(task.scheduled_date), ...task.scheduler_details }
-      : mode === 'create' && draft?.schedulerDetails
+      ? (() => {
+          const saved = { ...emptyScheduleDetails(task.scheduled_date), ...task.scheduler_details };
+          return { ...saved, reminders: reminderOffsets(saved) };
+        })()
+      : mode === 'edit'
+        ? { ...emptyScheduleDetails(task?.scheduled_date ?? todayIsoDate()), reminders: [] }
+        : mode === 'create' && draft?.schedulerDetails
         ? {
             ...draft.schedulerDetails,
             ends_on:
@@ -122,6 +133,25 @@ function TaskFormModalContent({
   const [savedTaskId, setSavedTaskId] = useState<string | null>(null);
 
   const isCalendarEvent = calendarVisibility === 'special';
+  const isAllDay = !dueLocalTime;
+  // Until someone picks reminders, a new 予定 gets the same default as LINE / AI入力.
+  const reminders = Array.isArray(details.reminders)
+    ? details.reminders
+    : isCalendarEvent
+      ? defaultReminders(!isAllDay)
+      : [];
+  const reminderOptions = [
+    ...new Set([...(isAllDay ? ALL_DAY_REMINDER_OPTIONS : TIMED_REMINDER_OPTIONS), ...reminders]),
+  ].sort((a, b) => a - b);
+  function toggleReminder(minutes: number, checked: boolean) {
+    setDetails((d) => ({
+      ...d,
+      reminder_minutes: null,
+      reminders: checked
+        ? [...reminders.filter((value) => value !== minutes), minutes].sort((a, b) => a - b)
+        : reminders.filter((value) => value !== minutes),
+    }));
+  }
   const modalTitle =
     mode === 'edit' ? '予定・やることを編集' : isCalendarEvent ? '予定を追加' : 'やることを追加';
   function closeForm() {
@@ -175,6 +205,31 @@ function TaskFormModalContent({
 
   function removeSubtaskRow(index: number) {
     setSubtasks((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleDelete() {
+    if (!task) return;
+    if (
+      !window.confirm(
+        `「${task.title}」を削除しますか？\n削除すると元に戻せません。予定ならカレンダーからも消えます。${
+          details.repeat_frequency !== 'none' ? '\n繰り返しのほかの回は残ります。' : ''
+        }`,
+      )
+    )
+      return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await runCommand(`task-form:cancel:${task.id}:r${task.revision ?? 1}`, EDGE_FUNCTIONS.cancelTask, (operationId) => ({
+        operation_id: operationId,
+        task_id: task.id,
+      }));
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '削除できませんでした。');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -239,6 +294,8 @@ function TaskFormModalContent({
             subtasks: completionMode === 'subtasks' ? cleanSubtasks : undefined,
             scheduler_details: {
               ...details,
+              reminder_minutes: null,
+              reminders,
               ends_on: isCalendarEvent ? details.ends_on : scheduledDate,
             },
           }),
@@ -265,6 +322,8 @@ function TaskFormModalContent({
             expected_revision: task.revision ?? 1,
             scheduler_details: {
               ...details,
+              reminder_minutes: null,
+              reminders,
               ends_on: isCalendarEvent ? details.ends_on : scheduledDate,
             },
           }),
@@ -356,8 +415,10 @@ function TaskFormModalContent({
                   type="checkbox"
                   checked={!dueLocalTime}
                   onChange={(e) => {
-                    setDueLocalTime(e.target.checked ? '' : '09:00');
-                    if (e.target.checked) setCalendarEndLocalTime('');
+                    if (e.target.checked) {
+                      setDueLocalTime('');
+                      setCalendarEndLocalTime('');
+                    } else setDueLocalTime('09:00');
                   }}
                 />
                 終日
@@ -404,6 +465,34 @@ function TaskFormModalContent({
                 onChange={(e) => setDueLocalTime(e.target.value)}
               />
             </label>
+          )}
+
+          {(isCalendarEvent || reminders.length > 0) && (
+            <fieldset className="reminder-picker">
+              <legend>通知（{MAX_REMINDERS}件まで選べます）</legend>
+              <div className="reminder-options">
+                {reminderOptions.map((minutes) => {
+                  const checked = reminders.includes(minutes);
+                  return (
+                    <label key={minutes} className="reminder-chip">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!checked && reminders.length >= MAX_REMINDERS}
+                        onChange={(e) => toggleReminder(minutes, e.target.checked)}
+                      />
+                      {reminderLabel(minutes, isAllDay)}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="form-help">
+                {reminders.length === 0
+                  ? '通知しません。'
+                  : `${reminders.map((minutes) => reminderLabel(minutes, isAllDay)).join('・')}に通知します。`}
+                参加する人（未選択なら家族全員）のアプリの通知と、LINE連携している人にはLINEにも届きます。
+              </p>
+            </fieldset>
           )}
 
           <label>
@@ -565,29 +654,6 @@ function TaskFormModalContent({
                 ))}
               </fieldset>
               <label>
-                通知
-                <select
-                  value={details.reminder_minutes ?? ''}
-                  onChange={(e) =>
-                    setDetails((d) => ({
-                      ...d,
-                      reminder_minutes: e.target.value === '' ? null : Number(e.target.value),
-                    }))
-                  }
-                >
-                  <option value="">通知しない</option>
-                  <option value="0">開始時</option>
-                  <option value="5">5分前</option>
-                  <option value="10">10分前</option>
-                  <option value="30">30分前</option>
-                  <option value="60">1時間前</option>
-                  <option value="1440">1日前</option>
-                </select>
-              </label>
-              <p className="form-help">
-                選んだ参加者に通知します。未選択なら家族全員。終日予定の開始は朝9時として通知します。
-              </p>
-              <label>
                 繰り返し
                 <select
                   value={details.repeat_frequency}
@@ -688,6 +754,16 @@ function TaskFormModalContent({
           >
             閉じる
           </button>
+          {mode === 'edit' && task && !savedTaskId && (
+            <button
+              type="button"
+              className="danger-button task-form-delete"
+              onClick={() => void handleDelete()}
+              disabled={submitting}
+            >
+              削除
+            </button>
+          )}
         </div>
       </form>
     </Modal>

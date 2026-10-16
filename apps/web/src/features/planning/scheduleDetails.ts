@@ -7,7 +7,10 @@ export type ScheduleDetails = {
   participants: string[];
   pinned: boolean;
   countdown: boolean;
+  /** Legacy single reminder; `reminders` wins when present. */
   reminder_minutes: number | null;
+  /** Minutes before the start (all-day: before 09:00). null = not chosen yet, use the default. */
+  reminders?: number[] | null;
   repeat_frequency: 'none' | 'daily' | 'weekly' | 'monthly';
   repeat_until: string | null;
   checklist: string[];
@@ -25,6 +28,7 @@ export function emptyScheduleDetails(date: string): ScheduleDetails {
     pinned: false,
     countdown: false,
     reminder_minutes: null,
+    reminders: null,
     repeat_frequency: 'none',
     repeat_until: null,
     checklist: [],
@@ -38,6 +42,40 @@ export function readScheduleDetails(value: unknown, date: string): ScheduleDetai
   const details = relation.details;
   if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
   return { ...emptyScheduleDetails(date), ...details } as ScheduleDetails;
+}
+
+// Mirrors public.default_schedule_reminders(): LINE and AI入力 use the same default.
+export function defaultReminders(hasStartTime: boolean): number[] {
+  return hasStartTime ? [60] : [780];
+}
+
+export function reminderOffsets(details: ScheduleDetails): number[] {
+  if (Array.isArray(details.reminders)) return [...details.reminders].sort((a, b) => a - b);
+  return details.reminder_minutes === null || details.reminder_minutes === undefined
+    ? []
+    : [details.reminder_minutes];
+}
+
+export const MAX_REMINDERS = 5;
+export const TIMED_REMINDER_OPTIONS = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080];
+export const ALL_DAY_REMINDER_OPTIONS = [0, 780, 1440, 2880, 10080];
+
+export function reminderLabel(minutes: number, allDay: boolean): string {
+  if (allDay) {
+    const allDayLabels: Record<number, string> = {
+      0: '当日 朝9時',
+      780: '前日 夜8時',
+      1440: '前日 朝9時',
+      2880: '2日前 朝9時',
+      10080: '1週間前 朝9時',
+    };
+    if (allDayLabels[minutes]) return allDayLabels[minutes];
+  }
+  if (minutes === 0) return '開始時';
+  if (minutes % 10080 === 0) return `${minutes / 10080}週間前`;
+  if (minutes % 1440 === 0) return minutes === 1440 ? '前日' : `${minutes / 1440}日前`;
+  if (minutes % 60 === 0) return `${minutes / 60}時間前`;
+  return `${minutes}分前`;
 }
 
 export const SCHEDULE_ATTACHMENT_BUCKET = 'schedule-attachments';

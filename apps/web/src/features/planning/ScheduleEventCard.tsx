@@ -7,6 +7,8 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import type { CalendarProjectionItem, PlanningTask } from './calendarProjection';
 import {
   emptyScheduleDetails,
+  reminderLabel,
+  reminderOffsets,
   SCHEDULE_ATTACHMENT_BUCKET,
   validateScheduleFiles,
 } from './scheduleDetails';
@@ -189,9 +191,12 @@ export function ScheduleEventCard({
               / {details.repeat_until}まで
             </p>
           )}
-          {details.reminder_minutes !== null && (
+          {reminderOffsets(details).length > 0 && (
             <p className="meta">
-              通知: {details.reminder_minutes === 0 ? '開始時' : `${details.reminder_minutes}分前`}
+              通知:{' '}
+              {reminderOffsets(details)
+                .map((minutes) => reminderLabel(minutes, !task?.due_at))
+                .join('・')}
             </p>
           )}
           {item.familyEventId && <Link to={`/events/${item.familyEventId}`}>行事と準備することを見る</Link>}
