@@ -29,7 +29,6 @@ const GAP_FILL_FUNCTIONS = new Set([
   // Edge adapter delegates to one service-role-only transactional RPC.
   'record-unplanned-actual',
   'confirm-request-draft',
-  'confirm-handover-draft',
   'propose-event-plan',
   'confirm-event-plan',
   'list-pending-actions',

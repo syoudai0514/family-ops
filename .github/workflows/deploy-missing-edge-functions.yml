@@ -40,15 +40,12 @@ jobs:
             process-pending-actions
             propose-ai-draft
             purchase-shopping-item
-            reassign-task-once
             renew-google-watch
             routine-session-item-action
             send-notifications
             send-request
             set-subtask-completion
             sync-jp-holidays
-            unlink-line-account
-            update-calendar-event
             update-notification-preferences
             update-routine-schedule
           )
