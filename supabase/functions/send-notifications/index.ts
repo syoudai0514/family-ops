@@ -43,7 +43,7 @@ import {
   buildGeneralRequestFlex,
 } from '../_shared/lineMessageBuilders.ts';
 import { findRequestReceivedItem } from './requestNotificationPayload.ts';
-import { readVapidConfig } from '../_shared/webPush.ts';
+import { resolveVapidConfig } from '../_shared/webPush.ts';
 import { processWebPushOutbox, type PushRunSummary } from './webPushWorker.ts';
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
@@ -530,7 +530,11 @@ Deno.serve(
     const { error: reminderError } = await serviceClient.rpc('server_tx_dispatch_schedule_reminders', { p_limit: 40 });
     if (reminderError) console.error('send-notifications: schedule reminder dispatch failed', reminderError.message);
     // PWA push is free and unlimited, unlike LINE; run it even when LINE is not configured.
-    const vapid = readVapidConfig();
+    // Read only: keys are made when the first device turns push on.
+    const vapid = await resolveVapidConfig(serviceClient, false).catch((error) => {
+      console.error('send-notifications: vapid keys unavailable', error instanceof Error ? error.message : error);
+      return null;
+    });
     const pushSummary = vapid ? await processWebPushOutbox(serviceClient, vapid) : null;
     // Dashboard/CLI pastes often include a trailing line break. HTTP header
     // values cannot contain it; trim only surrounding whitespace, never alter

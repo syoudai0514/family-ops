@@ -216,16 +216,15 @@ Schedule reminders go to devices that turned on 「この端末で通知を受�
 (設定 → 通知・LINE連携) and fall back to LINE for everyone else. Until the keys
 below exist, the screen says push is not available yet and LINE keeps working.
 
-1. Run the **Configure web push keys** workflow (Actions → workflow_dispatch). It
-   generates a VAPID key pair inside the runner and stores
-   `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` and `WEB_PUSH_SUBJECT`
-   as Supabase secrets; the private key is never printed. It does nothing when the
-   keys already exist, unless `rotate` is set (rotating makes every device turn push
-   on again).
-2. (Manual alternative) `npx web-push generate-vapid-keys`, then
-   `supabase secrets set` the three names above.
-3. Apply migrations `20261016090000_schedule_multi_reminders.sql` and
-   `20261017090000_web_push_reminders.sql`, then deploy the Edge Functions
+1. Nothing to set by default: the first time someone opens 「通知・LINE連携」, the
+   server creates a VAPID key pair and keeps it in `private.web_push_vapid_keys`
+   (service_role only). The deploy token cannot write Edge Function secrets.
+2. (Optional) To manage the keys as secrets instead, `npx web-push generate-vapid-keys`
+   and `supabase secrets set WEB_PUSH_VAPID_PUBLIC_KEY=… WEB_PUSH_VAPID_PRIVATE_KEY=…`
+   (and optionally `WEB_PUSH_SUBJECT`). Secrets take precedence; changing the pair makes
+   every device turn push on again.
+3. Apply migrations `20261016090000_schedule_multi_reminders.sql`,
+   `20261017090000_web_push_reminders.sql` and `20261017140000_web_push_vapid_keys.sql`, then deploy the Edge Functions
    `update-notification-preferences` (it also handles push on/off; the Free plan
    allows at most 100 Edge Functions) and `send-notifications`.
 4. Redeploy the web app so the service worker picks up `sw-push.js`.

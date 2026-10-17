@@ -1,9 +1,10 @@
 // Web Push subscription actions, called from update-notification-preferences.
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { createServiceRoleClient } from "./auth.ts";
 import { jsonResponse } from "./handler.ts";
 import { callServerTx } from "./rpc.ts";
 import { FamilyOpsError } from "./errors.ts";
-import { isAllowedPushEndpoint, readVapidConfig, sendWebPush } from "./webPush.ts";
+import { isAllowedPushEndpoint, resolveVapidConfig, sendWebPush } from "./webPush.ts";
 
 type StoredSubscription = { subscription_id: string; endpoint: string; p256dh: string; auth: string; active: boolean } | null;
 
@@ -20,16 +21,19 @@ function requireEndpoint(body: Record<string, unknown>): string {
  * because the Supabase Free plan caps the project at 100 Edge Functions.
  * Actions: config (VAPID public key), status, subscribe, unsubscribe, test.
  */
-export async function handleWebPushAction(actorId: string, body: Record<string, unknown>): Promise<Response> {
+export async function handleWebPushAction(
+  actorId: string,
+  body: Record<string, unknown>,
+  serviceClient: SupabaseClient = createServiceRoleClient(),
+): Promise<Response> {
   const action = body["web_push_action"];
-  const vapid = readVapidConfig();
+  const vapid = await resolveVapidConfig(serviceClient);
 
   if (action === "config") {
     return jsonResponse({ enabled: vapid !== null, public_key: vapid?.publicKey ?? null });
   }
   if (!vapid) throw new FamilyOpsError("INVALID_INPUT", "push notifications are not configured", 400);
   const endpoint = requireEndpoint(body);
-  const serviceClient = createServiceRoleClient();
 
   if (action === "status") {
     const stored = await callServerTx<StoredSubscription>(serviceClient, "server_tx_get_web_push_subscription", {
