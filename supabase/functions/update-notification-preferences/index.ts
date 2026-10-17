@@ -2,10 +2,12 @@
 // docs/design/v6/03_DOMAIN_AND_DATA_MODEL.md #8/#19 "update-notification-preferences".
 // Partial update: only the boolean fields present in the request body are
 // changed; schedule times are a separate mutation (update-routine-schedule).
+// Requests with web_push_action turn PWA push on/off for the caller's device.
 import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { withUserMutationHandler, jsonResponse } from "../_shared/handler.ts";
 import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.ts";
 import { FamilyOpsError } from "../_shared/errors.ts";
+import { handleWebPushAction } from "../_shared/webPushSubscription.ts";
 
 const ALLOWED_KEYS = [
   "request_line", "handover_line", "calendar_line", "conflict_line",
@@ -17,6 +19,8 @@ const ALLOWED_KEYS = [
 Deno.serve(withUserMutationHandler(async (req: Request) => {
   const actorId = await requireUserActor(req);
   const body = await readJsonBody(req);
+  // This device's push on/off rides here (Free plan: at most 100 Edge Functions).
+  if (typeof body["web_push_action"] === "string") return await handleWebPushAction(actorId, body);
   const operationId = requireOperationId(body);
 
   const fields: Record<string, boolean> = {};

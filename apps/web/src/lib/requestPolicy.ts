@@ -86,7 +86,6 @@ export const REQUEST_POLICY = {
   deleteNurserySourceImage: 'mutation',
   listGoogleEventReviews: 'read',
   resolveGoogleEventReview: 'mutation',
-  webPushSubscription: 'mutation',
 } satisfies Record<keyof typeof EDGE_FUNCTIONS, RequestPolicyKind>;
 
 const REQUEST_POLICY_BY_FUNCTION = Object.fromEntries(

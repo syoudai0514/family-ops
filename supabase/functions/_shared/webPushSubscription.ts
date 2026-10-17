@@ -1,10 +1,9 @@
-// verify_jwt=true. Turns push notifications on/off for the signed-in user's device.
-// Actions: config (VAPID public key), status, subscribe, unsubscribe, test.
-import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
-import { jsonResponse, withUserMutationHandler } from "../_shared/handler.ts";
-import { callServerTx, readJsonBody } from "../_shared/rpc.ts";
-import { FamilyOpsError } from "../_shared/errors.ts";
-import { isAllowedPushEndpoint, readVapidConfig, sendWebPush } from "../_shared/webPush.ts";
+// Web Push subscription actions, called from update-notification-preferences.
+import { createServiceRoleClient } from "./auth.ts";
+import { jsonResponse } from "./handler.ts";
+import { callServerTx } from "./rpc.ts";
+import { FamilyOpsError } from "./errors.ts";
+import { isAllowedPushEndpoint, readVapidConfig, sendWebPush } from "./webPush.ts";
 
 type StoredSubscription = { subscription_id: string; endpoint: string; p256dh: string; auth: string; active: boolean } | null;
 
@@ -16,18 +15,21 @@ function requireEndpoint(body: Record<string, unknown>): string {
   return endpoint;
 }
 
-Deno.serve(withUserMutationHandler(async (req: Request) => {
-  const actorId = await requireUserActor(req);
-  const body = await readJsonBody(req);
-  const action = body["action"];
+/**
+ * Push on/off for the caller's own device. Lives inside update-notification-preferences
+ * because the Supabase Free plan caps the project at 100 Edge Functions.
+ * Actions: config (VAPID public key), status, subscribe, unsubscribe, test.
+ */
+export async function handleWebPushAction(actorId: string, body: Record<string, unknown>): Promise<Response> {
+  const action = body["web_push_action"];
   const vapid = readVapidConfig();
-  const serviceClient = createServiceRoleClient();
 
   if (action === "config") {
     return jsonResponse({ enabled: vapid !== null, public_key: vapid?.publicKey ?? null });
   }
   if (!vapid) throw new FamilyOpsError("INVALID_INPUT", "push notifications are not configured", 400);
   const endpoint = requireEndpoint(body);
+  const serviceClient = createServiceRoleClient();
 
   if (action === "status") {
     const stored = await callServerTx<StoredSubscription>(serviceClient, "server_tx_get_web_push_subscription", {
@@ -66,8 +68,8 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
     if (sent.outcome === "gone") {
       await callServerTx(serviceClient, "server_tx_delete_web_push_subscription", { p_actor_id: actorId, p_endpoint: endpoint });
     }
-    if (sent.outcome !== "sent") console.warn("web-push-subscription: test push failed", { status: sent.status, error: sent.error });
+    if (sent.outcome !== "sent") console.warn("update-notification-preferences: test push failed", { status: sent.status, error: sent.error });
     return jsonResponse({ outcome: sent.outcome });
   }
   throw new FamilyOpsError("INVALID_INPUT", "unknown action", 400);
-}));
+}

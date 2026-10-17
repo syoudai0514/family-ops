@@ -60,8 +60,8 @@ describe('web push', () => {
     const { pushManager } = installBrowser();
     expect(await enablePush(PUBLIC_KEY)).toBe('enabled');
     expect(pushManager.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
-    expect(callEdgeFunction).toHaveBeenCalledWith('web-push-subscription', expect.objectContaining({
-      action: 'subscribe',
+    expect(callEdgeFunction).toHaveBeenCalledWith('update-notification-preferences', expect.objectContaining({
+      web_push_action: 'subscribe',
       endpoint: 'https://fcm.googleapis.com/fcm/send/new',
       keys: { p256dh: 'p', auth: 'a' },
       device_label: 'Android',
@@ -87,6 +87,6 @@ describe('web push', () => {
     installBrowser({ existing: fakeSubscription(null) });
     await syncPushSubscription();
     expect(Notification.requestPermission).not.toHaveBeenCalled();
-    expect(callEdgeFunction).toHaveBeenCalledWith('web-push-subscription', expect.objectContaining({ action: 'subscribe' }));
+    expect(callEdgeFunction).toHaveBeenCalledWith('update-notification-preferences', expect.objectContaining({ web_push_action: 'subscribe' }));
   });
 });
