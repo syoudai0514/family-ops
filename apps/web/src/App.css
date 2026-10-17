@@ -1631,3 +1631,4 @@ input[type="time"]::-webkit-date-and-time-value, input[type="date"]::-webkit-dat
 
 .push-howto ol { margin: 0.4rem 0 0; padding-left: 1.3rem; }
 .push-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.reminder-channel { display: grid; gap: 4px; margin-bottom: 8px; }

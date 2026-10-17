@@ -3,7 +3,9 @@
 --  * each reminder is delivered once per start time, so moving a schedule re-arms it
 --    while note/checklist edits never resend;
 --  * schedules created from LINE / the AI入力 get a default reminder, because only the
---    PWA form could set one before and LINE-created 予定 were silently never reminded.
+--    PWA form could set one before and LINE-created 予定 were silently never reminded;
+--  * details.reminder_channel='google' leaves a timed schedule to each person's Google
+--    Calendar notifications while the family calendar is written to Google.
 -- The legacy scalar details.reminder_minutes keeps working for old clients.
 
 create table private.schedule_reminder_deliveries (
@@ -44,6 +46,9 @@ begin
         when (value::text)::numeric<>trunc((value::text)::numeric) then true
         else not ((value::text)::int = any(public.schedule_reminder_allowed_offsets())) end)
   ) then raise exception 'INVALID_INPUT'; end if;
+  if new.details ? 'reminder_channel' and coalesce(new.details->>'reminder_channel','') not in ('app','google') then
+    raise exception 'INVALID_INPUT';
+  end if;
   return new;
 end $$;
 create trigger task_schedule_details_validate_reminders

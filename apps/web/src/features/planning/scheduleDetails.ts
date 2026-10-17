@@ -1,3 +1,5 @@
+export type ReminderChannel = 'app' | 'google';
+
 export type ScheduleDetails = {
   ends_on: string;
   location: string;
@@ -11,6 +13,8 @@ export type ScheduleDetails = {
   reminder_minutes: number | null;
   /** Minutes before the start (all-day: before 09:00). null = not chosen yet, use the default. */
   reminders?: number[] | null;
+  /** Who reminds: Google Calendar (each person's own settings) or おうちノート. null = default. */
+  reminder_channel?: ReminderChannel | null;
   repeat_frequency: 'none' | 'daily' | 'weekly' | 'monthly';
   repeat_until: string | null;
   checklist: string[];
@@ -29,6 +33,7 @@ export function emptyScheduleDetails(date: string): ScheduleDetails {
     countdown: false,
     reminder_minutes: null,
     reminders: null,
+    reminder_channel: null,
     repeat_frequency: 'none',
     repeat_until: null,
     checklist: [],
@@ -47,6 +52,28 @@ export function readScheduleDetails(value: unknown, date: string): ScheduleDetai
 // Mirrors public.default_schedule_reminders(): LINE and AI入力 use the same default.
 export function defaultReminders(hasStartTime: boolean): number[] {
   return hasStartTime ? [60] : [780];
+}
+
+/**
+ * Google can remind only what it shows at the right time: a timed event with a start
+ * and an end. Start-only items are written to Google as all-day (owner decision
+ * 2026-09-30), and preparations/to-dos are not written at all, so おうちノート reminds.
+ */
+export function canRemindWithGoogle(input: {
+  googleWriteTarget: boolean;
+  isCalendarEvent: boolean;
+  startTime: string;
+  endTime: string;
+}): boolean {
+  return input.googleWriteTarget && input.isCalendarEvent && Boolean(input.startTime) && Boolean(input.endTime);
+}
+
+export function effectiveReminderChannel(
+  chosen: ReminderChannel | null | undefined,
+  googleEligible: boolean,
+): ReminderChannel {
+  if (!googleEligible) return 'app';
+  return chosen ?? 'google';
 }
 
 export function reminderOffsets(details: ScheduleDetails): number[] {

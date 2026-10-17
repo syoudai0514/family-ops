@@ -10,7 +10,9 @@ import { useTaskCategories } from './useTaskCategories';
 import { clearTaskFormDraft, readTaskFormDraft, saveTaskFormDraft } from './taskFormDraft';
 import {
   ALL_DAY_REMINDER_OPTIONS,
+  canRemindWithGoogle,
   defaultReminders,
+  effectiveReminderChannel,
   emptyScheduleDetails,
   MAX_REMINDERS,
   reminderLabel,
@@ -20,6 +22,7 @@ import {
   type ScheduleDetails,
 } from '../planning/scheduleDetails';
 import { uploadScheduleAttachment } from '../planning/scheduleAttachments';
+import { useFamilyCalendarWriteTarget } from '../planning/useFamilyCalendarWriteTarget';
 
 interface SubtaskDraft {
   title: string;
@@ -140,6 +143,14 @@ function TaskFormModalContent({
     : isCalendarEvent
       ? defaultReminders(!isAllDay)
       : [];
+  const googleWriteTarget = useFamilyCalendarWriteTarget();
+  const googleEligible = canRemindWithGoogle({
+    googleWriteTarget,
+    isCalendarEvent,
+    startTime: dueLocalTime,
+    endTime: calendarEndLocalTime,
+  });
+  const reminderChannel = effectiveReminderChannel(details.reminder_channel, googleEligible);
   const reminderOptions = [
     ...new Set([...(isAllDay ? ALL_DAY_REMINDER_OPTIONS : TIMED_REMINDER_OPTIONS), ...reminders]),
   ].sort((a, b) => a - b);
@@ -296,6 +307,7 @@ function TaskFormModalContent({
               ...details,
               reminder_minutes: null,
               reminders,
+              reminder_channel: reminderChannel,
               ends_on: isCalendarEvent ? details.ends_on : scheduledDate,
             },
           }),
@@ -324,6 +336,7 @@ function TaskFormModalContent({
               ...details,
               reminder_minutes: null,
               reminders,
+              reminder_channel: reminderChannel,
               ends_on: isCalendarEvent ? details.ends_on : scheduledDate,
             },
           }),
@@ -469,29 +482,66 @@ function TaskFormModalContent({
 
           {(isCalendarEvent || reminders.length > 0) && (
             <fieldset className="reminder-picker">
-              <legend>通知（{MAX_REMINDERS}件まで選べます）</legend>
-              <div className="reminder-options">
-                {reminderOptions.map((minutes) => {
-                  const checked = reminders.includes(minutes);
-                  return (
-                    <label key={minutes} className="reminder-chip">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={!checked && reminders.length >= MAX_REMINDERS}
-                        onChange={(e) => toggleReminder(minutes, e.target.checked)}
-                      />
-                      {reminderLabel(minutes, isAllDay)}
-                    </label>
-                  );
-                })}
-              </div>
-              <p className="form-help">
-                {reminders.length === 0
-                  ? '通知しません。'
-                  : `${reminders.map((minutes) => reminderLabel(minutes, isAllDay)).join('・')}に通知します。`}
-                参加する人（未選択なら家族全員）に届きます。通知をオンにした端末にはスマホの通知で、それ以外の人にはLINEで届きます。
-              </p>
+              <legend>通知</legend>
+              {googleWriteTarget && isCalendarEvent && (
+                <div className="reminder-channel" role="radiogroup" aria-label="通知の方法">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      name="reminder-channel"
+                      checked={reminderChannel === 'google'}
+                      disabled={!googleEligible}
+                      onChange={() => setDetails((d) => ({ ...d, reminder_channel: 'google' }))}
+                    />
+                    Googleカレンダーの通知
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      name="reminder-channel"
+                      checked={reminderChannel === 'app'}
+                      onChange={() => setDetails((d) => ({ ...d, reminder_channel: 'app' }))}
+                    />
+                    おうちノートから通知（スマホの通知・LINE）
+                  </label>
+                  {!googleEligible && (
+                    <p className="form-help">
+                      Googleカレンダーの通知は、開始と終了の時刻がある予定で選べます。時刻のない予定や開始時刻だけの予定は、Googleでは終日の予定になるため、おうちノートから通知します。
+                    </p>
+                  )}
+                </div>
+              )}
+              {reminderChannel === 'google' ? (
+                <p className="form-help">
+                  それぞれのGoogleカレンダーの通知設定（家族カレンダーの通知）で届きます。おうちノートからは送りません。
+                </p>
+              ) : (
+                <>
+                  <p className="form-help">{MAX_REMINDERS}件まで選べます。</p>
+                  <div className="reminder-options">
+                    {reminderOptions.map((minutes) => {
+                      const checked = reminders.includes(minutes);
+                      return (
+                        <label key={minutes} className="reminder-chip">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={!checked && reminders.length >= MAX_REMINDERS}
+                            onChange={(e) => toggleReminder(minutes, e.target.checked)}
+                          />
+                          {reminderLabel(minutes, isAllDay)}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="form-help">
+                    {reminders.length === 0
+                      ? '通知しません。'
+                      : `${reminders.map((minutes) => reminderLabel(minutes, isAllDay)).join('・')}に通知します。`}
+                    参加する人（未選択なら家族全員）に届きます。通知をオンにした端末にはスマホの通知で、それ以外の人にはLINEで届きます。
+                  </p>
+                </>
+              )}
             </fieldset>
           )}
 

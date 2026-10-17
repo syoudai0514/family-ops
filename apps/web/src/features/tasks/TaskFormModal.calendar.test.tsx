@@ -12,6 +12,10 @@ vi.mock('../../app/HouseholdContext', () => ({
 vi.mock('../../lib/useCommandAttempt', () => ({
   useCommandAttempt: () => runCommand,
 }));
+const googleTarget = vi.hoisted(() => ({ active: false }));
+vi.mock('../planning/useFamilyCalendarWriteTarget', () => ({
+  useFamilyCalendarWriteTarget: () => googleTarget.active,
+}));
 vi.mock('./useTaskCategories', () => ({
   useTaskCategories: () => ({ categories: [{ code: 'other', label: 'その他' }] }),
 }));
@@ -35,6 +39,7 @@ describe('TaskFormModal special calendar time contract', () => {
     sessionStorage.clear();
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
     runCommand.mockReset();
+    googleTarget.active = false;
     runCommand.mockResolvedValue({ task_id: 'task-created' });
   });
 
@@ -145,5 +150,44 @@ describe('TaskFormModal special calendar time contract', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(runCommand.mock.calls[0][1]).toBe(EDGE_FUNCTIONS.cancelTask);
     expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves a timed event to Google Calendar when the family calendar is written there', async () => {
+    googleTarget.active = true;
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="面談" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText('開始時刻（任意）'), { target: { value: '14:00' } });
+    fireEvent.change(screen.getByLabelText(/終了時刻/), { target: { value: '15:00' } });
+    expect(screen.getByRole('radio', { name: 'Googleカレンダーの通知' })).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: '1時間前' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details.reminder_channel).toBe('google');
+  });
+
+  it('keeps start-only and all-day events on おうちノート even with Google connected', async () => {
+    googleTarget.active = true;
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="準備" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText('開始時刻（任意）'), { target: { value: '08:00' } });
+    expect(screen.getByRole('radio', { name: 'Googleカレンダーの通知' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /おうちノートから通知/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '1時間前' })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details).toMatchObject({ reminder_channel: 'app', reminders: [60] });
+  });
+
+  it('can choose おうちノート reminders for a Google-written timed event', async () => {
+    googleTarget.active = true;
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="面談" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText('開始時刻（任意）'), { target: { value: '14:00' } });
+    fireEvent.change(screen.getByLabelText(/終了時刻/), { target: { value: '15:00' } });
+    fireEvent.click(screen.getByRole('radio', { name: /おうちノートから通知/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '前日' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details).toMatchObject({ reminder_channel: 'app', reminders: [60, 1440] });
   });
 });

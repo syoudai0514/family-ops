@@ -163,6 +163,11 @@ begin
       public.schedule_reminder_offsets(d.details) as offsets) a
     where t.status in ('todo','in_progress') and t.test_context_id is null
       and cardinality(a.offsets)>0
+      -- Left to Google Calendar only while the family calendar is actually written there;
+      -- otherwise おうちノート still reminds, so a disconnected calendar loses nothing.
+      and not (d.details->>'reminder_channel'='google' and t.calendar_visibility='special'
+        and exists(select 1 from public.calendar_connections c
+          where c.household_id=d.household_id and c.active and c.is_family_write_target))
       and a.anchor_at+interval '1 hour'>now()
       and exists(select 1 from unnest(a.offsets) o
         where a.anchor_at-make_interval(mins=>o)<=now()

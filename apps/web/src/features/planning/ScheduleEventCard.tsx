@@ -191,7 +191,9 @@ export function ScheduleEventCard({
               / {details.repeat_until}まで
             </p>
           )}
-          {reminderOffsets(details).length > 0 && (
+          {details.reminder_channel === 'google' && task?.calendar_visibility === 'special' ? (
+            <p className="meta">通知: Googleカレンダー</p>
+          ) : reminderOffsets(details).length > 0 && (
             <p className="meta">
               通知:{' '}
               {reminderOffsets(details)

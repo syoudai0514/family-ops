@@ -5,7 +5,7 @@ do $$
 declare
  actor uuid:=gen_random_uuid(); partner uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid(); household uuid;
  sub jsonb; rejected boolean:=false; soon timestamptz:=now()+interval '20 minutes'; claimed record; n int;
- push_endpoint text:='https://push.example.com/send/device-1';
+ google_connection uuid; calendar_connection uuid; google_task uuid; push_endpoint text:='https://push.example.com/send/device-1';
 begin
  insert into auth.users(id) values(actor),(partner),(outsider);
  household := (public.server_tx_create_household(actor,gen_random_uuid(),'Push test','Owner')->>'household_id')::uuid;
@@ -57,6 +57,30 @@ begin
  if (public.server_tx_delete_web_push_subscription(actor,push_endpoint)->>'deleted')::int<>1 then raise exception 'FAIL own delete'; end if;
  if has_function_privilege('authenticated','public.server_tx_enqueue_web_push(uuid,uuid,text,text,text,text,text,timestamptz)','execute') then
    raise exception 'FAIL push enqueue exposed to clients'; end if;
+
+ -- reminder_channel=google: Google Calendar reminds while the family calendar is written there.
+ insert into private.google_connections(household_id,owner_user_id,google_subject,encrypted_refresh_token,encryption_version,scopes,status)
+ values(household,actor,'push-test','cipher',1,array['https://www.googleapis.com/auth/calendar.events'],'active') returning id into google_connection;
+ insert into public.calendar_connections(household_id,external_calendar_id,google_connection_id,active)
+ values(household,'push-test@group.calendar.google.com',google_connection,true) returning id into calendar_connection;
+ perform public.server_tx_set_family_calendar_target(actor,gen_random_uuid(),calendar_connection);
+ google_task:=(public.server_tx_save_scheduled_task(actor,gen_random_uuid(),null,null,jsonb_build_object(
+   'title','面談','scheduled_date',(soon at time zone 'Asia/Tokyo')::date,
+   'due_local_time',to_char(soon at time zone 'Asia/Tokyo','HH24:MI'),
+   'calendar_end_local_time',to_char((soon+interval '5 minutes') at time zone 'Asia/Tokyo','HH24:MI'),
+   'completion_mode','whole','calendar_visibility','special',
+   'scheduler_details',jsonb_build_object('reminders',jsonb_build_array(30),'reminder_channel','google')))->>'task_id')::uuid;
+ if public.server_tx_dispatch_schedule_reminders(40)<>0 then raise exception 'FAIL google-channel reminder also sent by the app'; end if;
+ -- Disconnecting the family calendar must not silently drop the reminder.
+ update public.calendar_connections set is_family_write_target=false where id=calendar_connection;
+ if public.server_tx_dispatch_schedule_reminders(40)<>1 then raise exception 'FAIL fallback after Google disconnect'; end if;
+ rejected:=false;
+ begin
+   perform public.server_tx_save_scheduled_task(actor,gen_random_uuid(),null,null,jsonb_build_object(
+     'title','x','scheduled_date',(now() at time zone 'Asia/Tokyo')::date+3,'completion_mode','whole',
+     'calendar_visibility','special','scheduler_details',jsonb_build_object('reminder_channel','email')));
+ exception when raise_exception then if sqlerrm='INVALID_INPUT' then rejected:=true; else raise; end if; end;
+ if not rejected then raise exception 'FAIL unknown reminder channel accepted'; end if;
 end $$;
 reset role;
 rollback;
