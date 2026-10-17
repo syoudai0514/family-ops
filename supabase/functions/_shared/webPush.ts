@@ -8,15 +8,44 @@ export type PushTarget = { endpoint: string; p256dh: string; auth: string };
 export type PushMessage = { title: string; body: string; url: string; tag: string | null };
 export type PushOutcome = "sent" | "retry" | "gone" | "dead";
 
+function pushSubject(): string | null {
+  // Push services require a contact; the app's (or the project's) https URL is enough.
+  const subject = Deno.env.get("WEB_PUSH_SUBJECT")?.trim() || Deno.env.get("APP_BASE_URL")?.trim() ||
+    Deno.env.get("SUPABASE_URL")?.trim() || "";
+  return /^(?:mailto:|https:\/\/)/.test(subject) ? subject : null;
+}
+
 export function readVapidConfig(): VapidConfig | null {
   const publicKey = Deno.env.get("WEB_PUSH_VAPID_PUBLIC_KEY")?.trim();
   const privateKey = Deno.env.get("WEB_PUSH_VAPID_PRIVATE_KEY")?.trim();
-  if (!publicKey || !privateKey) return null;
-  // Push services require a contact; fall back to the app's own https URL.
-  const subject = Deno.env.get("WEB_PUSH_SUBJECT")?.trim() ||
-    (Deno.env.get("APP_BASE_URL")?.trim() ?? "");
-  if (!/^(?:mailto:|https:\/\/)/.test(subject)) return null;
+  const subject = pushSubject();
+  if (!publicKey || !privateKey || !subject) return null;
   return { publicKey, privateKey, subject };
+}
+
+type VapidKeyStore = {
+  rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+};
+
+/**
+ * Secrets win when set. Otherwise the pair kept in private.web_push_vapid_keys is used,
+ * created on first need (the deploy token cannot write Edge Function secrets).
+ * `create: false` only reads, so a status check never makes keys.
+ */
+export async function resolveVapidConfig(client: VapidKeyStore, create = true): Promise<VapidConfig | null> {
+  const fromEnv = readVapidConfig();
+  if (fromEnv) return fromEnv;
+  const subject = pushSubject();
+  if (!subject) return null;
+  const fresh = create ? webpush.generateVAPIDKeys() : null;
+  const { data, error } = await client.rpc("server_tx_web_push_vapid_keys", {
+    p_public_key: fresh?.publicKey ?? null,
+    p_private_key: fresh?.privateKey ?? null,
+  });
+  if (error) throw new Error(`vapid key store: ${error.message}`);
+  const stored = data as { public_key?: string; private_key?: string } | null;
+  if (!stored?.public_key || !stored.private_key) return null;
+  return { publicKey: stored.public_key, privateKey: stored.private_key, subject };
 }
 
 // Only real browser push services. Without this a signed-in user could register
