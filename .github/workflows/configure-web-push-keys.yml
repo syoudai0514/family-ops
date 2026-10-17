@@ -1,0 +1,58 @@
+name: Configure web push keys
+
+# Creates the VAPID key pair for PWA push notifications and stores it as Supabase
+# Edge Function secrets. The private key exists only inside this runner and in
+# Supabase; it is masked and never printed. Re-running is a no-op unless `rotate`
+# is true, because a new key pair makes every device turn push on again.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rotate:
+        description: "Replace existing keys (every device must turn push on again)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: family-ops-web-push-keys
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: dnlqxjpjpkxnfgculzip
+      PUSH_SUBJECT: https://family-ops-web.vercel.app
+      ROTATE: ${{ inputs.rotate }}
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+      - name: Generate and store keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
+          if supabase secrets list --project-ref "$PROJECT_REF" | grep -q 'WEB_PUSH_VAPID_PRIVATE_KEY' && [ "$ROTATE" != "true" ]; then
+            echo "VAPID keys already exist; nothing to do (set rotate to replace them)."
+            exit 0
+          fi
+          keys=$(npx --yes web-push@3.6.7 generate-vapid-keys --json)
+          public_key=$(node -e 'console.log(JSON.parse(process.argv[1]).publicKey)' "$keys")
+          private_key=$(node -e 'console.log(JSON.parse(process.argv[1]).privateKey)' "$keys")
+          echo "::add-mask::$private_key"
+          test -n "$public_key" && test -n "$private_key"
+          env_file=$(mktemp)
+          trap 'rm -f "$env_file"' EXIT
+          printf 'WEB_PUSH_VAPID_PUBLIC_KEY=%s\nWEB_PUSH_VAPID_PRIVATE_KEY=%s\nWEB_PUSH_SUBJECT=%s\n' \
+            "$public_key" "$private_key" "$PUSH_SUBJECT" > "$env_file"
+          supabase secrets set --project-ref "$PROJECT_REF" --env-file "$env_file"
+          echo "Stored VAPID keys. Public key: $public_key"

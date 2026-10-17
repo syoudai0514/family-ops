@@ -216,17 +216,18 @@ Schedule reminders go to devices that turned on 「この端末で通知を受�
 (設定 → 通知・LINE連携) and fall back to LINE for everyone else. Until the keys
 below exist, the screen says push is not available yet and LINE keeps working.
 
-1. Generate a VAPID key pair once (keep the private key secret; changing it
-   later makes every device turn push on again):
-   `npx web-push generate-vapid-keys`
-2. Set Supabase project secrets (`supabase secrets set`):
-   - `WEB_PUSH_VAPID_PUBLIC_KEY` — the public key from step 1
-   - `WEB_PUSH_VAPID_PRIVATE_KEY` — the private key from step 1
-   - `WEB_PUSH_SUBJECT` — a contact such as `mailto:you@example.com`
-     (optional when `APP_BASE_URL` is an https URL)
+1. Run the **Configure web push keys** workflow (Actions → workflow_dispatch). It
+   generates a VAPID key pair inside the runner and stores
+   `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` and `WEB_PUSH_SUBJECT`
+   as Supabase secrets; the private key is never printed. It does nothing when the
+   keys already exist, unless `rotate` is set (rotating makes every device turn push
+   on again).
+2. (Manual alternative) `npx web-push generate-vapid-keys`, then
+   `supabase secrets set` the three names above.
 3. Apply migrations `20261016090000_schedule_multi_reminders.sql` and
    `20261017090000_web_push_reminders.sql`, then deploy the Edge Functions
-   `web-push-subscription` (new) and `send-notifications`.
+   `update-notification-preferences` (it also handles push on/off; the Free plan
+   allows at most 100 Edge Functions) and `send-notifications`.
 4. Redeploy the web app so the service worker picks up `sw-push.js`.
 5. On iPhone/iPad (iOS 16.4+), open the app from the home screen icon — push is
    not offered inside a Safari tab — and use 「テスト通知を送る」 to confirm.

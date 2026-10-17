@@ -52,8 +52,8 @@ function deviceLabel(): string {
 
 export async function fetchPushConfig(): Promise<{ enabled: boolean; publicKey: string | null }> {
   const result = await callEdgeFunction<{ enabled: boolean; public_key: string | null }>(
-    EDGE_FUNCTIONS.webPushSubscription,
-    { action: 'config' },
+    EDGE_FUNCTIONS.updateNotificationPreferences,
+    { web_push_action: 'config' },
   );
   return { enabled: result.enabled, publicKey: result.public_key };
 }
@@ -65,8 +65,8 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 
 async function register(subscription: PushSubscription): Promise<void> {
   const json = subscription.toJSON();
-  await callEdgeFunction(EDGE_FUNCTIONS.webPushSubscription, {
-    action: 'subscribe',
+  await callEdgeFunction(EDGE_FUNCTIONS.updateNotificationPreferences, {
+    web_push_action: 'subscribe',
     endpoint: json.endpoint,
     keys: json.keys,
     device_label: deviceLabel(),
@@ -98,8 +98,8 @@ export async function enablePush(publicKey: string): Promise<'enabled' | 'denied
 export async function disablePush(): Promise<void> {
   const subscription = await currentSubscription();
   if (!subscription) return;
-  await callEdgeFunction(EDGE_FUNCTIONS.webPushSubscription, {
-    action: 'unsubscribe',
+  await callEdgeFunction(EDGE_FUNCTIONS.updateNotificationPreferences, {
+    web_push_action: 'unsubscribe',
     endpoint: subscription.endpoint,
   }).catch(() => undefined);
   await subscription.unsubscribe();
@@ -110,8 +110,8 @@ export async function isPushEnabledHere(): Promise<boolean> {
   if (pushAvailability() !== 'supported' || notificationPermission() !== 'granted') return false;
   const subscription = await currentSubscription();
   if (!subscription) return false;
-  const result = await callEdgeFunction<{ registered: boolean }>(EDGE_FUNCTIONS.webPushSubscription, {
-    action: 'status',
+  const result = await callEdgeFunction<{ registered: boolean }>(EDGE_FUNCTIONS.updateNotificationPreferences, {
+    web_push_action: 'status',
     endpoint: subscription.endpoint,
   });
   return result.registered;
@@ -121,8 +121,8 @@ export async function sendTestPush(): Promise<'sent' | 'retry' | 'gone' | 'dead'
   const subscription = await currentSubscription();
   if (!subscription) return 'gone';
   const result = await callEdgeFunction<{ outcome: 'sent' | 'retry' | 'gone' | 'dead' }>(
-    EDGE_FUNCTIONS.webPushSubscription,
-    { action: 'test', endpoint: subscription.endpoint },
+    EDGE_FUNCTIONS.updateNotificationPreferences,
+    { web_push_action: 'test', endpoint: subscription.endpoint },
   );
   return result.outcome;
 }
