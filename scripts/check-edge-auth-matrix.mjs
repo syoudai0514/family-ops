@@ -74,6 +74,8 @@ const GAP_FILL_FUNCTIONS = new Set([
   'resolve-google-event-review',
   // Issue #48 final UX: period-scoped weekly transport template + occurrence override.
   'transport-schedule',
+  // PWA push notifications: authenticated; turns push on/off for the caller's own device.
+  'web-push-subscription',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

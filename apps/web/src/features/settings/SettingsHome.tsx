@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { InviteSection } from '../household/InviteSection';
 import { supabase } from '../../lib/supabaseClient';
+import { forgetPushOnSignOut } from '../../lib/webPush';
 import { CalendarIntegrationSettings } from './CalendarIntegrationSettings';
 import { FamilyRoles } from './FamilyRoles';
 
@@ -11,6 +12,7 @@ export function SettingsHome() {
   async function handleSignOut() {
     setSigningOut(true);
     try {
+      await forgetPushOnSignOut();
       await supabase.auth.signOut();
     } finally {
       setSigningOut(false);

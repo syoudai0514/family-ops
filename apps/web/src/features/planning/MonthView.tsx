@@ -51,7 +51,14 @@ export function monthDateHeading(date: string) {
 
 export function MonthView() {
   const { household, members, me } = useHousehold();
-  const [anchor, setAnchor] = useState(() => new Date(`${tokyoIsoDate(new Date())}T12:00:00`));
+  // A tapped reminder opens /month?date=YYYY-MM-DD on that day's agenda.
+  const [linkedDate] = useState(() => {
+    const value = new URLSearchParams(window.location.search).get('date') ?? '';
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+  });
+  const [anchor, setAnchor] = useState(
+    () => new Date(`${linkedDate ?? tokyoIsoDate(new Date())}T12:00:00`),
+  );
   const { start, end } = monthRange(anchor);
   const { tasks, occurrences, loading, error, refresh } = usePlanningData(
     household?.id ?? null,
@@ -62,8 +69,8 @@ export function MonthView() {
   // the week view. Without it the month grid silently renders "予定はありません"
   // on every day while the cache stays stale.
   useCalendarFreshness({ enabled: Boolean(household) });
-  const [selected, setSelected] = useState(tokyoIsoDate(new Date()));
-  const [sheetDate, setSheetDate] = useState<string | null>(null);
+  const [selected, setSelected] = useState(linkedDate ?? tokyoIsoDate(new Date()));
+  const [sheetDate, setSheetDate] = useState<string | null>(linkedDate);
   const [taskFormDate, setTaskFormDate] = useState<string | null>(null);
   const [transportOverrideDate, setTransportOverrideDate] = useState<string | null>(null);
   const primaryUserId = papaUserId(members);

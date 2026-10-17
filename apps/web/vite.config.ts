@@ -50,8 +50,8 @@ export default defineConfig({
         // A newly activated worker reloads existing PWA windows (see this
         // script). That moves an iPhone off an old precached app shell while
         // leaving localStorage and the Supabase session untouched.
-        importScripts: ['sw-update.js'],
-        globIgnores: ['sw-update.js'],
+        importScripts: ['sw-update.js', 'sw-push.js'],
+        globIgnores: ['sw-update.js', 'sw-push.js'],
         // Read-only offline caching for the app shell only. Mutations require
         // network + Edge Functions, so no mutation requests are cached.
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],

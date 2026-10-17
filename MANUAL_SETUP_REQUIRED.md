@@ -210,6 +210,27 @@ dev environment — see below.
    no independent standalone notification type for a calendar change/
    conflict event outside that digest, matching this decision as-is.
 
+## PWA push notifications (schedule reminders)
+
+Schedule reminders go to devices that turned on 「この端末で通知を受け取る」
+(設定 → 通知・LINE連携) and fall back to LINE for everyone else. Until the keys
+below exist, the screen says push is not available yet and LINE keeps working.
+
+1. Generate a VAPID key pair once (keep the private key secret; changing it
+   later makes every device turn push on again):
+   `npx web-push generate-vapid-keys`
+2. Set Supabase project secrets (`supabase secrets set`):
+   - `WEB_PUSH_VAPID_PUBLIC_KEY` — the public key from step 1
+   - `WEB_PUSH_VAPID_PRIVATE_KEY` — the private key from step 1
+   - `WEB_PUSH_SUBJECT` — a contact such as `mailto:you@example.com`
+     (optional when `APP_BASE_URL` is an https URL)
+3. Apply migrations `20261016090000_schedule_multi_reminders.sql` and
+   `20261017090000_web_push_reminders.sql`, then deploy the Edge Functions
+   `web-push-subscription` (new) and `send-notifications`.
+4. Redeploy the web app so the service worker picks up `sw-push.js`.
+5. On iPhone/iPad (iOS 16.4+), open the app from the home screen icon — push is
+   not offered inside a Safari tab — and use 「テスト通知を送る」 to confirm.
+
 ## Scheduled LINE household routines (WP8 — routine automation)
 
 1. **Schedule `dispatch-routine-automation` every 1 minute**

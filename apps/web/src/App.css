@@ -1628,3 +1628,6 @@ input[type="time"]::-webkit-date-and-time-value, input[type="date"]::-webkit-dat
   border-color: var(--color-accent);
   background: var(--color-unread-bg);
 }
+
+.push-howto ol { margin: 0.4rem 0 0; padding-left: 1.3rem; }
+.push-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }

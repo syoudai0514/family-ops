@@ -490,7 +490,7 @@ function TaskFormModalContent({
                 {reminders.length === 0
                   ? '通知しません。'
                   : `${reminders.map((minutes) => reminderLabel(minutes, isAllDay)).join('・')}に通知します。`}
-                参加する人（未選択なら家族全員）のアプリの通知と、LINE連携している人にはLINEにも届きます。
+                参加する人（未選択なら家族全員）に届きます。通知をオンにした端末にはスマホの通知で、それ以外の人にはLINEで届きます。
               </p>
             </fieldset>
           )}
