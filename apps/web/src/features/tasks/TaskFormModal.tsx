@@ -17,6 +17,8 @@ import {
   MAX_REMINDERS,
   reminderLabel,
   reminderOffsets,
+  REPEAT_FREQUENCIES,
+  repeatLabel,
   TIMED_REMINDER_OPTIONS,
   validateScheduleFiles,
   type ScheduleDetails,
@@ -134,6 +136,11 @@ function TaskFormModalContent({
   );
   const [files, setFiles] = useState<File[]>([]);
   const [savedTaskId, setSavedTaskId] = useState<string | null>(null);
+  // A repeating series can be edited for this date only or from this date on.
+  const isSeries = mode === 'edit' && Boolean(details.series_id);
+  const [editScope, setEditScope] = useState<'this' | 'following'>('this');
+  const [choosingDeleteScope, setChoosingDeleteScope] = useState(false);
+  const repeatEditable = mode === 'create' || (isSeries && editScope === 'following');
 
   const isCalendarEvent = calendarVisibility === 'special';
   const isAllDay = !dueLocalTime;
@@ -218,22 +225,24 @@ function TaskFormModalContent({
     setSubtasks((prev) => prev.filter((_, i) => i !== index));
   }
 
-  async function handleDelete() {
+  async function handleDelete(scope: 'this' | 'following' | 'all' = 'this') {
     if (!task) return;
+    const what = scope === 'all' ? 'この繰り返しの予定をすべて' : scope === 'following' ? 'この回以降の予定をすべて' : `「${task.title}」`;
     if (
       !window.confirm(
-        `「${task.title}」を削除しますか？\n削除すると元に戻せません。予定ならカレンダーからも消えます。${
-          details.repeat_frequency !== 'none' ? '\n繰り返しのほかの回は残ります。' : ''
-        }`,
+        `${what}削除しますか？\n削除すると元に戻せません。予定ならカレンダーからも消えます。${
+          scope === 'this' && details.repeat_frequency !== 'none' ? '\n繰り返しのほかの回は残ります。' : ''
+        }${scope !== 'this' ? '\n終わった回の記録は残ります。' : ''}`,
       )
     )
       return;
     setError(null);
     setSubmitting(true);
     try {
-      await runCommand(`task-form:cancel:${task.id}:r${task.revision ?? 1}`, EDGE_FUNCTIONS.cancelTask, (operationId) => ({
+      await runCommand(`task-form:cancel:${scope}:${task.id}:r${task.revision ?? 1}`, EDGE_FUNCTIONS.cancelTask, (operationId) => ({
         operation_id: operationId,
         task_id: task.id,
+        ...(scope === 'this' ? {} : { scope }),
       }));
       onSaved();
     } catch (err) {
@@ -265,8 +274,8 @@ function TaskFormModalContent({
       setError('終了日は開始日以降にしてください。');
       return;
     }
-    if (details.repeat_frequency !== 'none' && !details.repeat_until) {
-      setError('繰り返しの終了日を選んでください。');
+    if (repeatEditable && details.repeat_until && details.repeat_until < scheduledDate) {
+      setError('繰り返しの最終日は開始日以降にしてください。');
       return;
     }
     const fileError = validateScheduleFiles(files);
@@ -332,6 +341,7 @@ function TaskFormModalContent({
             calendar_visibility: calendarVisibility,
             planned_assignee_user_id: assigneeId || null,
             expected_revision: task.revision ?? 1,
+            edit_scope: isSeries ? editScope : 'this',
             scheduler_details: {
               ...details,
               reminder_minutes: null,
@@ -478,6 +488,72 @@ function TaskFormModalContent({
                 onChange={(e) => setDueLocalTime(e.target.value)}
               />
             </label>
+          )}
+
+          {isSeries && (
+            <fieldset className="reminder-channel" role="radiogroup" aria-label="変更する範囲">
+              <legend>繰り返しの予定です。変更する範囲</legend>
+              <label className="checkbox-row">
+                <input type="radio" name="edit-scope" checked={editScope === 'this'} onChange={() => setEditScope('this')} />
+                この予定だけ
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="radio"
+                  name="edit-scope"
+                  checked={editScope === 'following'}
+                  onChange={() => setEditScope('following')}
+                />
+                これ以降すべて
+              </label>
+            </fieldset>
+          )}
+          <label>
+            繰り返し
+            <select
+              value={details.repeat_frequency}
+              disabled={!repeatEditable}
+              onChange={(e) =>
+                setDetails((d) => ({
+                  ...d,
+                  repeat_frequency: e.target.value as ScheduleDetails['repeat_frequency'],
+                }))
+              }
+            >
+              {REPEAT_FREQUENCIES.map((frequency) => (
+                <option key={frequency} value={frequency}>
+                  {repeatLabel(frequency, scheduledDate)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {details.repeat_frequency !== 'none' && repeatEditable && (
+            <>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={Boolean(details.repeat_until)}
+                  onChange={(e) =>
+                    setDetails((d) => ({ ...d, repeat_until: e.target.checked ? scheduledDate : null }))
+                  }
+                />
+                終わりの日を決める（決めなければずっと繰り返します）
+              </label>
+              {details.repeat_until && (
+                <label>
+                  繰り返しの最終日
+                  <input
+                    type="date"
+                    value={details.repeat_until}
+                    min={scheduledDate}
+                    onChange={(e) => setDetails((d) => ({ ...d, repeat_until: e.target.value || null }))}
+                  />
+                </label>
+              )}
+            </>
+          )}
+          {mode === 'edit' && !isSeries && details.repeat_frequency !== 'none' && (
+            <p className="form-help">この回だけを編集します。</p>
           )}
 
           {(isCalendarEvent || reminders.length > 0) && (
@@ -703,46 +779,6 @@ function TaskFormModalContent({
                   </label>
                 ))}
               </fieldset>
-              <label>
-                繰り返し
-                <select
-                  value={details.repeat_frequency}
-                  disabled={mode === 'edit'}
-                  onChange={(e) =>
-                    setDetails((d) => ({
-                      ...d,
-                      repeat_frequency: e.target.value as ScheduleDetails['repeat_frequency'],
-                    }))
-                  }
-                >
-                  <option value="none">繰り返さない</option>
-                  <option value="daily">毎日</option>
-                  <option value="weekly">毎週</option>
-                  <option value="monthly">毎月</option>
-                </select>
-              </label>
-              {details.repeat_frequency !== 'none' && (
-                <label>
-                  繰り返しの終了日
-                  <input
-                    type="date"
-                    value={details.repeat_until ?? ''}
-                    min={scheduledDate}
-                    max={new Date(
-                      new Date(`${scheduledDate || todayIsoDate()}T12:00:00Z`).getTime() +
-                        366 * 86400000,
-                    )
-                      .toISOString()
-                      .slice(0, 10)}
-                    disabled={mode === 'edit'}
-                    onChange={(e) => setDetails((d) => ({ ...d, repeat_until: e.target.value }))}
-                    required
-                  />
-                </label>
-              )}
-              {mode === 'edit' && details.repeat_frequency !== 'none' && (
-                <p className="form-help">この回だけを編集します。</p>
-              )}
               <label className="checkbox-row">
                 <input
                   type="checkbox"
@@ -808,13 +844,26 @@ function TaskFormModalContent({
             <button
               type="button"
               className="danger-button task-form-delete"
-              onClick={() => void handleDelete()}
+              onClick={() => (isSeries ? setChoosingDeleteScope((value) => !value) : void handleDelete())}
               disabled={submitting}
             >
               削除
             </button>
           )}
         </div>
+        {choosingDeleteScope && isSeries && (
+          <div className="task-form-delete-scope" role="group" aria-label="削除する範囲">
+            <button type="button" className="danger-button" disabled={submitting} onClick={() => void handleDelete('this')}>
+              この予定だけ削除
+            </button>
+            <button type="button" className="danger-button" disabled={submitting} onClick={() => void handleDelete('following')}>
+              これ以降をすべて削除
+            </button>
+            <button type="button" className="danger-button" disabled={submitting} onClick={() => void handleDelete('all')}>
+              すべて削除
+            </button>
+          </div>
+        )}
       </form>
     </Modal>
   );

@@ -28,5 +28,11 @@ Deno.serve(withServiceHandler(async (req: Request) => {
     });
   }
 
-  return jsonResponse({ today, ...(data as object) });
+  // Repeating 予定 without an end keep a horizon of occurrences ahead.
+  const { data: seriesCreated, error: seriesError } = await serviceClient.rpc("server_tx_extend_schedule_series", {
+    p_today: today,
+  });
+  if (seriesError) console.error("materialize-recurring: schedule series extension failed", seriesError.message);
+
+  return jsonResponse({ today, ...(data as object), schedule_series_created: seriesError ? null : seriesCreated });
 }));

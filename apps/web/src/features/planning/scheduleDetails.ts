@@ -1,4 +1,13 @@
 export type ReminderChannel = 'app' | 'google';
+export type RepeatFrequency =
+  | 'none'
+  | 'daily'
+  | 'weekdays'
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly'
+  | 'monthly_nth'
+  | 'yearly';
 
 export type ScheduleDetails = {
   ends_on: string;
@@ -15,8 +24,11 @@ export type ScheduleDetails = {
   reminders?: number[] | null;
   /** Who reminds: Google Calendar (each person's own settings) or おうちノート. null = default. */
   reminder_channel?: ReminderChannel | null;
-  repeat_frequency: 'none' | 'daily' | 'weekly' | 'monthly';
+  repeat_frequency: RepeatFrequency;
+  /** null = no end date (a series keeps extending). */
   repeat_until: string | null;
+  /** Set on occurrences of a repeating series (public.schedule_series). */
+  series_id?: string | null;
   checklist: string[];
   checked_items?: number[];
 };
@@ -132,4 +144,53 @@ export function validateScheduleFiles(files: File[]): string | null {
       return `${file.name}は対応していません。画像・PDF・テキストを選んでください。`;
   }
   return null;
+}
+
+const WEEKDAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+
+function dateParts(isoDate: string) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  const lastOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return { month, day, weekday, nth: Math.ceil(day / 7), isLast: day + 7 > lastOfMonth };
+}
+
+/** "毎週火曜" etc. for the repeat picker, worded from the first date. */
+export function repeatLabel(frequency: RepeatFrequency, startDate: string): string {
+  if (frequency === 'none') return '繰り返さない';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return frequency;
+  const { month, day, weekday, nth } = dateParts(startDate);
+  const dow = `${WEEKDAY_NAMES[weekday]}曜`;
+  switch (frequency) {
+    case 'daily':
+      return '毎日';
+    case 'weekdays':
+      return '平日（月〜金）';
+    case 'weekly':
+      return `毎週${dow}`;
+    case 'biweekly':
+      return `隔週${dow}`;
+    case 'monthly':
+      return `毎月${day}日`;
+    case 'monthly_nth':
+      return nth >= 5 ? `毎月最終${dow}` : `毎月第${nth}${dow}`;
+    case 'yearly':
+      return `毎年${month}月${day}日`;
+  }
+}
+
+export const REPEAT_FREQUENCIES: RepeatFrequency[] = [
+  'none',
+  'daily',
+  'weekdays',
+  'weekly',
+  'biweekly',
+  'monthly',
+  'monthly_nth',
+  'yearly',
+];
+
+export function repeatSummary(details: Pick<ScheduleDetails, 'repeat_frequency' | 'repeat_until'>, startDate: string): string {
+  const label = repeatLabel(details.repeat_frequency, startDate);
+  return details.repeat_until ? `${label}（${details.repeat_until}まで）` : `${label}（終了日なし）`;
 }

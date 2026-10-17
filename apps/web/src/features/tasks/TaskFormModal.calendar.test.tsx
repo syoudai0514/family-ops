@@ -190,4 +190,45 @@ describe('TaskFormModal special calendar time contract', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details).toMatchObject({ reminder_channel: 'app', reminders: [60, 1440] });
   });
+
+  it('creates a repeat without an end date by default', async () => {
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="スイミング" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    const repeat = screen.getByLabelText('繰り返し');
+    expect(screen.getByRole('option', { name: '毎月第3火曜' })).toBeInTheDocument();
+    fireEvent.change(repeat, { target: { value: 'biweekly' } });
+    expect(screen.getByRole('checkbox', { name: /終わりの日を決める/ })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details).toMatchObject({ repeat_frequency: 'biweekly', repeat_until: null });
+  });
+
+  it('edits a series occurrence for this date only unless これ以降すべて is chosen', async () => {
+    const seriesTask = { ...task, scheduler_details: { series_id: 'series-1', repeat_frequency: 'weekly', repeat_until: null } } as never;
+    const view = render(<TaskFormModal mode="edit" task={seriesTask} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText('繰り返し')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(runCommand).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').edit_scope).toBe('this');
+    view.unmount();
+    runCommand.mockClear();
+    render(<TaskFormModal mode="edit" task={seriesTask} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole('radio', { name: 'これ以降すべて' }));
+    expect(screen.getByLabelText('繰り返し')).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(runCommand).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').edit_scope).toBe('following');
+  });
+
+  it('asks which occurrences to delete for a series', async () => {
+    const onSaved = vi.fn();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const seriesTask = { ...task, scheduler_details: { series_id: 'series-1', repeat_frequency: 'weekly', repeat_until: null } } as never;
+    render(<TaskFormModal mode="edit" task={seriesTask} onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    fireEvent.click(screen.getByRole('button', { name: 'これ以降をすべて削除' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][1]).toBe(EDGE_FUNCTIONS.cancelTask);
+    expect(runCommand.mock.calls[0][2]('operation-1')).toMatchObject({ task_id: 'task-1', scope: 'following' });
+  });
 });
