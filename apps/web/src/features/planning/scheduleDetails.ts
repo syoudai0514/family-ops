@@ -49,9 +49,16 @@ export function readScheduleDetails(value: unknown, date: string): ScheduleDetai
   return { ...emptyScheduleDetails(date), ...details } as ScheduleDetails;
 }
 
-// Mirrors public.default_schedule_reminders(): LINE and AI入力 use the same default.
-export function defaultReminders(hasStartTime: boolean): number[] {
-  return hasStartTime ? [60] : [780];
+// Mirrors public.default_schedule_reminders(): LINE and AI入力 use the same household default.
+export const BUILT_IN_TIMED_REMINDERS = [60];
+export const BUILT_IN_ALL_DAY_REMINDERS = [780];
+export function defaultReminders(
+  hasStartTime: boolean,
+  household?: { default_timed_reminders?: number[] | null; default_all_day_reminders?: number[] | null } | null,
+): number[] {
+  const configured = hasStartTime ? household?.default_timed_reminders : household?.default_all_day_reminders;
+  if (Array.isArray(configured)) return [...configured].sort((a, b) => a - b);
+  return hasStartTime ? BUILT_IN_TIMED_REMINDERS : BUILT_IN_ALL_DAY_REMINDERS;
 }
 
 /**

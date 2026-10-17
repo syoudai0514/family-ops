@@ -17,6 +17,9 @@ export interface Household {
   connections_setup_completed_at: string | null;
   notification_preferences_setup_completed_at: string | null;
   onboarding_preview_completed_at: string | null;
+  /** Reminders a new timed / all-day 予定 starts with (minutes before; all-day before 09:00). */
+  default_timed_reminders?: number[] | null;
+  default_all_day_reminders?: number[] | null;
 }
 
 export interface HouseholdMember {
@@ -223,6 +226,8 @@ export interface NotificationPreferences {
   routine_checklist_line: boolean;
   routine_checkin_prompt_line: boolean;
   in_app: boolean;
+  /** Also send schedule reminders by LINE when a device already gets them as push. */
+  schedule_line_with_push?: boolean;
   updated_at: string;
 }
 

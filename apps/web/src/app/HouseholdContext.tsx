@@ -115,7 +115,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
           supabase
             .from('households')
             .select(
-              'id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at, morning_preparation_setup_completed_at, connections_setup_completed_at, notification_preferences_setup_completed_at, onboarding_preview_completed_at',
+              'id, name, timezone, evening_routine_setup_completed_at, dropoff_pickup_setup_completed_at, morning_preparation_setup_completed_at, connections_setup_completed_at, notification_preferences_setup_completed_at, onboarding_preview_completed_at, default_timed_reminders, default_all_day_reminders',
             )
             .eq('id', householdId)
             .maybeSingle(),

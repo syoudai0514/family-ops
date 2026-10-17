@@ -2,7 +2,8 @@
 // docs/design/v6/03_DOMAIN_AND_DATA_MODEL.md #8/#19 "update-notification-preferences".
 // Partial update: only the boolean fields present in the request body are
 // changed; schedule times are a separate mutation (update-routine-schedule).
-// Requests with web_push_action turn PWA push on/off for the caller's device.
+// Requests with web_push_action turn PWA push on/off for the caller's device;
+// reminder_settings changes the reminder defaults and the push/LINE choice.
 import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { withUserMutationHandler, jsonResponse } from "../_shared/handler.ts";
 import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.ts";
@@ -22,6 +23,20 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   // This device's push on/off rides here (Free plan: at most 100 Edge Functions).
   if (typeof body["web_push_action"] === "string") return await handleWebPushAction(actorId, body);
   const operationId = requireOperationId(body);
+
+  // Reminder defaults (household) and "LINE too when push is on" (self).
+  if (body["reminder_settings"] !== undefined) {
+    const settings = body["reminder_settings"];
+    if (typeof settings !== "object" || settings === null || Array.isArray(settings)) {
+      throw new FamilyOpsError("INVALID_INPUT", "reminder_settings must be an object", 400);
+    }
+    const result = await callServerTx<{ ok: true }>(
+      createServiceRoleClient(),
+      "server_tx_update_reminder_settings",
+      { p_actor_id: actorId, p_operation_id: operationId, p_settings: settings },
+    );
+    return jsonResponse(result);
+  }
 
   const fields: Record<string, boolean> = {};
   for (const [key, value] of Object.entries(body)) {

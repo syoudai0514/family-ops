@@ -141,7 +141,7 @@ function TaskFormModalContent({
   const reminders = Array.isArray(details.reminders)
     ? details.reminders
     : isCalendarEvent
-      ? defaultReminders(!isAllDay)
+      ? defaultReminders(!isAllDay, household)
       : [];
   const googleWriteTarget = useFamilyCalendarWriteTarget();
   const googleEligible = canRemindWithGoogle({
