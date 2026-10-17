@@ -1602,3 +1602,33 @@ input[type="time"]::-webkit-date-and-time-value, input[type="date"]::-webkit-dat
 .routine-sheet-subtasks .subtask-row input:not([type="checkbox"]) { flex: 1; min-width: 0; }
 .routine-sheet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .routine-sheet-stop { margin-left: auto; color: var(--color-danger, #b42318); }
+
+/* Schedule reminders: tap targets big enough to pick several on a phone. */
+.reminder-picker {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.reminder-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.reminder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  font-size: 0.9rem;
+}
+.reminder-chip:has(input:checked) {
+  border-color: var(--color-accent);
+  background: var(--color-unread-bg);
+}
+
+.push-howto ol { margin: 0.4rem 0 0; padding-left: 1.3rem; }
+.push-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.reminder-channel { display: grid; gap: 4px; margin-bottom: 8px; }

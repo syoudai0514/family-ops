@@ -12,6 +12,10 @@ vi.mock('../../app/HouseholdContext', () => ({
 vi.mock('../../lib/useCommandAttempt', () => ({
   useCommandAttempt: () => runCommand,
 }));
+const googleTarget = vi.hoisted(() => ({ active: false }));
+vi.mock('../planning/useFamilyCalendarWriteTarget', () => ({
+  useFamilyCalendarWriteTarget: () => googleTarget.active,
+}));
 vi.mock('./useTaskCategories', () => ({
   useTaskCategories: () => ({ categories: [{ code: 'other', label: 'その他' }] }),
 }));
@@ -35,6 +39,7 @@ describe('TaskFormModal special calendar time contract', () => {
     sessionStorage.clear();
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
     runCommand.mockReset();
+    googleTarget.active = false;
     runCommand.mockResolvedValue({ task_id: 'task-created' });
   });
 
@@ -102,5 +107,87 @@ describe('TaskFormModal special calendar time contract', () => {
     expect(buildPayload('operation-1')).toMatchObject({
       due_local_time: '08:00', calendar_end_local_time: '09:00',
     });
+  });
+
+  it('gives a new timed event the default reminder and allows several', async () => {
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="歯医者" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText('開始時刻（任意）'), { target: { value: '14:00' } });
+    expect(screen.getByRole('checkbox', { name: '1時間前' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: '前日' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details).toMatchObject({
+      reminders: [60, 1440], reminder_minutes: null,
+    });
+  });
+
+  it('defaults an all-day event to the evening before and can turn reminders off', async () => {
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="遠足" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    const evening = screen.getByRole('checkbox', { name: '前日 夜8時' });
+    expect(evening).toBeChecked();
+    fireEvent.click(evening);
+    expect(screen.getByText(/通知しません。/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details.reminders).toEqual([]);
+  });
+
+  it('shows a legacy single reminder as selected when editing', () => {
+    render(<TaskFormModal mode="edit" task={{ ...task, scheduler_details: { reminder_minutes: 30 } } as never} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByRole('checkbox', { name: '30分前' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '1時間前' })).not.toBeChecked();
+  });
+
+  it('deletes from the edit form only after confirmation', async () => {
+    const onSaved = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    render(<TaskFormModal mode="edit" task={task} onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    expect(runCommand).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][1]).toBe(EDGE_FUNCTIONS.cancelTask);
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves a timed event to Google Calendar when the family calendar is written there', async () => {
+    googleTarget.active = true;
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="面談" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText('開始時刻（任意）'), { target: { value: '14:00' } });
+    fireEvent.change(screen.getByLabelText(/終了時刻/), { target: { value: '15:00' } });
+    expect(screen.getByRole('radio', { name: 'Googleカレンダーの通知' })).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: '1時間前' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details.reminder_channel).toBe('google');
+  });
+
+  it('keeps start-only and all-day events on おうちノート even with Google connected', async () => {
+    googleTarget.active = true;
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="準備" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText('開始時刻（任意）'), { target: { value: '08:00' } });
+    expect(screen.getByRole('radio', { name: 'Googleカレンダーの通知' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /おうちノートから通知/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '1時間前' })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details).toMatchObject({ reminder_channel: 'app', reminders: [60] });
+  });
+
+  it('can choose おうちノート reminders for a Google-written timed event', async () => {
+    googleTarget.active = true;
+    const onSaved = vi.fn();
+    render(<TaskFormModal mode="create" initialTitle="面談" initialScheduledDate="2026-10-20" initialCalendarVisibility="special" onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText('開始時刻（任意）'), { target: { value: '14:00' } });
+    fireEvent.change(screen.getByLabelText(/終了時刻/), { target: { value: '15:00' } });
+    fireEvent.click(screen.getByRole('radio', { name: /おうちノートから通知/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '前日' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(runCommand.mock.calls[0][2]('operation-1').scheduler_details).toMatchObject({ reminder_channel: 'app', reminders: [60, 1440] });
   });
 });

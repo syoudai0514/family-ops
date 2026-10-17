@@ -84,6 +84,7 @@ export const EDGE_FUNCTIONS = {
   deleteNurserySourceImage: 'delete-nursery-source-image',
   listGoogleEventReviews: 'list-google-event-reviews',
   resolveGoogleEventReview: 'resolve-google-event-review',
+  webPushSubscription: 'web-push-subscription',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

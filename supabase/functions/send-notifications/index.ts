@@ -43,6 +43,8 @@ import {
   buildGeneralRequestFlex,
 } from '../_shared/lineMessageBuilders.ts';
 import { findRequestReceivedItem } from './requestNotificationPayload.ts';
+import { readVapidConfig } from '../_shared/webPush.ts';
+import { processWebPushOutbox, type PushRunSummary } from './webPushWorker.ts';
 
 // docs/design/v6/09_API_AND_EDGE_FUNCTIONS.md #6 "Worker-only; every
 // minute" — batch/lease sizing keeps one invocation well inside a 1-minute
@@ -119,6 +121,7 @@ type RunSummary = {
   no_line_link: number;
   quota_refreshed: boolean;
   quota_refresh_skipped_reason: string | null;
+  web_push: PushRunSummary | null;
 };
 
 async function enrichRequestOutcomeItems(
@@ -526,6 +529,9 @@ Deno.serve(
     const serviceClient = createServiceRoleClient();
     const { error: reminderError } = await serviceClient.rpc('server_tx_dispatch_schedule_reminders', { p_limit: 40 });
     if (reminderError) console.error('send-notifications: schedule reminder dispatch failed', reminderError.message);
+    // PWA push is free and unlimited, unlike LINE; run it even when LINE is not configured.
+    const vapid = readVapidConfig();
+    const pushSummary = vapid ? await processWebPushOutbox(serviceClient, vapid) : null;
     // Dashboard/CLI pastes often include a trailing line break. HTTP header
     // values cannot contain it; trim only surrounding whitespace, never alter
     // a token's meaningful interior characters.
@@ -564,6 +570,7 @@ Deno.serve(
       no_line_link: 0,
       quota_refreshed: quotaRefresh.refreshed,
       quota_refresh_skipped_reason: quotaRefresh.skippedReason,
+      web_push: pushSummary,
     };
 
     for (const item of claimed) {

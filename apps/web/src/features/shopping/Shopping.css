@@ -17,3 +17,7 @@
 .shopping-page .error-text { grid-column: 1 / -1; }
 .shopping-ai-entry { width: 100%; margin: .7rem 0; padding: .8rem; text-align: left; }
 .shopping-manual-entry { margin-bottom: 1.1rem; color: var(--color-text-muted); font-size: .8rem; }
+.shopping-quick-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; margin-bottom: .4rem; }
+.shopping-quick-add-field input { width: 100%; min-height: 2.75rem; font-size: 1rem; }
+.shopping-quick-add button { min-height: 2.75rem; }
+.shopping-quick-add-status, .shopping-quick-add .error-text { grid-column: 1 / -1; margin: 0; font-size: .8rem; }

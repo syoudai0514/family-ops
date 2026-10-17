@@ -106,6 +106,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.update-notification-preferences]
 verify_jwt = true
+[functions.web-push-subscription]
+verify_jwt = true
 [functions.update-routine-schedule]
 verify_jwt = true
 [functions.change-recurrence]

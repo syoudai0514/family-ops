@@ -1,4 +1,5 @@
 import { callGemini } from "../_shared/gemini.ts";
+import { resolveJapaneseDate } from "../_shared/jpDate.ts";
 
 export type LineIntentKind = "task" | "request" | "shopping";
 export type LineDaypart = "morning" | "noon" | "evening" | "night" | null;
@@ -100,11 +101,7 @@ function addJstDays(now: Date, days: number): string {
 }
 
 function resolveFirstRelativeDate(text: string, now: Date): string {
-  const match = text.match(/今夜|今朝|今日|明後日|明日/);
-  if (!match) return addJstDays(now, 0);
-  if (match[0] === "明後日") return addJstDays(now, 2);
-  if (match[0] === "明日") return addJstDays(now, 1);
-  return addJstDays(now, 0);
+  return resolveJapaneseDate(text, now) ?? addJstDays(now, 0);
 }
 
 function resolveDaypart(text: string): LineDaypart {
@@ -181,7 +178,7 @@ function hasExplicitClockToken(text: string): boolean {
 function cleanNoun(value: string): string {
   return value
     .replace(/^(?:嫁さん|奥さん|妻|ママ|パパ)[、,\s]*/u, "")
-    .replace(/(?:今日|明日|明後日)(?:の)?(?:朝|昼|夕方|夜)?[に、,\s]*/gu, "")
+    .replace(/(?:今日|明日|明後日|あさって|(?:再来週|来週|今週)?(?:の)?[月火水木金土日]曜(?:日)?|\d{1,2}[月/]\d{1,2}日?)(?:の)?(?:朝|昼|夕方|夜)?[に、,\s]*/gu, "")
     .replace(/今夜[に、,\s]*/gu, "")
     .replace(/^(?:朝|昼|夕方|夜)[に、,\s]*/u, "")
     .replace(/明日の(?=(?:病院|歯医者|保育園|幼稚園|学校))/gu, "")

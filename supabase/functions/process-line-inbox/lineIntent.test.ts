@@ -199,3 +199,17 @@ Deno.test("role-prefixed noun phrase without a request cue remains an assigned t
   assertEquals(got?.targetRole, "mama");
   assertEquals(got?.sharedMessage, null);
 });
+
+Deno.test("fallback keeps weekday and month/day dates instead of defaulting to today", () => {
+  // 2026-08-22 is a Saturday.
+  const friday = deterministicLineIntent("来週の金曜に歯医者の予約して", now);
+  assertEquals(friday?.title, "歯医者の予約");
+  assertEquals(friday?.scheduledDate, "2026-08-28");
+  const monthDay = deterministicLineIntent("9/3に保険証準備して", now);
+  assertEquals(monthDay?.title, "保険証を準備");
+  assertEquals(monthDay?.scheduledDate, "2026-09-03");
+  const shopping = deterministicLineIntent("月曜に牛乳買って", now);
+  assertEquals(shopping?.kind, "shopping");
+  assertEquals(shopping?.title, "牛乳");
+  assertEquals(shopping?.scheduledDate, "2026-08-24");
+});

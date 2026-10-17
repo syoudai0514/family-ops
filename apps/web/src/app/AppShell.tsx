@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { UndoNoticeProvider } from './UndoNotice';
+import { syncPushSubscription } from '../lib/webPush';
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { TodayContractPage } from '../features/today/TodayContractPage';
 import { Requests } from '../features/requests/Requests';
@@ -62,6 +64,10 @@ function BottomNavLink({ item }: { item: (typeof PRIMARY_NAV_ITEMS)[number] }) {
 }
 
 export function AppShell() {
+  // Keep this device's push subscription attached to whoever is signed in.
+  useEffect(() => {
+    void syncPushSubscription().catch(() => undefined);
+  }, []);
   return (
     <UndoNoticeProvider><div className="app-root">
       <NavigationStateManager />

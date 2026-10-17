@@ -8,6 +8,7 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
 import type { NotificationPreferences, UserNotification } from '../../lib/types';
+import { PushSection } from './PushSection';
 
 const PREFERENCE_FIELDS: {
   key: keyof Omit<NotificationPreferences, 'household_id' | 'user_id' | 'updated_at'>;
@@ -72,6 +73,7 @@ export function Notifications() {
           {error}
         </p>
       )}
+      <PushSection />
       <LineLinkSection />
       <PreferencesSection householdId={household?.id ?? null} userId={user?.id ?? null} />
       <section className="card">
