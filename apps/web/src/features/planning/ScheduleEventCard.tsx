@@ -9,6 +9,7 @@ import {
   emptyScheduleDetails,
   reminderLabel,
   reminderOffsets,
+  repeatSummary,
   SCHEDULE_ATTACHMENT_BUCKET,
   validateScheduleFiles,
 } from './scheduleDetails';
@@ -181,15 +182,7 @@ export function ScheduleEventCard({
             </ul>
           )}
           {details.repeat_frequency !== 'none' && (
-            <p className="meta">
-              繰り返し:{' '}
-              {
-                ({ daily: '毎日', weekly: '毎週', monthly: '毎月' } as const)[
-                  details.repeat_frequency
-                ]
-              }{' '}
-              / {details.repeat_until}まで
-            </p>
+            <p className="meta">繰り返し: {repeatSummary(details, task?.scheduled_date ?? item.localDate)}</p>
           )}
           {details.reminder_channel === 'google' && task?.calendar_visibility === 'special' ? (
             <p className="meta">通知: Googleカレンダー</p>

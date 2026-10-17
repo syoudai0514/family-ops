@@ -123,6 +123,7 @@ import {
   type CompletionContext,
 } from "./lineCompletionReport.ts";
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
+import { buildQuickShoppingAddedMessage, isQuickShoppingInput, type QuickShoppingUndoResult, quickShoppingUndoReply } from "./lineQuickShopping.ts";
 import { type DraftSpec, draftToPending, isScheduleDate, type ScheduleRange, evaluateUnderstanding, makeGeminiProvider, resolveUnderstandModel, runPlan, UNDERSTAND_THINKING_LEVEL, understandLineText } from "./lineUnderstand.ts";
 import type { GeminiThinkingLevel } from "../_shared/gemini.ts";
 import { loadSnapshot, logLineTurn, markUnderstandModelBusy, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
@@ -967,6 +968,37 @@ async function buildMultiIntentPendingCandidates(
   }));
 }
 
+/**
+ * Plain shopping skips the confirm tap: confirm now (the worker kicked after this inbox
+ * run adds it within seconds) and reply with a 取り消す button. False = show the preview.
+ */
+async function tryQuickShoppingAdd(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  pendingActionId: string,
+  titles: string[],
+): Promise<boolean> {
+  const { error } = await client.rpc("server_tx_confirm_pending_action", {
+    p_actor_id: actor.user_id,
+    p_pending_action_id: pendingActionId,
+  });
+  if (error) {
+    console.error("process-line-inbox: quick shopping confirm failed; showing preview", error.message);
+    return false;
+  }
+  await replyOrEnqueuePush(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: item.source_external_user_id,
+    householdId: actor.household_id,
+    recipientUserId: actor.user_id,
+    text: `買い物リストに追加しました: ${titles.join("、")}`,
+    message: buildQuickShoppingAddedMessage(pendingActionId, titles),
+    dedupKey: `line-quick-shopping:${item.provider_event_id}`,
+  });
+  return true;
+}
+
 async function tryCreateMultiIntentReview(
   client: SupabaseClient,
   item: WebhookInboxItem,
@@ -989,6 +1021,10 @@ async function tryCreateMultiIntentReview(
     console.error("process-line-inbox: create multi intent review failed", error?.message);
     return true;
   }
+  if (isQuickShoppingInput(candidates) && await tryQuickShoppingAdd(
+    client, item, actor, String(data.pending_action_id),
+    candidates.filter((candidate) => candidate.status !== "cancelled").map((candidate) => candidate.title),
+  )) return true;
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
     lineUserId: item.source_external_user_id,
@@ -1681,6 +1717,22 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     }
     const choice = eventCalendarChoiceReply(fields.pending_action_id, fields.value);
     await sendConfirmation(client, item, actor, fields.value === "special" ? "✓ Googleカレンダーに入れます。" : choice.text, fields.value === "special" ? menuQuickReplies() : [...choice.quickReplies, ...menuQuickReplies()]);
+    return;
+  }
+
+  if (fields.action === "undo_quick_shopping" && fields.pending_action_id) {
+    const { data, error } = await client.rpc("server_tx_undo_line_quick_shopping", {
+      p_actor_id: actor.user_id,
+      p_pending_action_id: fields.pending_action_id,
+    });
+    if (error) {
+      console.error("process-line-inbox: undo_quick_shopping failed", error.message);
+      await sendConfirmation(client, item, actor, /OPERATION_IN_PROGRESS/.test(error.message)
+        ? "いま追加している途中です。少し待ってから、もう一度「取り消す」を押してください。"
+        : "取り消せませんでした。アプリの買い物リストから外してください。");
+      return;
+    }
+    await sendConfirmation(client, item, actor, quickShoppingUndoReply(data as QuickShoppingUndoResult), menuQuickReplies());
     return;
   }
 
@@ -2400,6 +2452,9 @@ async function handleText(
     return;
   }
   const pendingActionId = pendingData?.pending_action_id as string | undefined;
+  if (pendingActionId && semanticCandidate && actionType === "shopping_item_add" &&
+    isQuickShoppingInput([semanticCandidate]) &&
+    await tryQuickShoppingAdd(client, item, actor, pendingActionId, [semanticCandidate.title])) return;
   if (pendingActionId && actionType !== "needs_pwa_review") {
     await sendPendingActionPreview(client, item, actor, pendingActionId, actionType, payload);
     return;
@@ -2481,6 +2536,9 @@ async function applyUnderstoodDraft(
     console.error("process-line-inbox: understood draft not stored", error?.message);
     return false;
   }
+  const shoppingTitle = typeof built.payload.title === "string" ? built.payload.title.trim() : "";
+  if (built.actionType === "shopping_item_add" && shoppingTitle &&
+    await tryQuickShoppingAdd(client, item, actor, pendingActionId, [shoppingTitle])) return true;
   await sendPendingActionPreview(client, item, actor, pendingActionId, built.actionType, payload);
   return true;
 }

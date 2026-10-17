@@ -16,6 +16,19 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   }
 
   const serviceClient = createServiceRoleClient();
+  // Repeating 予定: これ以降すべて / すべて. Without a scope only this task is cancelled.
+  const scope = body["scope"];
+  if (scope === "following" || scope === "all") {
+    const result = await callServerTx<{ ok: true; cancelled: number }>(
+      serviceClient,
+      "server_tx_cancel_schedule_series",
+      { p_actor_id: actorId, p_operation_id: operationId, p_task_id: taskId, p_scope: scope },
+    );
+    return jsonResponse(result);
+  }
+  if (scope !== undefined && scope !== "this") {
+    throw new FamilyOpsError("INVALID_INPUT", "scope must be this, following or all", 400);
+  }
   const result = await callServerTx<{ ok: true }>(
     serviceClient,
     "server_tx_cancel_task",

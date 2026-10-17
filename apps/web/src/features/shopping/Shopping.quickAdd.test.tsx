@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Shopping } from './Shopping';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
+import { UndoNoticeProvider } from '../../app/UndoNotice';
 
 const runCommand = vi.fn();
 const rpc = vi.fn();
@@ -47,5 +48,26 @@ describe('Shopping quick add', () => {
     expect(screen.getByRole('button', { name: '購入した' })).toBeInTheDocument();
     finishRefresh({ data: { actor_ref_id: 'actor-1', active: [], history: [] }, error: null });
     expect(await screen.findByText('いま買うものはありません。')).toBeInTheDocument();
+  });
+
+  it('offers to undo a purchase and reopens the item at its latest revision', async () => {
+    render(<UndoNoticeProvider><MemoryRouter><Shopping /></MemoryRouter></UndoNoticeProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: '購入した' }));
+    expect(await screen.findByText('牛乳を購入済みにしました')).toBeInTheDocument();
+    rpc.mockResolvedValue({ data: { actor_ref_id: 'actor-1', active: [], history: [{ ...milk, status: 'purchased', revision: 2 }] }, error: null });
+    fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+    await waitFor(() => expect(runCommand).toHaveBeenCalledTimes(2));
+    expect(runCommand.mock.calls[1][1]).toBe(EDGE_FUNCTIONS.reopenShoppingItem);
+    expect(runCommand.mock.calls[1][2]('op')).toMatchObject({ shopping_item_id: 'item-1', expected_revision: 2 });
+  });
+
+  it('does not undo over a later change by the partner', async () => {
+    render(<UndoNoticeProvider><MemoryRouter><Shopping /></MemoryRouter></UndoNoticeProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: '購入した' }));
+    await screen.findByText('牛乳を購入済みにしました');
+    rpc.mockResolvedValue({ data: { actor_ref_id: 'actor-1', active: [{ ...milk, status: 'wanted', revision: 3 }], history: [] }, error: null });
+    fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+    expect(await screen.findByText(/その後に変更されています/)).toBeInTheDocument();
+    expect(runCommand).toHaveBeenCalledTimes(1);
   });
 });
