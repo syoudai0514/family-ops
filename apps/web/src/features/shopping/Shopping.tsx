@@ -9,7 +9,8 @@ import type { PurchaseMethod, ShoppingItem, ShoppingItemStatus } from '../../lib
 import './Shopping.css';
 import { Link, useNavigate } from 'react-router-dom';
 import { useRealtimeRefresh } from '../../lib/useRealtimeRefresh';
-import { shoppingTitleKey, splitShoppingInput } from './quickAdd';
+import { shoppingTitleKey, splitShoppingInput, withQuantity } from './quickAdd';
+import { useUndoNotice } from '../../app/UndoNotice';
 
 const SHOPPING_REALTIME_TABLES = ['shopping_items'];
 
@@ -34,6 +35,37 @@ const PURCHASE_METHOD_LABELS: Record<PurchaseMethod, string> = {
   either: 'どちらでも',
   undecided: '未定',
 };
+
+// Undo for 購入した / 注文した / 到着した: reopen the item at its latest revision, but only
+// while it is still in the state this tap put it in (a partner's later change wins).
+function useShoppingUndo(onChanged: () => void) {
+  const offerUndo = useUndoNotice();
+  const runCommand = useCommandAttempt();
+  return (items: Array<{ id: string; title: string }>, recorded: ShoppingItemStatus, label: string) =>
+    offerUndo({
+      label,
+      undo: async () => {
+        const { data, error } = await supabase.rpc('get_my_shopping_workspace');
+        if (error) throw new Error('最新の買い物リストを確認できませんでした。');
+        const workspace = (data ?? {}) as { active?: Array<Record<string, unknown>>; history?: Array<Record<string, unknown>> };
+        const rows = [...(workspace.active ?? []), ...(workspace.history ?? [])];
+        for (const item of items) {
+          const latest = rows.find((row) => String(row.shopping_item_id) === item.id);
+          if (!latest || latest.status !== recorded) {
+            throw new Error(`${item.title}はその後に変更されています。リストで確認してください。`);
+          }
+          const revision = Number(latest.revision ?? 1);
+          await runCommand(`shopping:${item.id}:undo-${recorded}:r${revision}`, EDGE_FUNCTIONS.reopenShoppingItem, (operationId) => ({
+            operation_id: operationId,
+            shopping_item_id: item.id,
+            expected_revision: revision,
+            reason: '押し間違いを元に戻す',
+          }));
+        }
+        onChanged();
+      },
+    });
+}
 
 function useShoppingItems(householdId: string | null, userId: string | null) {
   const [items, setItems] = useState<ShoppingItem[]>([]);
@@ -86,17 +118,20 @@ export function Shopping() {
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchResults, setBatchResults] = useState<Array<{ title: string; ok: boolean; message?: string }>>([]);
   const run = useCommandAttempt();
+  const offerShoppingUndo = useShoppingUndo(refresh);
   async function purchaseSelected() {
     if (batchBusy) return;
     setBatchBusy(true); setBatchResults([]);
     const results: Array<{ title: string; ok: boolean; message?: string }> = [];
+    const bought: Array<{ id: string; title: string }> = [];
     for (const item of items.filter(item => selected.includes(item.id) && getShoppingItemActions(item.status,item.purchase_method).canPurchase)) {
       try {
         await run(`shopping:${item.id}:batch-purchase:r${item.revision ?? 1}`, EDGE_FUNCTIONS.purchaseShoppingItem, operation_id => ({ operation_id, shopping_item_id: item.id, expected_revision: item.revision ?? 1 }));
-        results.push({ title: item.title, ok: true }); setSelected(current => current.filter(id => id !== item.id));
+        results.push({ title: item.title, ok: true }); bought.push({ id: item.id, title: item.title }); setSelected(current => current.filter(id => id !== item.id));
       } catch (err) { results.push({ title: item.title, ok: false, message: err instanceof Error ? err.message : '購入を記録できませんでした。' }); }
     }
     setBatchResults(results); await refresh(); setBatchBusy(false);
+    if (bought.length > 0) offerShoppingUndo(bought, 'purchased', `${bought.length}件を購入済みにしました`);
   }
 
   if (loading) return <div className="app-shell">読み込み中…</div>;
@@ -199,6 +234,7 @@ function ShoppingItemRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runCommand = useCommandAttempt();
+  const offerShoppingUndo = useShoppingUndo(onChanged);
 
   function stable(endpoint: Parameters<typeof runCommand>[1], payload: Record<string, unknown>) {
     return runCommand(
@@ -208,12 +244,13 @@ function ShoppingItemRow({
     );
   }
 
-  async function run(fn: () => Promise<unknown>) {
+  async function run(fn: () => Promise<unknown>, recorded?: { status: ShoppingItemStatus; label: string }) {
     setBusy(true);
     setError(null);
     try {
       await fn();
       onChanged();
+      if (recorded) offerShoppingUndo([item], recorded.status, recorded.label);
     } catch (err) {
       if (err instanceof FamilyOpsApiError && err.code === 'INVALID_SHOPPING_TRANSITION') {
         setError('この操作は現在の状態では実行できません。');
@@ -228,13 +265,13 @@ function ShoppingItemRow({
   const assignee = members.find((m) => m.user_id === item.assignee_id);
   const assignmentMode = item.assignment_mode ?? (item.assignee_id ? 'person' : 'unassigned');
   const primaryAction = actions.canOrder && item.purchase_method === 'online'
-    ? { label: '注文した', run: () => stable(EDGE_FUNCTIONS.orderShoppingItem, { shopping_item_id: item.id, expected_revision: revision }) }
+    ? { label: '注文した', run: () => stable(EDGE_FUNCTIONS.orderShoppingItem, { shopping_item_id: item.id, expected_revision: revision }), recorded: { status: 'ordered' as const, label: `${item.title}を注文済みにしました` } }
     : actions.canPurchase
-      ? { label: '購入した', run: () => stable(EDGE_FUNCTIONS.purchaseShoppingItem, { shopping_item_id: item.id, expected_revision: revision }) }
+      ? { label: '購入した', run: () => stable(EDGE_FUNCTIONS.purchaseShoppingItem, { shopping_item_id: item.id, expected_revision: revision }), recorded: { status: 'purchased' as const, label: `${item.title}を購入済みにしました` } }
       : actions.canArrive
-        ? { label: '到着した', run: () => stable(EDGE_FUNCTIONS.arriveShoppingItem, { shopping_item_id: item.id, expected_revision: revision }) }
+        ? { label: '到着した', run: () => stable(EDGE_FUNCTIONS.arriveShoppingItem, { shopping_item_id: item.id, expected_revision: revision }), recorded: { status: 'arrived' as const, label: `${item.title}を到着済みにしました` } }
         : assignmentMode === 'anyone' && item.status === 'wanted' && !item.active_claimant_actor_ref_id
-          ? { label: '自分がやる', run: () => stable(EDGE_FUNCTIONS.claimShoppingItem, { shopping_item_id: item.id, action: 'claim', expected_revision: revision }) }
+          ? { label: '自分がやる', run: () => stable(EDGE_FUNCTIONS.claimShoppingItem, { shopping_item_id: item.id, action: 'claim', expected_revision: revision }), recorded: undefined }
           : null;
 
   return (
@@ -258,7 +295,7 @@ function ShoppingItemRow({
       </div>
       <div className="shopping-item-actions">
         {primaryAction && (
-          <button type="button" className="shopping-primary-action" disabled={busy} onClick={() => run(primaryAction.run)}>
+          <button type="button" className="shopping-primary-action" disabled={busy} onClick={() => run(primaryAction.run, primaryAction.recorded)}>
             {primaryAction.label}
           </button>
         )}
@@ -504,6 +541,7 @@ function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
   const { members } = useHousehold();
   const runCommand = useCommandAttempt();
   const [title, setTitle] = useState('');
+  const [quantity, setQuantity] = useState(1);
   const [purchaseMethod, setPurchaseMethod] = useState<PurchaseMethod>('undecided');
   const [assigneeId, setAssigneeId] = useState('');
   const [assignmentMode, setAssignmentMode] = useState<'person' | 'unassigned' | 'anyone'>('unassigned');
@@ -522,7 +560,7 @@ function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
         EDGE_FUNCTIONS.addShoppingItem,
         (operationId) => ({
         operation_id: operationId,
-        title: title.trim(),
+        title: withQuantity(title, quantity),
         purchase_method: purchaseMethod,
         assignee_user_id: assigneeId || undefined,
         assignment_mode: assignmentMode,
@@ -544,6 +582,16 @@ function AddShoppingItemForm({ onAdded }: { onAdded: () => void }) {
       <label>
         商品名
         <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+      </label>
+      <label>
+        数量
+        <select value={quantity} onChange={(e) => setQuantity(Number(e.target.value))}>
+          {Array.from({ length: 12 }, (_, index) => index + 1).map((value) => (
+            <option key={value} value={value}>
+              {value === 1 ? '1（表示しない）' : value}
+            </option>
+          ))}
+        </select>
       </label>
       <label>
         購入方法

@@ -18,3 +18,9 @@ export function splitShoppingInput(text: string): string[] {
 export function shoppingTitleKey(title: string): string {
   return title.normalize('NFKC').replace(/\s+/gu, '').toLowerCase();
 }
+
+/** "牛乳" + 2 → "牛乳 ×2". The count lives in the title so LINE and the list show it as is. */
+export function withQuantity(title: string, quantity: number): string {
+  const name = title.trim();
+  return quantity > 1 ? `${name} ×${quantity}` : name;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shoppingTitleKey, splitShoppingInput } from './quickAdd';
+import { shoppingTitleKey, splitShoppingInput, withQuantity } from './quickAdd';
 
 describe('splitShoppingInput', () => {
   it('splits on 、 commas and new lines and drops blanks', () => {
@@ -17,5 +17,12 @@ describe('splitShoppingInput', () => {
 
   it('matches full-width and case variants as the same item', () => {
     expect(shoppingTitleKey('Ｔｉｓｓｕｅ')).toBe(shoppingTitleKey('tissue'));
+  });
+});
+
+describe('withQuantity', () => {
+  it('appends a count only when more than one', () => {
+    expect(withQuantity(' 牛乳 ', 1)).toBe('牛乳');
+    expect(withQuantity('牛乳', 2)).toBe('牛乳 ×2');
   });
 });
