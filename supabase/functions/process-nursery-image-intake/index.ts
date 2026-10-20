@@ -69,20 +69,29 @@ async function validateReviewItems(client: ReturnType<typeof createServiceRoleCl
 
 // Worker-authenticated, read-only release check against an already stored image.
 // Never creates reviews, sends LINE, or returns notice content in the response.
-async function validateStoredImage(client: ReturnType<typeof createServiceRoleClient>, intakeId: unknown): Promise<Response> {
+async function validateStoredImage(client: ReturnType<typeof createServiceRoleClient>, intakeId: unknown, expected: unknown = []): Promise<Response> {
   if (typeof intakeId !== 'string' || !/^[0-9a-f-]{36}$/i.test(intakeId)) return jsonResponse({error:'INVALID_INPUT'},400);
+  if (!Array.isArray(expected) || expected.length>20 || expected.some(group=>!Array.isArray(group) || !group.length || group.length>8 || group.some(term=>typeof term !== 'string' || !term.length || term.length>80))) return jsonResponse({error:'INVALID_INPUT'},400);
   if (Deno.env.get('TEST_MODE') === '1') throw new Error('TEST_MODE_PROVIDER_READ_DISABLED');
   const startedAt = performance.now();
   const {data: source, error} = await client.rpc('server_read_nursery_line_delivery_context', {p_intake_id:intakeId});
   if (error) throw error;
   if (!source?.object_key) return jsonResponse({error:'NURSERY_SOURCE_UNAVAILABLE'},404);
-  const {data: image, error: imageError} = await client.storage.from('nursery-source').download(source.object_key);
-  if (imageError) throw imageError;
+  // Existing failed intakes used household/intake filenames before source
+  // identity was bound correctly. Try only those server-derived legacy keys.
+  let image: Blob | null = null;
+  for (const key of new Set<string>([source.object_key,...(source.legacy_object_keys ?? [])])) {
+    const result = await client.storage.from('nursery-source').download(key);
+    if (!result.error && result.data) { image=result.data; break; }
+  }
+  if (!image) return jsonResponse({error:'NURSERY_SOURCE_UNAVAILABLE'},404);
   const {data: contexts, error: contextError} = await client.from('child_school_contexts').select('id,school_display_name,class_display_name,recognition_aliases').eq('household_id',source.household_id).eq('active',true);
   if (contextError) throw contextError;
   const analysis = await analyzeImage(new Uint8Array(await image.arrayBuffer()),image.type || 'image/jpeg',contexts ?? [],false,source.received_at);
   await validateReviewItems(client,analysis);
-  return jsonResponse({validated:true,model:nurseryVisionModel(),triage:analysis.triage,item_count:analysis.review_items.length,item_kinds:analysis.review_items.map(i=>i.item_kind),elapsed_ms:Math.round(performance.now()-startedAt)});
+  const values = JSON.stringify(analysis.review_items.map(item=>item.proposed_value));
+  const checks = (expected as string[][]).map(group=>group.some(term=>values.includes(term)));
+  return jsonResponse({validated:true,checks,model:nurseryVisionModel(),triage:analysis.triage,item_count:analysis.review_items.length,item_kinds:analysis.review_items.map(i=>i.item_kind),elapsed_ms:Math.round(performance.now()-startedAt)});
 }
 
 export const nurseryHandler = withServiceHandler(async (req: Request) => {
@@ -90,7 +99,7 @@ export const nurseryHandler = withServiceHandler(async (req: Request) => {
   const client = createServiceRoleClient();
   const requested = await req.json().catch(() => ({}));
   const options = requested && typeof requested === 'object' ? requested : {};
-  if (options.validation_intake_id) return await validateStoredImage(client, options.validation_intake_id);
+  if ('validation_intake_id' in options) return await validateStoredImage(client, options.validation_intake_id, options.validation_expectations);
   const { data, error } = await client.rpc('server_tx_claim_nursery_line_images', { p_limit: 3, p_worker: WORKER_ID });
   if (error) throw error;
   const claimed = ((data ?? []) as Claimed[]).sort((a,b) => Date.parse(a.received_at)-Date.parse(b.received_at));
@@ -118,13 +127,16 @@ export const nurseryHandler = withServiceHandler(async (req: Request) => {
         currentRevision = Number(finishedOrdinary?.revision ?? currentRevision);
         processed++; return null;
       }
-      const ext = image.contentType.includes('png')?'png':image.contentType.includes('webp')?'webp':image.contentType.includes('heic')?'heic':'jpg';
-      const objectKey = `${item.household_id}/${item.id}.${ext}`;
-      const { error: uploadError } = await client.storage.from('nursery-source').upload(objectKey,image.bytes,{contentType:image.contentType,upsert:false});
-      if (uploadError) throw uploadError;
-      const { data: prepared, error: prepareError } = await client.rpc('server_tx_prepare_nursery_line_source',{p_intake_id:item.id,p_expected_revision:currentRevision,p_storage_object_key:objectKey,p_parser_version:'nursery-line-v1'});
+      const { data: prepared, error: prepareError } = await client.rpc('server_tx_prepare_nursery_line_source',{p_intake_id:item.id,p_expected_revision:currentRevision,p_storage_object_key:`${item.household_id}/${item.id}.jpg`,p_parser_version:'nursery-line-v1'});
       if (prepareError) throw prepareError;
       currentRevision = Number(prepared.revision);
+      // DD9 mints its own opaque source key; upload to that key, not the
+      // caller-supplied intake path that the canonical guard replaces.
+      const {data: locator, error: locatorError} = await client.rpc('server_read_nursery_source_locator',{p_actor_id:item.actor_id,p_intake_id:item.id});
+      if (locatorError) throw locatorError;
+      if (!locator?.available || !locator.storage_object_key) throw new Error('NURSERY_SOURCE_UNAVAILABLE');
+      const {error:uploadError} = await client.storage.from('nursery-source').upload(locator.storage_object_key,image.bytes,{contentType:image.contentType,upsert:false});
+      if (uploadError) throw uploadError;
       const status = analysis.ambiguous_fields.length > 0 || analysis.triage === 'needs_clarification' ? 'needs_clarification' : 'review_ready';
       const { data: finished, error: recordError } = await client.rpc('server_tx_record_nursery_line_analysis',{p_intake_id:item.id,p_expected_revision:currentRevision,p_child_school_context_id:analysis.child_school_context_id,p_context_confidence:analysis.context_confidence,p_ambiguity_fields:analysis.ambiguous_fields,p_source_facts:[],p_ai_candidates:[],p_review_items:analysis.review_items,p_status:status});
       if (recordError) throw recordError;

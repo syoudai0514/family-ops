@@ -34,7 +34,8 @@ const REVIEW_ITEM_KINDS = new Set([
   'exception',
 ]);
 export function nurseryVisionModel(): string {
-  return Deno.env.get('GEMINI_MODEL_VISION')?.trim() || 'gemini-3.8-flash';
+  // Versioned with the image worker; text-model secrets are independent.
+  return 'gemini-3.8-flash';
 }
 
 export async function analyzeImage(
@@ -69,7 +70,7 @@ export async function analyzeImage(
     'candidate_key/source_locator are technical metadata only and will be normalized by the server; never place notice text or personal data in them.',
     'For preparation use proposed_value {trigger_spec:{event?|event_type?|weekday?|month?|date?|condition?|title_contains?|classification?},preparation_template:{items:[string|{title,quantity?,note?,category?}],tasks?:[],checklist?:[],notes?:string},effective_from,effective_to?}. Keep the structure small; never include transcripts or people.',
     'For timetable use proposed_value {title,date,location?,details?}. For shared_info use {text,date?}. For URL/QR/execution destination use exactly one of {title,due_date,url} or {title,due_date,destination}; only emit url when clearly readable and http/https. For tasks and submissions use {title,due_date}. Never choose calendar inclusion for a submission; that is a human review choice. For recurrence always include effective_from/effective_to <= 366 days and rule_spec.',
-    'source_facts and ai_candidates must be empty arrays. Extract only actionable notice facts, at most 16 review_items. For a one-off required item prefer a task with title and due_date. Use preparation only for an actual reusable preparation rule.',
+    'source_facts and ai_candidates must be empty arrays. Extract only actionable notice facts, at most 64 review_items. For a one-off required item prefer a task with title and due_date. Use preparation only for an actual reusable preparation rule.',
     'Keep Other timetable items. Ask ambiguity only for nursery/child/class/date/document_group.',
   ].join('\n');
   const response = await fetch(
@@ -89,7 +90,7 @@ export async function analyzeImage(
         generationConfig: {
           temperature: 0,
           responseMimeType: 'application/json',
-          maxOutputTokens: 4096,
+          maxOutputTokens: 8192,
           ...(/^gemini-3[.-]/.test(model)
             ? { thinkingConfig: { thinkingLevel: 'low' } }
             : {}),
