@@ -74,7 +74,7 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
       assertEquals(body.generationConfig.thinkingConfig, {
         thinkingLevel: 'low',
       });
-      assertEquals(body.generationConfig.maxOutputTokens, 4096);
+      assertEquals(body.generationConfig.maxOutputTokens, 8192);
       assertEquals(
         new Headers(init?.headers).get('x-goog-api-key'),
         'gemini-test',
