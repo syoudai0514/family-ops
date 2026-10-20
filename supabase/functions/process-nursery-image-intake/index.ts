@@ -1,83 +1,32 @@
-// Q89-Q106 worker. Provider interaction is LINE content READ only; no LINE
-// send and no Google/provider mutation. Canonical changes remain behind the
+// Q89-Q106 worker. Reads LINE images and replies to their sender; push
+// fallbacks remain owned by the durable notification worker. Canonical changes remain behind the
 // authenticated human-confirm endpoint.
 import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts';
 import { jsonResponse, withServiceHandler } from '../_shared/handler.ts';
-import { assertPrivacySafeStructuredValue, buildNurseryResultMessage, isSafeExternalUrl, keepValidReviewItems, mayGroupNurseryPages, nurseryFailureCode, requiredClarificationFields, type NurseryAnalysis, type NurseryResultKind } from '../_shared/nurseryImage.ts';
+import { buildNurseryResultMessage, mayGroupNurseryPages, nurseryFailureCode, type NurseryResultKind } from '../_shared/nurseryImage.ts';
+
+import { analyzeImage, nurseryVisionModel, type ContextRow, type ModelResult } from './nurseryVision.ts';
+import { replyOrEnqueuePush } from '../_shared/lineMessaging.ts';
+import { kickNotificationDelivery } from './nurseryDelivery.ts';
 
 type Claimed = {
   id: string; provider_event_id: string; line_message_id: string; household_id: string;
   actor_id: string; line_user_id: string; revision: number; received_at: string;
 };
-type ContextRow = { id: string; school_display_name: string; class_display_name: string | null; recognition_aliases: string[] | null };
-type ReviewItem = { candidate_key: string; origin: 'source_explicit'|'ai_inference'; item_kind: string; classification?: string | null; source_page: number; source_locator?: string; confidence_band: 'high'|'medium'|'low'; proposed_value: Record<string, unknown> };
-type ModelResult = NurseryAnalysis & { review_items: ReviewItem[] };
 type PreviousImage = { found: boolean; intake_id?: string; received_at?: string; page_index?: number | null };
 
 const WORKER_ID = `process-nursery-image-intake:${crypto.randomUUID()}`;
-const REVIEW_ITEM_KINDS = new Set(['preparation','task','timetable','shared_info','submission','url','recurrence','exception']);
 
 async function fetchLineImage(messageId: string): Promise<{ bytes: Uint8Array; contentType: string }> {
   const token = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? '';
   if (!token) throw new Error('LINE_CHANNEL_ACCESS_TOKEN_MISSING');
-  const response = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, { headers: { Authorization: `Bearer ${token}` } });
+  const response = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error(`LINE_CONTENT_HTTP_${response.status}`);
   const length = Number(response.headers.get('content-length') ?? '0');
   if (length > 10 * 1024 * 1024) throw new Error('NURSERY_IMAGE_TOO_LARGE');
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength > 10 * 1024 * 1024) throw new Error('NURSERY_IMAGE_TOO_LARGE');
   return { bytes, contentType: response.headers.get('content-type') ?? 'image/jpeg' };
-}
-
-async function analyzeImage(bytes: Uint8Array, contentType: string, contexts: ContextRow[], hasRecentPage: boolean): Promise<ModelResult> {
-  const apiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
-  const model = Deno.env.get('GEMINI_MODEL_VISION') ?? Deno.env.get('GEMINI_MODEL_REWRITE') ?? '';
-  if (!apiKey || !model) throw new Error('GEMINI_NOT_CONFIGURED');
-  let binary = ''; for (let i=0;i<bytes.length;i+=0x8000) binary += String.fromCharCode(...bytes.subarray(i,Math.min(i+0x8000,bytes.length)));
-  const prompt = [
-    'Family Ops nursery notice triage. Return JSON only.',
-    'First decide triage: ordinary_photo, nursery_notice, or needs_clarification. Ordinary family photos must not be extracted.',
-    'Never return names/contact/address/roster/other-child data. Include only facts/actions for the selected household child/class.',
-    'Contexts: '+JSON.stringify(contexts),
-    `A recent image page from the same LINE sender exists within 10 minutes: ${hasRecentPage ? 'yes' : 'no'}. Set same_document_as_previous=true only when this image itself gives evidence it continues that notice (page numbering, repeated heading/layout/context, or explicit continuation). Time proximity alone is not enough.`,
-    'Schema: {triage,same_document_as_previous,child_school_context_id,context_confidence,ambiguous_fields,source_facts,ai_candidates,review_items}.',
-    'review_items entries: candidate_key, origin(source_explicit|ai_inference), item_kind(preparation|task|timetable|shared_info|submission|url|recurrence|exception), classification(recommended|other only for timetable), source_page, source_locator, confidence_band, proposed_value.',
-    'candidate_key/source_locator are technical metadata only and will be normalized by the server; never place notice text or personal data in them.',
-    'For preparation use proposed_value {trigger_spec:{event?|event_type?|weekday?|month?|date?|condition?|title_contains?|classification?},preparation_template:{items:[string|{title,quantity?,note?,category?}],tasks?:[],checklist?:[],notes?:string},effective_from,effective_to?}. Keep the structure small; never include transcripts or people.',
-    'For timetable use proposed_value {title,date,location?,details?}. For shared_info use {text,date?}. For URL/QR/execution destination use exactly one of {title,due_date,url} or {title,due_date,destination}; only emit url when clearly readable and http/https. For tasks and submissions use {title,due_date}. Never choose calendar inclusion for a submission; that is a human review choice. For recurrence always include effective_from/effective_to <= 366 days and rule_spec.',
-    'Keep Other timetable items. Ask ambiguity only for nursery/child/class/date/document_group.',
-  ].join('\n');
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ contents:[{parts:[{text:prompt},{inlineData:{mimeType:contentType,data:btoa(binary)}}]}], generationConfig:{temperature:0,responseMimeType:'application/json'} }),
-  });
-  if (!response.ok) throw new Error(`GEMINI_HTTP_${response.status}`);
-  const body = await response.json(); const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (typeof text !== 'string') throw new Error('GEMINI_EMPTY_RESPONSE');
-  const parsed = JSON.parse(text) as ModelResult;
-  if (!['ordinary_photo','nursery_notice','needs_clarification'].includes(parsed.triage)) throw new Error('NURSERY_TRIAGE_INVALID');
-  if (!Array.isArray(parsed.review_items)) throw new Error('NURSERY_REVIEW_ITEMS_INVALID');
-  // A malformed item is dropped, not fatal: the rest of the notice is still worth reviewing.
-  const { kept, dropped } = keepValidReviewItems(parsed.review_items.slice(0, 64), (item, index) => {
-    if (!REVIEW_ITEM_KINDS.has(item.item_kind)) throw new Error('NURSERY_REVIEW_ITEM_INVALID');
-    if (!Number.isInteger(item.source_page) || item.source_page < 1 || item.source_page > 32) throw new Error('NURSERY_SOURCE_PAGE_INVALID');
-    if (!['source_explicit','ai_inference'].includes(item.origin) || !['high','medium','low'].includes(item.confidence_band)) throw new Error('NURSERY_REVIEW_ITEM_INVALID');
-    // Model-generated technical metadata is never persisted. Keeping the
-    // durable locator deterministic closes an otherwise unnecessary text
-    // channel while retaining exact page/item traceability for review.
-    item.candidate_key = `item-${index + 1}-${item.item_kind}`;
-    item.source_locator = `p${item.source_page}:item${index + 1}`;
-    assertPrivacySafeStructuredValue(item.proposed_value);
-    if (item.item_kind === 'url') {
-      const url = typeof item.proposed_value.url === 'string' ? item.proposed_value.url.trim() : '';
-      const destination = typeof item.proposed_value.destination === 'string' ? item.proposed_value.destination.trim() : '';
-      if (url && !isSafeExternalUrl(url)) throw new Error('NURSERY_UNSAFE_URL');
-      if ((!url && !destination) || (url && destination)) throw new Error('NURSERY_EXECUTION_TARGET_INVALID');
-    }
-  });
-  if (dropped.length > 0) console.warn('process-nursery-image-intake: dropped invalid review items', { codes: dropped });
-  parsed.review_items = kept;
-  parsed.ambiguous_fields = requiredClarificationFields(parsed);
-  return parsed;
 }
 
 // Tells the sender what happened to their photo. Best effort: a failed
@@ -91,27 +40,65 @@ async function notifySender(
 ): Promise<void> {
   try {
     const base = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
-    const { error } = await client.rpc('server_tx_enqueue_immediate_line_push', {
-      p_household_id: item.household_id,
-      p_recipient_user_id: item.actor_id,
-      p_text: buildNurseryResultMessage({ kind, itemCount, hasContexts, link: base ? `${base}/nursery/reviews/${item.id}` : '' }),
-      p_dedup_key: `nursery-intake:${item.id}:${kind}`,
-      p_rich_message: null,
+    const { data: delivery, error: deliveryError } = await client.rpc('server_read_nursery_line_delivery_context', {p_intake_id:item.id});
+    if (deliveryError) console.warn('nursery delivery context unavailable', {code:nurseryFailureCode(deliveryError)});
+    const result = await replyOrEnqueuePush(client, {
+      replyToken: delivery?.reply_token,
+      lineUserId: item.line_user_id,
+      householdId: item.household_id,
+      recipientUserId: item.actor_id,
+      text: buildNurseryResultMessage({ kind, itemCount, hasContexts, link: base ? `${base}/nursery/reviews/${item.id}` : '' }),
+      dedupKey: `nursery-intake:${item.id}:${kind}`,
     });
-    if (error) console.warn('process-nursery-image-intake: sender notice not queued', { message: error.message });
+    if (result === 'push_fallback') await kickNotificationDelivery();
+    console.info('nursery result delivery', {intakeId:item.id,delivery:result});
   } catch (err) {
     console.warn('process-nursery-image-intake: sender notice failed', { message: err instanceof Error ? err.message : String(err) });
   }
 }
 
-Deno.serve(withServiceHandler(async (req: Request) => {
+
+async function validateReviewItems(client: ReturnType<typeof createServiceRoleClient>, analysis: ModelResult): Promise<void> {
+  if (!analysis.review_items.length) return;
+  const {data, error} = await client.rpc('server_read_validate_nursery_review_items', {p_items:analysis.review_items});
+  if (error) throw error;
+  if (!data?.items?.length) throw new Error('NURSERY_REVIEW_ITEMS_INVALID');
+  if (data.dropped > 0) console.warn('nursery invalid candidates withheld', {count:data.dropped});
+  analysis.review_items = data.items;
+}
+
+// Worker-authenticated, read-only release check against an already stored image.
+// Never creates reviews, sends LINE, or returns notice content in the response.
+async function validateStoredImage(client: ReturnType<typeof createServiceRoleClient>, intakeId: unknown): Promise<Response> {
+  if (typeof intakeId !== 'string' || !/^[0-9a-f-]{36}$/i.test(intakeId)) return jsonResponse({error:'INVALID_INPUT'},400);
+  if (Deno.env.get('TEST_MODE') === '1') throw new Error('TEST_MODE_PROVIDER_READ_DISABLED');
+  const startedAt = performance.now();
+  const {data: source, error} = await client.rpc('server_read_nursery_line_delivery_context', {p_intake_id:intakeId});
+  if (error) throw error;
+  if (!source?.object_key) return jsonResponse({error:'NURSERY_SOURCE_UNAVAILABLE'},404);
+  const {data: image, error: imageError} = await client.storage.from('nursery-source').download(source.object_key);
+  if (imageError) throw imageError;
+  const {data: contexts, error: contextError} = await client.from('child_school_contexts').select('id,school_display_name,class_display_name,recognition_aliases').eq('household_id',source.household_id).eq('active',true);
+  if (contextError) throw contextError;
+  const analysis = await analyzeImage(new Uint8Array(await image.arrayBuffer()),image.type || 'image/jpeg',contexts ?? [],false,source.received_at);
+  await validateReviewItems(client,analysis);
+  return jsonResponse({validated:true,model:nurseryVisionModel(),triage:analysis.triage,item_count:analysis.review_items.length,item_kinds:analysis.review_items.map(i=>i.item_kind),elapsed_ms:Math.round(performance.now()-startedAt)});
+}
+
+export const nurseryHandler = withServiceHandler(async (req: Request) => {
   requireWorkerToken(req);
   const client = createServiceRoleClient();
-  const { data, error } = await client.rpc('server_tx_claim_nursery_line_images', { p_limit: 5, p_worker: WORKER_ID });
+  const requested = await req.json().catch(() => ({}));
+  const options = requested && typeof requested === 'object' ? requested : {};
+  if (options.validation_intake_id) return await validateStoredImage(client, options.validation_intake_id);
+  const { data, error } = await client.rpc('server_tx_claim_nursery_line_images', { p_limit: 3, p_worker: WORKER_ID });
   if (error) throw error;
-  const claimed = (data ?? []) as Claimed[];
+  const claimed = ((data ?? []) as Claimed[]).sort((a,b) => Date.parse(a.received_at)-Date.parse(b.received_at));
   let processed=0;
-  for (const item of claimed) {
+  // At most three independent analyses run together, so one slow page does not
+  // hold up another sender/page. Grouping follows persistence, in source order.
+  const completed = await Promise.all(claimed.map(async (item) => {
+    const startedAt = performance.now();
     let currentRevision = item.revision;
     try {
       if (Deno.env.get('TEST_MODE') === '1') throw new Error('TEST_MODE_PROVIDER_READ_DISABLED');
@@ -120,14 +107,16 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       const previous = (previousData ?? {found:false}) as PreviousImage;
 
       const image = await fetchLineImage(item.line_message_id);
-      const { data: contexts, error: contextsError } = await client.from('child_school_contexts').select('id,school_display_name,class_display_name,recognition_aliases').eq('household_id',item.household_id);
+      const { data: contexts, error: contextsError } = await client.from('child_school_contexts').select('id,school_display_name,class_display_name,recognition_aliases').eq('household_id',item.household_id).eq('active',true);
       if (contextsError) throw contextsError;
-      const analysis = await analyzeImage(image.bytes,image.contentType,(contexts ?? []) as ContextRow[],previous.found === true);
+      const analysis = await analyzeImage(image.bytes,image.contentType,(contexts ?? []) as ContextRow[],previous.found === true,item.received_at);
+      await validateReviewItems(client, analysis);
+      console.info('nursery image analyzed', {intakeId:item.id,model:nurseryVisionModel(),elapsedMs:Math.round(performance.now()-startedAt),itemCount:analysis.review_items.length});
       if (analysis.triage === 'ordinary_photo') {
         const { data: finishedOrdinary, error: finishError } = await client.rpc('server_tx_finish_nursery_image_review',{ p_intake_id:item.id,p_expected_revision:currentRevision,p_status:'ordinary_photo',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:true });
         if (finishError) throw finishError;
         currentRevision = Number(finishedOrdinary?.revision ?? currentRevision);
-        processed++; continue;
+        processed++; return null;
       }
       const ext = image.contentType.includes('png')?'png':image.contentType.includes('webp')?'webp':image.contentType.includes('heic')?'heic':'jpg';
       const objectKey = `${item.household_id}/${item.id}.${ext}`;
@@ -142,6 +131,21 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       currentRevision = Number(finished.revision);
       await notifySender(client, item, status === 'needs_clarification' ? 'needs_clarification' : 'review_ready', analysis.review_items.length, (contexts ?? []).length > 0);
 
+      processed++;
+      return {item,analysis,previous,currentRevision};
+    } catch (err) {
+      console.error('process-nursery-image-intake failed',{intakeId:item.id,code:nurseryFailureCode(err)});
+      try {
+        await client.rpc('server_tx_finish_nursery_image_review',{p_intake_id:item.id,p_expected_revision:currentRevision,p_status:'failed',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:false});
+      } catch { /* already-terminal/stale rows remain auditable; processing rows use the latest known revision */ }
+      await notifySender(client, item, 'failed', 0, true);
+      return null;
+    }
+  }));
+  for (const result of completed) {
+    if (!result) continue;
+    const {item,analysis,previous} = result;
+    const {currentRevision} = result;
       if (previous.found && previous.intake_id && previous.received_at && mayGroupNurseryPages({
         sameDocumentAsPrevious:analysis.same_document_as_previous,
         sameHousehold:true,
@@ -151,16 +155,10 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       })) {
         const { data: grouped, error: groupError } = await client.rpc('server_tx_group_nursery_image_pages',{p_previous_id:previous.intake_id,p_current_id:item.id,p_expected_current_revision:currentRevision});
         if (groupError) console.warn('nursery grouping deferred', { intakeId:item.id,message:groupError.message });
-        else currentRevision = Number(grouped?.revision ?? currentRevision);
+        else if (!grouped) console.warn('nursery grouping returned no result');
       }
-      processed++;
-    } catch (err) {
-      console.error('process-nursery-image-intake failed',{intakeId:item.id,code:nurseryFailureCode(err)});
-      try {
-        await client.rpc('server_tx_finish_nursery_image_review',{p_intake_id:item.id,p_expected_revision:currentRevision,p_status:'failed',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:false});
-      } catch { /* already-terminal/stale rows remain auditable; processing rows use the latest known revision */ }
-      await notifySender(client, item, 'failed', 0, true);
-    }
   }
   return jsonResponse({claimed:claimed.length,processed});
-}));
+});
+
+Deno.serve(nurseryHandler);

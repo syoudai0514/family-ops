@@ -105,7 +105,7 @@ export function buildNurseryResultMessage(input: {
   link: string;
 }): string {
   if (input.kind === 'failed') {
-    return '📷 写真をうまく読み取れませんでした。\nもう一度撮り直して送るか、内容を文字で送ってください。';
+    return '📷 写真の処理中にエラーが発生しました。\n少し待ってからもう一度送るか、内容を文字で送ってください。';
   }
   const lines = [
     input.itemCount > 0
