@@ -32,7 +32,10 @@ begin
   if recorded->>'status'<>'review_ready' or (select count(*) from private.nursery_review_items where intake_id=iid)<>1 then raise exception 'FAIL normalized actual photo task did not save'; end if;
   if exists(select 1 from public.task_instances where household_id=h) or exists(select 1 from public.family_events where household_id=h) then raise exception 'FAIL analysis bypassed human confirmation'; end if;
   delivery:=public.server_read_nursery_line_delivery_context(iid);
-  if delivery->>'reply_token'<>'nursery-133-reply' or delivery->>'object_key'<>h::text||'/'||iid::text||'.jpg' then raise exception 'FAIL photo-scoped delivery context'; end if;
+  if delivery->>'reply_token' is distinct from 'nursery-133-reply' or delivery->>'object_key' is distinct from ('nursery-r0/'||(prepared->>'source_document_id')) then raise exception 'FAIL photo-scoped delivery context'; end if;
+  perform public.server_tx_mark_nursery_raw_deleted(u,iid,(recorded->>'revision')::bigint);
+  delivery:=public.server_read_nursery_line_delivery_context(iid);
+  if delivery->>'object_key' is not null or delivery->'legacy_object_keys' is distinct from '[]'::jsonb then raise exception 'FAIL deleted photo locator became available'; end if;
   if public.server_read_nursery_line_delivery_context(gen_random_uuid()) is not null then raise exception 'FAIL nonexistent context exposed data'; end if;
   if has_function_privilege('anon','public.server_read_nursery_line_delivery_context(uuid)','execute')
     or has_function_privilege('authenticated','public.server_read_nursery_line_delivery_context(uuid)','execute')

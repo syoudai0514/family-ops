@@ -21,10 +21,9 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: 2.115.0
-      - name: Select image-only model
+      - name: Require deployment credential
         run: |
           test -n "$SUPABASE_ACCESS_TOKEN"
-          supabase secrets set GEMINI_MODEL_VISION=gemini-3.8-flash --project-ref "$PROJECT_REF"
       - name: Deploy photo processing and receipt only
         run: |
           supabase functions deploy process-nursery-image-intake --project-ref "$PROJECT_REF" --use-api

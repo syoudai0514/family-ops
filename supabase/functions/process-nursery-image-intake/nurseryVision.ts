@@ -34,7 +34,8 @@ const REVIEW_ITEM_KINDS = new Set([
   'exception',
 ]);
 export function nurseryVisionModel(): string {
-  return Deno.env.get('GEMINI_MODEL_VISION')?.trim() || 'gemini-3.8-flash';
+  // Versioned with the image worker; text-model secrets are independent.
+  return 'gemini-3.8-flash';
 }
 
 export async function analyzeImage(

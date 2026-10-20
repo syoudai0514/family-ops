@@ -137,6 +137,12 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
           data = { items, dropped: 0 };
           break;
         }
+        case 'server_read_nursery_source_locator':
+          data = {
+            available: true,
+            storage_object_key: 'nursery-r0/canonical-source',
+          };
+          break;
         case 'server_tx_prepare_nursery_line_source':
           data = { revision: 3 };
           break;
@@ -218,6 +224,17 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
         });
         assertEquals(recorded?.p_status, 'review_ready');
         assertEquals((recorded?.p_review_items as unknown[]).length, 2);
+        const prepare = calls.findIndex((c) =>
+          c.path.endsWith('server_tx_prepare_nursery_line_source')
+        );
+        const upload = calls.findIndex((c) =>
+          c.path ===
+            '/storage/v1/object/nursery-source/nursery-r0/canonical-source'
+        );
+        const record = calls.findIndex((c) =>
+          c.path.endsWith('server_tx_record_nursery_line_analysis')
+        );
+        assert(prepare >= 0 && upload > prepare && record > upload);
         assert(calls.find((c) => c.path === '/v2/bot/message/reply'));
         assert(
           !calls.some((c) =>
