@@ -37,17 +37,24 @@ begin
   perform public.server_tx_finish_nursery_image_review(iid2,rev,'ordinary_photo',null,null,null,null,'{}', '[]'::jsonb,true);
   if (select status from private.nursery_line_image_intakes where id=iid2)<>'ordinary_photo' then raise exception 'FAIL Q89 ordinary photo triage'; end if;
 
-  -- Build the existing DD9 source/extraction foundation for a notice image.
-  dd9:=private.fn_command_create_nursery_intake_v1(h1,u1,a1,null,'66000000-0000-0000-0000-000000000201',
-    'codmon_notice','nursery-source/opaque-object-key','2026-09-05 12:00+09','q89-q106-v1',jsonb_build_object('provider','line'),'line');
-  doc:=(dd9->>'source_document_id')::uuid; ext:=(dd9->>'extraction_id')::uuid;
+  -- Exercise the actual LINE worker adapter: calling DD9 directly concealed
+  -- invalid provider metadata in server_tx_prepare_nursery_line_source.
   select revision into rev from private.nursery_line_image_intakes where id=iid;
-  finish:=public.server_tx_finish_nursery_image_review(iid,rev,'review_ready',doc,ext,ctx,'high','{}',jsonb_build_array(
+  dd9:=public.server_tx_prepare_nursery_line_source(iid,rev,'nursery-source/opaque-object-key','q89-q106-v1');
+  doc:=(dd9->>'source_document_id')::uuid; ext:=(dd9->>'extraction_id')::uuid;
+  if doc is null or ext is null or (dd9->>'revision')::bigint<>rev+1 then
+    raise exception 'FAIL Q89 LINE source preparation result';
+  end if;
+  if exists(select 1 from private.document_extractions where id=ext and provider_metadata ? 'source') then
+    raise exception 'FAIL Q89 forbidden source key in provider metadata';
+  end if;
+  select revision into rev from private.nursery_line_image_intakes where id=iid;
+  finish:=public.server_tx_record_nursery_line_analysis(iid,rev,ctx,'high','{}','[]'::jsonb,'[]'::jsonb,jsonb_build_array(
     jsonb_build_object('candidate_key','task-1','origin','source_explicit','item_kind','task','source_page',1,'source_locator','p1:item','confidence_band','high','proposed_value',jsonb_build_object('title','水筒を準備','due_date','2026-09-10')),
     jsonb_build_object('candidate_key','other-1','origin','source_explicit','item_kind','timetable','classification','other','source_page',1,'source_locator','p1:calendar','confidence_band','high','proposed_value',jsonb_build_object('title','身体測定','date','2026-09-12')),
     jsonb_build_object('candidate_key','url-1','origin','ai_inference','item_kind','url','source_page',1,'source_locator','qr1','confidence_band','medium','proposed_value',jsonb_build_object('title','提出フォーム','due_date','2026-09-11','url','https://example.jp/form')),
     jsonb_build_object('candidate_key','rec-1','origin','ai_inference','item_kind','recurrence','source_page',1,'source_locator','p1:weekly','confidence_band','medium','proposed_value',jsonb_build_object('effective_from','2026-09-01','effective_to','2027-08-31','rule_spec',jsonb_build_object('weekday','Friday','frequency','weekly')))
-  ),false);
+  ),'review_ready');
   rev:=(finish->>'revision')::bigint;
 
   -- Q91 cross-household read is denied.

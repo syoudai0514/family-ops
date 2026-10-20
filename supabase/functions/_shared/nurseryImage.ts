@@ -78,6 +78,20 @@ export function validateBoundedRecurrence(input: { effective_from: string; effec
 
 export type NurseryResultKind = 'failed' | 'review_ready' | 'needs_clarification';
 
+// PostgREST errors are plain objects, so String(error) loses their code.
+// Persist only a machine code: DB details may contain private notice content.
+export function nurseryFailureCode(error: unknown): string {
+  if (error !== null && typeof error === 'object' && 'message' in error &&
+      typeof error.message === 'string' && /^[A-Z][A-Z0-9_]{0,100}$/.test(error.message)) {
+    return error.message;
+  }
+  if (error !== null && typeof error === 'object' && 'code' in error &&
+      typeof error.code === 'string' && /^[A-Z0-9_]{1,40}$/.test(error.code)) {
+    return error.code;
+  }
+  return 'NURSERY_PROCESSING_FAILED';
+}
+
 /**
  * What the sender is told after a photo was processed. Before this, nothing was
  * sent on success or failure (2026-09-29 review §2-7): the worker never sends to
