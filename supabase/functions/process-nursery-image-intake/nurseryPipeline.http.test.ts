@@ -283,9 +283,21 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
       async () => {
         calls.length = 0;
         geminiFails = false;
-        const response = await handler!(request({ validation_intake_id: id }));
+        const response = await handler!(
+          request({
+            validation_intake_id: id,
+            validation_expectations: [
+              ['エプロン'],
+              ['三角巾', '三角きん'],
+              ['マスク'],
+              ['2026-10-26'],
+              ['2026-10-22'],
+            ],
+          }),
+        );
         const result = await response.json();
         assertEquals(result.validated, true);
+        assertEquals(result.checks, [true, true, true, true, true]);
         assertEquals(result.model, 'gemini-3.8-flash');
         assertEquals(result.item_count, 2);
         assert(!JSON.stringify(result).includes('エプロン'));

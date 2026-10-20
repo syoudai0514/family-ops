@@ -69,8 +69,9 @@ async function validateReviewItems(client: ReturnType<typeof createServiceRoleCl
 
 // Worker-authenticated, read-only release check against an already stored image.
 // Never creates reviews, sends LINE, or returns notice content in the response.
-async function validateStoredImage(client: ReturnType<typeof createServiceRoleClient>, intakeId: unknown): Promise<Response> {
+async function validateStoredImage(client: ReturnType<typeof createServiceRoleClient>, intakeId: unknown, expected: unknown = []): Promise<Response> {
   if (typeof intakeId !== 'string' || !/^[0-9a-f-]{36}$/i.test(intakeId)) return jsonResponse({error:'INVALID_INPUT'},400);
+  if (!Array.isArray(expected) || expected.length>20 || expected.some(group=>!Array.isArray(group) || !group.length || group.length>8 || group.some(term=>typeof term !== 'string' || !term.length || term.length>80))) return jsonResponse({error:'INVALID_INPUT'},400);
   if (Deno.env.get('TEST_MODE') === '1') throw new Error('TEST_MODE_PROVIDER_READ_DISABLED');
   const startedAt = performance.now();
   const {data: source, error} = await client.rpc('server_read_nursery_line_delivery_context', {p_intake_id:intakeId});
@@ -88,7 +89,9 @@ async function validateStoredImage(client: ReturnType<typeof createServiceRoleCl
   if (contextError) throw contextError;
   const analysis = await analyzeImage(new Uint8Array(await image.arrayBuffer()),image.type || 'image/jpeg',contexts ?? [],false,source.received_at);
   await validateReviewItems(client,analysis);
-  return jsonResponse({validated:true,model:nurseryVisionModel(),triage:analysis.triage,item_count:analysis.review_items.length,item_kinds:analysis.review_items.map(i=>i.item_kind),elapsed_ms:Math.round(performance.now()-startedAt)});
+  const values = JSON.stringify(analysis.review_items.map(item=>item.proposed_value));
+  const checks = (expected as string[][]).map(group=>group.some(term=>values.includes(term)));
+  return jsonResponse({validated:true,checks,model:nurseryVisionModel(),triage:analysis.triage,item_count:analysis.review_items.length,item_kinds:analysis.review_items.map(i=>i.item_kind),elapsed_ms:Math.round(performance.now()-startedAt)});
 }
 
 export const nurseryHandler = withServiceHandler(async (req: Request) => {
@@ -96,7 +99,7 @@ export const nurseryHandler = withServiceHandler(async (req: Request) => {
   const client = createServiceRoleClient();
   const requested = await req.json().catch(() => ({}));
   const options = requested && typeof requested === 'object' ? requested : {};
-  if ('validation_intake_id' in options) return await validateStoredImage(client, options.validation_intake_id);
+  if ('validation_intake_id' in options) return await validateStoredImage(client, options.validation_intake_id, options.validation_expectations);
   const { data, error } = await client.rpc('server_tx_claim_nursery_line_images', { p_limit: 3, p_worker: WORKER_ID });
   if (error) throw error;
   const claimed = ((data ?? []) as Claimed[]).sort((a,b) => Date.parse(a.received_at)-Date.parse(b.received_at));
