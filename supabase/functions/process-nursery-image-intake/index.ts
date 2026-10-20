@@ -91,7 +91,7 @@ async function validateStoredImage(client: ReturnType<typeof createServiceRoleCl
   await validateReviewItems(client,analysis);
   const values = JSON.stringify(analysis.review_items.map(item=>item.proposed_value));
   const checks = (expected as string[][]).map(group=>group.some(term=>values.includes(term)));
-  return jsonResponse({validated:true,checks,model:nurseryVisionModel(),triage:analysis.triage,item_count:analysis.review_items.length,item_kinds:analysis.review_items.map(i=>i.item_kind),elapsed_ms:Math.round(performance.now()-startedAt)});
+  return jsonResponse({validated:true,checks,model:analysis.model_used ?? nurseryVisionModel(),triage:analysis.triage,item_count:analysis.review_items.length,item_kinds:analysis.review_items.map(i=>i.item_kind),elapsed_ms:Math.round(performance.now()-startedAt)});
 }
 
 export const nurseryHandler = withServiceHandler(async (req: Request) => {
@@ -120,7 +120,7 @@ export const nurseryHandler = withServiceHandler(async (req: Request) => {
       if (contextsError) throw contextsError;
       const analysis = await analyzeImage(image.bytes,image.contentType,(contexts ?? []) as ContextRow[],previous.found === true,item.received_at);
       await validateReviewItems(client, analysis);
-      console.info('nursery image analyzed', {intakeId:item.id,model:nurseryVisionModel(),elapsedMs:Math.round(performance.now()-startedAt),itemCount:analysis.review_items.length});
+      console.info('nursery image analyzed', {intakeId:item.id,model:analysis.model_used ?? nurseryVisionModel(),elapsedMs:Math.round(performance.now()-startedAt),itemCount:analysis.review_items.length});
       if (analysis.triage === 'ordinary_photo') {
         const { data: finishedOrdinary, error: finishError } = await client.rpc('server_tx_finish_nursery_image_review',{ p_intake_id:item.id,p_expected_revision:currentRevision,p_status:'ordinary_photo',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:true });
         if (finishError) throw finishError;

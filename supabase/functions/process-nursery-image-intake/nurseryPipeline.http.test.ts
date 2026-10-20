@@ -30,6 +30,7 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
   const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
   let replyFails = false;
   let geminiFails = false;
+  let primaryTimesOut = false;
   let recorded: Record<string, unknown> | undefined;
   const modelResult = {
     triage: 'nursery_notice',
@@ -70,7 +71,10 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
     calls.push({ path: url.pathname, body });
     if (url.hostname === 'generativelanguage.googleapis.com') {
       assert(init?.signal, 'Gemini must have a timeout');
-      assertStringIncludes(url.pathname, 'gemini-3.8-flash:generateContent');
+      assert(/gemini-3\.(8|5)-flash:generateContent$/.test(url.pathname));
+      if (primaryTimesOut && url.pathname.includes('gemini-3.8-flash')) {
+        return Promise.reject(new DOMException('timed out', 'TimeoutError'));
+      }
       assertEquals(body.generationConfig.thinkingConfig, {
         thinkingLevel: 'low',
       });
@@ -257,6 +261,24 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
           c.path.endsWith('send-notifications')
         );
         assert(enqueue >= 0 && kick > enqueue);
+      },
+    );
+    await t.step(
+      'a slow primary model switches to the stronger Flash fallback and still records',
+      async () => {
+        calls.length = 0;
+        replyFails = false;
+        primaryTimesOut = true;
+        assertEquals(await (await handler!(request())).json(), {
+          claimed: 1,
+          processed: 1,
+        });
+        const models = calls.filter((c) => c.path.includes(':generateContent'))
+          .map((c) => c.path);
+        assertEquals(models.length, 2);
+        assertStringIncludes(models[0], 'gemini-3.8-flash');
+        assertStringIncludes(models[1], 'gemini-3.5-flash');
+        primaryTimesOut = false;
       },
     );
     await t.step(

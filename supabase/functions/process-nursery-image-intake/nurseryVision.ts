@@ -22,7 +22,10 @@ export type ReviewItem = {
   confidence_band: 'high' | 'medium' | 'low';
   proposed_value: Record<string, unknown>;
 };
-export type ModelResult = NurseryAnalysis & { review_items: ReviewItem[] };
+export type ModelResult = NurseryAnalysis & {
+  review_items: ReviewItem[];
+  model_used?: string;
+};
 const REVIEW_ITEM_KINDS = new Set([
   'preparation',
   'task',
@@ -46,7 +49,7 @@ export async function analyzeImage(
   receivedAt = new Date().toISOString(),
 ): Promise<ModelResult> {
   const apiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
-  const model = nurseryVisionModel();
+  let model = nurseryVisionModel();
   if (!apiKey || !model) throw new Error('GEMINI_NOT_CONFIGURED');
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) {
@@ -73,38 +76,71 @@ export async function analyzeImage(
     'source_facts and ai_candidates must be empty arrays. Extract only actionable notice facts, at most 64 review_items. For a one-off required item prefer a task with title and due_date. Use preparation only for an actual reusable preparation rule.',
     'Keep Other timetable items. Ask ambiguity only for nursery/child/class/date/document_group.',
   ].join('\n');
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${
-      encodeURIComponent(model)
-    }:generateContent`,
-    {
-      method: 'POST',
-      signal: AbortSignal.timeout(25_000),
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }, {
-            inlineData: { mimeType: contentType, data: btoa(binary) },
-          }],
-        }],
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: 'application/json',
-          maxOutputTokens: 8192,
-          ...(/^gemini-3[.-]/.test(model)
-            ? { thinkingConfig: { thinkingLevel: 'low' } }
-            : {}),
+  type Envelope = {
+    candidates?: Array<
+      { content?: { parts?: Array<{ text?: string; thought?: boolean }> } }
+    >;
+  };
+  let body: Envelope | undefined;
+  // Independently limited Flash models; never wait minutes on one free-tier queue.
+  for (
+    const attempt of [{ model: nurseryVisionModel(), timeout: 12_000 }, {
+      model: 'gemini-3.5-flash',
+      timeout: 20_000,
+    }]
+  ) {
+    model = attempt.model;
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${
+          encodeURIComponent(model)
+        }:generateContent`,
+        {
+          method: 'POST',
+          signal: AbortSignal.timeout(attempt.timeout),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: prompt }, {
+                inlineData: { mimeType: contentType, data: btoa(binary) },
+              }],
+            }],
+            generationConfig: {
+              temperature: 0,
+              responseMimeType: 'application/json',
+              maxOutputTokens: 8192,
+              ...(/^gemini-3[.-]/.test(model)
+                ? { thinkingConfig: { thinkingLevel: 'low' } }
+                : {}),
+            },
+          }),
         },
-      }),
-    },
-  );
-  if (!response.ok) throw new Error(`GEMINI_HTTP_${response.status}`);
-  const body = await response.json();
+      );
+      if (!response.ok) throw new Error(`GEMINI_HTTP_${response.status}`);
+      body = await response.json();
+      break;
+    } catch (error) {
+      const retryable = (error instanceof Error &&
+        (error.name === 'TimeoutError' ||
+          /^GEMINI_HTTP_(429|5\d\d)$/.test(error.message))) ||
+        error instanceof TypeError;
+      if (!retryable || model === 'gemini-3.5-flash') throw error;
+      console.warn('nursery vision trying alternate model', {
+        model,
+        reason: error instanceof Error && error.name === 'TimeoutError'
+          ? 'TIMEOUT'
+          : 'PROVIDER_UNAVAILABLE',
+      });
+    }
+  }
   const text = body?.candidates?.[0]?.content?.parts?.filter((
     p: { text?: string; thought?: boolean },
-  ) => typeof p.text === 'string' && !p.thought).map((p: { text: string }) =>
-    p.text
-  ).join('');
+  ) => typeof p.text === 'string' && !p.thought).map((p) => p.text ?? '').join(
+    '',
+  );
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error('GEMINI_EMPTY_RESPONSE');
   }
@@ -112,6 +148,7 @@ export async function analyzeImage(
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('NURSERY_TRIAGE_INVALID');
   }
+  parsed.model_used = model;
   if (!Array.isArray(parsed.ambiguous_fields)) parsed.ambiguous_fields = [];
   if (!['high', 'medium', 'low'].includes(parsed.context_confidence)) {
     parsed.context_confidence = 'low';
