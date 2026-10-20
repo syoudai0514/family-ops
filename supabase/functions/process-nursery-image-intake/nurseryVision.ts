@@ -47,9 +47,10 @@ export async function analyzeImage(
   contexts: ContextRow[],
   hasRecentPage: boolean,
   receivedAt = new Date().toISOString(),
+  selectedModel?: string,
 ): Promise<ModelResult> {
   const apiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
-  let model = nurseryVisionModel();
+  let model = selectedModel ?? nurseryVisionModel();
   if (!apiKey || !model) throw new Error('GEMINI_NOT_CONFIGURED');
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) {
@@ -83,12 +84,13 @@ export async function analyzeImage(
   };
   let body: Envelope | undefined;
   // Independently limited Flash models; never wait minutes on one free-tier queue.
-  for (
-    const attempt of [{ model: nurseryVisionModel(), timeout: 12_000 }, {
-      model: 'gemini-3.5-flash',
-      timeout: 20_000,
-    }]
-  ) {
+  const attempts = selectedModel
+    ? [{ model: selectedModel, timeout: 20_000 }]
+    : [{ model: nurseryVisionModel(), timeout: 8_000 }, {
+      model: 'gemini-3.5-flash-lite',
+      timeout: 15_000,
+    }];
+  for (const attempt of attempts) {
     model = attempt.model;
     try {
       const response = await fetch(
@@ -112,6 +114,9 @@ export async function analyzeImage(
               temperature: 0,
               responseMimeType: 'application/json',
               maxOutputTokens: 8192,
+              ...(model === 'gemini-2.5-flash'
+                ? { thinkingConfig: { thinkingBudget: 0 } }
+                : {}),
               ...(/^gemini-3[.-]/.test(model)
                 ? { thinkingConfig: { thinkingLevel: 'low' } }
                 : {}),
@@ -127,7 +132,9 @@ export async function analyzeImage(
         (error.name === 'TimeoutError' ||
           /^GEMINI_HTTP_(429|5\d\d)$/.test(error.message))) ||
         error instanceof TypeError;
-      if (!retryable || model === 'gemini-3.5-flash') throw error;
+      if (!retryable || selectedModel || model === 'gemini-3.5-flash-lite') {
+        throw error;
+      }
       console.warn('nursery vision trying alternate model', {
         model,
         reason: error instanceof Error && error.name === 'TimeoutError'
