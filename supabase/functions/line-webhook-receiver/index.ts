@@ -5,6 +5,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 import { createServiceRoleClient, verifyLineSignature } from '../_shared/auth.ts';
 import { withServiceHandler } from '../_shared/handler.ts';
+import { acknowledgeLineImage } from './lineReceipt.ts';
 import { kickLineWorkers } from './lineWorkerKick.ts';
 
 interface LineWebhookEvent {
@@ -12,7 +13,7 @@ interface LineWebhookEvent {
   webhookEventId?: string;
   timestamp?: number;
   source?: { userId?: string };
-  message?: { id?: string; type?: string };
+  message?: { id?: string; type?: string; markAsReadToken?: string };
   [key: string]: unknown;
 }
 
@@ -23,6 +24,7 @@ async function kickNurseryWorker(baseUrl: string, workerToken: string): Promise<
       method: 'POST',
       headers: { 'X-Family-Ops-Worker-Token': workerToken, 'Content-Type': 'application/json' },
       body: '{}',
+      signal: AbortSignal.timeout(90_000),
     });
     if (!response.ok) console.warn('line-webhook-receiver: nursery worker kick deferred', { status: response.status });
   } catch (error) {
@@ -47,6 +49,7 @@ Deno.serve(
 
     const serviceClient = createServiceRoleClient();
     let nurseryImageQueued = false;
+    const imageReceipts: Array<{markAsReadToken?:string;userId?:string}> = [];
 
     for (const event of events) {
       const providerEventId = event.webhookEventId;
@@ -77,6 +80,7 @@ Deno.serve(
           return new Response('internal error', { status: 500 });
         }
         nurseryImageQueued = true;
+        imageReceipts.push({markAsReadToken:event.message.markAsReadToken,userId:event.source.userId});
       }
     }
 
@@ -84,6 +88,7 @@ Deno.serve(
     const workerToken = Deno.env.get('CRON_WORKER_TOKEN') ?? '';
     EdgeRuntime.waitUntil(
       Promise.all([
+        ...imageReceipts.map((event) => acknowledgeLineImage(event.markAsReadToken,event.userId)),
         kickLineWorkers(baseUrl, workerToken).then((result) => {
           if (!result.ok) console.warn('line-webhook-receiver: immediate worker kick deferred to cron', { worker: result.failedWorker });
         }),
