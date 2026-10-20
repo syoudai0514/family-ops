@@ -3,7 +3,7 @@
 // authenticated human-confirm endpoint.
 import { createServiceRoleClient, requireWorkerToken } from '../_shared/auth.ts';
 import { jsonResponse, withServiceHandler } from '../_shared/handler.ts';
-import { assertPrivacySafeStructuredValue, buildNurseryResultMessage, isSafeExternalUrl, keepValidReviewItems, mayGroupNurseryPages, requiredClarificationFields, type NurseryAnalysis, type NurseryResultKind } from '../_shared/nurseryImage.ts';
+import { assertPrivacySafeStructuredValue, buildNurseryResultMessage, isSafeExternalUrl, keepValidReviewItems, mayGroupNurseryPages, nurseryFailureCode, requiredClarificationFields, type NurseryAnalysis, type NurseryResultKind } from '../_shared/nurseryImage.ts';
 
 type Claimed = {
   id: string; provider_event_id: string; line_message_id: string; household_id: string;
@@ -155,7 +155,7 @@ Deno.serve(withServiceHandler(async (req: Request) => {
       }
       processed++;
     } catch (err) {
-      console.error('process-nursery-image-intake failed',{intakeId:item.id,message:err instanceof Error?err.message:String(err)});
+      console.error('process-nursery-image-intake failed',{intakeId:item.id,code:nurseryFailureCode(err)});
       try {
         await client.rpc('server_tx_finish_nursery_image_review',{p_intake_id:item.id,p_expected_revision:currentRevision,p_status:'failed',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:false});
       } catch { /* already-terminal/stale rows remain auditable; processing rows use the latest known revision */ }

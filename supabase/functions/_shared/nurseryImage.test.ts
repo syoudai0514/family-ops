@@ -43,7 +43,16 @@ Deno.test('Q102 recurrence must be bounded', () => {
   assertEquals(validateBoundedRecurrence({ effective_from: '2026-09-01', effective_to: '2028-09-01' }), false);
 });
 
-import { buildNurseryResultMessage, keepValidReviewItems } from './nurseryImage.ts';
+import { buildNurseryResultMessage, keepValidReviewItems, nurseryFailureCode } from './nurseryImage.ts';
+
+Deno.test('photo failure logs retain plain-object DB codes without private details', () => {
+  assertEquals(nurseryFailureCode({ message: 'NURSERY_PROVIDER_METADATA_INVALID', code: 'P0001', details: 'private notice' }), 'NURSERY_PROVIDER_METADATA_INVALID');
+  assertEquals(nurseryFailureCode(new Error('GEMINI_HTTP_429')), 'GEMINI_HTTP_429');
+  assertEquals(nurseryFailureCode({ message: 'private notice in a constraint error', code: '23514' }), '23514');
+  for (const error of [null, 'private notice', new Error('private notice'), { message: 'private notice', code: 'private details' }]) {
+    assertEquals(nurseryFailureCode(error), 'NURSERY_PROCESSING_FAILED');
+  }
+});
 
 Deno.test('a failed photo tells the sender to retry or type it', () => {
   const text = buildNurseryResultMessage({ kind: 'failed', itemCount: 0, hasContexts: true, link: 'https://x/r' });
