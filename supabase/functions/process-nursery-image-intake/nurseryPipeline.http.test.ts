@@ -71,7 +71,9 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
     calls.push({ path: url.pathname, body });
     if (url.hostname === 'generativelanguage.googleapis.com') {
       assert(init?.signal, 'Gemini must have a timeout');
-      assert(/gemini-3\.(8|5)-flash:generateContent$/.test(url.pathname));
+      assert(
+        /gemini-3\.[5678]-flash(?:-lite)?:generateContent$/.test(url.pathname),
+      );
       if (primaryTimesOut && url.pathname.includes('gemini-3.8-flash')) {
         return Promise.reject(new DOMException('timed out', 'TimeoutError'));
       }
@@ -264,7 +266,7 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
       },
     );
     await t.step(
-      'a slow primary model switches to the stronger Flash fallback and still records',
+      'a slow primary model switches to the available vision fallback and still records',
       async () => {
         calls.length = 0;
         replyFails = false;
@@ -277,7 +279,7 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
           .map((c) => c.path);
         assertEquals(models.length, 2);
         assertStringIncludes(models[0], 'gemini-3.8-flash');
-        assertStringIncludes(models[1], 'gemini-3.5-flash');
+        assertStringIncludes(models[1], 'gemini-3.5-flash-lite:generateContent');
         primaryTimesOut = false;
       },
     );
@@ -323,6 +325,24 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
         assertEquals(result.model, 'gemini-3.8-flash');
         assertEquals(result.item_count, 2);
         assert(!JSON.stringify(result).includes('エプロン'));
+        assert(
+          !calls.some((c) =>
+            c.path.includes('server_tx_') || c.path.includes('/v2/bot/')
+          ),
+        );
+      },
+    );
+    await t.step(
+      'private model probes stay read-only and report the selected model',
+      async () => {
+        calls.length = 0;
+        const result = await (await handler!(
+          request({
+            validation_intake_id: id,
+            validation_model: 'gemini-3.7-flash',
+          }),
+        )).json();
+        assertEquals(result.model, 'gemini-3.7-flash');
         assert(
           !calls.some((c) =>
             c.path.includes('server_tx_') || c.path.includes('/v2/bot/')

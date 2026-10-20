@@ -69,8 +69,9 @@ async function validateReviewItems(client: ReturnType<typeof createServiceRoleCl
 
 // Worker-authenticated, read-only release check against an already stored image.
 // Never creates reviews, sends LINE, or returns notice content in the response.
-async function validateStoredImage(client: ReturnType<typeof createServiceRoleClient>, intakeId: unknown, expected: unknown = []): Promise<Response> {
+async function validateStoredImage(client: ReturnType<typeof createServiceRoleClient>, intakeId: unknown, expected: unknown = [], selectedModel?: unknown): Promise<Response> {
   if (typeof intakeId !== 'string' || !/^[0-9a-f-]{36}$/i.test(intakeId)) return jsonResponse({error:'INVALID_INPUT'},400);
+  if (selectedModel !== undefined && !['configured','gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-2.5-flash'].includes(String(selectedModel))) return jsonResponse({error:'INVALID_INPUT'},400);
   if (!Array.isArray(expected) || expected.length>20 || expected.some(group=>!Array.isArray(group) || !group.length || group.length>8 || group.some(term=>typeof term !== 'string' || !term.length || term.length>80))) return jsonResponse({error:'INVALID_INPUT'},400);
   if (Deno.env.get('TEST_MODE') === '1') throw new Error('TEST_MODE_PROVIDER_READ_DISABLED');
   const startedAt = performance.now();
@@ -87,7 +88,8 @@ async function validateStoredImage(client: ReturnType<typeof createServiceRoleCl
   if (!image) return jsonResponse({error:'NURSERY_SOURCE_UNAVAILABLE'},404);
   const {data: contexts, error: contextError} = await client.from('child_school_contexts').select('id,school_display_name,class_display_name,recognition_aliases').eq('household_id',source.household_id).eq('active',true);
   if (contextError) throw contextError;
-  const analysis = await analyzeImage(new Uint8Array(await image.arrayBuffer()),image.type || 'image/jpeg',contexts ?? [],false,source.received_at);
+  const probeModel = selectedModel === 'configured' ? (Deno.env.get('GEMINI_MODEL_VISION') || Deno.env.get('GEMINI_MODEL_REWRITE') || undefined) : selectedModel;
+  const analysis = await analyzeImage(new Uint8Array(await image.arrayBuffer()),image.type || 'image/jpeg',contexts ?? [],false,source.received_at, probeModel as string | undefined);
   await validateReviewItems(client,analysis);
   const values = JSON.stringify(analysis.review_items.map(item=>item.proposed_value));
   const checks = (expected as string[][]).map(group=>group.some(term=>values.includes(term)));
@@ -99,7 +101,7 @@ export const nurseryHandler = withServiceHandler(async (req: Request) => {
   const client = createServiceRoleClient();
   const requested = await req.json().catch(() => ({}));
   const options = requested && typeof requested === 'object' ? requested : {};
-  if ('validation_intake_id' in options) return await validateStoredImage(client, options.validation_intake_id, options.validation_expectations);
+  if ('validation_intake_id' in options) return await validateStoredImage(client, options.validation_intake_id, options.validation_expectations, options.validation_model);
   const { data, error } = await client.rpc('server_tx_claim_nursery_line_images', { p_limit: 3, p_worker: WORKER_ID });
   if (error) throw error;
   const claimed = ((data ?? []) as Claimed[]).sort((a,b) => Date.parse(a.received_at)-Date.parse(b.received_at));
