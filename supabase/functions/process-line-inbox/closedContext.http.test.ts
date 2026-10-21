@@ -194,16 +194,16 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       assertStringIncludes(rendered(), "すでに確定");
       assertEquals(calls.some((call) => call.rpc === "server_tx_confirm_pending_action"), false);
     });
-    await t.step("an old generic dropoff request card cannot send a new ToDo and keeps its original date", async () => {
+    await t.step("an old generic dropoff request card refuses without promoting its model-filled date", async () => {
       genericConfirm = true;
       transportDate = new Date(Date.parse(`${tomorrow}T00:00:00Z`) + 7 * 86400_000).toISOString().slice(0, 10);
       await run("");
       assertEquals(pendingCalls().length, 0);
       assertEquals(calls.some((call) => call.rpc === "server_tx_confirm_pending_action"), false);
-      assertStringIncludes(rendered(), "送信していません");
-      assertStringIncludes(rendered(), "現在: ママ → 変更希望: パパ");
-      assertStringIncludes(rendered(), `date=${transportDate}`);
-      assertEquals(taskReadDates, [`eq.${transportDate}`]);
+      assertStringIncludes(rendered(), "送信・登録はしていません");
+      assertStringIncludes(rendered(), "担当は変更できません");
+      assertEquals(rendered().includes(transportDate), false);
+      assertEquals(taskReadDates, []);
     });
     await t.step("an old generic pickup task card also requires review instead of confirming a duplicate task", async () => {
       genericActionType = "task_create_once";
@@ -213,10 +213,10 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       await run("");
       assertEquals(pendingCalls().length, 0);
       assertEquals(calls.some((call) => call.rpc === "server_tx_confirm_pending_action"), false);
-      assertStringIncludes(rendered(), "送信していません");
-      assertStringIncludes(rendered(), "現在: パパ → 変更希望: ママ");
-      assertStringIncludes(rendered(), `date=${transportDate}`);
-      assertEquals(taskReadDates, [`eq.${transportDate}`]);
+      assertStringIncludes(rendered(), "送信・登録はしていません");
+      assertStringIncludes(rendered(), "担当は変更できません");
+      assertEquals(rendered().includes(transportDate), false);
+      assertEquals(taskReadDates, []);
     });
   } finally {
     Object.defineProperty(Deno, "serve", originalServe);

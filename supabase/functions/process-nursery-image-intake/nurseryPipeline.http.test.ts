@@ -66,11 +66,12 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
     ],
   };
   globalThis.fetch = (input, init) => {
+    const requestInit = init as RequestInit | undefined;
     const url = new URL(input instanceof Request ? input.url : String(input));
-    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+    const body = typeof requestInit?.body === 'string' ? JSON.parse(requestInit.body) : {};
     calls.push({ path: url.pathname, body });
     if (url.hostname === 'generativelanguage.googleapis.com') {
-      assert(init?.signal, 'Gemini must have a timeout');
+      assert(requestInit?.signal, 'Gemini must have a timeout');
       assert(
         /gemini-3\.[5678]-flash(?:-lite)?:generateContent$/.test(url.pathname),
       );
@@ -82,7 +83,7 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
       });
       assertEquals(body.generationConfig.maxOutputTokens, 8192);
       assertEquals(
-        new Headers(init?.headers).get('x-goog-api-key'),
+        new Headers(requestInit?.headers).get('x-goog-api-key'),
         'gemini-test',
       );
       assertEquals(url.search, '');
@@ -186,7 +187,7 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
       );
     }
     if (
-      url.pathname.includes('/storage/v1/object/') && init?.method === 'POST'
+      url.pathname.includes('/storage/v1/object/') && requestInit?.method === 'POST'
     ) return Promise.resolve(Response.json({ Key: 'photo' }));
     if (url.pathname.includes('/storage/v1/object/')) {
       return Promise.resolve(

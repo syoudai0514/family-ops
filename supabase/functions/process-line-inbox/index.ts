@@ -131,6 +131,10 @@ import { formatScheduleDate, inferredNight, leadingScheduleDates } from './sched
 import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import { loadTodayTaskBlock, mergeTodayBrief } from "./lineTodayTasks.ts";
 import { resolveLineTransportAssignment } from "./lineTransportAssignment.ts";
+import { parseTransportAssignmentCorrection } from "../_shared/transportAssignmentIntent.ts";
+import { detectTransportAssignmentPending } from "../_shared/transportAssignmentDraft.ts";
+import { groundLineSourceDate } from "../_shared/lineSourceDate.ts";
+import { resolveTransportCorrectionContext } from "./lineTransportCorrectionContext.ts";
 import {
   handleLineTransportPreviewPostback,
   handleLineTransportPreviewText,
@@ -1007,6 +1011,24 @@ async function tryCreateMultiIntentReview(
   candidates: LineMultiIntentPendingCandidate[],
 ): Promise<boolean> {
   if (candidates.length === 0) return false;
+  // Bind model-produced candidate source fields to the actual user message.
+  candidates = candidates.map((candidate) => {
+    const source = candidate.source_text && text.includes(candidate.source_text)
+      ? candidate.source_text : text;
+    return { ...candidate, source_text: source, payload: { ...candidate.payload, raw_text: source } };
+  });
+  if (await refuseGenericTransportDraft(client, item, actor, { candidates }, "line_multi_intent_review")) return true;
+  for (const candidate of candidates) {
+    if (candidate.status === "cancelled" || !["request_create", "task_create_once"].includes(candidate.action_type)) continue;
+    const date = groundLineSourceDate(candidate.source_text,
+      typeof candidate.payload.scheduled_date === "string" ? candidate.payload.scheduled_date : null,
+      lineEventClock(item));
+    if (date.kind === "ambiguous") {
+      await sendConfirmation(client, item, actor, "候補の日付を一つに特定できないため、まだ登録していません。登録する日付を確認してください。");
+      return true;
+    }
+    if (date.kind === "grounded") candidate.payload.scheduled_date = date.date;
+  }
   const operationId = await deterministicOperationId("line-text", item.provider_event_id);
   const { data, error } = await client.rpc("server_tx_create_pending_action", {
     p_actor_id: actor.user_id,
@@ -1505,6 +1527,27 @@ function completionContext(
   };
 }
 
+function lineEventClock(item: WebhookInboxItem): Date {
+  const timestamp = item.payload.timestamp;
+  return Number.isSafeInteger(timestamp) && (timestamp ?? 0) > 0 &&
+      (timestamp ?? 0) <= Date.now() + 60_000
+    ? new Date(timestamp!)
+    : new Date();
+}
+
+async function refuseGenericTransportDraft(
+  client: SupabaseClient,
+  item: WebhookInboxItem,
+  actor: LineActor,
+  payload: Record<string, unknown>,
+  actionType = "task_create_once",
+): Promise<boolean> {
+  if (!detectTransportAssignmentPending(actionType, payload, lineEventClock(item))) return false;
+  await sendConfirmation(client, item, actor,
+    "送り・お迎えの担当変更を、新しい予定としては登録しません。日付と変更後の担当を確認したいので、「11/5のお迎えをパパに変更」のようにもう一度送ってください。担当はまだ変更していません。");
+  return true;
+}
+
 async function handlePostback(
   client: SupabaseClient,
   item: WebhookInboxItem,
@@ -1661,22 +1704,12 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       await sendConfirmation(client, item, actor, "この下書きはすでに確定・期限切れです。");
       return;
     }
-    // Old generic cards must not create a new ToDo that only says to change
-    // transport. Keep their original target date when reviewing an old 明日.
-    if (["request_create", "task_create_once"].includes(pending.action_type)) {
-      const rawText = typeof pending.normalized_payload.raw_text === "string" && pending.normalized_payload.raw_text.trim()
-        ? pending.normalized_payload.raw_text : pendingTitle(pending);
-      const transport = await resolveLineTransportAssignment({
-        client, actorId: actor.user_id, householdId: actor.household_id,
-        appBaseUrl: Deno.env.get("APP_BASE_URL") ?? "",
-        scheduledDateOverride: typeof pending.normalized_payload.scheduled_date === "string"
-          ? pending.normalized_payload.scheduled_date : undefined,
-        forceReview: true,
-      }, rawText);
-      if (transport.kind === "reply") {
-        await sendConfirmation(client, item, actor, `このカードからは送り・お迎えの担当を変更できないため、送信していません。\n\n${transport.text}`);
+    // A generic card cannot change transport. Its model-filled title/date are
+    // classification evidence only, including old cards with an invented year.
+    if (detectTransportAssignmentPending(pending.action_type, pending.normalized_payload, lineEventClock(item))) {
+        await sendConfirmation(client, item, actor,
+          "このカードは新しい予定の登録用で、送り・お迎えの担当は変更できません。送信・登録はしていません。「11/5のお迎えをパパに変更」のように、日付と希望の担当をもう一度送ってください。");
         return;
-      }
     }
     const { error } = await client.rpc("server_tx_confirm_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: fields.pending_action_id });
     if (error) {
@@ -2152,6 +2185,27 @@ async function handleText(
   }
   if (!actor) return;
 
+  const inputText = text;
+  const eventClock = lineEventClock(item);
+  let transportText = text;
+  if (parseTransportAssignmentCorrection(text)) {
+    let turns: unknown = null;
+    try {
+      const result = await client.rpc("server_read_line_turns", {
+        p_actor_id: actor.user_id, p_limit: 30, p_within: "15 minutes",
+      });
+      if (!result.error) turns = result.data;
+    } catch { /* A failed context read must never create a replacement event. */ }
+    const correction = resolveTransportCorrectionContext(turns, text, eventClock);
+    if (correction.kind !== "resolved") {
+      await logLineTurn(client, actor.user_id, "user", text);
+      await sendConfirmation(client, item, actor,
+        "変更後の担当は分かりましたが、変更する日付と送り・お迎えを確認できませんでした。担当は変更していません。「11/5のお迎えをパパに変更」のように対象も添えて送ってください。");
+      return;
+    }
+    transportText = correction.text;
+  }
+
   // Explicit transport changes bind to the actual occurrence, before either an
   // old draft or a model-generated light request can capture the same sentence.
   const transport = await resolveLineTransportAssignment({
@@ -2160,11 +2214,8 @@ async function handleText(
     nativePreview: true,
     // Relative dates name the sender's day, even if a queued webhook is first
     // processed after midnight. Confirmation stores that absolute occurrence.
-    now: Number.isSafeInteger(item.payload.timestamp) && (item.payload.timestamp ?? 0) > 0 &&
-        (item.payload.timestamp ?? 0) <= Date.now() + 60_000
-      ? new Date(item.payload.timestamp!)
-      : undefined,
-  }, text);
+    now: eventClock,
+  }, transportText);
   if (transport.kind === "review") {
     await logLineTurn(client, actor.user_id, "user", text);
     await openLineTransportPreview(completionContext(client, item, actor), transport);
@@ -2319,7 +2370,7 @@ async function handleText(
       const multipleSchedules = plan.actions.filter((action) => action.type === 'create').length > 1 || leadingScheduleDates(text).length > 1;
       if (multipleSchedules && outcome.continueWith.mode === 'create') {
         const candidates = await buildMultiIntentPendingCandidates(client, item, actor, text);
-        if (candidates.length > 1 && await tryCreateMultiIntentReview(client, item, actor, text, candidates)) return;
+        if (candidates.length > 1 && await tryCreateMultiIntentReview(client, item, actor, inputText, candidates)) return;
       }
       if (!multipleSchedules && outcome.continueWith.draft && await applyUnderstoodDraft(client, item, actor, {
         mode: outcome.continueWith.mode,
@@ -2383,12 +2434,12 @@ async function handleText(
   const needsCandidateReview = semanticCandidates.length > 1 || semanticCandidates.some((candidate) =>
     candidate.missing_fields.length > 0 || Boolean(candidate.duplicate_match)
   );
-  if (needsCandidateReview && await tryCreateMultiIntentReview(client, item, actor, text, semanticCandidates)) return;
+  if (needsCandidateReview && await tryCreateMultiIntentReview(client, item, actor, inputText, semanticCandidates)) return;
 
   let assignmentPayload: Record<string, unknown> | null = null;
 
   if (!starterKind && isPickupAssignmentChangeText(text)) {
-    const scheduledDate = resolveJapanesePickupDate(text);
+    const scheduledDate = resolveJapanesePickupDate(text, eventClock);
     const { data: definition } = await client.from("task_definitions").select("id").eq("household_id", actor.household_id).eq("code", "pickup").maybeSingle();
     const { data: task } = definition && scheduledDate
       ? await client.from("task_instances").select("id,title,due_at,scheduled_date").eq("household_id", actor.household_id).eq("task_definition_id", definition.id).eq("scheduled_date", scheduledDate).eq("planned_assignee_id", actor.user_id).in("status", ["todo", "in_progress"]).maybeSingle()
@@ -2438,6 +2489,19 @@ async function handleText(
   const operationId = semanticCandidate && !assignmentPayload && !starterKind
     ? semanticCandidate.operation_id
     : await deterministicOperationId("line-text", item.provider_event_id);
+  if (["request_create", "task_create_once"].includes(actionType)) {
+    payload.raw_text = inputText;
+    const date = groundLineSourceDate(inputText,
+      typeof payload.scheduled_date === "string" ? payload.scheduled_date : null,
+      lineEventClock(item));
+    if (date.kind === "ambiguous") {
+      await sendConfirmation(client, item, actor, "日付を一つに特定できないため、まだ登録していません。登録する日付を確認してください。");
+      return;
+    }
+    if (date.kind === "grounded") payload.scheduled_date = date.date;
+  }
+  if (["request_create", "task_create_once"].includes(actionType) &&
+    await refuseGenericTransportDraft(client, item, actor, payload)) return;
   const { data: pendingData, error } = await client.rpc("server_tx_create_pending_action", {
     p_actor_id: actor.user_id,
     p_household_id: actor.household_id,
@@ -2499,29 +2563,41 @@ async function applyUnderstoodDraft(
     rawText: string;
   },
 ): Promise<boolean> {
+  const sourceDate = opts.draft.kind === "shopping"
+    ? { kind: "unchanged" as const, date: opts.draft.date }
+    : groundLineSourceDate(opts.rawText, opts.draft.date, lineEventClock(item));
+  if (sourceDate.kind === "ambiguous") {
+    await sendConfirmation(client, item, actor, "日付を一つに特定できないため、まだ登録していません。登録する日付を確認してください。");
+    return true;
+  }
+  const sourceDraft = { ...opts.draft, date: sourceDate.date };
   const ctx = {
     actorId: actor.user_id,
     partnerId: await partnerUserId(client, actor),
     partnerLabel: opts.partnerLabel,
-    today: jstIsoDateOffset(0),
+    today: new Date(lineEventClock(item).getTime() + 9 * 3600_000).toISOString().slice(0, 10),
   };
   if (opts.mode === "edit") {
     const pending = opts.pending;
     if (!pending || pending.status !== "draft" || !DRAFT_EDITABLE_TYPES.has(pending.action_type)) return false;
-    const built = draftToPending(opts.draft, ctx, pending.normalized_payload);
+    const built = draftToPending(sourceDraft, ctx, pending.normalized_payload);
     if (!built) return false;
+    if (["request_create", "task_create_once"].includes(built.actionType) &&
+      await refuseGenericTransportDraft(client, item, actor, { ...built.payload, raw_text: opts.rawText })) return true;
     const updated = await updateEditablePending(client, actor, pending.id, built.actionType, built.payload);
     if (!updated) return false;
     await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
     return true;
   }
   if (opts.mode !== "create") return false;
-  const draft = inferredNight(opts.draft.title) && !/\d{1,2}(?:時|:\d{2})/u.test(opts.rawText)
-    ? { ...opts.draft, time: null, daypart: 'night' as const }
-    : opts.draft;
+  const draft = inferredNight(sourceDraft.title) && !/\d{1,2}(?:時|:\d{2})/u.test(opts.rawText)
+    ? { ...sourceDraft, time: null, daypart: 'night' as const }
+    : sourceDraft;
   const built = draftToPending(draft, ctx);
   if (!built) return false;
   const payload = { ...built.payload, raw_text: opts.rawText };
+  if (["request_create", "task_create_once"].includes(built.actionType) &&
+    await refuseGenericTransportDraft(client, item, actor, payload)) return true;
   const { data, error } = await client.rpc("server_tx_create_pending_action", {
     p_actor_id: actor.user_id,
     p_household_id: actor.household_id,

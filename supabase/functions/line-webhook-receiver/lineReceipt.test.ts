@@ -7,7 +7,7 @@ Deno.test('image receipt marks read and starts loading in parallel without spend
   const releases: Array<() => void> = [];
   try {
     const result = acknowledgeLineImage('read-token', 'user', (url, init) => {
-      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      calls.push({ url: String(url), body: JSON.parse(String((init as RequestInit | undefined)?.body)) });
       return new Promise<Response>((resolve) =>
         releases.push(() => resolve(Response.json({})))
       );
