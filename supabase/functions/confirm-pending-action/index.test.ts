@@ -155,7 +155,7 @@ Deno.test("PWA pending confirmation rejects generic transport cards without chan
       },
     );
     await t.step(
-      "old generic requests preserve the stored occurrence date and cannot confirm",
+      "old generic requests keep their payload unchanged and cannot confirm",
       async () => {
         for (
           const raw_text of [
@@ -175,7 +175,7 @@ Deno.test("PWA pending confirmation rejects generic transport cards without chan
           });
           assertEquals(response.status, 400);
           assertEquals(data.error.code, "INVALID_INPUT");
-          assertStringIncludes(data.error.message, "2026-10-15の送り");
+          assertStringIncludes(data.error.message, "対象日の送り");
           assertStringIncludes(data.error.message, "担当を調整");
           assertStringIncludes(
             data.error.message,
@@ -203,6 +203,111 @@ Deno.test("PWA pending confirmation rejects generic transport cards without chan
         assertStringIncludes(data.error.message, "対象日のお迎え");
         assertEquals(data.error.message.includes("2026-02-30"), false);
         assertEquals(confirms(), []);
+      },
+    );
+    await t.step(
+      "the father's pickup request cannot confirm a wrong-year calendar event",
+      async () => {
+        actionType = "task_create_once";
+        payload = {
+          raw_text: "11/5の迎えを父に変更して。合意済みです。",
+          title: "11/5のお迎えを父に変更",
+          scheduled_date: "2025-11-05",
+          calendar_visibility: "special",
+        };
+        const { response, data } = await run();
+        assertEquals(response.status, 400);
+        assertStringIncludes(data.error.message, "対象日のお迎え");
+        assertEquals(data.error.message.includes("2025"), false);
+        assertEquals(confirms(), []);
+      },
+    );
+    await t.step(
+      "a repeated elliptical correction cannot confirm a second transport-looking event",
+      async () => {
+        for (const title of ["お迎えをパパに変更", "お迎えをママに変更"]) {
+          payload = {
+            raw_text: "だからパパに変えてって言ったじゃん",
+            title,
+            scheduled_date: "2026-11-05",
+            calendar_visibility: "special",
+          };
+          const { response, data } = await run();
+          assertEquals(response.status, 400);
+          assertStringIncludes(data.error.message, "対象日のお迎え");
+          assertEquals(confirms(), []);
+        }
+      },
+    );
+    await t.step(
+      "an unmatched positive pickup report with an assignment title cannot become an ordinary event",
+      async () => {
+        payload = {
+          raw_text: "11/5は父が迎えに行きます",
+          title: "お迎えをパパに変更",
+          scheduled_date: "2025-11-05",
+          calendar_visibility: "special",
+        };
+        const { response, data } = await run();
+        assertEquals(response.status, 400);
+        assertEquals(data.error.message.includes("2025"), false);
+        assertEquals(confirms(), []);
+      },
+    );
+    await t.step(
+      "an active transport candidate in a multi-intent card cannot bypass the confirmation guard",
+      async () => {
+        actionType = "line_multi_intent_review";
+        payload = {
+          raw_text: "買い物メモと変更です",
+          candidates: [
+            {
+              status: "draft",
+              action_type: "shopping_item_add",
+              title: "牛乳",
+              payload: { title: "牛乳" },
+            },
+            {
+              candidate_id: "pickup",
+              status: "draft",
+              action_type: "task_create_once",
+              source_text: "だからパパに変えてって言ったじゃん",
+              title: "お迎えをパパに変更",
+              payload: {
+                title: "お迎えをパパに変更",
+                scheduled_date: "2025-11-05",
+              },
+            },
+          ],
+        };
+        const { response, data } = await run();
+        assertEquals(response.status, 400);
+        assertStringIncludes(data.error.message, "対象日のお迎え");
+        assertEquals(confirms(), []);
+      },
+    );
+    await t.step(
+      "a cancelled transport candidate does not block ordinary active multi-intent work",
+      async () => {
+        payload = {
+          candidates: [
+            {
+              status: "cancelled",
+              action_type: "task_create_once",
+              source_text: "11/5の迎えを父に変更して",
+              payload: { title: "お迎えをパパに変更" },
+            },
+            {
+              status: "draft",
+              action_type: "request_create",
+              source_text: "牛乳を買って",
+              payload: { title: "牛乳を買う" },
+            },
+          ],
+        };
+        const { response } = await run();
+        assertEquals(response.status, 200);
+        assertEquals(confirms().length, 1);
       },
     );
     await t.step(

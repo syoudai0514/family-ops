@@ -15,18 +15,7 @@ import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { jsonResponse, withUserMutationHandler } from "../_shared/handler.ts";
 import { callServerTx, readJsonBody } from "../_shared/rpc.ts";
 import { FamilyOpsError } from "../_shared/errors.ts";
-import { parseTransportAssignmentText } from "../_shared/transportAssignmentIntent.ts";
-
-function storedDateLabel(value: unknown): string | null {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
-    return null;
-  }
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return Number.isFinite(parsed.getTime()) &&
-      parsed.toISOString().slice(0, 10) === value
-    ? value
-    : null;
-}
+import { detectTransportAssignmentPending } from "../_shared/transportAssignmentDraft.ts";
 
 Deno.serve(withUserMutationHandler(async (req: Request) => {
   const actorId = await requireUserActor(req);
@@ -72,20 +61,17 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
         500,
       );
     }
-    if (["request_create", "task_create_once"].includes(pending.action_type)) {
-      const payload = pending.normalized_payload as Record<string, unknown>;
-      const raw =
-        typeof payload.raw_text === "string" && payload.raw_text.trim()
-          ? payload.raw_text
-          : typeof payload.title === "string"
-          ? payload.title
-          : "";
-      const intent = parseTransportAssignmentText(raw);
-      if (intent) {
-        // Never recalculate an old "明日" when its card is reopened later.
-        const date = storedDateLabel(payload.scheduled_date);
-        const subject = `${date ? `${date}の` : "対象日の"}${
-          intent.code === "dropoff" ? "送り" : "お迎え"
+    {
+      const transport = detectTransportAssignmentPending(
+        pending.action_type,
+        pending.normalized_payload as Record<string, unknown>,
+      );
+      if (transport) {
+        // Neither re-interpret an old "明日" nor endorse a model-generated
+        // wrong year. The draft stays unchanged; a canonical occurrence must
+        // be selected separately before it can authorize a reassignment.
+        const subject = `対象日の${
+          transport.intent.code === "dropoff" ? "送り" : "お迎え"
         }`;
         throw new FamilyOpsError(
           "INVALID_INPUT",

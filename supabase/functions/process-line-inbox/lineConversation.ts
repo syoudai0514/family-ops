@@ -281,11 +281,11 @@ function scheduleReadOnlyIntent(text: string): "today" | "tomorrow" | "week" | n
  * Before 2026-10-11 these fell back to today's list (owner report).
  */
 export function scheduleDateInquiry(text: string, todayIso: string): string | null {
-  const value = normalized(text).replace(/[。.!！?？]+$/g, "");
+  const value = normalized(text).replace(/おしえて/gu, "教えて").replace(/[。.!！?？]+$/g, "");
   const match = value.match(/^(?:(\d{4})(?:\/|-|年))?(\d{1,2})(?:\/|-|月)(\d{1,2})日?(?:\([月火水木金土日]\)|（[月火水木金土日]）)?(?:の|は)?(.*)$/u);
   if (!match) return null;
   const rest = match[4];
-  if (!/^(?:(?:なんか|何か))?(?:予定|タスク|やること)(?:は|を|が)?(?:見せて|教えて|知りたい|見たい|確認したい|何(?:が)?ある|何だっけ|なんだっけ|ある|あるの|あるっけ|どう|どうなってる)?$|^(?:なんか|何か)?(?:何(?:が)?ある|ある(?:の|っけ)?)$/u.test(rest)) return null;
+  if (!/^(?:(?:なんか|何か))?(?:予定|タスク|やること|送り迎え|送りとお?迎え|送迎|お?迎え|送り)(?:の予定)?(?:は|を|が)?(?:見せて|教えて(?:ください|下さい)?|知りたい|見たい|確認したい|何(?:が)?ある|何だっけ|なんだっけ|ある|あるの|あるっけ|どう|どうなってる)?$|^(?:なんか|何か)?(?:何(?:が)?ある|ある(?:の|っけ)?)$/u.test(rest)) return null;
   return match[1]
     ? validScheduleDate(Number(match[1]), Number(match[2]), Number(match[3]))
     : monthDayNearToday(Number(match[2]), Number(match[3]), todayIso);

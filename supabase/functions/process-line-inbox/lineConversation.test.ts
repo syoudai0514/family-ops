@@ -187,6 +187,9 @@ Deno.test("an event confirmation says it goes to Google and offers a one-tap opt
 
 Deno.test("「10/24の予定見せて」 asks for that day's schedule; a dated entry still creates", () => {
   assertEquals(scheduleDateInquiry("10/24の予定見せて", "2026-10-11"), "2026-10-24");
+  assertEquals(scheduleDateInquiry("11/5の送り迎えおしえて", "2026-10-21"), "2026-11-05");
+  assertEquals(scheduleDateInquiry("11/5のお迎えを教えてください", "2026-10-21"), "2026-11-05");
+  assertEquals(scheduleDateInquiry("11/5の迎えを父に変更して。", "2026-10-21"), null);
   assertEquals(scheduleDateInquiry("10月24日の予定は？", "2026-10-11"), "2026-10-24");
   assertEquals(scheduleDateInquiry("10/24(土)何がある？", "2026-10-11"), "2026-10-24");
   assertEquals(scheduleDateInquiry("１/５の予定", "2026-12-20"), "2027-01-05");
