@@ -4,6 +4,7 @@ import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { withUserMutationHandler, jsonResponse } from "../_shared/handler.ts";
 import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.ts";
 import { FamilyOpsError } from "../_shared/errors.ts";
+import { isCodmonSubmitTask } from "../_shared/codmonSubmit.ts";
 
 Deno.serve(withUserMutationHandler(async (req: Request) => {
   const actorId = await requireUserActor(req);
@@ -60,7 +61,12 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
 
   // "コドモンで送信した": closes the still-open Codmon inputs and the submit task
   // in one transaction (owner decision 2026-09-30: sending Codmon ends the job).
-  if (body["action"] === "codmon_submitted") {
+  // A plain completion of the submit task means the same thing, so it takes this
+  // path too wherever the screen does not know the day's Codmon readiness.
+  if (
+    body["action"] === "codmon_submitted" ||
+    (body["action"] === undefined && await isCodmonSubmitTask(serviceClient, taskId))
+  ) {
     const result = await callServerTx<{ ok: true; task_id: string; inputs_closed: number }>(
       serviceClient,
       "server_tx_acknowledge_codmon_submission_v1",
