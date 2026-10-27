@@ -20,6 +20,8 @@ export interface Household {
   /** Reminders a new timed / all-day 予定 starts with (minutes before; all-day before 09:00). */
   default_timed_reminders?: number[] | null;
   default_all_day_reminders?: number[] | null;
+  /** Local time of the 朝の残り message on workdays (HH:MM[:SS]); null = off. */
+  morning_nudge_local_time?: string | null;
 }
 
 export interface HouseholdMember {

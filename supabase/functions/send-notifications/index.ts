@@ -529,6 +529,9 @@ Deno.serve(
     const serviceClient = createServiceRoleClient();
     const { error: reminderError } = await serviceClient.rpc('server_tx_dispatch_schedule_reminders', { p_limit: 40 });
     if (reminderError) console.error('send-notifications: schedule reminder dispatch failed', reminderError.message);
+    // 朝の残り: one message per adult on a workday, only when a morning task is still open.
+    const { error: nudgeError } = await serviceClient.rpc('server_tx_dispatch_morning_nudges');
+    if (nudgeError) console.error('send-notifications: morning nudge dispatch failed', nudgeError.message);
     // PWA push is free and unlimited, unlike LINE; run it even when LINE is not configured.
     // Read only: keys are made when the first device turns push on.
     const vapid = await resolveVapidConfig(serviceClient, false).catch((error) => {

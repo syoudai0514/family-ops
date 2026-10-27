@@ -9,6 +9,7 @@ import { newOperationId } from '../../lib/id';
 import { formatDateTimeJa } from '../../lib/date';
 import type { NotificationPreferences, UserNotification } from '../../lib/types';
 import { PushSection } from './PushSection';
+import { MorningNudgeSection } from './MorningNudgeSection';
 import { ReminderSettingsSection } from './ReminderSettingsSection';
 
 const PREFERENCE_FIELDS: {
@@ -75,6 +76,7 @@ export function Notifications() {
         </p>
       )}
       <PushSection />
+      <MorningNudgeSection />
       <ReminderSettingsSection />
       <LineLinkSection />
       <PreferencesSection householdId={household?.id ?? null} userId={user?.id ?? null} />
