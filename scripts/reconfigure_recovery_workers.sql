@@ -12,6 +12,11 @@
 -- Routine restore drills do NOT run this file. They prove that no active
 -- Family Ops jobs were copied from production. This script is only for an
 -- intentional disaster-recovery cutover after the target has been validated.
+--
+-- Cadence (2026-11): the every-minute polling exceeded the Free-plan 1 GB log
+-- quota. LINE workers are kicked immediately by line-webhook-receiver, so their
+-- cron is a fallback (5 min, staggered). Reminder/routine dispatchers catch up
+-- on anything due (<= now()), so 2 min only adds at most ~2 min of delay.
 
 DO $preflight$
 BEGIN
@@ -35,7 +40,7 @@ $preflight$;
 
 SELECT cron.schedule(
   'family-ops-calendar-outbox-v1',
-  '* * * * *',
+  '2-59/5 * * * *',
   $job$
     SELECT net.http_post(
       url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'family_ops_project_url') || '/functions/v1/process-family-ops-calendar-outbox',
@@ -48,7 +53,7 @@ SELECT cron.schedule(
 
 SELECT cron.schedule(
   'family-ops-line-delivery-v1',
-  '* * * * *',
+  '*/2 * * * *',
   $job$
     SELECT net.http_post(
       url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'family_ops_project_url') || '/functions/v1/send-notifications',
@@ -61,7 +66,7 @@ SELECT cron.schedule(
 
 SELECT cron.schedule(
   'family-ops-line-inbox-v1',
-  '* * * * *',
+  '*/5 * * * *',
   $job$
     SELECT net.http_post(
       url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'family_ops_project_url') || '/functions/v1/process-line-inbox',
@@ -87,7 +92,7 @@ SELECT cron.schedule(
 
 SELECT cron.schedule(
   'family-ops-pending-actions-v1',
-  '* * * * *',
+  '1-59/5 * * * *',
   $job$
     SELECT net.http_post(
       url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'family_ops_project_url') || '/functions/v1/process-pending-actions',
@@ -100,7 +105,7 @@ SELECT cron.schedule(
 
 SELECT cron.schedule(
   'family-ops-routine-dispatch-v1',
-  '* * * * *',
+  '*/2 * * * *',
   $job$
     SELECT net.http_post(
       url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'family_ops_project_url') || '/functions/v1/dispatch-routine-automation',
