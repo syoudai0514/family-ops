@@ -124,12 +124,12 @@ BEGIN
   FROM cron.job
   WHERE active
     AND (
-      (jobname = 'family-ops-calendar-outbox-v1' AND schedule = '* * * * *') OR
-      (jobname = 'family-ops-line-delivery-v1' AND schedule = '* * * * *') OR
-      (jobname = 'family-ops-line-inbox-v1' AND schedule = '* * * * *') OR
+      (jobname = 'family-ops-calendar-outbox-v1' AND schedule = '2-59/5 * * * *') OR
+      (jobname = 'family-ops-line-delivery-v1' AND schedule = '*/2 * * * *') OR
+      (jobname = 'family-ops-line-inbox-v1' AND schedule = '*/5 * * * *') OR
       (jobname = 'family-ops-materialize-recurring-v1' AND schedule = '10 15 * * *') OR
-      (jobname = 'family-ops-pending-actions-v1' AND schedule = '* * * * *') OR
-      (jobname = 'family-ops-routine-dispatch-v1' AND schedule = '* * * * *')
+      (jobname = 'family-ops-pending-actions-v1' AND schedule = '1-59/5 * * * *') OR
+      (jobname = 'family-ops-routine-dispatch-v1' AND schedule = '*/2 * * * *')
     );
 
   IF expected_count <> 6 THEN
