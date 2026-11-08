@@ -54,7 +54,6 @@ import {
   buildLineMenuFlex,
   buildMissingTitleFlex,
   buildMultiIntentPreviewFlex,
-  buildScheduleSummaryFlex,
 } from "./lineUxBuilders.ts";
 import {
   decomposeLineConversationCandidates,
@@ -82,10 +81,8 @@ import {
   missingRoleRecoveryText,
 } from "./linePartnerInviteFlow.ts";
 import {
-  type CompactScheduleEntry,
   completionHint,
   conversationalScheduleLead,
-  formatScheduleReply,
   type LineCreationKind,
   isAssistantAddressCorrection,
   isLineCorrectionCue,
@@ -110,9 +107,13 @@ import {
   buildAssistantConversationReply,
 } from "./lineAssistantConversation.ts";
 import {
+  clearLineRequestContext,
   tryHandleLineMustCompletePostback,
   tryHandleLineMustCompleteText,
 } from "./lineMustComplete.ts";
+import { loadLineSchedulePage, parseLineSchedulePage } from "./lineScheduleFlow.ts";
+import { completeLineSubtask, recordLineProgress } from "./lineTaskProgress.ts";
+import { openSavedTaskCorrection, tryHandleSavedTaskCorrectionPostback } from "./lineSavedTaskCorrection.ts";
 import {
   completeTaskAndReply,
   parseCodmonSentReport,
@@ -124,7 +125,7 @@ import {
 } from "./lineCompletionReport.ts";
 import { answerShoppingList, tryHandleShoppingListQuestion } from "./lineShoppingList.ts";
 import { buildQuickShoppingAddedMessage, isQuickShoppingInput, type QuickShoppingUndoResult, quickShoppingUndoReply } from "./lineQuickShopping.ts";
-import { type DraftSpec, draftToPending, isScheduleDate, type ScheduleRange, evaluateUnderstanding, makeGeminiProvider, resolveUnderstandModel, runPlan, UNDERSTAND_THINKING_LEVEL, understandLineText } from "./lineUnderstand.ts";
+import { type DraftSpec, draftToPending, isScheduleDate, type ScheduleRange, evaluateUnderstanding, makeGeminiProvider, rejectedPartialPlanNeedsClarification, resolveUnderstandModel, runPlan, UNDERSTAND_THINKING_LEVEL, understandLineText } from "./lineUnderstand.ts";
 import type { GeminiThinkingLevel } from "../_shared/gemini.ts";
 import { loadSnapshot, logLineTurn, markUnderstandModelBusy, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
 import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
@@ -178,7 +179,7 @@ interface WebhookInboxItem {
     type?: string;
     timestamp?: number;
     message?: { type?: string; text?: string };
-    postback?: { data?: string };
+    postback?: { data?: string; params?: { datetime?: string; date?: string; time?: string } };
     replyToken?: string;
   };
   attempts: number;
@@ -363,47 +364,29 @@ async function sendLineSchedule(
     : kind === "date" && day
       ? { start: day, end: day }
       : { start: jstIsoDateOffset(1), end: jstIsoDateOffset(1) };
-  const { data, error } = await client.rpc("server_tx_get_week_schedule", {
-    p_actor_id: actor.user_id,
-    p_start_date: range.start,
-    p_end_date: range.end,
-  });
-  if (error) {
-    console.error("process-line-inbox: schedule read failed", error.message);
-    await sendConfirmation(client, item, actor, "予定を読み込めませんでした。少し待ってからもう一度送ってください。", menuQuickReplies());
-    return;
+  const title = kind === "week" ? "今週の予定" : kind === "tomorrow" ? "明日の予定" : undefined;
+  await sendSchedulePage(client, item, actor, range.start, range.end, 0, leadingText, title);
+}
+
+async function sendSchedulePage(
+  client: SupabaseClient, item: WebhookInboxItem, actor: LineActor,
+  startDate: string, endDate: string, page: number, leadingText?: string, title?: string,
+): Promise<void> {
+  try {
+    const result = await loadLineSchedulePage({
+      client, actorId: actor.user_id, householdId: actor.household_id,
+      startDate, endDate, page, title, appBaseUrl: Deno.env.get("APP_BASE_URL") ?? "",
+    });
+    await replyOrEnqueuePush(client, {
+      replyToken: item.payload.replyToken, lineUserId: item.source_external_user_id,
+      householdId: actor.household_id, recipientUserId: actor.user_id,
+      text: result.text, message: result.message, leadingText,
+      dedupKey: `line-schedule:${item.provider_event_id}`,
+    });
+  } catch (error) {
+    console.error("process-line-inbox: schedule read failed", error instanceof Error ? error.message : "unknown");
+    await sendConfirmation(client, item, actor, "予定を読み込めませんでした。少し待ってから、同じ一覧のボタンでもう一度お試しください。", menuQuickReplies());
   }
-  const { data: members } = await client.from("household_members").select("user_id,family_role").eq("household_id", actor.household_id);
-  const roles = new Map<string, string>();
-  for (const member of members ?? []) {
-    if (member.family_role === "papa") roles.set(member.user_id, "P");
-    if (member.family_role === "mama") roles.set(member.user_id, "M");
-  }
-  const schedule = (data ?? {}) as {
-    assignments?: Array<{ title?: string; display_title?: string | null; due_at?: string | null; planned_assignee_id?: string | null; has_conflict?: boolean }>;
-    occurrences?: Array<{ title?: string; starts_at?: string | null }>;
-  };
-  const entries: CompactScheduleEntry[] = [
-    ...(schedule.assignments ?? []).map((entry) => ({
-      title: entry.display_title || entry.title || "タスク",
-      startsAt: entry.due_at ?? null,
-      roleLabel: entry.planned_assignee_id ? (roles.get(entry.planned_assignee_id) ?? null) : null,
-      conflict: Boolean(entry.has_conflict),
-    })),
-    ...(schedule.occurrences ?? []).map((entry) => ({ title: entry.title ?? "Google Calendar予定", startsAt: entry.starts_at ?? null })),
-  ].sort((a, b) => (a.startsAt ?? "").localeCompare(b.startsAt ?? ""));
-  const title = kind === "tomorrow" ? "明日の予定" : kind === "date" && day ? `${formatScheduleDate(day)}の予定` : "今週の予定";
-  const scheduleText = formatScheduleReply(title, entries);
-  await replyOrEnqueuePush(client, {
-    replyToken: item.payload.replyToken,
-    lineUserId: item.source_external_user_id,
-    householdId: actor.household_id,
-    recipientUserId: actor.user_id,
-    text: scheduleText,
-    leadingText,
-    message: buildScheduleSummaryFlex(title, entries, Deno.env.get("APP_BASE_URL") ?? ""),
-    dedupKey: `line-schedule:${item.provider_event_id}`,
-  });
 }
 
 async function tryHandleReadOnlyText(
@@ -528,6 +511,7 @@ type EditablePendingAction = {
   normalized_payload: Record<string, unknown>;
   status: string;
   expires_at?: string;
+  revision?: number;
 };
 
 /** The PWA Today page for that date (?date=), for a LINE list of another day. */
@@ -659,7 +643,8 @@ async function tryHandlePendingReferent(
     });
     if (error) {
       console.warn("process-line-inbox: assistant-address correction cancel failed", error.message);
-      return false;
+      await sendConfirmation(client, item, actor, "前の下書きの取り消し結果を確認できませんでした。元の確認カードから最新の状態を確かめてください。", menuQuickReplies());
+      return true;
     }
 
     if (inferred) {
@@ -683,7 +668,11 @@ async function tryHandlePendingReferent(
   }
 
   if (pending.status !== "draft") {
-    await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」は${pendingStateLabel(pending.status)}です。変更は新しい入力として扱ってください。`);
+    if (pending.status === "succeeded") {
+      await openSavedTaskCorrection(mustCompleteContext(client, item, actor), pending.id);
+    } else {
+      await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」は${pendingStateLabel(pending.status)}です。処理中の内容や期限切れの確認カードから変更することはできません。最新の状態を確認してください。`, menuQuickReplies());
+    }
     return true;
   }
 
@@ -720,11 +709,17 @@ async function tryHandlePendingReferent(
       await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」を取り消しました。`);
       return true;
     }
-    return false;
+    await sendConfirmation(client, item, actor, "下書きの取り消し結果を確認できませんでした。元の確認カードから最新の状態を確かめてください。", menuQuickReplies());
+    return true;
   }
 
   const role = correctionRole(text);
-  const date = correctionDate(text);
+  const sourceDate = groundLineSourceDate(text, null, lineEventClock(item));
+  if (sourceDate.kind === "ambiguous") {
+    await sendConfirmation(client, item, actor, "変更する日付を一つに特定できませんでした。元の下書きは変更していません。日付を確認してもう一度送ってください。");
+    return true;
+  }
+  const date = sourceDate.date;
   const time = correctionTime(text);
   const replacementTitle = lineConversationalReplacementTitle(text);
   if (!role && !date && time === undefined && !replacementTitle) return false;
@@ -747,7 +742,10 @@ async function tryHandlePendingReferent(
           p_actor_id: actor.user_id,
           p_pending_action_id: pending.id,
         });
-        if (error) return false;
+        if (error) {
+          await sendConfirmation(client, item, actor, "担当変更のお願いの取り消し結果を確認できませんでした。元の確認カードから最新の状態を確かめてください。", menuQuickReplies());
+          return true;
+        }
         await sendConfirmation(client, item, actor, "担当を自分のままにする内容なので、この担当変更のお願いは取り消しました。");
         return true;
       }
@@ -796,8 +794,11 @@ async function tryHandlePendingReferent(
       }
     }
 
-    const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload);
-    if (!updated) return false;
+    const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload, pending.revision, lineEventClock(item).getTime());
+    if (!updated) {
+      await sendConfirmation(client, item, actor, "下書きが更新されています。最新の確認カードから編集し直してください。新しい作業やお願いは作成していません。");
+      return true;
+    }
     await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
     return true;
   }
@@ -824,8 +825,11 @@ async function tryHandlePendingReferent(
     else payload.planned_assignee_user_id = assignee;
     payload.target_label = role === "papa" ? "パパ" : role === "mama" ? "ママ" : "自分";
   }
-  const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload);
-  if (!updated) return false;
+  const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload, pending.revision, lineEventClock(item).getTime());
+  if (!updated) {
+    await sendConfirmation(client, item, actor, "下書きが更新されています。最新の確認カードから編集し直してください。新しい作業やお願いは作成していません。");
+    return true;
+  }
   await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
   return true;
 }
@@ -1098,7 +1102,7 @@ async function cancelMultiIntentCandidate(
   const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
     ...pending.normalized_payload,
     candidates,
-  });
+  }, pending.revision, lineEventClock(item).getTime());
   if (!updated) return;
   const active = candidates.filter((row): row is Record<string, unknown> =>
     Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
@@ -1157,7 +1161,7 @@ async function resolveMultiIntentDuplicate(
   }
   const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, {
     ...pending.normalized_payload, candidates,
-  });
+  }, pending.revision, lineEventClock(item).getTime());
   if (!updated) return;
   const active = candidates.filter((row): row is Record<string, unknown> =>
     Boolean(row) && typeof row === "object" && (row as Record<string, unknown>).status === "draft"
@@ -1197,13 +1201,6 @@ function correctionRole(text: string): "papa" | "mama" | "self" | null {
   return null;
 }
 
-function correctionDate(text: string): string | null {
-  if (/明後日/.test(text)) return jstIsoDateOffset(2);
-  if (/明日/.test(text)) return jstIsoDateOffset(1);
-  if (/今日|今夜|今朝/.test(text)) return jstIsoDateOffset(0);
-  return null;
-}
-
 function correctionTime(text: string): string | null | undefined {
   if (/時刻なし|時間なし/.test(text)) return null;
   const explicit = text.match(/(?:午前|午後)?\s*(\d{1,2})時(?:\s*(\d{1,2})分?)?/);
@@ -1232,12 +1229,17 @@ async function updateEditablePending(
   pendingActionId: string,
   actionType: string,
   payload: Record<string, unknown>,
+  expectedRevision: number | undefined,
+  eventTimestamp: number,
 ): Promise<EditablePendingAction | null> {
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision! < 0) return null;
   const { data, error } = await client.rpc("server_tx_update_pending_action", {
     p_actor_id: actor.user_id,
     p_pending_action_id: pendingActionId,
     p_action_type: actionType,
     p_normalized_payload: payload,
+    p_expected_revision: expectedRevision,
+    p_line_event_timestamp: eventTimestamp,
   });
   if (error) {
     console.error("process-line-inbox: update_pending failed", error.message);
@@ -1292,6 +1294,25 @@ async function tryApplyLineTextEdit(
   const pending = await getLineTextEditPending(client, actor);
   if (!pending) return false;
 
+  if (pending.action_type === "assignment_change_request") {
+    const wording = text.match(/^(?:文面|メッセージ)\s*[:：]\s*(.{1,500})$/u);
+    if (wording) {
+      const payload = { ...pending.normalized_payload, shared_message: wording[1].trim(), line_edit_mode: false };
+      const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload, pending.revision, lineEventClock(item).getTime());
+      if (!updated) {
+        await sendConfirmation(client, item, actor, "下書きが更新されています。最新の確認カードから編集し直してください。");
+        return true;
+      }
+      await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
+      return true;
+    }
+    if (await tryHandlePendingReferent(client, item, actor, text, pending)) return true;
+    await sendConfirmation(client, item, actor, "変更したい日付・担当・対象（送り／お迎え）、または「文面: …」を送ってください。時刻は元の予定を使います。", [
+      { type: "postback", label: "確認に戻る", data: `action=preview_pending&pending_action_id=${pending.id}`, displayText: "確認に戻る" },
+    ]);
+    return true;
+  }
+
   if (pending.normalized_payload.clarification_stage === "title") {
     const value = text.normalize("NFKC").replace(/\s+/g, " ").trim().replace(/[。！!]+$/u, "");
     if (!value || value.length > 80 || lineCreationStarterKind(value) || readOnlyLineIntent(value)) {
@@ -1312,14 +1333,22 @@ async function tryApplyLineTextEdit(
     if (pending.action_type === "request_create") payload.shared_message = `${String(payload.title)}をお願いできますか？`;
     delete payload.clarification_stage;
     delete payload.line_edit_mode;
-    const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload);
-    if (!updated) return true;
+    const updated = await updateEditablePending(client, actor, pending.id, pending.action_type, payload, pending.revision, lineEventClock(item).getTime());
+    if (!updated) {
+      await sendConfirmation(client, item, actor, "下書きが更新されています。最新の確認カードから編集し直してください。新しい作業やお願いは作成していません。");
+      return true;
+    }
     await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
     return true;
   }
 
   const role = correctionRole(text);
-  const date = correctionDate(text);
+  const sourceDate = groundLineSourceDate(text, null, lineEventClock(item));
+  if (sourceDate.kind === "ambiguous") {
+    await sendConfirmation(client, item, actor, "変更する日付を一つに特定できませんでした。元の下書きは変更していません。日付を確認してもう一度送ってください。");
+    return true;
+  }
+  const date = sourceDate.date;
   const time = correctionTime(text);
   const title = correctionTitle(text);
   if (!role && !date && time === undefined && !title) {
@@ -1353,7 +1382,7 @@ async function tryApplyLineTextEdit(
       delete payload.recipient_user_id;
     }
   }
-  const updated = await updateEditablePending(client, actor, pending.id, actionType, payload);
+  const updated = await updateEditablePending(client, actor, pending.id, actionType, payload, pending.revision, lineEventClock(item).getTime());
   if (!updated) {
     await sendConfirmation(client, item, actor, "修正を保存できませんでした。元の確認カードからもう一度お試しください。");
     return true;
@@ -1402,7 +1431,6 @@ async function sendPendingActionPreview(
   payload: Record<string, unknown>,
 ): Promise<void> {
   if (actionType === "assignment_change_request") {
-    const editUrl = `${Deno.env.get("APP_BASE_URL") ?? ""}/requests?pending=${pendingActionId}`;
     await replyOrEnqueuePush(client, {
       replyToken: item.payload.replyToken,
       lineUserId: item.source_external_user_id,
@@ -1413,7 +1441,6 @@ async function sendPendingActionPreview(
         pendingActionId,
         title: String(payload.title ?? "担当変更"),
         message: String(payload.shared_message ?? "担当をお願いできますか？"),
-        editUrl,
         scheduleLabel: payload.due_at ? new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(String(payload.due_at))) : String(payload.scheduled_date ?? ""),
         scope: payload.scope === "this_week" ? "this_week" : "once",
       }),
@@ -1498,7 +1525,7 @@ async function beginClarificationForKind(
     payload.target_label = "パートナー";
     delete payload.planned_assignee_user_id;
   }
-  const updated = await updateEditablePending(client, actor, pending.id, actionType, payload);
+  const updated = await updateEditablePending(client, actor, pending.id, actionType, payload, pending.revision, lineEventClock(item).getTime());
   if (!updated) return;
   await replyOrEnqueuePush(client, {
     replyToken: item.payload.replyToken,
@@ -1525,6 +1552,17 @@ function completionContext(
     operationId: deterministicOperationId,
     reply: (text, quickReplies) => sendConfirmation(client, item, actor, text, quickReplies),
   };
+}
+
+function mustCompleteContext(client: SupabaseClient, item: WebhookInboxItem, actor: LineActor) {
+  return {
+    client, actorId: actor.user_id, householdId: actor.household_id, eventId: item.provider_event_id,
+    reply: (text: string, quickReplies?: LineQuickReplyAction[]) => sendConfirmation(client, item, actor, text, quickReplies),
+  };
+}
+
+function preservesRequestTopic(text: string): boolean {
+  return /^(?:お願いの返事|お願い確認|返事|相談中|相談を確認)$|^(?:相談メモ|辞退コメント)(?:[：:\s]|$)|^条件期限(?:\s|$)/u.test(text.normalize("NFKC").trim());
 }
 
 function lineEventClock(item: WebhookInboxItem): Date {
@@ -1556,6 +1594,33 @@ async function handlePostback(
   const data = item.payload.postback?.data;
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
+  // datetimepicker sends its value separately; never let a query field replace
+  // the action/resource IDs or impersonate the provider's selected datetime.
+  delete fields.datetime;
+  if (typeof item.payload.postback?.params?.datetime === "string") fields.datetime = item.payload.postback.params.datetime;
+  if (!fields.action?.startsWith("mc_request")) await clearLineRequestContext(mustCompleteContext(client, item, actor));
+
+  if (await tryHandleSavedTaskCorrectionPostback(mustCompleteContext(client, item, actor), fields)) return;
+
+  if (fields.action === "schedule_page") {
+    const range = parseLineSchedulePage(fields);
+    if (!range) {
+      await sendConfirmation(client, item, actor, "この予定一覧は開けません。日付を指定して、もう一度予定を聞いてください。");
+      return;
+    }
+    await sendSchedulePage(client, item, actor, range.startDate, range.endDate, range.page);
+    return;
+  }
+
+  if (fields.action === "preview_pending" && fields.pending_action_id) {
+    const pending = await getEditablePending(client, actor, fields.pending_action_id);
+    if (!pending) {
+      await sendConfirmation(client, item, actor, "この下書きはすでに確定・期限切れです。最新の内容を確認してください。");
+      return;
+    }
+    await sendPendingActionPreview(client, item, actor, pending.id, pending.action_type, pending.normalized_payload);
+    return;
+  }
 
   if (await handleLineTransportPreviewPostback(completionContext(client, item, actor), fields)) return;
 
@@ -1606,16 +1671,22 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       return;
     }
     if (pending.action_type === "assignment_change_request") {
+      const marked = await updateEditablePending(client, actor, pending.id, pending.action_type,
+        { ...pending.normalized_payload, line_edit_mode: true }, pending.revision, lineEventClock(item).getTime());
+      if (!marked) {
+        await sendConfirmation(client, item, actor, "下書きが更新されています。最新の確認カードから編集し直してください。");
+        return;
+      }
       const quick: LineQuickReplyAction[] = [
         { type: "postback", label: "今回だけ", data: `action=update_pending&pending_action_id=${fields.pending_action_id}&field=scope&value=once`, displayText: "今回だけ" },
         { type: "postback", label: "今週だけ", data: `action=update_pending&pending_action_id=${fields.pending_action_id}&field=scope&value=this_week`, displayText: "今週だけ" },
         { type: "postback", label: "キャンセル", data: `action=cancel_pending&pending_action_id=${fields.pending_action_id}`, displayText: "キャンセル" },
       ];
-      await sendConfirmation(client, item, actor, "変更する範囲を選んでください。", quick);
+      await sendConfirmation(client, item, actor, `「${pendingTitle(pending)}」の編集です。変更したい日付・担当・対象、または「文面: …」を送ってください。時刻は元の予定を使います。範囲は下から選べます。`, quick);
       return;
     }
     const editPayload = { ...pending.normalized_payload, line_edit_mode: true };
-    const marked = await updateEditablePending(client, actor, pending.id, pending.action_type, editPayload);
+    const marked = await updateEditablePending(client, actor, pending.id, pending.action_type, editPayload, pending.revision, lineEventClock(item).getTime());
     if (!marked) {
       await sendConfirmation(client, item, actor, "編集を開始できませんでした。元の確認カードからもう一度お試しください。");
       return;
@@ -1632,6 +1703,10 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     }
     let actionType = pending.action_type;
     const payload = { ...pending.normalized_payload };
+    if (actionType === "assignment_change_request" && fields.field !== "scope") {
+      await sendConfirmation(client, item, actor, "担当変更は実際の予定を確認して編集します。確認カードの「編集」から、変更したい日付・担当・対象を送ってください。");
+      return;
+    }
     if (fields.field === "scope" && actionType === "assignment_change_request") {
       payload.scope = fields.value === "this_week" ? "this_week" : "once";
     } else if (fields.field === "date") {
@@ -1692,7 +1767,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       }
     }
     delete payload.line_edit_mode;
-    const result = await updateEditablePending(client, actor, fields.pending_action_id, actionType, payload);
+    const result = await updateEditablePending(client, actor, fields.pending_action_id, actionType, payload, pending.revision, lineEventClock(item).getTime());
     if (!result) return;
     await sendPendingActionPreview(client, item, actor, result.id, result.action_type, result.normalized_payload);
     return;
@@ -2184,6 +2259,7 @@ async function handleText(
     return;
   }
   if (!actor) return;
+  if (!preservesRequestTopic(text)) await clearLineRequestContext(mustCompleteContext(client, item, actor));
 
   const inputText = text;
   const eventClock = lineEventClock(item);
@@ -2349,6 +2425,14 @@ async function handleText(
           });
           return drain();
         },
+        completeSubtask: (task, ref, by) => completeLineSubtask({
+          client, actorId: actor.user_id, householdId: actor.household_id, eventId: item.provider_event_id,
+          operationId: (...parts) => deterministicOperationId("line-progress", item.provider_event_id, ...parts),
+        }, task, ref, by),
+        recordProgress: (task, action) => recordLineProgress({
+          client, actorId: actor.user_id, householdId: actor.household_id, eventId: item.provider_event_id,
+          operationId: (...parts) => deterministicOperationId("line-progress", item.provider_event_id, ...parts),
+        }, task, action),
         couldNotDo: async (task) => {
           await couldNotDoAndReply(collectingCompletion, task.id, {
             operationId: await deterministicOperationId("line-understand", item.provider_event_id, task.id),
@@ -2381,6 +2465,9 @@ async function handleText(
       })) return;
       text = multipleSchedules ? text : outcome.continueWith.text;
       routedCreate = outcome.continueWith.mode === "create";
+    } else if (rejectedPartialPlanNeedsClarification(understood.parsed, text)) {
+      await sendConfirmation(client, item, actor, "どの作業の、どの項目を済ませたか確認したいです。「今日」または「昨日の作業」で最新の状態を確認して、対象を添えてもう一度送ってください。作業全体の完了や新しい作業の作成は行っていません。", menuQuickReplies());
+      return;
     } else if (understood.raw !== null) {
       console.warn("process-line-inbox: understanding unusable, using the fallback handlers");
     }
@@ -2461,6 +2548,13 @@ async function handleText(
 
   let actionType: string;
   let payload: Record<string, unknown>;
+  const fallbackDate = groundLineSourceDate(text, null, eventClock);
+  if (!assignmentPayload && (starterKind || !semanticCandidate) && fallbackDate.kind === "ambiguous") {
+    await sendConfirmation(client, item, actor, "登録する日付を一つに特定できませんでした。日付を確認してもう一度送ってください。まだ新しい作業は作成していません。");
+    return;
+  }
+  const eventDate = new Date(eventClock.getTime() + 9 * 3600_000).toISOString().slice(0, 10);
+  const fallbackScheduledDate = fallbackDate.kind === "grounded" ? fallbackDate.date : eventDate;
   if (assignmentPayload) {
     actionType = "assignment_change_request";
     payload = assignmentPayload;
@@ -2470,7 +2564,7 @@ async function handleText(
     payload = {
       raw_text: text,
       clarification_kind: starterKind,
-      scheduled_date: correctionDate(text) ?? jstIsoDateOffset(0),
+      scheduled_date: fallbackScheduledDate,
       due_local_time: due === undefined ? null : due,
       daypart: /朝/.test(text) ? "morning" : /夕方/.test(text) ? "evening" : /夜/.test(text) ? "night" : null,
     };
@@ -2481,7 +2575,7 @@ async function handleText(
     actionType = "needs_pwa_review";
     payload = {
       raw_text: text,
-      scheduled_date: correctionDate(text) ?? jstIsoDateOffset(0),
+      scheduled_date: fallbackScheduledDate,
       due_local_time: correctionTime(text) ?? null,
     };
   }
@@ -2543,7 +2637,7 @@ async function handleText(
   }
 }
 
-const DRAFT_EDITABLE_TYPES = new Set(["task_create_once", "request_create", "shopping_item_add", "needs_pwa_review"]);
+const DRAFT_EDITABLE_TYPES = new Set(["task_create_once", "request_create", "shopping_item_add", "needs_pwa_review", "assignment_change_request"]);
 
 /**
  * The model filled in the draft (title with the child's name and the count, date,
@@ -2580,12 +2674,20 @@ async function applyUnderstoodDraft(
   if (opts.mode === "edit") {
     const pending = opts.pending;
     if (!pending || pending.status !== "draft" || !DRAFT_EDITABLE_TYPES.has(pending.action_type)) return false;
+    if (pending.action_type === "assignment_change_request") {
+      // Model understanding never rewrites a linked occurrence into a new task.
+      // The existing assignment editor resolves date/role edits against real tasks.
+      return await tryApplyLineTextEdit(client, item, actor, opts.rawText);
+    }
     const built = draftToPending(sourceDraft, ctx, pending.normalized_payload);
     if (!built) return false;
     if (["request_create", "task_create_once"].includes(built.actionType) &&
       await refuseGenericTransportDraft(client, item, actor, { ...built.payload, raw_text: opts.rawText })) return true;
-    const updated = await updateEditablePending(client, actor, pending.id, built.actionType, built.payload);
-    if (!updated) return false;
+    const updated = await updateEditablePending(client, actor, pending.id, built.actionType, built.payload, pending.revision, lineEventClock(item).getTime());
+    if (!updated) {
+      await sendConfirmation(client, item, actor, "下書きが更新されています。最新の確認カードから編集し直してください。新しい作業やお願いは作成していません。");
+      return true;
+    }
     await sendPendingActionPreview(client, item, actor, updated.id, updated.action_type, updated.normalized_payload);
     return true;
   }

@@ -73,7 +73,7 @@ Deno.test("LINE daily input enters canonical reconciliation and exposes all/most
   });
   assertEquals(await tryHandleLineMustCompleteText(ctx, "入力"), true);
   assertEquals(calls[0].name, "server_read_current_routine_sessions");
-  const postbacks = replies[0].quickReplies.filter((action) => action.type === "postback");
+  const postbacks = replies[0].quickReplies.filter((action) => action.type === "postback" && new URLSearchParams(action.data).get("action") === "mc_reconcile");
   assertEquals(postbacks.length, 3);
   assert(postbacks.some((action) => action.type === "postback" && action.data.includes("response_kind=all_done")));
   assert(postbacks.some((action) => action.type === "postback" && action.data.includes("response_kind=mostly_done")));
@@ -93,6 +93,19 @@ Deno.test("LINE all-done postback uses canonical reconciliation and returns an u
   }), true);
   assertEquals(calls.length, 1);
   assert(replies[0].quickReplies.some((action) => action.type === "postback" && action.data.includes("mc_reconcile_undo") && action.data.includes("recon-1")));
+});
+
+Deno.test("individual confirmation after all-done reads the same empty session instead of failing", async () => {
+  const { ctx, calls, replies } = makeContext((name, args) => {
+    assertEquals(args.p_session_id, "same-session");
+    if (name === "server_tx_reconcile_routine_session_v2") return { data: null, error: { message: "RECONCILIATION_EMPTY_GROUP" } };
+    assertEquals(name, "server_tx_get_routine_session");
+    return { data: { id: "same-session", items: [{ id: "done", title: "洗濯", status: "completed" }] }, error: null };
+  });
+  await tryHandleLineMustCompletePostback(ctx, { action: "mc_reconcile", session_id: "same-session", response_kind: "individual" });
+  assertEquals(calls.length, 2);
+  assertStringIncludes(replies[0].text, "回答する項目はありません");
+  assert(replies[0].quickReplies.some((a) => a.label === "昨日分の訂正"));
 });
 
 Deno.test("LINE request action forwards immutable attempt revisions and fails stale closed", async () => {

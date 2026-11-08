@@ -28,6 +28,13 @@ declare
   -- so the "future" ones stay at least a week ahead of today.
   sh integer := 7 * ceil(greatest(0, (now() at time zone 'Asia/Tokyo')::date - date '2026-09-24') / 7.0)::integer;
 begin
+  -- Week-preserving shifts can land the protected fixture on a holiday (for
+  -- example 2026-11-23). Transport intentionally does not materialize that day.
+  -- Keep both assertion dates on school days without weakening holiday rules.
+  while exists (select 1 from private.jp_holidays
+    where local_date in (date '2026-10-05' + sh, date '2026-10-06' + sh)) loop
+    sh := sh + 7;
+  end loop;
   insert into auth.users(id) values(u1),(u2),(u3);
   insert into public.profiles(user_id,display_name) values
     (u1,'Transport Papa'),(u2,'Transport Mama'),(u3,'Other Household');

@@ -171,7 +171,7 @@ export async function loadSnapshot(
     safe<Array<Record<string, unknown>>>([], async () => {
       const { data } = await client
         .from("task_instances")
-        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase,expectation")
+        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase,expectation,revision,scheduled_date,completion_mode")
         .eq("household_id", householdId)
         .eq("scheduled_date", today)
         .is("test_context_id", null)
@@ -237,7 +237,7 @@ export async function loadSnapshot(
       if (!yesterday) return [];
       const { data } = await client
         .from("task_instances")
-        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase,expectation")
+        .select("id,title,status,outcome_reason,planned_assignee_id,assignment_mode,due_at,task_definition_id,routine_phase,expectation,revision,scheduled_date,completion_mode")
         .eq("household_id", householdId)
         .eq("scheduled_date", yesterday)
         .is("test_context_id", null)
@@ -255,6 +255,16 @@ export async function loadSnapshot(
     return new Map((data ?? []).map((row: Record<string, unknown>) => [String(row.id), String(row.code ?? "")]));
   });
 
+  const subtaskRows = await safe<Array<Record<string, unknown>>>([], async () => {
+    const ids = [...taskRows, ...yesterdayRows].filter((row) => row.completion_mode === "subtasks").map((row) => String(row.id));
+    if (!ids.length) return [];
+    const { data, error } = await client.from("task_subtask_instances")
+      .select("id,task_instance_id,title,is_completed,required,sort_order")
+      .eq("household_id", householdId).is("test_context_id", null)
+      .in("task_instance_id", ids).order("sort_order", { ascending: true }).limit(300);
+    return error ? [] : data ?? [];
+  });
+
   const labels = new Map(members.map((m) => [m.user_id, ROLE_LABEL[m.family_role ?? ""] ?? "家族"]));
   const partner = members.find((m) => m.user_id !== actorId);
 
@@ -263,6 +273,12 @@ export async function loadSnapshot(
     rows.filter((row) => row.status !== "skipped" || row.outcome_reason === "could_not_do").map((row, index) => ({
       ref: `${prefix}${index + 1}`,
       id: String(row.id),
+      revision: Number(row.revision ?? 0),
+      date: typeof row.scheduled_date === "string" ? row.scheduled_date : prefix === "y" ? yesterday ?? today : today,
+      subtasks: subtaskRows.filter((s) => s.task_instance_id === row.id).map((s, childIndex) => ({
+        ref: `${prefix}${index + 1}c${childIndex + 1}`, id: String(s.id), title: String(s.title ?? ""),
+        completed: s.is_completed === true, required: s.required !== false,
+      })),
       title: String(row.title ?? ""),
       who: row.assignment_mode === "anyone"
         ? "anyone"

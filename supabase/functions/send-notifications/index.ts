@@ -208,6 +208,7 @@ function buildRichRequestMessage(
     message: item.body ?? '',
     acceptPendingActionId,
     declinePendingActionId,
+    requestId: item.payload.request_id,
     scheduleLabel: label,
     otherResponseUrl,
   });

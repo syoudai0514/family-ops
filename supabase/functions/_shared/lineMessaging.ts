@@ -55,8 +55,16 @@ export interface LineMessageQuickReplyAction {
   text: string;
 }
 
+export interface LineDatetimePickerQuickReplyAction {
+  type: 'datetimepicker';
+  label: string;
+  data: string;
+  mode: 'datetime';
+  initial?: string;
+}
+
 export type LineQuickReplyAction =
-  LinePostbackQuickReplyAction | LineUriQuickReplyAction | LineMessageQuickReplyAction;
+  LinePostbackQuickReplyAction | LineUriQuickReplyAction | LineMessageQuickReplyAction | LineDatetimePickerQuickReplyAction;
 
 export interface ReplyOrEnqueuePushArgs {
   /** private.webhook_inbox item's payload.replyToken for THIS event, or null/undefined if none/already-used. Never logged in full. */

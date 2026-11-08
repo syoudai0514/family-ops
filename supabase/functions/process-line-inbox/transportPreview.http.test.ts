@@ -69,6 +69,7 @@ Deno.test("LINE transport agreement preview survives follow-up and confirms only
               ...(eventTimestamp === undefined ? {} : { timestamp: eventTimestamp }),
               ...(postback ? { postback: { data: postback } } : { message: { type: "text", text: message } }),
             } }]; break;
+          case "server_tx_line_request_context": return Promise.resolve(Response.json(null));
           case "server_tx_resolve_line_actor": result = { user_id: actor, household_id: household }; break;
           case "server_tx_prepare_line_transport_assignment_v1":
             preview = { ...originalPreview, scheduled_date: transportDate, due_at: `${transportDate}T08:00:00+09:00` };
