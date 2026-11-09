@@ -2,6 +2,7 @@ import type {
   CompactScheduleEntry,
   LineCreationKind,
 } from "./lineConversation.ts";
+import { clipScheduleText, LINE_SCHEDULE_PAGE_SIZE, schedulePageData, type LineScheduleRange } from "./lineSchedulePage.ts";
 
 const GREEN = "#16815D";
 const LINE_GREEN = "#06C755";
@@ -463,35 +464,43 @@ export function buildScheduleSummaryFlex(
   title: string,
   entries: CompactScheduleEntry[],
   appBaseUrl: string,
+  range?: LineScheduleRange,
 ): Record<string, unknown> {
-  // Keep enough room for the navigation actions in iPhone LINE, including
-  // while the software keyboard is visible. The PWA remains the full view.
-  const shown = entries.slice(0, 6);
+  const pageCount = Math.max(1, Math.ceil(entries.length / LINE_SCHEDULE_PAGE_SIZE));
+  const page = Math.min(Math.max(0, Math.floor(range?.page ?? 0)), pageCount - 1);
+  const shown = entries.slice(page * LINE_SCHEDULE_PAGE_SIZE, (page + 1) * LINE_SCHEDULE_PAGE_SIZE);
+  let shortened = false;
   const body: Record<string, unknown>[] = shown.map((entry) => {
-    const time = entry.startsAt
+    const date = entry.startsAt ? new Date(entry.startsAt) : null;
+    const time = date && Number.isFinite(date.getTime())
       ? new Intl.DateTimeFormat("ja-JP", {
         timeZone: "Asia/Tokyo",
+        ...(range && range.startDate !== range.endDate ? { month: "numeric", day: "numeric" } as const : {}),
         hour: "2-digit",
         minute: "2-digit",
         hour12: false,
-      }).format(new Date(entry.startsAt))
+      }).format(date)
       : "終日";
+    // Keep the bubble within LINE's JSON/text limits without splitting an emoji.
+    shortened ||= entry.title.length > 300;
+    const name = clipScheduleText(entry.title, 300);
     return row(
       time,
-      `${entry.title}${entry.roleLabel ? ` ${entry.roleLabel}` : ""}${
+      `${name}${entry.roleLabel ? ` ${entry.roleLabel}` : ""}${
         entry.conflict ? " ⚠️" : ""
       }`,
     );
   });
-  if (entries.length > shown.length) {
+  if (pageCount > 1 || range) {
     body.push({
       type: "text",
-      text: `ほか${entries.length - shown.length}件`,
+      text: `${page + 1}/${pageCount}ページ・全${entries.length}件（最新の予定）`,
       size: "xxs",
       color: MUTED,
       align: "end",
     });
   }
+  if (shortened) body.push({ type: "text", text: "長い予定名を省略しています。日付の詳細で全文を確認できます。", size: "xxs", color: MUTED, wrap: true });
   if (entries.length === 0) {
     body.push({
       type: "text",
@@ -500,9 +509,19 @@ export function buildScheduleSummaryFlex(
       color: MUTED,
     });
   }
+  const footer: Record<string, unknown>[] = [];
+  if (range && page > 0) footer.push(actionButton("前の予定", schedulePageData(range, page - 1)));
+  if (range && page + 1 < pageCount) footer.push(actionButton("続きの予定", schedulePageData(range, page + 1)));
+  if (range) footer.push(actionButton("最新を表示", schedulePageData(range, page)));
+  const base = appBaseUrl.replace(/\/$/, "");
+  if (base && range) footer.push({
+    type: "button", style: "link", height: "sm",
+    action: { type: "uri", label: "日付の詳細", uri: `${base}/month?date=${encodeURIComponent(range.startDate)}` },
+  });
+  footer.push(messageButton("今日", "今日"));
   return {
     type: "flex",
-    altText: title,
+    altText: clipScheduleText(`${title} ${page + 1}/${pageCount}ページ`, 400),
     contents: {
       type: "bubble",
       size: "mega",
@@ -513,7 +532,7 @@ export function buildScheduleSummaryFlex(
         backgroundColor: "#F2FBF7",
         contents: [{
           type: "text",
-          text: `📅 ${title}`,
+          text: clipScheduleText(`📅 ${title}`, 200),
           size: "md",
           weight: "bold",
           color: TEXT,
@@ -528,19 +547,10 @@ export function buildScheduleSummaryFlex(
       },
       footer: {
         type: "box",
-        layout: "horizontal",
+        layout: "vertical",
         spacing: "xs",
         paddingAll: "4px",
-        contents: [messageButton("明日", "明日の予定教えて"), {
-          type: "button",
-          style: "secondary",
-          height: "sm",
-          action: {
-            type: "uri",
-            label: "詳しく見る",
-            uri: `${appBaseUrl.replace(/\/$/, "")}/week`,
-          },
-        }],
+        contents: footer,
       },
     },
   };

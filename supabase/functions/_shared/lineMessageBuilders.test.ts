@@ -3,6 +3,7 @@ import {
   buildAssignmentAcceptanceConfirmFlex,
   buildAssignmentRequestFlex,
   buildAssignmentSenderPreviewFlex,
+  buildGeneralRequestFlex,
   buildPendingActionPreviewFlex,
   rewritePickupRequest,
 } from './lineMessageBuilders.ts';
@@ -40,6 +41,8 @@ Deno.test(
     assertStringIncludes(raw, 'お願いの確認');
     assertStringIncludes(raw, 'action=confirm_pending&pending_action_id=pending-1');
     assertEquals(raw.includes('data=迎えお願い'), false);
+    assertStringIncludes(raw, 'action=edit_pending&pending_action_id=pending-1');
+    assertEquals(raw.includes('https://example.test/requests'), false);
   },
 );
 
@@ -201,3 +204,12 @@ Deno.test(
     assertStringIncludes(raw, '準備: ・子供の身支度 ・診察カード ・保険証');
   },
 );
+
+Deno.test('general request other response stays in LINE with the selected request', () => {
+  const card = buildGeneralRequestFlex({ title: '迎えお願い', message: 'お願いできますか',
+    acceptPendingActionId: 'accept-1', declinePendingActionId: 'decline-1', requestId: 'request-2',
+    otherResponseUrl: 'https://example.test/requests?request=request-2' });
+  const raw = JSON.stringify(card);
+  assertStringIncludes(raw, 'action=mc_request_open&request_id=request-2');
+  assertEquals(raw.includes('https://example.test/requests'), false);
+});

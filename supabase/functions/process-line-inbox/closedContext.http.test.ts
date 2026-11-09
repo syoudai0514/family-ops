@@ -70,6 +70,8 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
             source_external_user_id: "test-line-user", attempts: 1, lease_token: "test-lease", payload: {
               type: postback ? "postback" : "message", ...(postback ? { postback: { data: postback } } : { message: { type: "text", text } }), replyToken: "test-reply",
             } }]; break;
+          case "server_tx_line_request_context": return Promise.resolve(Response.json(null));
+          case "server_read_line_saved_task_v1": return Promise.resolve(Response.json(null));
           case "server_tx_resolve_line_actor": data = { user_id: actorId, household_id: householdId }; break;
           case "server_tx_get_line_conversation_pending": data = { id: closedId, status: "succeeded", action_type: "task_create_once",
             normalized_payload: { title: "詩乃の検尿チャレンジ", scheduled_date: tomorrow }, revision: 2 }; break;
@@ -177,7 +179,8 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       aiEnabled = false;
       await run("さっきの詩乃の検尿チャレンジを明日に変更して");
       assertEquals(pendingCalls().length, 0);
-      assertStringIncludes(rendered(), "登録済み");
+      assertStringIncludes(rendered(), "登録先を安全に確認できない");
+      assertStringIncludes(rendered(), "新しい作業は作成していません");
       assertEquals(calls.some((call) => /update_pending|confirm_pending|send_request/.test(call.rpc)), false);
     });
     await t.step("an AI create proposal cannot duplicate an explicitly referenced completed input", async () => {
@@ -185,7 +188,8 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       planMode = "create";
       await run("さっきの詩乃の検尿チャレンジを明日に変更して");
       assertEquals(pendingCalls().length, 0);
-      assertStringIncludes(rendered(), "登録済み");
+      assertStringIncludes(rendered(), "登録先を安全に確認できない");
+      assertStringIncludes(rendered(), "新しい作業は作成していません");
     });
     await t.step("replaying the old confirm button cannot register another input", async () => {
       postback = `action=confirm_pending&pending_action_id=${closedId}`;

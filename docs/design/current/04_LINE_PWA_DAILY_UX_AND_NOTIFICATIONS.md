@@ -302,6 +302,22 @@ After auth redirect, original app-relative path is restored.
 
 Stale deep link opens latest state rather than reenacting old operation.
 
+### 11.1 LINE schedule continuation — Issue #193
+
+Tomorrow, week, and explicit-date schedule replies use six entries per LINE page.
+`前の予定 / 続きの予定 / 最新を表示` postbacks carry the absolute start/end
+dates and page number. The worker validates real dates and an inclusive range
+of at most seven days, then reuses `server_tx_get_week_schedule` with the
+resolved LINE actor on every access. A shrinking result clamps the old page to
+the last available page; a failed read is an error with retry guidance, never
+an empty-calendar claim. No operation is replayed by paging.
+
+The optional detail link opens `/month?date=YYYY-MM-DD` for the original start
+date. Multi-day pages show the date as well as time on each timed entry.
+Long names are visibly shortened without splitting UTF-16 surrogate pairs;
+navigation remains available. The `今日` route continues to show all of the
+current user's tasks under its existing contract.
+
 ## 12. Fixed LINE menu
 
 Target IA:
@@ -721,3 +737,27 @@ Assignment-change `引き受ける` is a non-mutating prompt first. The second e
 ### 26.4 Two-account F2
 
 For two-party request/assignment acceptance, final physical F2 uses separate real LINE identities. One-user simulation remains useful for isolation/safety rehearsal but cannot substitute for the two-party transport/postback proof.
+
+
+## 27. LINE partial progress — Issue #193
+
+This is the bounded M13 extension defined by Baseline §29.38. It adds two advisory AI actions to the existing AI-first plan; it does not introduce a second execution truth or state machine.
+
+- The snapshot includes the occurrence date and parent revision, plus bounded child refs/titles/completed/required state. Database IDs remain local to the snapshot and never enter the prompt.
+- `complete_subtask` identifies one existing child of the named occurrence. Its source must be an exact span of the current utterance, confidence must be high, and the canonical child command receives the saved parent revision and explicit performer (`self / partner / unknown`). It never calls whole-task completion; the existing canonical required-child rule owns the parent state.
+- `record_progress` retains exact source spans for observation/work/remaining/next-step notes and calls the same shared progress adapter as PWA. The original task date is retained. Work attributed to another person or to an unknown performer is stored as observation, not as the recorder's work actual.
+- At most one partial operation per occurrence is dispatched from one plan. Any partial operation blocks a whole-task completion of the same occurrence. A partial/remaining report cannot be promoted to whole-task completion merely because the model omitted its partial operation.
+- This bounded entry records only (`share_with_household=false`, `ack_policy=none`). A separate explicit share/request continues through the existing human-confirmed path. Detailed child editing, rich multi-person correction, and share-policy editing remain eligible for the concrete PWA hand-off.
+- Responses identify the original date, task, and changed child/notes. Revision conflicts require a fresh view. A transport error after dispatch is result-unknown; no success or unchanged claim is fabricated.
+
+
+## 28. LINE daily-flow continuity — Issue #193
+
+Baseline §29.39 adds target selection and continuity over the existing commands; it introduces no second domain state machine.
+
+- Request lists are paginated and each selected request is freshly resolved against the production actor and household. Memo/date actions bind request ID, attempt ID, attempt revision and terms revision. The existing active LINE link holds an expiring UI context; topic changes clear it. Canonical request transitions remain the consent/state authority.
+- Sender preview editing and incoming other-response actions use target-bound postbacks. Deadline selection uses the LINE datetime picker, with its params forwarded separately from opaque action identity. Stale context cannot edit a different request. Comments accompanying a decline belong to the same canonical transition and notification, not an extra request or push.
+- Daily input selects an actionable session returned by the actor-scoped reader, prefers the appropriate time of day and labels its actual date/type. Explicit morning/evening selection does not fall back to another period. Group completion semantics remain unchanged; individual follow-up keeps the same session ID.
+- Recent correction lists use absolute dates, current household and production task rows. Selection rereads the task and revision; whole-task reopening uses the existing canonical revision boundary; checklist correction unchecks only the selected child through the same parent-revision-checked command as PWA. Daily completion and failed-outcome correction add receipt-backed day/revision/actor checks around the existing writers, and Codmon completion requires an explicit sent action. Listing failure is a read error, never an empty history.
+- Saved-input correction resolves only the actor's own recent succeeded LINE task_create_once result to an own manual, non-recurring, non-request-linked task. A service-only reader and mutation adapter enforce provenance, current household, expected revision and receipt replay. Date/time edit preserves existing duration, assignment and calendar visibility through the existing calendar editor. Unsupported overnight/detail changes are not silently simplified.
+- Rollout order is additive database migration, then the matching process-line-inbox and send-notifications functions. Existing functions and quota/outbox delivery remain in use; no new Edge endpoint or frontend build is required for this scope. Automated HTTP/SQL evidence does not substitute for the two-identity physical LINE check in §26.4.

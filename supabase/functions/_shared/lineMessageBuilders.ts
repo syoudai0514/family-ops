@@ -253,7 +253,7 @@ export function buildAssignmentSenderPreviewFlex(data: {
   pendingActionId: string;
   title: string;
   message: string;
-  editUrl: string;
+  editUrl?: string;
   scheduleLabel?: string;
   scope?: "once" | "this_week";
 }): Record<string, unknown> {
@@ -309,7 +309,7 @@ export function buildAssignmentSenderPreviewFlex(data: {
             `action=confirm_pending&pending_action_id=${data.pendingActionId}`,
           primary: true,
         },
-        { label: "編集", uri: data.editUrl, type: "uri" },
+        { label: "編集", data: `action=edit_pending&pending_action_id=${data.pendingActionId}` },
         {
           label: "キャンセル",
           data:
@@ -325,6 +325,7 @@ export function buildGeneralRequestFlex(data: {
   message: string;
   acceptPendingActionId: string;
   declinePendingActionId: string;
+  requestId?: string;
   scheduleLabel?: string;
   otherResponseUrl?: string;
 }): Record<string, unknown> {
@@ -385,7 +386,7 @@ export function buildGeneralRequestFlex(data: {
           data:
             `action=confirm_pending&pending_action_id=${data.declinePendingActionId}`,
         },
-        ...(data.otherResponseUrl ? [{ label: "その他の返答", uri: data.otherResponseUrl, type: "uri" as const }] : []),
+        ...(data.requestId ? [{ label: "その他の返答", data: `action=mc_request_open&request_id=${data.requestId}` }] : []),
       ]),
     },
   };

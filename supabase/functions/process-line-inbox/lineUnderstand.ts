@@ -38,6 +38,10 @@ export interface SnapshotTask {
   /** could_not_do: recorded as できなかった (forgotten), apart from an open todo. */
   status: "todo" | "done" | "could_not_do";
   code: string | null;
+  /** Exact occurrence and parent revision used by partial-progress commands. */
+  date?: string;
+  revision?: number;
+  subtasks?: Array<{ ref: string; id: string; title: string; completed: boolean; required: boolean }>;
   /** routine_phase: "morning" | "evening" | "anytime" ... ("朝の全部やった"). */
   phase?: string | null;
   /** 余裕があれば (not required): left out of "全部やった", as in the app's bulk completion. */
@@ -126,6 +130,8 @@ export type Action =
   | { type: "complete_all"; phase: "morning" | "evening" | "today"; by: "self" | "partner" }
   /** "詩乃の薬あげるの忘れた": できなかった, kept apart from 未記録. */
   | { type: "could_not_do"; ref: string }
+  | { type: "complete_subtask"; ref: string; subtask_ref: string; by: "self" | "partner" | "unknown"; source: string }
+  | { type: "record_progress"; ref: string; observed: string | null; done: string | null; remaining: string | null; next: string | null; by: "self" | "partner" | "unknown"; source: string }
   | { type: "create"; text: string; draft?: DraftSpec }
   | { type: "edit_draft"; text: string; draft?: DraftSpec }
   | { type: "cancel_draft" }
@@ -193,16 +199,20 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     対象日のタスク:snapshot.tasks.slice(0, 50).map((t) => ({
       ref: t.ref,
       タスク: t.title,
+      ...(t.date ? { 対象日: t.date } : {}),
       担当: WHO_LABEL(snapshot, t.who),
       時刻: t.due,
       ...(t.phase ? { 時間帯: PHASE_LABEL[t.phase] ?? t.phase } : {}),
       ...(t.optional ? { 必須: "ではない（余裕があれば。「全部」には含めない）" } : {}),
+      ...(t.subtasks?.length ? { チェック項目: t.subtasks.map((s) => ({ ref: s.ref, 項目: s.title, 状態: s.completed ? "完了" : "未完了", 必須: s.required })) } : {}),
       状態: t.status === "done" ? "完了" : t.status === "could_not_do" ? "できなかった" : "未完了",
     })),
     昨日のタスク: (snapshot.yesterdayTasks ?? []).slice(0, 40).map((t) => ({
       ref: t.ref,
       タスク: t.title,
+      ...(t.date ? { 対象日: t.date } : {}),
       担当: WHO_LABEL(snapshot, t.who),
+      ...(t.subtasks?.length ? { チェック項目: t.subtasks.map((s) => ({ ref: s.ref, 項目: s.title, 状態: s.completed ? "完了" : "未完了", 必須: s.required })) } : {}),
       状態: t.status === "done" ? "完了" : t.status === "could_not_do" ? "できなかった" : "未完了",
     })),
     買い物リスト_未購入: snapshot.shopping.slice(0, 30).map((s) => ({
@@ -241,6 +251,9 @@ export function buildUnderstandPrompt(snapshot: Snapshot, message: string): stri
     '- {"type":"mark_bought","refs":["s1"]} 買い物を「買った」にする。その1件の中身を全部買ったと言われたときだけ。',
     '- {"type":"buy_part","ref":"s1","bought":"食器用洗剤","remaining":"パパ用のシャンプーとリンス"} 1件に複数の品物がまとまっている買い物（例「食器用洗剤とパパ用のシャンプーとリンスの購入」）のうち、一部だけ買ったと言われたとき。bought = 買ったもの、remaining = まだ買っていないもの（元の言い方のまま、「の購入」などは付けても付けなくてもよい）。残りは買い物リストに残る。全部買ったと言われたら mark_bought。どれが買ったものか分からなければ、actions を空にして reply で聞き返す。',
     "- 買い物1件に「〜と〜」で複数の品物があるときは、言われた品物だけを数える。言われていない品物を「買った」にしない（2026-10-07: 食器用洗剤だけ買ったのに、シャンプーとリンスまで買った扱いになった）。",
+    '- {"type":"complete_subtask","ref":"t2","subtask_ref":"t2c1","by":"self|partner|unknown","source":"洗濯を回した"} チェック項目の一部だけ実施した。存在する項目refだけ使う。sourceは今回の本人の発言から実施内容をそのまま抜き出す。実施者が分からない「済んでいた」はunknown。まだ・これから・予定・依頼は完了にしない。',
+    '- {"type":"record_progress","ref":"t2","observed":null,"done":"洗濯を回した","remaining":"干すのはまだ","next":null,"by":"self","source":"洗濯を回した、干すのはまだ"} 対応するチェック項目がない途中状況を、元の言葉のままメモに残す。各欄は今回の発言の抜粋だけ。byは行ったことの実施者。自分はself、相手はpartner、分からなければunknown。共有や相手への送信は行わない。',
+    "- 一部だけ実施・残りありの報告でcomplete_taskを使わない。チェック項目が合わなければrecord_progress。項目の完了と同じ内容のメモは重ねず、複数なら最大1操作/タスクにまとめ、不明な場合はどの項目か聞く。薬・コドモン・送迎の事実や実施者を推測しない。",
     '- {"type":"complete_task","ref":"t3","by":"self|partner"} 今日のタスクを「やった」にする。by = 実際にやった人（相手がやってくれたなら partner）。',
     '- {"type":"complete_tasks","refs":["t1","t2","t5"],"all":null,"by":"self|partner"} 複数のタスクをまとめて「やった」にする。時間帯ごと全部なら {"type":"complete_tasks","refs":[],"all":"morning|evening|today","by":"self"}。',
     '- {"type":"could_not_do","ref":"t2"} 今日のタスクを「できなかった」にする（忘れた・やれなかった・間に合わなかった）。やっていないことを「やった」にしない。「あとでやる」「まだ」「これからやる」は記録しない（actions を空にして reply だけ）。同じ名前のタスクが朝と夜など複数あるときは、『いま』より前の時刻のもの（過ぎてしまった方）を選ぶ。',
@@ -364,6 +377,22 @@ function parseAction(raw: unknown): Action | Action[] | null {
       const ref = str(a.ref);
       return ref ? { type: "complete_task", ref, by: a.by === "partner" ? "partner" : "self" } : null;
     }
+    case "complete_subtask": {
+      const ref = str(a.ref), subtask_ref = str(a.subtask_ref), source = str(a.source);
+      if (!ref || !subtask_ref || !source || source.length > 500) return null;
+      if (a.by !== "self" && a.by !== "partner" && a.by !== "unknown") return null;
+      return { type: "complete_subtask", ref, subtask_ref, by: a.by, source };
+    }
+    case "record_progress": {
+      const ref = str(a.ref), source = str(a.source);
+      if (!ref || !source || source.length > 500) return null;
+      if (a.by !== "self" && a.by !== "partner" && a.by !== "unknown") return null;
+      const notes = [a.observed, a.done, a.remaining, a.next];
+      if (notes.some((v) => v != null && (typeof v !== "string" || v.length > 500))) return null;
+      const [observed, done, remaining, next] = notes.map((v) => str(v) ?? null);
+      if (![observed, done, remaining, next].some(Boolean)) return null;
+      return { type: "record_progress", ref, observed, done, remaining, next, by: a.by, source };
+    }
     case "could_not_do": {
       const ref = str(a.ref);
       return ref ? { type: "could_not_do", ref } : null;
@@ -417,7 +446,7 @@ export function parsePlan(raw: string): Plan | null {
   };
 }
 
-const RECORDING = new Set<Action["type"]>(["mark_bought", "buy_part", "complete_task", "could_not_do", "create", "cancel_draft"]);
+const RECORDING = new Set<Action["type"]>(["mark_bought", "buy_part", "complete_task", "could_not_do", "complete_subtask", "record_progress", "create", "cancel_draft"]);
 
 /**
  * The safety net. Returns the plan to run, or null for the old path.
@@ -441,7 +470,14 @@ function expandCompleteAll(action: Extract<Action, { type: "complete_all" }>, sn
     .map((t) => ({ type: "complete_task" as const, ref: t.ref, by: action.by, bulk: true as const }));
 }
 
-export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
+const PARTIAL_REPORT = /(?:一部|途中|(?:は|が|のは)まだ(?:[、。!！]|$)|まだ(?:やって|終わって|干して|たたんで|洗って)(?:い)?ない|残り(?:は|が))/u;
+
+/** A rejected partial report must not become whole-task completion in the fallback. */
+export function rejectedPartialPlanNeedsClarification(parsed: Plan | null, original: string): boolean {
+  return Boolean(parsed?.actions.some((action) => action.type === "complete_subtask" || action.type === "record_progress")) || PARTIAL_REPORT.test(original);
+}
+
+export function guardPlan(plan: Plan, snapshot: Snapshot, original = ""): Plan | null {
   // A link or a copied list in the model's own words is never sent (2026-10-07: it
   // re-typed the daily brief on one line with a broken URL). The app shows lists itself.
   if (/https?:\/\/|vercel\.|\.app\//iu.test(plan.reply)) return null;
@@ -449,7 +485,30 @@ export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
   const shopRefs = new Set(snapshot.shopping.map((s) => s.ref));
   const actions: Action[] = [];
   const requested = plan.actions.flatMap((a) => a.type === "complete_all" ? expandCompleteAll(a, snapshot) : [a]);
+  const previousDay = new Date(`${snapshot.now.date}T00:00:00Z`);
+  previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+  const partialDates = new Set([snapshot.now.date, Number.isFinite(previousDay.getTime()) ? previousDay.toISOString().slice(0, 10) : ""]);
+  const partialRefs = new Set(requested.flatMap((a) => a.type === "complete_subtask" || a.type === "record_progress" ? [a.ref] : []));
+  const partialReport = rejectedPartialPlanNeedsClarification(plan, original);
   for (const action of requested) {
+    // A retry can observe the child that its first attempt already completed.
+    // Handing the original sentence to the older completion path would use a
+    // different receipt and could complete the remaining children as well.
+    if (action.type === "legacy" && partialReport) continue;
+    if (action.type === "complete_subtask" || action.type === "record_progress") {
+      const task = knownTasks(snapshot).find((t) => t.ref === action.ref);
+      // Source spans are evidence, never model-authored instructions. A partial
+      // operation also blocks a whole-task completion for this occurrence.
+      if (!task || !task.date || !partialDates.has(task.date) || task.status !== "todo" || !Number.isSafeInteger(task.revision) || Number(task.revision) < 1 ||
+        !original.includes(action.source) || !action.source.trim() || plan.confidence !== "high" ||
+        actions.some((a) => (a.type === "complete_subtask" || a.type === "record_progress") && a.ref === action.ref)) continue;
+      if (action.type === "complete_subtask") {
+        const child = task.subtasks?.find((s) => s.ref === action.subtask_ref);
+        if (!child || child.completed || /(?:まだ|これから|予定|お願い|やってほし)/u.test(action.source)) continue;
+      } else if ([action.observed, action.done, action.remaining, action.next].some((v) => v !== null && !action.source.includes(v))) continue;
+      actions.push(action);
+      continue;
+    }
     if (action.type === "buy_part") {
       if (!shopRefs.has(action.ref)) continue;
       // An item bought whole in the same message is not split as well.
@@ -464,7 +523,10 @@ export function guardPlan(plan: Plan, snapshot: Snapshot): Plan | null {
       continue;
     }
     if (action.type === "complete_task") {
-      if (!taskRefs.has(action.ref)) continue;
+      if (!taskRefs.has(action.ref) || partialRefs.has(action.ref)) continue;
+      // A partial report may never be promoted to whole-task completion even
+      // when the model omitted its corresponding partial operation. Ask instead.
+      if (PARTIAL_REPORT.test(original)) continue;
       // In a bulk report, a task that is already done is not reported again.
       if (action.bulk && knownTasks(snapshot).find((t) => t.ref === action.ref)?.status === "done") continue;
       if (actions.some((a) => a.type === "complete_task" && a.ref === action.ref)) continue;
@@ -613,7 +675,7 @@ export async function understandLineText(
 ): Promise<UnderstandResult> {
   const raw = await provider(buildUnderstandPrompt(snapshot, message));
   const parsed = raw ? parsePlan(raw) : null;
-  return { raw, parsed, plan: parsed ? guardPlan(parsed, snapshot) : null };
+  return { raw, parsed, plan: parsed ? guardPlan(parsed, snapshot, message) : null };
 }
 
 // ---------------------------------------------------------------------------
@@ -636,6 +698,8 @@ export interface PlanEffects {
   buyPart(item: SnapshotShopping, bought: string, remaining: string): Promise<ReplyPart[]>;
   /** For the Codmon submit task, `partnerInputCodes` lists the inputs the other adult did. */
   completeTask(task: SnapshotTask, by: "self" | "partner", partnerInputCodes?: string[]): Promise<ReplyPart[]>;
+  completeSubtask?(task: SnapshotTask, subtaskRef: string, by: "self" | "partner" | "unknown"): Promise<ReplyPart[]>;
+  recordProgress?(task: SnapshotTask, action: Extract<Action, { type: "record_progress" }>): Promise<ReplyPart[]>;
   /** できなかった (forgotten), apart from an open todo. */
   couldNotDo(task: SnapshotTask): Promise<ReplyPart[]>;
   cancelDraft(): Promise<ReplyPart[]>;
@@ -706,6 +770,16 @@ export async function runPlan(plan: Plan, snapshot: Snapshot, effects: PlanEffec
         if (task) {
           parts.push(...await effects.completeTask(task, action.by, task.code === "codmon_submit" && !task.ref.startsWith("y") ? partnerInputCodes : undefined));
         }
+        break;
+      }
+      case "complete_subtask": {
+        const task = knownTasks(snapshot).find((t) => t.ref === action.ref);
+        if (task) parts.push(...await (effects.completeSubtask?.(task, action.subtask_ref, action.by) ?? Promise.resolve([{ text: "チェック項目を確認できませんでした。もう一度内容を送ってください。" }])));
+        break;
+      }
+      case "record_progress": {
+        const task = knownTasks(snapshot).find((t) => t.ref === action.ref);
+        if (task) parts.push(...await (effects.recordProgress?.(task, action) ?? Promise.resolve([{ text: "途中の状況を記録できませんでした。もう一度内容を送ってください。" }])));
         break;
       }
       case "could_not_do": {

@@ -8,6 +8,10 @@ declare
   at_0730 timestamptz := timestamptz '2027-02-02 07:30:00+09';
   n int; body1 text; body2 text; focus text; whole_text text; brief jsonb; result jsonb;
 begin
+  -- This worker scans every household. Fixtures retained by earlier SQL files
+  -- must not contribute nudges to this test's exact dispatch counts. The
+  -- surrounding transaction restores their settings at the end of the file.
+  update public.households set morning_nudge_local_time=null;
   insert into auth.users(id) values(u1),(u2);
   insert into public.profiles(user_id,display_name) values(u1,'Nudge Papa'),(u2,'Nudge Mama');
   h := (public.server_tx_create_household(u1,gen_random_uuid(),'Nudge H','Papa')->>'household_id')::uuid;

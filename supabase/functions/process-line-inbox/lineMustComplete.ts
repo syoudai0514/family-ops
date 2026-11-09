@@ -1,3 +1,4 @@
+import { handleDailyInputPostback, inputDates, openDailyInput } from "./lineDailyInput.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
 import {
@@ -22,14 +23,7 @@ export interface LineMustCompleteContext {
 
 type JsonObject = Record<string, unknown>;
 
-type RoutineSessionRead = {
-  session_id: string;
-  session_type?: string | null;
-  status?: string | null;
-  can_act?: boolean;
-  current_session_id?: string | null;
-  items?: RoutineSessionItem[];
-};
+
 
 type RequestView = {
   id: string;
@@ -114,11 +108,13 @@ async function replyMutationError(ctx: LineMustCompleteContext, error: { message
     return;
   }
   if (/EXPIRED/.test(code)) {
-    await ctx.reply("返事期限を過ぎています。依頼した側からLINEで再提案してください。");
+    await ctx.reply("返事期限を過ぎています。依頼した側からLINEで再提案してください。", [message("お願いを確認", "お願いの返事")]);
     return;
   }
   console.error("process-line-inbox: LINE must-complete mutation failed", code);
-  await ctx.reply("更新できませんでした。状態は変更していません。LINEで最新の状態を開き直してください。");
+  await ctx.reply("更新結果を確認できませんでした。LINEで最新の状態を開き直して確認してください。", [
+    message("今日を見る", "今日"), message("お願いを確認", "お願いの返事"),
+  ]);
 }
 
 function formatJst(value: string | null): string {
@@ -189,37 +185,8 @@ function isSimulationEndText(text: string): boolean {
   return /^(テスト終了|1人テスト終了|一人テスト終了)$/u.test(text.normalize("NFKC").trim());
 }
 
-async function openReconciliation(ctx: LineMustCompleteContext): Promise<void> {
-  const { data, error } = await ctx.client.rpc("server_read_current_routine_sessions", { p_actor_id: ctx.actorId });
-  if (error) {
-    await replyMutationError(ctx, error);
-    return;
-  }
-  const sessions = records(data)
-    .map((row): RoutineSessionRead | null => {
-      const id = str(row.session_id ?? row.id);
-      if (!id) return null;
-      return {
-        session_id: id,
-        session_type: str(row.session_type),
-        status: str(row.status),
-        can_act: typeof row.can_act === "boolean" ? row.can_act : row.status === "open",
-        current_session_id: str(row.current_session_id),
-      };
-    })
-    .filter((v): v is RoutineSessionRead => Boolean(v))
-    .filter((v) => v.can_act !== false && v.status !== "submitted");
-  const session = sessions[0];
-  if (!session) {
-    await ctx.reply("いま回答できる家事チェックはありません。今日の内容は「今日」で確認できます。");
-    return;
-  }
-  const quick = [
-    postback("全部やった", encodeFields("mc_reconcile", { session_id: session.session_id, response_kind: "all_done" })),
-    postback("大体やった", encodeFields("mc_reconcile", { session_id: session.session_id, response_kind: "mostly_done" })),
-    postback("個別で答える", encodeFields("mc_reconcile", { session_id: session.session_id, response_kind: "individual" })),
-  ];
-  await ctx.reply("今日の家事、どうでしたか？ LINEの中だけで回答できます。", quick);
+async function openReconciliation(ctx: LineMustCompleteContext, text = "入力"): Promise<void> {
+  await openDailyInput(ctx, text === "朝の入力" ? "morning" : /^(今夜|お迎え)の入力$/u.test(text) ? "evening" : undefined);
 }
 
 async function individualRoutinePrompt(ctx: LineMustCompleteContext, sessionId: string): Promise<void> {
@@ -245,7 +212,7 @@ async function individualRoutinePrompt(ctx: LineMustCompleteContext, sessionId: 
   }).filter((v): v is RoutineSessionItem => Boolean(v));
   const next = pickNextUnfinished(items, null);
   if (!next) {
-    await ctx.reply("✓ 回答する項目はありません。");
+    await ctx.reply("✓ この範囲に回答する項目はありません。記録の訂正や別の時間帯へ進めます。", [message("入力・訂正", "入力"), message("昨日分の訂正", "昨日の入力")]);
     return;
   }
   await ctx.reply(buildItemPromptText(sessionId, next), buildItemQuickReply(sessionId, next.task_instance_id));
@@ -263,6 +230,12 @@ async function reconcile(ctx: LineMustCompleteContext, fields: Record<string, st
     p_response_kind: responseKind,
   });
   if (error) {
+    // A submitted all-done group has no remaining targets. The follow-up is
+    // still a valid same-session read; it must not manufacture another group.
+    if (responseKind === "individual" && /RECONCILIATION_EMPTY_GROUP/.test(error.message ?? "")) {
+      await individualRoutinePrompt(ctx, sessionId);
+      return;
+    }
     await replyMutationError(ctx, error);
     return;
   }
@@ -277,7 +250,8 @@ async function reconcile(ctx: LineMustCompleteContext, fields: Record<string, st
   if (responseKind === "all_done") {
     quick.push(postback("元に戻す", encodeFields("mc_reconcile_undo", { target_operation_id: reconciliationId }), "さっきの入力を元に戻す"));
   }
-  quick.push(message("個別で確認", "入力"));
+  quick.push(postback("個別で確認", encodeFields("mc_reconcile", { session_id: sessionId, response_kind: "individual" })));
+  quick.push(message("別の時間帯・訂正", "入力"));
   await ctx.reply(label, quick);
 }
 
@@ -569,13 +543,14 @@ async function mutateAnyoneTask(ctx: LineMustCompleteContext, fields: Record<str
 }
 
 async function actorRefId(ctx: LineMustCompleteContext): Promise<string | null> {
-  const { data } = await ctx.client.from("domain_actor_refs")
+  const { data, error } = await ctx.client.from("domain_actor_refs")
     .select("id")
     .eq("household_id", ctx.householdId)
     .eq("actor_kind", "real_user")
     .eq("real_user_id", ctx.actorId)
     .is("test_context_id", null)
     .maybeSingle();
+  if (error) throw new Error(error.message);
   return str(record(data)?.id);
 }
 
@@ -585,10 +560,10 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
   const { data: requestData, error: requestError } = await ctx.client.from("requests")
     .select("id,request_kind,shared_title,due_at,assignment_scope,requester_actor_ref_id,recipient_actor_ref_id,revision,created_at")
     .eq("household_id", ctx.householdId)
+    .is("test_context_id", null)
     .or(`requester_actor_ref_id.eq.${selfActorRef},recipient_actor_ref_id.eq.${selfActorRef}`)
-    .order("created_at", { ascending: false })
-    .limit(12);
-  if (requestError) return [];
+    .order("created_at", { ascending: false });
+  if (requestError) throw new Error(requestError.message);
   const requestRows = records(requestData);
   const ids = requestRows.map((row) => str(row.id)).filter((v): v is string => Boolean(v));
   if (ids.length === 0) return [];
@@ -598,11 +573,14 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
   const { data: attemptData, error: attemptError } = await ctx.client.from("request_attempts")
     .select("id,request_id,state,revision,terms_revision,terms,reply_due_at,created_at")
     .in("request_id", ids)
-    .in("state", states)
+    .eq("household_id", ctx.householdId)
+    .is("test_context_id", null)
     .order("created_at", { ascending: false });
-  if (attemptError) return [];
+  if (attemptError) throw new Error(attemptError.message);
   const latest = new Map<string, JsonObject>();
-  for (const row of records(attemptData)) {
+  for (const row of records(attemptData).sort((a, b) =>
+    (str(b.created_at) ?? "").localeCompare(str(a.created_at) ?? "") || (str(b.id) ?? "").localeCompare(str(a.id) ?? "")
+  )) {
     const requestId = str(row.request_id);
     if (requestId && !latest.has(requestId)) latest.set(requestId, row);
   }
@@ -611,7 +589,10 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
     const id = str(row.id);
     if (!id) continue;
     const attemptRow = latest.get(id);
-    if (!attemptRow) continue;
+    if (!attemptRow || !states.includes(str(attemptRow.state) ?? "")) continue;
+    // Equal timestamps do not prove which attempt superseded the other.
+    if (records(attemptData).some((other) => other.request_id === id && other.id !== attemptRow.id
+      && other.created_at === attemptRow.created_at)) continue;
     const requester = str(row.requester_actor_ref_id);
     const recipient = str(row.recipient_actor_ref_id);
     if (!requester || !recipient) continue;
@@ -654,39 +635,185 @@ function requestActionData(view: { request: RequestView; attempt: AttemptView },
   });
 }
 
-async function openRequests(ctx: LineMustCompleteContext): Promise<void> {
-  const views = await activeRequests(ctx, true);
-  const view = views[0];
-  if (!view) {
+type RequestWorkspaceView = { request: RequestView; attempt: AttemptView; party: "requester" | "recipient" };
+
+async function readRequestWorkspace(ctx: LineMustCompleteContext, includeExpired = false): Promise<RequestWorkspaceView[] | null> {
+  try { return await activeRequests(ctx, includeExpired); }
+  catch (error) {
+    console.warn("process-line-inbox: request list read failed", error instanceof Error ? error.message : "unknown");
+    await ctx.reply("お願いを読み込めませんでした。少し待ってから、もう一度開いてください。", [message("お願いを確認", "お願いの返事")]);
+    return null;
+  }
+}
+
+function requestFields(view: RequestWorkspaceView): Record<string, string | number> {
+  return { request_id: view.request.id, attempt_id: view.attempt.id,
+    revision: view.attempt.revision, terms_revision: view.attempt.terms_revision };
+}
+
+async function requestContext(ctx: LineMustCompleteContext, action: "get" | "set" | "clear", view?: RequestWorkspaceView, extra: JsonObject = {}): Promise<JsonObject | null> {
+  const { data, error } = await ctx.client.rpc("server_tx_line_request_context", {
+    p_actor_id: ctx.actorId, p_action: action, p_context: view ? { ...requestFields(view), ...extra } : null,
+  });
+  if (error) throw new Error(error.message);
+  return record(data);
+}
+
+/** A new topic only proceeds after its old selection has been invalidated. */
+export async function clearLineRequestContext(ctx: LineMustCompleteContext): Promise<void> {
+  await requestContext(ctx, "clear");
+}
+
+function matchesRequest(view: RequestWorkspaceView, fields: JsonObject): boolean {
+  return view.request.id === fields.request_id && view.attempt.id === fields.attempt_id
+    && view.attempt.revision === Number(fields.revision)
+    && view.attempt.terms_revision === Number(fields.terms_revision);
+}
+
+function requestStateLabel(state: string): string {
+  return ({ pending: "返事待ち", checking: "確認中", consulting: "相談中", awaiting_confirmation: "条件の確認待ち", expired: "返事期限切れ", accepted: "合意済み", declined: "難しいと返答済み" } as Record<string, string>)[state] ?? "最新の状態を確認してください";
+}
+
+async function openRequests(ctx: LineMustCompleteContext, selected?: string, page = 0): Promise<void> {
+  const views = await readRequestWorkspace(ctx, true);
+  if (!views) return;
+  if (views.length === 0) {
+    await clearLineRequestContext(ctx);
     await ctx.reply("いま返事・相談できるお願いはありません。");
     return;
   }
+  const view = selected ? views.find((item) => item.request.id === selected) : views.length === 1 ? views[0] : undefined;
+  if (!view) {
+    await clearLineRequestContext(ctx);
+    const start = Math.max(0, Math.min(Math.floor(page) || 0, Math.ceil(views.length / 5) - 1)) * 5;
+    const shown = views.slice(start, start + 5);
+    const quick = shown.map((item, i) => postback(`${start + i + 1}件目を開く`, encodeFields("mc_request_open", { request_id: item.request.id })));
+    if (start > 0) quick.push(postback("前のお願い", encodeFields("mc_request_list", { page: start / 5 - 1 })));
+    if (start + 5 < views.length) quick.push(postback("次のお願い", encodeFields("mc_request_list", { page: start / 5 + 1 })));
+    await ctx.reply(`${selected ? "そのお願いは更新済みか、現在は返答できません。\n" : ""}どのお願いを開きますか？\n${shown.map((item, i) => `${start + i + 1}. ${item.request.shared_title}\n   ${formatJst(item.request.due_at)}・${item.party === "requester" ? "相手へのお願い" : "自分へのお願い"}・${requestStateLabel(item.attempt.state)}`).join("\n")}`, quick);
+    return;
+  }
   const { request, attempt, party } = view;
-  const summary = `${request.shared_title}\n返事期限: ${formatJst(attempt.reply_due_at)}\n作業期限: ${formatJst(request.due_at)}\n状態: ${attempt.state}`;
+  const proposedDue = str(record(attempt.terms.material_patch)?.work_due_at);
+  const memo = str(attempt.terms.candidate);
+  const summary = `${request.shared_title}\n${party === "requester" ? "相手へのお願い" : "自分へのお願い"}\n返事期限: ${formatJst(attempt.reply_due_at)}\n作業期限: ${formatJst(request.due_at)}${proposedDue ? `\n提案中の作業期限: ${formatJst(proposedDue)}` : ""}\n状態: ${requestStateLabel(attempt.state)}${memo ? `\n相談メモ: ${memo}` : ""}`;
   const quick: LineQuickReplyAction[] = [];
   if (attempt.state === "expired") {
     if (party === "requester") quick.push(postback("再提案する", encodeFields("mc_request_repropose", { request_id: request.id, request_revision: request.revision })));
   } else if (party === "recipient" && ["pending", "checking"].includes(attempt.state)) {
     if (request.request_kind === "assignment_change") {
-      quick.push(postback("引き受ける", encodeFields("mc_request_prompt_accept", {
-        request_id: request.id,
-        attempt_id: attempt.id,
-        revision: attempt.revision,
-        terms_revision: attempt.terms_revision,
-      })));
-      quick.push(postback("難しい", requestActionData(view, "decline")));
-      quick.push(postback("相談する", requestActionData(view, "consult")));
-    } else {
-      quick.push(postback("やる", requestActionData(view, "accept")));
-      quick.push(postback("難しい", requestActionData(view, "decline")));
-      if (attempt.state === "pending") quick.push(postback("確認中", requestActionData(view, "checking")));
-      quick.push(postback("相談する", requestActionData(view, "consult")));
-    }
+      quick.push(postback("引き受ける", encodeFields("mc_request_prompt_accept", requestFields(view))));
+    } else quick.push(postback("やる", requestActionData(view, "accept")));
+    quick.push(postback("難しい", requestActionData(view, "decline")));
+    quick.push(postback("コメント付きで難しい", encodeFields("mc_request_decline_memo", requestFields(view))));
+    if (attempt.state === "pending") quick.push(postback("確認中", requestActionData(view, "checking")));
+    quick.push(postback("相談する", requestActionData(view, "consult")));
   } else if (["consulting", "awaiting_confirmation"].includes(attempt.state)) {
     quick.push(postback("この条件で確認", requestActionData(view, "confirm_terms")));
-    quick.push(message("作業期限を変更", "条件期限 2026-09-11 18:30"));
+    quick.push({ type: "datetimepicker", label: "作業期限を変更", mode: "datetime",
+      data: encodeFields("mc_request_due", requestFields(view)) });
+    quick.push(postback("相談メモを書く", encodeFields("mc_request_memo", requestFields(view))));
   }
-  await ctx.reply(`${summary}\n\n相談メモだけでは担当・作業期限は変わりません。変更する場合は、保存された具体的な条件を二人が同じ版で確認します。`, quick);
+  quick.push(postback("ほかのお願い", encodeFields("mc_request_list", { page: 0 })));
+  try { await requestContext(ctx, "set", view); } catch {
+    // Buttons carry their exact target even when selection persistence is unavailable.
+  }
+  await ctx.reply(`${summary}\n\n相談中の変更は、二人が同じ条件を確認するまで反映されません。`, quick);
+}
+
+async function selectedConsultation(ctx: LineMustCompleteContext, explicit?: JsonObject): Promise<RequestWorkspaceView | null> {
+  const allViews = await readRequestWorkspace(ctx);
+  if (!allViews) return null;
+  const views = allViews.filter((view) => ["consulting", "awaiting_confirmation"].includes(view.attempt.state));
+  let fields = explicit;
+  if (!fields) {
+    try { fields = await requestContext(ctx, "get") ?? undefined; }
+    catch {
+      await ctx.reply("選んだお願いを確認できませんでした。もう一度開いてから送ってください。", [message("お願いを確認", "お願いの返事")]);
+      return null;
+    }
+  }
+  const view = fields ? views.find((candidate) => matchesRequest(candidate, fields!)) : undefined;
+  if (!view) {
+    await ctx.reply("変更するお願いをもう一度選んでください。ほかのお願いは変更していません。", [message("お願いを確認", "お願いの返事")]);
+    return null;
+  }
+  return view;
+}
+
+async function promptConsultationMemo(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
+  const view = await selectedConsultation(ctx, fields);
+  if (!view) return;
+  try { await requestContext(ctx, "set", view); } catch {
+    await ctx.reply("相談メモの入力を開始できませんでした。お願いを開き直してください。");
+    return;
+  }
+  await ctx.reply(`「${view.request.shared_title}」の相談メモを入力します。\n「相談メモ：」に続けて送ってください。\nメモだけでは担当や作業期限は変わりません。`, [postback("お願いに戻る", encodeFields("mc_request_open", { request_id: view.request.id }))]);
+}
+
+async function editRequestDueFromPicker(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
+  const datetime = fields.datetime;
+  const due = typeof datetime === "string" ? parseStructuredWorkDue(`条件期限 ${datetime.replace("T", " ")}`) : null;
+  if (!due) { await ctx.reply("作業期限を読み取れませんでした。お願いを開いて日付と時刻を選び直してください。", [message("お願いを確認", "お願いの返事")]); return; }
+  await editStructuredDue(ctx, due, fields);
+}
+
+async function promptDeclineComment(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
+  const views = await readRequestWorkspace(ctx);
+  if (!views) return;
+  const view = views.find((candidate) => matchesRequest(candidate, fields)
+    && candidate.party === "recipient" && ["pending", "checking"].includes(candidate.attempt.state));
+  if (!view) {
+    await ctx.reply("お願いの内容が変わりました。もう一度開いてから返答してください。", [message("お願いを確認", "お願いの返事")]);
+    return;
+  }
+  await requestContext(ctx, "set", view, { mode: "decline_comment" });
+  await ctx.reply(`「${view.request.shared_title}」に添える返答を「辞退コメント：」に続けて送ってください。次に内容を確認してから送信します。`, [postback("戻る", encodeFields("mc_request_open", { request_id: view.request.id }))]);
+}
+
+async function prepareDeclineComment(ctx: LineMustCompleteContext, comment: string): Promise<void> {
+  const fields = await requestContext(ctx, "get");
+  const views = await readRequestWorkspace(ctx);
+  if (!views) return;
+  const view = fields?.mode === "decline_comment" ? views.find((candidate) => matchesRequest(candidate, fields)
+    && candidate.party === "recipient" && ["pending", "checking"].includes(candidate.attempt.state)) : undefined;
+  if (!view) {
+    await ctx.reply("コメントを添えるお願いをもう一度選んでください。まだ送っていません。", [message("お願いを確認", "お願いの返事")]);
+    return;
+  }
+  const previewId = await deterministicOperationId("line-request-decline-preview", view.request.id, view.attempt.id,
+    String(view.attempt.revision), String(view.attempt.terms_revision), comment);
+  await requestContext(ctx, "set", view, { mode: "decline_comment", comment, preview_id: previewId });
+  await ctx.reply(`「${view.request.shared_title}」は難しいと返しますか？\n返答: ${comment}\nまだ送っていません。`, [
+    postback("この内容で返す", encodeFields("mc_request_decline_comment", { ...requestFields(view), preview_id: previewId })),
+    postback("戻る", encodeFields("mc_request_open", { request_id: view.request.id })),
+  ]);
+}
+
+async function sendDeclineComment(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
+  const selected = await requestContext(ctx, "get");
+  const comment = str(selected?.comment);
+  if (!selected || selected.mode !== "decline_comment" || !comment
+    || selected.preview_id !== fields.preview_id || !fields.preview_id
+    || selected.request_id !== fields.request_id || selected.attempt_id !== fields.attempt_id
+    || Number(selected.revision) !== Number(fields.revision) || Number(selected.terms_revision) !== Number(fields.terms_revision)) {
+    await ctx.reply("返答の確認が期限切れか、内容が変わりました。お願いを開き直してください。", [message("お願いを確認", "お願いの返事")]);
+    return;
+  }
+  const operationId = await deterministicOperationId("line-request-decline-comment", ctx.actorId, fields.request_id,
+    fields.attempt_id, fields.revision, fields.terms_revision, fields.preview_id);
+  const { data, error } = await ctx.client.rpc("server_tx_line_decline_request_comment", {
+    p_actor_id: ctx.actorId, p_operation_id: operationId, p_request_id: fields.request_id, p_attempt_id: fields.attempt_id,
+    p_comment: comment, p_expected_revision: Number(fields.revision), p_expected_terms_revision: Number(fields.terms_revision),
+  });
+  if (error) { await replyMutationError(ctx, error); return; }
+  const result = record(data);
+  if (result?.state !== "declined") {
+    await replyMutationError(ctx, { message: result?.state === "expired" ? "REQUEST_ATTEMPT_EXPIRED" : "UNKNOWN_RESULT" });
+    return;
+  }
+  // Retain the immutable preview until expiry so a replay can retrieve its receipt.
+  await ctx.reply("✓ コメントを添えて「難しい」と返しました。お願いは成立していません。", [message("今日を見る", "今日")]);
 }
 
 async function promptAssignmentRequestAccept(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
@@ -695,7 +822,9 @@ async function promptAssignmentRequestAccept(ctx: LineMustCompleteContext, field
   const revision = Number(fields.revision);
   const termsRevision = Number(fields.terms_revision);
   if (!requestId || !attemptId || !Number.isFinite(revision) || !Number.isFinite(termsRevision)) return;
-  const view = (await activeRequests(ctx, true)).find((candidate) =>
+  const views = await readRequestWorkspace(ctx, true);
+  if (!views) return;
+  const view = views.find((candidate) =>
     candidate.party === "recipient"
     && candidate.request.id === requestId
     && candidate.request.request_kind === "assignment_change"
@@ -747,45 +876,49 @@ async function transitionRequest(ctx: LineMustCompleteContext, fields: Record<st
     return;
   }
   const root = record(data);
-  const state = str(root?.state) ?? action;
+  const state = str(root?.state);
+  if (!state || !["accepted", "declined", "pending", "checking", "consulting", "awaiting_confirmation", "expired"].includes(state)) {
+    await replyMutationError(ctx, { message: "UNKNOWN_RESULT" });
+    return;
+  }
   if (state === "awaiting_confirmation") {
-    await ctx.reply("✓ この条件版を確認しました。もう一人が同じ条件版を確認すると確定します。", [message("お願いを確認", "お願いの返事")]);
+    await ctx.reply("✓ この条件版を確認しました。もう一人が同じ条件版を確認すると確定します。", [postback("条件を確認", encodeFields("mc_request_open", { request_id: requestId }))]);
   } else if (state === "accepted") {
-    await ctx.reply("✓ 合意を確定し、同じcanonical Taskへ反映しました。今日の表示も同じ状態を読みます。", [message("今日を確認", "今日")]);
+    await ctx.reply("✓ 合意が成立し、お願いを反映しました。今日の表示から確認できます。", [message("今日を確認", "今日")]);
   } else if (state === "expired") {
     await ctx.reply("返事期限を過ぎています。依頼した側から再提案してください。", [message("お願いを確認", "お願いの返事")]);
   } else {
-    await ctx.reply(`✓ お願いを「${state}」に更新しました。`, [message("お願いを確認", "お願いの返事")]);
+    await ctx.reply(`✓ お願いを「${requestStateLabel(state)}」に更新しました。`, [postback("お願いを確認", encodeFields("mc_request_open", { request_id: requestId }))]);
   }
 }
 
 async function editConsultationMemo(ctx: LineMustCompleteContext, memo: string): Promise<void> {
-  const views = (await activeRequests(ctx)).filter((view) => ["consulting", "awaiting_confirmation"].includes(view.attempt.state));
-  if (views.length !== 1) {
-    await ctx.reply("相談中のお願いを1件に絞れませんでした。先に「お願いの返事」で対象を確認してください。");
-    return;
-  }
-  const view = views[0];
+  const view = await selectedConsultation(ctx);
+  if (!view) return;
   const terms: JsonObject = { ...view.attempt.terms, candidate: memo };
   const operationId = await deterministicOperationId("line-request-memo", ctx.eventId, view.attempt.id, memo, String(view.attempt.revision));
-  const { error } = await ctx.client.rpc("server_tx_transition_request_v2", {
+  const { data, error } = await ctx.client.rpc("server_tx_transition_request_v2", {
     p_actor_id: ctx.actorId, p_operation_id: operationId, p_request_id: view.request.id,
     p_attempt_id: view.attempt.id, p_action: "edit_terms", p_terms: terms,
     p_expected_revision: view.attempt.revision, p_expected_terms_revision: view.attempt.terms_revision, p_source: "line",
   });
   if (error) { await replyMutationError(ctx, error); return; }
-  await ctx.reply("✓ 相談メモを条件版に保存しました。この文章だけでは担当・Task・作業期限は変わりません。具体的な変更は別に明示して、二人で同じ版を確認します。", [message("お願いを確認", "お願いの返事")]);
+  if (!await requestEditSucceeded(ctx, data)) return;
+  await ctx.reply(`✓ 「${view.request.shared_title}」の相談メモを保存しました。二人が同じ条件を確認するまで、担当や作業期限は変わりません。`, [postback("条件を確認", encodeFields("mc_request_open", { request_id: view.request.id }))]);
 }
 
-async function editStructuredDue(ctx: LineMustCompleteContext, dueIso: string): Promise<void> {
-  const views = (await activeRequests(ctx)).filter((view) => ["consulting", "awaiting_confirmation"].includes(view.attempt.state));
-  if (views.length !== 1) {
-    await ctx.reply("変更する相談を1件に絞れませんでした。先に「お願いの返事」で対象を確認してください。状態は変更していません。");
-    return;
-  }
-  const view = views[0];
+async function requestEditSucceeded(ctx: LineMustCompleteContext, data: unknown): Promise<boolean> {
+  const state = str(record(data)?.state);
+  if (state === "consulting" || state === "awaiting_confirmation") return true;
+  await replyMutationError(ctx, { message: state === "expired" ? "REQUEST_ATTEMPT_EXPIRED" : "UNKNOWN_RESULT" });
+  return false;
+}
+
+async function editStructuredDue(ctx: LineMustCompleteContext, dueIso: string, fields?: JsonObject): Promise<void> {
+  const view = await selectedConsultation(ctx, fields);
+  if (!view) return;
   const oldTerms = view.attempt.terms;
-  const materialPatch: JsonObject = { version: 1, work_due_at: dueIso };
+  const materialPatch: JsonObject = { ...(record(oldTerms.material_patch) ?? {}), version: 1, work_due_at: dueIso };
   if (view.request.request_kind === "assignment_change") {
     const targets = oldTerms.assignment_targets;
     if (!Array.isArray(targets) || targets.length === 0) {
@@ -796,22 +929,14 @@ async function editStructuredDue(ctx: LineMustCompleteContext, dueIso: string): 
   }
   const terms: JsonObject = { ...oldTerms, material_patch: materialPatch };
   const operationId = await deterministicOperationId("line-request-edit-terms", ctx.eventId, view.attempt.id, dueIso, String(view.attempt.revision));
-  const { error } = await ctx.client.rpc("server_tx_transition_request_v2", {
-    p_actor_id: ctx.actorId,
-    p_operation_id: operationId,
-    p_request_id: view.request.id,
-    p_attempt_id: view.attempt.id,
-    p_action: "edit_terms",
-    p_terms: terms,
-    p_expected_revision: view.attempt.revision,
-    p_expected_terms_revision: view.attempt.terms_revision,
-    p_source: "line",
+  const { data, error } = await ctx.client.rpc("server_tx_transition_request_v2", {
+    p_actor_id: ctx.actorId, p_operation_id: operationId, p_request_id: view.request.id,
+    p_attempt_id: view.attempt.id, p_action: "edit_terms", p_terms: terms,
+    p_expected_revision: view.attempt.revision, p_expected_terms_revision: view.attempt.terms_revision, p_source: "line",
   });
-  if (error) {
-    await replyMutationError(ctx, error);
-    return;
-  }
-  await ctx.reply(`条件を提案しました。\n作業期限: ${formatJst(view.request.due_at)} → ${formatJst(dueIso)}\n担当変更がある依頼では、対象Taskと相手も同じ条件版に固定されています。\n\nまだTaskは変更していません。二人がこの条件版を確認すると確定します。`, [message("条件を確認", "お願いの返事")]);
+  if (error) { await replyMutationError(ctx, error); return; }
+  if (!await requestEditSucceeded(ctx, data)) return;
+  await ctx.reply(`「${view.request.shared_title}」の条件を提案しました。\n作業期限: ${formatJst(view.request.due_at)} → ${formatJst(dueIso)}\n\nまだ担当や作業期限は変わっていません。二人がこの条件を確認すると確定します。`, [postback("条件を確認", encodeFields("mc_request_open", { request_id: view.request.id }))]);
 }
 
 async function reproposeRequest(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
@@ -1137,9 +1262,18 @@ async function mutateSimulation(ctx: LineMustCompleteContext, fields: Record<str
 
 export async function tryHandleLineMustCompleteText(ctx: LineMustCompleteContext, rawText: string): Promise<boolean> {
   const text = rawText.normalize("NFKC").trim();
-  const memoMatch = text.match(/^相談メモ[：:\s]+(.{1,500})$/u);
+  const declineMatch = text.match(/^辞退コメント(?:[：:\s]+([\s\S]*))?$/u);
+  if (declineMatch) {
+    const comment = declineMatch[1]?.trim() ?? "";
+    if (!comment || [...comment].length > 500) await ctx.reply("返答は1〜500文字で入力してください。まだ送っていません。");
+    else await prepareDeclineComment(ctx, comment);
+    return true;
+  }
+  const memoMatch = text.match(/^相談メモ(?:[：:\s]+([\s\S]*))?$/u);
   if (memoMatch) {
-    await editConsultationMemo(ctx, memoMatch[1].trim());
+    const memo = memoMatch[1]?.trim() ?? "";
+    if (!memo || [...memo].length > 500) await ctx.reply("相談メモは1〜500文字で入力してください。まだ変更していません。");
+    else await editConsultationMemo(ctx, memo);
     return true;
   }
   const dueIso = parseStructuredWorkDue(text);
@@ -1147,12 +1281,20 @@ export async function tryHandleLineMustCompleteText(ctx: LineMustCompleteContext
     await editStructuredDue(ctx, dueIso);
     return true;
   }
-  if (/^条件期限\b/u.test(text)) {
-    await ctx.reply("作業期限の変更は `条件期限 2026-09-11 18:30` の形で送ってください。自由文からTaskを自動変更することはありません。");
+  if (/^条件期限(?:\s|$)/u.test(text)) {
+    await ctx.reply("作業期限は、お願いの「作業期限を変更」で日付と時刻を選んでください。", [message("お願いを確認", "お願いの返事")]);
+    return true;
+  }
+  if (text === "予定外の実績を入力") {
+    await ctx.reply("何を、いつ、誰が行ったか送ってください。例：「昨日、予定になかった窓拭きを自分がやった」。既存の作業に該当する場合は、その作業へ記録します。");
+    return true;
+  }
+  if (text === "昨日の入力" || text === "昨日分の訂正") {
+    await handleDailyInputPostback(ctx, { action: "mc_input_tasks", day: inputDates().yesterday, page: "0" });
     return true;
   }
   if (isDailyInputText(text)) {
-    await openReconciliation(ctx);
+    await openReconciliation(ctx, text);
     return true;
   }
   if (isWaitingText(text)) {
@@ -1195,6 +1337,7 @@ export async function tryHandleLineMustCompletePostback(
   fields: Record<string, string>,
 ): Promise<boolean> {
   const action = fields.action;
+  if (await handleDailyInputPostback(ctx, fields)) return true;
   if (action === "mc_reconcile") {
     await reconcile(ctx, fields);
     return true;
@@ -1225,6 +1368,26 @@ export async function tryHandleLineMustCompletePostback(
   }
   if (action === "mc_task_anyone") {
     await mutateAnyoneTask(ctx, fields);
+    return true;
+  }
+  if (action === "mc_request_open" || action === "mc_request_list") {
+    await openRequests(ctx, action === "mc_request_open" ? fields.request_id : undefined, Number(fields.page) || 0);
+    return true;
+  }
+  if (action === "mc_request_due") {
+    await editRequestDueFromPicker(ctx, fields);
+    return true;
+  }
+  if (action === "mc_request_decline_memo") {
+    await promptDeclineComment(ctx, fields);
+    return true;
+  }
+  if (action === "mc_request_decline_comment") {
+    await sendDeclineComment(ctx, fields);
+    return true;
+  }
+  if (action === "mc_request_memo") {
+    await promptConsultationMemo(ctx, fields);
     return true;
   }
   if (action === "mc_request_prompt_accept") {
