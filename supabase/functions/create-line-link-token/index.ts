@@ -19,6 +19,7 @@
 import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { withUserMutationHandler, jsonResponse } from "../_shared/handler.ts";
 import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.ts";
+import { FamilyOpsError } from "../_shared/errors.ts";
 
 interface CreateLineLinkTokenResult {
   token_id: string;
@@ -33,11 +34,22 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
   const operationId = requireOperationId(body);
 
   const serviceClient = createServiceRoleClient();
-  const result = await callServerTx<CreateLineLinkTokenResult>(
-    serviceClient,
-    "server_tx_create_line_link_token",
-    { p_actor_id: actorId, p_operation_id: operationId },
-  );
+  // member_user_id: a 7-day code for the other adult, to send to them (the seat's LINE changes hands).
+  const memberUserId = body["member_user_id"];
+  if (memberUserId !== undefined && (typeof memberUserId !== "string" || memberUserId.length === 0)) {
+    throw new FamilyOpsError("INVALID_INPUT", "member_user_id must be a string", 400);
+  }
+  const result = memberUserId
+    ? await callServerTx<CreateLineLinkTokenResult>(
+      serviceClient,
+      "server_tx_create_member_line_link_token",
+      { p_actor_id: actorId, p_operation_id: operationId, p_member_user_id: memberUserId },
+    )
+    : await callServerTx<CreateLineLinkTokenResult>(
+      serviceClient,
+      "server_tx_create_line_link_token",
+      { p_actor_id: actorId, p_operation_id: operationId },
+    );
 
   const basicId = Deno.env.get("LINE_OA_BASIC_ID");
   const responseBody: Record<string, unknown> = { ...result };

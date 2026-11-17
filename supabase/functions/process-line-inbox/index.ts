@@ -164,7 +164,7 @@ const RETRY_DELAY_SECONDS = Number(
 const PENDING_ACTION_TTL_MINUTES = Number(
   Deno.env.get("LINE_PENDING_ACTION_TTL_MINUTES") ?? "30",
 );
-const LINK_TOKEN_RE = /^[0-9a-f]{64}$/i;
+import { findLinkToken, FOLLOW_UNLINKED_TEXT, LINK_REJECTED_TEXT, NOT_LINKED_TEXT } from "./lineLinkToken.ts";
 
 interface LineActor {
   user_id: string;
@@ -228,11 +228,11 @@ async function tryClaimLinkToken(
   sourceExternalUserId: string | null,
   text: string,
 ): Promise<LinkTokenClaim> {
-  const trimmed = text.trim();
-  if (!LINK_TOKEN_RE.test(trimmed) || !sourceExternalUserId) return "not_token";
+  const token = findLinkToken(text);
+  if (!token || !sourceExternalUserId) return "not_token";
   const { error } = await client.rpc("server_tx_claim_line_link_token", {
     p_source_external_user_id: sourceExternalUserId,
-    p_raw_token: trimmed,
+    p_raw_token: token,
   });
   if (error) {
     console.warn("process-line-inbox: link token claim rejected", error.message);
@@ -252,6 +252,19 @@ async function replyOrEnqueuePush(
     await logLineTurn(client, args.recipientUserId, "assistant", [args.leadingText, args.text].filter(Boolean).join("\n"));
   }
   return result;
+}
+
+// Someone not linked yet gets a reply (free; never a push), so a code that did not work is
+// not met with silence.
+async function replyToUnlinked(client: SupabaseClient, item: WebhookInboxItem, text: string): Promise<void> {
+  if (!item.payload.replyToken) return;
+  await sendLineMessage(client, {
+    replyToken: item.payload.replyToken,
+    lineUserId: null,
+    householdId: "",
+    recipientUserId: "",
+    text,
+  });
 }
 
 async function sendConfirmation(
@@ -2255,10 +2268,15 @@ async function handleText(
           menuQuickReplies(),
         );
       }
+    } else if (!actor) {
+      await replyToUnlinked(client, item, LINK_REJECTED_TEXT);
     }
     return;
   }
-  if (!actor) return;
+  if (!actor) {
+    await replyToUnlinked(client, item, NOT_LINKED_TEXT);
+    return;
+  }
   if (!preservesRequestTopic(text)) await clearLineRequestContext(mustCompleteContext(client, item, actor));
 
   const inputText = text;
@@ -2726,6 +2744,8 @@ async function processItem(client: SupabaseClient, item: WebhookInboxItem): Prom
   if (item.payload.type === "postback") await handlePostback(client, item, actor);
   else if (item.payload.type === "message" && item.payload.message?.type === "text") {
     await handleText(client, item, actor, item.payload.message.text ?? "");
+  } else if (item.payload.type === "follow" && !actor) {
+    await replyToUnlinked(client, item, FOLLOW_UNLINKED_TEXT);
   }
 }
 
