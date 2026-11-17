@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>おうちノート LINEのはじめかた</title>
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/800.css">
+<style>
+@page { size: A4; margin: 0; }
+:root { --green:#2f6f5e; --green-soft:#e6f1ec; --orange:#e07a2f; --orange-soft:#fdeedf; --ink:#2b2b2b; --muted:#6b6b6b; --line:#06c755; --chat:#dce6f2; }
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; }
+body { font-family:'M PLUS Rounded 1c', sans-serif; color:var(--ink); font-size:12.5pt; line-height:1.7; background:#fff; }
+.page { width:210mm; height:297mm; padding:16mm 16mm 14mm; position:relative; overflow:hidden; page-break-after:always; background:#fffdf9; }
+.page:last-child { page-break-after:auto; }
+.foot { position:absolute; bottom:8mm; left:16mm; right:16mm; display:flex; justify-content:space-between; font-size:9pt; color:var(--muted); }
+h1 { font-weight:800; font-size:27pt; line-height:1.3; margin:0; color:var(--green); }
+h2 { font-weight:800; font-size:18pt; margin:0 0 4mm; color:var(--green); display:flex; align-items:center; gap:3mm; }
+h3 { font-weight:800; font-size:14pt; margin:0 0 2mm; }
+p { margin:0 0 2.5mm; }
+.lead { font-size:13.5pt; }
+.tag { display:inline-block; background:var(--orange); color:#fff; font-weight:700; border-radius:99px; padding:1mm 4mm; font-size:11pt; }
+.card { background:#fff; border-radius:5mm; padding:5mm 6mm; box-shadow:0 0.5mm 2mm rgba(0,0,0,.08); margin-bottom:5mm; }
+.card.green { background:var(--green-soft); box-shadow:none; }
+.card.orange { background:var(--orange-soft); box-shadow:none; }
+.steps3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4mm; margin:4mm 0 5mm; }
+.mini { background:#fff; border:0.6mm solid var(--green-soft); border-radius:5mm; padding:4mm; text-align:center; }
+.num { display:inline-flex; width:11mm; height:11mm; border-radius:50%; background:var(--green); color:#fff; font-weight:800; font-size:16pt; align-items:center; justify-content:center; flex:none; }
+.mini .num { margin-bottom:2mm; }
+.mini b { display:block; font-size:13pt; line-height:1.4; }
+.mini span { font-size:10.5pt; color:var(--muted); }
+.big-ok { font-size:15pt; font-weight:800; color:var(--orange); }
+.step { display:grid; grid-template-columns:1fr 62mm; gap:6mm; align-items:start; margin-bottom:6mm; }
+.step ol { margin:1mm 0 0; padding-left:6mm; }
+.step li { margin-bottom:1.5mm; }
+.hint { font-size:10.5pt; color:var(--muted); }
+.phone { background:var(--chat); border-radius:6mm; padding:4mm 3.5mm; border:1.2mm solid #3a3a3a; font-size:9.5pt; line-height:1.5; }
+.phone .bar { text-align:center; font-weight:700; font-size:9.5pt; color:#333; margin:-1mm 0 3mm; }
+.msg { display:flex; gap:2mm; margin-bottom:2.5mm; align-items:flex-start; }
+.ava { width:7mm; height:7mm; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; color:#fff; font-size:8pt; font-weight:800; }
+.ava.p { background:#5b8def; } .ava.o { background:var(--green); }
+.bub { background:#fff; border-radius:3mm; padding:2mm 2.8mm; max-width:46mm; word-break:break-all; }
+.bub.me { background:#8de055; margin-left:auto; }
+.right { justify-content:flex-end; }
+.btnline { display:inline-block; background:var(--line); color:#fff; border-radius:2mm; padding:0.6mm 3mm; font-weight:700; margin-top:1mm; }
+.menu { background:#fff; border-radius:3mm; padding:1.5mm 0; box-shadow:0 0.5mm 2mm rgba(0,0,0,.25); width:30mm; margin:-1mm 0 2mm 9mm; font-size:9pt; }
+.menu div { padding:0.8mm 3mm; } .menu .hl { background:#fff3c4; font-weight:800; }
+.code { font-family:monospace; font-size:7.5pt; color:#555; }
+.arrow { color:var(--orange); font-weight:800; }
+table { width:100%; border-collapse:separate; border-spacing:0 2.2mm; }
+td { background:#fff; padding:2.8mm 4mm; vertical-align:middle; }
+td:first-child { border-radius:3mm 0 0 3mm; width:30mm; font-weight:800; color:var(--green); font-size:13pt; white-space:nowrap; }
+td:last-child { border-radius:0 3mm 3mm 0; }
+td small { display:block; color:var(--muted); font-size:10pt; line-height:1.5; }
+.say { display:grid; grid-template-columns:1fr 1fr; gap:3mm 5mm; }
+.say div { background:#fff; border-radius:3mm; padding:2.5mm 3.5mm; }
+.say b { display:inline-block; background:#8de055; border-radius:2.5mm; padding:0.5mm 2.5mm; margin-bottom:1mm; }
+.say span { display:block; font-size:10.5pt; color:var(--muted); line-height:1.5; }
+.qa { margin-bottom:3.5mm; }
+.qa b { display:block; font-size:12.5pt; }
+.qa b::before { content:"Q. "; color:var(--orange); }
+.qa p { padding-left:6mm; margin:0.5mm 0 0; }
+.promise { border:0.8mm dashed var(--orange); border-radius:5mm; padding:4mm 6mm; background:#fff; }
+.promise li { margin-bottom:1mm; }
+.papa { font-size:10pt; line-height:1.6; background:#f3f3f3; border-radius:4mm; padding:3.5mm 5mm; }
+.papa h3 { font-size:11pt; margin-bottom:1mm; color:#555; }
+.papa ol { margin:0; padding-left:5mm; }
+</style></head><body>
+
+<!-- 1 -->
+<section class="page">
+  <span class="tag">ママへ</span>
+  <h1 style="margin-top:5mm">おうちノート<br>LINEのはじめかた</h1>
+  <p class="lead" style="margin-top:3mm">いつものLINEで、家の予定がわかるようになります。<br>準備は<b>5分</b>で終わります。</p>
+
+  <div class="card green" style="margin-top:6mm">
+    <h3>おうちノートって、なに？</h3>
+    <p>送り迎え・保育園・家の予定を、LINEで知らせてくれる<b>家族のお知らせ係</b>です。</p>
+    <p style="margin:0">アプリを入れたり、会員登録をしたりする必要はありません。<b>LINEだけ</b>で使えます。</p>
+  </div>
+
+  <h2 style="margin-top:7mm">やることは 3つだけ</h2>
+  <div class="steps3">
+    <div class="mini"><div class="num">1</div><b>友だち追加</b><span>パパから届く<br>「おうちノート」を追加</span></div>
+    <div class="mini"><div class="num">2</div><b>コードを転送</b><span>パパから届く<br>「連携コード」を<br>おうちノートへ転送</span></div>
+    <div class="mini"><div class="num">3</div><b>完了を確認</b><span>「連携が完了しました」<br>と届けばおしまい</span></div>
+  </div>
+
+  <div class="promise">
+    <h3 style="color:var(--orange)">はじめに知っておいてほしいこと</h3>
+    <ul style="margin:0;padding-left:5mm">
+      <li><b>返事をしなくても大丈夫</b>です。読むだけでも役に立ちます。</li>
+      <li>やったことの記録は、<b>気が向いた時だけ</b>で十分です。</li>
+      <li>届くものが多いと感じたら、いつでも減らせます（4ページ）。</li>
+    </ul>
+  </div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>1 / 4</span></div>
+</section>
+
+<!-- 2 -->
+<section class="page">
+  <h2><span class="num">1</span>「おうちノート」を友だち追加する</h2>
+  <div class="step">
+    <div>
+      <ol>
+        <li>パパとのLINEに、<b>「おうちノート」の紹介</b>が届きます。</li>
+        <li>それを<b>タップ</b>して、<b>「追加」</b>を押します。</li>
+        <li>おうちノートから「友だち追加ありがとうございます」と届きます。</li>
+      </ol>
+      <p class="hint" style="margin-top:2mm">※ 自分で探す必要はありません。パパから届くのを待ってください。</p>
+    </div>
+    <div class="phone"><div class="bar">パパ</div>
+      <div class="msg"><div class="ava p">パ</div><div class="bub"><b>おうちノート</b><br><span class="hint">LINE公式アカウント</span><br><span class="btnline">追加</span></div></div>
+    </div>
+  </div>
+
+  <h2><span class="num">2</span>「連携コード」をおうちノートへ転送する</h2>
+  <div class="step">
+    <div>
+      <ol>
+        <li>パパから、<b>英数字が並んだメッセージ</b>が届きます。</li>
+        <li>そのメッセージを<b>長押し</b>して、<b>「転送」</b>を押します。</li>
+        <li>下の<b>「転送」</b>を押し、送り先に<b>「おうちノート」</b>を選んで送ります。</li>
+      </ol>
+      <p class="hint" style="margin-top:2mm">※ 長押しして「コピー」→ おうちノートのトークに「貼り付け」て送っても大丈夫です。<br>※ コードは<b>7日間</b>使えます。他の人には送らないでください。</p>
+    </div>
+    <div class="phone"><div class="bar">パパ</div>
+      <div class="msg"><div class="ava p">パ</div><div class="bub">おうちノートの「ママ」用のLINE連携コードです。<br>…<br><span class="code">3f9a0c…e71b</span></div></div>
+      <div class="menu"><div>コピー</div><div class="hl">転送 ←</div><div>返信</div></div>
+    </div>
+  </div>
+
+  <h2><span class="num">3</span>「連携が完了しました」を確認する</h2>
+  <div class="step">
+    <div>
+      <p>おうちノートから <b>「✅ LINE連携が完了しました。」</b> と届けば、準備はおしまいです。</p>
+      <p class="big-ok">おつかれさまでした！</p>
+      <p class="hint">「このコードは使えませんでした」と届いた時は、期限切れです。パパに新しいコードを作ってもらって、もう一度 2 をしてください。</p>
+    </div>
+    <div class="phone"><div class="bar">おうちノート</div>
+      <div class="msg right"><div class="bub me">おうちノートの「ママ」用の…</div></div>
+      <div class="msg"><div class="ava o">お</div><div class="bub">✅ LINE連携が完了しました。<br>このLINEには、普段の言葉でそのまま話しかけて大丈夫です。</div></div>
+    </div>
+  </div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>2 / 4</span></div>
+</section>
+
+<!-- 3 -->
+<section class="page">
+  <h2>どんなお知らせが届くの？</h2>
+  <p>平日は、だいたいこんな時間に届きます。<b>土日・祝日は朝の1通だけ</b>です。</p>
+  <table>
+    <tr><td>朝 6:30</td><td><b>朝のおうちノート</b><small>今日だけの予定と、今朝やることを時間の順に。</small></td></tr>
+    <tr><td>朝 7:30</td><td><b>朝の残り</b><small>朝のことがまだ残っている時だけ。全部済んでいれば届きません。</small></td></tr>
+    <tr><td>朝 9:00</td><td><b>コドモンのお知らせ</b><small>お迎えを担当する日だけ。保育園への入力の締め切り（9:15）の前に。</small></td></tr>
+    <tr><td>夜 20:30</td><td><b>夜のおうちノート</b><small>夜のことと、明日の予定・準備。</small></td></tr>
+    <tr><td>予定の前</td><td><b>予定のお知らせ</b><small>登録された予定の前に（例：1時間前）。</small></td></tr>
+  </table>
+
+  <h2 style="margin-top:6mm">返事は、ふだんの言葉でOK</h2>
+  <p>おうちノートのトークに、そのまま送るだけです。<b>ボタンが出たら押すだけ</b>。予定やお願いは、登録・送信の前に必ず確認が出ます。</p>
+  <div class="say">
+    <div><b>今日</b><span>今日の予定と、自分の担当がわかります。（「明日」「今週」もOK）</span></div>
+    <div><b>牛乳買って</b><span>家族の買い物リストに入ります。</span></div>
+    <div><b>お迎え終わった</b><span>やったことの記録になります。（「朝のは全部やった」もOK）</span></div>
+    <div><b>木曜の迎え、代わってほしい</b><span>パパへのお願いになります。送る前に確認が出ます。</span></div>
+    <div><b>12/3 14時 歯医者</b><span>家族の予定に入ります。登録の前に確認が出ます。</span></div>
+    <div><b>（保育園のおたよりの写真）</b><span>持ち物や行事を読み取って、予定の候補にします。</span></div>
+  </div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>3 / 4</span></div>
+</section>
+
+<!-- 4 -->
+<section class="page">
+  <h2>こまった時は</h2>
+  <div class="qa"><b>お知らせが届かない</b><p>LINEで「おうちノート」をブロックしていないか確認してください。それでも届かない時は、パパに伝えてください。</p></div>
+  <div class="qa"><b>コードが使えない</b><p>コードは7日間で使えなくなります。パパに新しいコードを作ってもらってください（新しいコードを作ると、前のコードは使えなくなります）。</p></div>
+  <div class="qa"><b>何を送ればいいかわからない</b><p>まずは「今日」と送ってみてください。今日の予定が返ってきます。</p></div>
+  <div class="qa"><b>お知らせが多い・やめたい</b><p>パパに伝えてください。届くものを減らしたり、止めたりできます。</p></div>
+  <div class="qa"><b>間違えて送った</b><p>予定やお願いは、登録・送信の前に必ず確認が出るので、そこで「やめる」を選べます。買い物は、入った後に出る「取り消す」ボタンで戻せます。</p></div>
+
+  <div class="card orange" style="margin-top:6mm">
+    <h3>大事なこと</h3>
+    <ul style="margin:0;padding-left:5mm">
+      <li>おうちノートは、家のことを<b>2人で見えるようにする</b>ための道具です。</li>
+      <li>返事も記録も、<b>できる時だけで大丈夫</b>です。</li>
+      <li>連携コードは、<b>他の人には送らない</b>でください。</li>
+    </ul>
+  </div>
+
+  <div class="papa" style="margin-top:8mm">
+    <h3>【パパへ】ママに送るもの</h3>
+    <ol>
+      <li><b>おうちノートの紹介</b>：LINEで「おうちノート」のトークを開く → 右上のメニュー → 「おすすめ」 → ママを選んで送る。</li>
+      <li><b>連携コード</b>：おうちノートのアプリ → 設定 → 「通知・LINE連携」 → 「ママ用の連携コードを作る」 → 「ママにLINEで送る」。コードは7日間有効です。</li>
+      <li>ママから「完了したよ」と聞いたら、同じ画面で「ママ：LINE連携済み」になっていることを確認してください。</li>
+    </ol>
+  </div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>4 / 4</span></div>
+</section>
+</body></html>
