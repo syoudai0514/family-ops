@@ -51,6 +51,7 @@ td:first-child { border-radius:3mm 0 0 3mm; width:30mm; font-weight:800; color:v
 td:last-child { border-radius:0 3mm 3mm 0; }
 td small { display:block; color:var(--muted); font-size:10pt; line-height:1.5; }
 .say { display:grid; grid-template-columns:1fr 1fr; gap:3mm 5mm; }
+.pill { display:inline-block; background:#8de055; border-radius:2.5mm; padding:0 2.2mm; font-weight:700; }
 .say div { background:#fff; border-radius:3mm; padding:2.5mm 3.5mm; }
 .say b { display:inline-block; background:#8de055; border-radius:2.5mm; padding:0.5mm 2.5mm; margin-bottom:1mm; }
 .say span { display:block; font-size:10.5pt; color:var(--muted); line-height:1.5; }
@@ -89,10 +90,10 @@ td small { display:block; color:var(--muted); font-size:10pt; line-height:1.5; }
     <ul style="margin:0;padding-left:5mm">
       <li><b>返事をしなくても大丈夫</b>です。読むだけでも役に立ちます。</li>
       <li>やったことの記録は、<b>気が向いた時だけ</b>で十分です。</li>
-      <li>届くものが多いと感じたら、いつでも減らせます（4ページ）。</li>
+      <li>届くものが多いと感じたら、いつでも減らせます（5ページ）。</li>
     </ul>
   </div>
-  <div class="foot"><span>おうちノート ママ用ガイド</span><span>1 / 4</span></div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>1 / 5</span></div>
 </section>
 
 <!-- 2 -->
@@ -140,7 +141,7 @@ td small { display:block; color:var(--muted); font-size:10pt; line-height:1.5; }
       <div class="msg"><div class="ava o">お</div><div class="bub">✅ LINE連携が完了しました。<br>このLINEには、普段の言葉でそのまま話しかけて大丈夫です。</div></div>
     </div>
   </div>
-  <div class="foot"><span>おうちノート ママ用ガイド</span><span>2 / 4</span></div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>2 / 5</span></div>
 </section>
 
 <!-- 3 -->
@@ -161,11 +162,45 @@ td small { display:block; color:var(--muted); font-size:10pt; line-height:1.5; }
     <div><b>今日</b><span>今日の予定と、自分の担当がわかります。（「明日」「今週」もOK）</span></div>
     <div><b>牛乳買って</b><span>家族の買い物リストに入ります。</span></div>
     <div><b>お迎え終わった</b><span>やったことの記録になります。（「朝のは全部やった」もOK）</span></div>
-    <div><b>木曜の迎え、代わってほしい</b><span>パパへのお願いになります。送る前に確認が出ます。</span></div>
+    <div><b>11/20の予定</b><span>その日の予定がわかります。（「11/20の送り迎え」もOK）</span></div>
     <div><b>12/3 14時 歯医者</b><span>家族の予定に入ります。登録の前に確認が出ます。</span></div>
     <div><b>（保育園のおたよりの写真）</b><span>持ち物や行事を読み取って、予定の候補にします。</span></div>
   </div>
-  <div class="foot"><span>おうちノート ママ用ガイド</span><span>3 / 4</span></div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>3 / 5</span></div>
+</section>
+
+<!-- changes -->
+<section class="page">
+  <h2>予定を変えたい・調整したい時</h2>
+  <div class="card">
+    <h3>🙏 送り迎えを代わってほしい（まだ話していない時）</h3>
+    <p>おうちノートに <b class="pill">11/20のお迎え、代わって</b> と送ります。</p>
+    <ol style="margin:0;padding-left:6mm">
+      <li>「お願いの確認」が出るので <b>「送る」</b> を押します。</li>
+      <li>パパに届き、パパが引き受けると担当が変わります。結果もLINEで届きます。</li>
+    </ol>
+    <p class="hint" style="margin-top:1.5mm">※ <b>日付</b>を入れてください（「明日」「11/20」など）。「木曜」だけでは分かりません。<br>※ その日のお迎え担当があなたの時に使えます。送りを代わってほしい時は、先にパパと話してから下の方法で。</p>
+  </div>
+  <div class="card">
+    <h3>🤝 もう2人で話して決めた時</h3>
+    <p><b class="pill">11/20の迎えをパパに変更して</b> と送ります。</p>
+    <p style="margin:0">「担当変更の確認」が出るので、<b>「2人で調整済み・変更する」</b> を押すと変わります。<span class="hint">（15分以内に押してください。やめる時は「やめる」）</span></p>
+  </div>
+  <div class="card">
+    <h3>📩 パパからお願いが届いた時</h3>
+    <p style="margin:0">送り迎えのお願い：<b>「引き受ける」</b>（このあと「確定（引受）」）／<b>「難しい」</b>／<b>「相談する」</b><br>
+    そのほかのお願い：<b>「やる」</b>／<b>「難しい」</b>／<b>「その他の返答」</b><br>
+    <span class="hint">返事をするまで、担当は勝手に変わりません。</span></p>
+  </div>
+  <div class="card">
+    <h3>🕒 予定の日にち・時間を変えたい／消したい</h3>
+    <ul style="margin:0;padding-left:5mm">
+      <li><b>登録する前</b>なら、<b class="pill">明日じゃなくて明後日</b> <b class="pill">ママじゃなくてパパ</b> と送れば直せます。<b class="pill">やっぱりなし</b> で取り消せます。</li>
+      <li><b>自分がLINEで登録した予定</b>は、24時間以内なら <b class="pill">さっきのを15時に変更</b> と送ると「日時を変更」ボタンが出ます。</li>
+      <li>それ以外の予定の変更や削除は、LINEではできません。<b>アプリ</b>（詳細版の手順書）で行うか、パパに頼んでください。</li>
+    </ul>
+  </div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>4 / 5</span></div>
 </section>
 
 <!-- 4 -->
@@ -175,6 +210,7 @@ td small { display:block; color:var(--muted); font-size:10pt; line-height:1.5; }
   <div class="qa"><b>コードが使えない</b><p>コードは7日間で使えなくなります。パパに新しいコードを作ってもらってください（新しいコードを作ると、前のコードは使えなくなります）。</p></div>
   <div class="qa"><b>何を送ればいいかわからない</b><p>まずは「今日」と送ってみてください。今日の予定が返ってきます。</p></div>
   <div class="qa"><b>お知らせが多い・やめたい</b><p>パパに伝えてください。届くものを減らしたり、止めたりできます。</p></div>
+  <div class="qa"><b>アプリでも見たい・操作したい</b><p>「アプリ（PWA）の使い方 詳細版」を見てください。カレンダーのように月や週で見たり、予定を直したりできます。</p></div>
   <div class="qa"><b>間違えて送った</b><p>予定やお願いは、登録・送信の前に必ず確認が出るので、そこで「やめる」を選べます。買い物は、入った後に出る「取り消す」ボタンで戻せます。</p></div>
 
   <div class="card orange" style="margin-top:6mm">
@@ -194,6 +230,6 @@ td small { display:block; color:var(--muted); font-size:10pt; line-height:1.5; }
       <li>ママから「完了したよ」と聞いたら、同じ画面で「ママ：LINE連携済み」になっていることを確認してください。</li>
     </ol>
   </div>
-  <div class="foot"><span>おうちノート ママ用ガイド</span><span>4 / 4</span></div>
+  <div class="foot"><span>おうちノート ママ用ガイド</span><span>5 / 5</span></div>
 </section>
 </body></html>
