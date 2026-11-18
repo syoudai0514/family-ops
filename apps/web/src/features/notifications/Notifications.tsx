@@ -99,9 +99,78 @@ export function Notifications() {
   );
 }
 
+/** A 7-day code for the other adult: sent to them on LINE, it links their LINE to their place here. */
+export function partnerLinkShareText(name: string, token: string, expiresAt: string): string {
+  return [
+    `おうちノートの「${name}」用のLINE連携コードです。`,
+    '① 「おうちノート」をLINEで友だち追加',
+    '② このメッセージを長押し →「転送」→「おうちノート」を選んで送信',
+    '（コピーして、おうちノートのトークに貼り付けて送ってもOK）',
+    `有効期限：${formatDateTimeJa(expiresAt)}`,
+    '',
+    token,
+  ].join('\n');
+}
+
+function PartnerLineCode({ userId, name }: { userId: string; name: string }) {
+  const [code, setCode] = useState<{ token: string; expiresAt: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function create() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await callEdgeFunction<{ raw_token: string; expires_at: string }>(
+        EDGE_FUNCTIONS.createLineLinkToken,
+        { operation_id: newOperationId(), member_user_id: userId },
+      );
+      setCode({ token: result.raw_token, expiresAt: result.expires_at });
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '連携コードを作れませんでした。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function send() {
+    if (!code) return;
+    const text = partnerLinkShareText(name, code.token, code.expiresAt);
+    try {
+      if (navigator.share) await navigator.share({ text });
+      else {
+        await navigator.clipboard.writeText(text);
+        setNotice('コピーしました。LINEで送ってください。');
+      }
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) setError('送れませんでした。もう一度お試しください。');
+    }
+  }
+
+  return (
+    <div className="partner-line-code">
+      <p className="task-item-meta">{name}のLINEを、{name}本人のLINEにつなぎます。コードは7日間使えます。</p>
+      {!code ? (
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => void create()}>
+          {busy ? '作成中…' : `${name}用の連携コードを作る`}
+        </button>
+      ) : (
+        <>
+          <button type="button" onClick={() => void send()}>{name}にLINEで送る</button>
+          <p className="task-item-meta">有効期限：{formatDateTimeJa(code.expiresAt)}。新しく作ると、前のコードは使えなくなります。</p>
+        </>
+      )}
+      {notice && <p role="status">{notice}</p>}
+      {error && <p role="alert" className="error-text">{error}</p>}
+    </div>
+  );
+}
+
 export function LineLinkSection() {
   const { data: familySetup, loading: statusLoading, error: statusError, refresh: refreshStatus } = useFamilySetup();
-  const { members } = useHousehold();
+  const { members, me } = useHousehold();
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 15000); return () => window.clearInterval(timer); }, []);
@@ -148,6 +217,9 @@ export function LineLinkSection() {
       {statusLoading && <p role="status">連携状況を確認中…</p>}
       {statusError && <p role="alert">{statusError}</p>}
       {familySetup?.members.map(member => <p key={member.user_id} className="task-item-meta">{members.find(m => m.user_id === member.user_id)?.profile?.display_name ?? '家族'}：{member.line_linked ? 'LINE連携済み' : 'LINE未連携'}</p>)}
+      {familySetup?.members.filter(member => member.user_id !== me?.user_id && !member.line_linked).map(member => (
+        <PartnerLineCode key={member.user_id} userId={member.user_id} name={members.find(m => m.user_id === member.user_id)?.profile?.display_name ?? '家族'} />
+      ))}
       <button type="button" className="text-button" disabled={statusLoading} onClick={() => void refreshStatus()}>連携状況を再確認</button>
       <p className="task-item-meta">連携済みでも通知が届かない場合は、LINEで公式アカウントのブロックと、下の通知設定を確認してください。</p>
       {!token || expired ? (

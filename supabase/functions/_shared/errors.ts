@@ -91,6 +91,7 @@ const HTTP_STATUS_BY_CODE: Record<string, number> = {
   CALENDAR_EVENT_NOT_FOUND: 404,
   GOOGLE_SYNC_LEASE_LOST: 409,
   CODMON_INPUTS_INCOMPLETE: 409,
+  MEMBER_LINE_ALREADY_LINKED: 409,
 };
 
 // v6 review fix (P2): any code we don't explicitly classify as a client
@@ -178,6 +179,7 @@ const KNOWN_CODES = new Set([
   "CALENDAR_EVENT_NOT_FOUND",
   "GOOGLE_SYNC_LEASE_LOST",
   "CODMON_INPUTS_INCOMPLETE",
+  "MEMBER_LINE_ALREADY_LINKED",
 ]);
 
 export function isKnownErrorCode(code: string): boolean {
@@ -291,6 +293,8 @@ export function describeCode(code: string): string {
       return "対象の予定が見つかりませんでした";
     case "GOOGLE_SYNC_LEASE_LOST":
       return "同期処理が別のワーカーに引き継がれました";
+    case "MEMBER_LINE_ALREADY_LINKED":
+      return "この家族はすでにLINEと連携しています。連携を外してから、もう一度コードを作ってください";
     case "CODMON_INPUTS_INCOMPLETE":
       return "コドモンの入力がまだそろっていません。残っている入力を先に完了してください";
     default:
