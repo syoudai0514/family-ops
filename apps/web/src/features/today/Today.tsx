@@ -29,6 +29,7 @@ import { tokyoIsoDate } from '../planning/dateHelpers';
 import { useDayTaskRecording } from './useDayTaskRecording';
 import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
 import { readAssignmentEntry } from '../tasks/assignmentEntry';
+import { LineConnectPrompt } from './LineConnectPrompt';
 
 const INPUT_LABELS: Record<string, string> = {
   dropoff: '朝の入力',
@@ -637,6 +638,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     <TaskSelectionProvider onChanged={refreshToday} partnerLabel={partner?.family_role === 'papa' ? 'パパ' : partner?.family_role === 'mama' ? 'ママ' : undefined}>
     <div className="app-shell today-dashboard">
       <div className="today-header today-page-heading"><h1>今日</h1></div>
+      <LineConnectPrompt />
 
       {data.status === 'stale' && (
         <p role="status" className="empty-hint">通信が不安定なため、最後に取得できた内容を表示しています。</p>

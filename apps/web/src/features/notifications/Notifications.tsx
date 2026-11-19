@@ -177,6 +177,8 @@ export function LineLinkSection() {
   const expired = Boolean(expiresAt && new Date(expiresAt).getTime() <= now);
   const [token, setToken] = useState<string | null>(null);
   const [friendUrl, setFriendUrl] = useState<string | null>(null);
+  const [followUrl, setFollowUrl] = useState<string | null>(null);
+  const myLinked = Boolean(familySetup?.members?.find((member) => member.user_id === me?.user_id)?.line_linked);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -185,12 +187,13 @@ export function LineLinkSection() {
     setBusy(true);
     setError(null);
     try {
-      const result = await callEdgeFunction<{ raw_token: string; expires_at: string; line_add_friend_url?: string }>(
+      const result = await callEdgeFunction<{ raw_token: string; expires_at: string; line_add_friend_url?: string; line_follow_url?: string }>(
         EDGE_FUNCTIONS.createLineLinkToken,
         { operation_id: newOperationId() },
       );
       setToken(result.raw_token); setExpiresAt(result.expires_at); setCopied(false); setNow(Date.now());
       setFriendUrl(result.line_add_friend_url ?? null);
+      setFollowUrl(result.line_follow_url ?? null);
     } catch (err) {
       setError(
         err instanceof FamilyOpsApiError ? err.message : 'LINE連携コードを発行できませんでした。',
@@ -222,10 +225,34 @@ export function LineLinkSection() {
       ))}
       <button type="button" className="text-button" disabled={statusLoading} onClick={() => void refreshStatus()}>連携状況を再確認</button>
       <p className="task-item-meta">連携済みでも通知が届かない場合は、LINEで公式アカウントのブロックと、下の通知設定を確認してください。</p>
-      {!token || expired ? (
+      {myLinked ? (
+        <p role="status">✓ あなたのLINEは「おうちノート」とつながっています。</p>
+      ) : !token || expired ? (
         <button type="button" disabled={busy} onClick={createLinkToken}>
-          {busy ? '発行中…' : expired ? '期限切れ：新しいコードを発行' : 'LINE連携コードを発行'}
+          {busy ? '準備中…' : expired ? '時間切れ：もう一度LINEとつなぐ' : 'LINEとつなぐ'}
         </button>
+      ) : friendUrl ? (
+        <ol className="line-link-steps">
+          {followUrl && (
+            <li>
+              <a className="button-link" href={followUrl}>おうちノートを友だち追加</a>
+              <span className="task-item-meta">LINEが開いたら「追加」を押して、この画面に戻ってきてください。</span>
+            </li>
+          )}
+          <li>
+            <a className="button-link" href={friendUrl}>LINEでつなぐ</a>
+            <span className="task-item-meta">LINEが開いたら、そのまま「送信」を押すだけです。「LINE連携が完了しました」と届けば完了です。{expiresAt && `（${formatDateTimeJa(expiresAt)}まで）`}</span>
+          </li>
+          <li className="task-item-meta">
+            <details><summary>うまく開かない時</summary>
+              <p>次のコードを「おうちノート」のLINEトークへ送ってください。</p>
+              <div className="line-link-token">
+                <code>{token}</code>
+                <button type="button" className="line-link-copy" onClick={copyToken}>{copied ? 'コピー済み' : 'コードをコピー'}</button>
+              </div>
+            </details>
+          </li>
+        </ol>
       ) : (
         <>
           <p>次のコードを「おうちノート」のLINEトークへ送信してください。{expiresAt && `期限：${formatDateTimeJa(expiresAt)}`}</p>
@@ -235,17 +262,8 @@ export function LineLinkSection() {
               {copied ? 'コピー済み' : 'コードをコピー'}
             </button>
           </div>
-          {friendUrl && (
-            <p>
-              <a href={friendUrl}>LINEを開いてコードを送る</a>
-            </p>
-          )}
           <button type="button" className="text-button" disabled={busy} onClick={() => void createLinkToken()}>新しいコードを発行する</button>
-          {!friendUrl && (
-            <p className="empty-hint">
-              公式アカウントを友だち追加してから、上のコードをそのまま送信してください。
-            </p>
-          )}
+          <p className="empty-hint">公式アカウントを友だち追加してから、上のコードをそのまま送信してください。</p>
         </>
       )}
       {error && (
