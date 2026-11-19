@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>おうちノート アプリの使い方 詳細版</title>
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/800.css">
+<style>
+@page { size: A4; margin: 0; }
+:root { --green:#2f6f5e; --green-soft:#e6f1ec; --orange:#e07a2f; --orange-soft:#fdeedf; --ink:#2b2b2b; --muted:#6b6b6b; --line:#06c755; --chat:#dce6f2; }
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; }
+body { font-family:'M PLUS Rounded 1c', sans-serif; color:var(--ink); font-size:12.5pt; line-height:1.7; background:#fff; }
+.page { width:210mm; height:297mm; padding:16mm 16mm 14mm; position:relative; overflow:hidden; page-break-after:always; background:#fffdf9; }
+.page:last-child { page-break-after:auto; }
+.foot { position:absolute; bottom:8mm; left:16mm; right:16mm; display:flex; justify-content:space-between; font-size:9pt; color:var(--muted); }
+h1 { font-weight:800; font-size:27pt; line-height:1.3; margin:0; color:var(--green); }
+h2 { font-weight:800; font-size:18pt; margin:0 0 4mm; color:var(--green); display:flex; align-items:center; gap:3mm; }
+h3 { font-weight:800; font-size:14pt; margin:0 0 2mm; }
+p { margin:0 0 2.5mm; }
+.lead { font-size:13.5pt; }
+.tag { display:inline-block; background:var(--orange); color:#fff; font-weight:700; border-radius:99px; padding:1mm 4mm; font-size:11pt; }
+.card { background:#fff; border-radius:5mm; padding:5mm 6mm; box-shadow:0 0.5mm 2mm rgba(0,0,0,.08); margin-bottom:5mm; }
+.card.green { background:var(--green-soft); box-shadow:none; }
+.card.orange { background:var(--orange-soft); box-shadow:none; }
+.steps3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4mm; margin:4mm 0 5mm; }
+.mini { background:#fff; border:0.6mm solid var(--green-soft); border-radius:5mm; padding:4mm; text-align:center; }
+.num { display:inline-flex; width:11mm; height:11mm; border-radius:50%; background:var(--green); color:#fff; font-weight:800; font-size:16pt; align-items:center; justify-content:center; flex:none; }
+.mini .num { margin-bottom:2mm; }
+.mini b { display:block; font-size:13pt; line-height:1.4; }
+.mini span { font-size:10.5pt; color:var(--muted); }
+.big-ok { font-size:15pt; font-weight:800; color:var(--orange); }
+.step { display:grid; grid-template-columns:1fr 62mm; gap:6mm; align-items:start; margin-bottom:6mm; }
+.step ol { margin:1mm 0 0; padding-left:6mm; }
+.step li { margin-bottom:1.5mm; }
+.hint { font-size:10.5pt; color:var(--muted); }
+.phone { background:var(--chat); border-radius:6mm; padding:4mm 3.5mm; border:1.2mm solid #3a3a3a; font-size:9.5pt; line-height:1.5; }
+.phone .bar { text-align:center; font-weight:700; font-size:9.5pt; color:#333; margin:-1mm 0 3mm; }
+.msg { display:flex; gap:2mm; margin-bottom:2.5mm; align-items:flex-start; }
+.ava { width:7mm; height:7mm; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; color:#fff; font-size:8pt; font-weight:800; }
+.ava.p { background:#5b8def; } .ava.o { background:var(--green); }
+.bub { background:#fff; border-radius:3mm; padding:2mm 2.8mm; max-width:46mm; word-break:break-all; }
+.bub.me { background:#8de055; margin-left:auto; }
+.right { justify-content:flex-end; }
+.btnline { display:inline-block; background:var(--line); color:#fff; border-radius:2mm; padding:0.6mm 3mm; font-weight:700; margin-top:1mm; }
+.menu { background:#fff; border-radius:3mm; padding:1.5mm 0; box-shadow:0 0.5mm 2mm rgba(0,0,0,.25); width:30mm; margin:-1mm 0 2mm 9mm; font-size:9pt; }
+.menu div { padding:0.8mm 3mm; } .menu .hl { background:#fff3c4; font-weight:800; }
+.code { font-family:monospace; font-size:7.5pt; color:#555; }
+.arrow { color:var(--orange); font-weight:800; }
+table { width:100%; border-collapse:separate; border-spacing:0 2.2mm; }
+td { background:#fff; padding:2.8mm 4mm; vertical-align:middle; }
+td:first-child { border-radius:3mm 0 0 3mm; width:30mm; font-weight:800; color:var(--green); font-size:13pt; white-space:nowrap; }
+td:last-child { border-radius:0 3mm 3mm 0; }
+td small { display:block; color:var(--muted); font-size:10pt; line-height:1.5; }
+.say { display:grid; grid-template-columns:1fr 1fr; gap:3mm 5mm; }
+.pill { display:inline-block; background:#8de055; border-radius:2.5mm; padding:0 2.2mm; font-weight:700; }
+.say div { background:#fff; border-radius:3mm; padding:2.5mm 3.5mm; }
+.say b { display:inline-block; background:#8de055; border-radius:2.5mm; padding:0.5mm 2.5mm; margin-bottom:1mm; }
+.say span { display:block; font-size:10.5pt; color:var(--muted); line-height:1.5; }
+.qa { margin-bottom:3.5mm; }
+.qa b { display:block; font-size:12.5pt; }
+.qa b::before { content:"Q. "; color:var(--orange); }
+.qa p { padding-left:6mm; margin:0.5mm 0 0; }
+.promise { border:0.8mm dashed var(--orange); border-radius:5mm; padding:4mm 6mm; background:#fff; }
+.promise li { margin-bottom:1mm; }
+.papa { font-size:10pt; line-height:1.6; background:#f3f3f3; border-radius:4mm; padding:3.5mm 5mm; }
+.papa h3 { font-size:11pt; margin-bottom:1mm; color:#555; }
+.papa ol { margin:0; padding-left:5mm; }
+
+.nav { display:flex; background:#fff; border-radius:3mm; border:0.4mm solid #ddd; overflow:hidden; font-size:10pt; text-align:center; }
+.nav div { flex:1; padding:2mm 0; } .nav .on { color:var(--green); font-weight:800; background:var(--green-soft); }
+.nav .plus { flex:none; width:12mm; background:var(--green); color:#fff; font-size:16pt; font-weight:800; line-height:1.2; }
+.row { display:flex; align-items:center; gap:3mm; background:#fff; border:0.4mm solid #ddd; border-radius:3mm; padding:2.5mm 3.5mm; font-size:10.5pt; }
+.row .t { flex:1; } .row .t small { display:block; color:var(--muted); font-size:9pt; }
+.chip { border-radius:99px; padding:0.8mm 3mm; font-weight:700; font-size:10pt; }
+.chip.g { background:var(--green); color:#fff; } .chip.w { border:0.4mm solid #ccc; color:#555; }
+.cal { display:grid; grid-template-columns:repeat(7,1fr); gap:0.8mm; font-size:9pt; text-align:center; }
+.cal div { background:#fff; border-radius:1.5mm; padding:1.5mm 0; } .cal .sel { background:var(--orange); color:#fff; font-weight:800; }
+.cal .h { background:none; color:var(--muted); }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:5mm; }
+.k { display:inline-block; border:0.4mm solid var(--green); color:var(--green); border-radius:2mm; padding:0 2mm; font-weight:700; background:#fff; }
+.sec { margin-bottom:5mm; }
+.toc li { margin-bottom:1mm; }
+.warn { background:#fff4f0; border-left:1.5mm solid #e0553a; border-radius:2mm; padding:2.5mm 4mm; font-size:11pt; }
+</style></head><body>
+<section class="page">
+  <span class="tag">ママへ・詳細版</span>
+  <h1 style="margin-top:5mm">おうちノート<br>アプリの使い方</h1>
+  <p class="lead" style="margin-top:3mm">ふだんは<b>LINEだけで大丈夫</b>です。<br>カレンダーで見たい時や、予定を直したい時にアプリを使います。</p>
+  <div class="card green" style="margin-top:5mm">
+    <h3>アプリでできること</h3>
+    <ul style="margin:0;padding-left:5mm">
+      <li>月・週のカレンダーで、予定と送り迎えを見る</li>
+      <li>予定の日にち・時間を変える、消す</li>
+      <li>送り迎えを1日だけ代わる・代わってもらう</li>
+      <li>お願いを送る・お願いに返事をする</li>
+    </ul>
+  </div>
+  <h2 style="margin-top:6mm">もくじ</h2>
+  <ol class="toc" style="padding-left:6mm;margin:0">
+    <li>アプリを開く・ホーム画面に置く ……… 2ページ</li>
+    <li>ログインする（はじめての時） ……… 2ページ</li>
+    <li>画面の見方・予定を見る ……… 3ページ</li>
+    <li>予定を追加する・変える・消す ……… 4ページ</li>
+    <li>送り迎えを代わる・お願いする ……… 5ページ</li>
+    <li>通知の設定・こまった時 ……… 6ページ</li>
+  </ol>
+  <p class="hint" style="margin-top:6mm">※ 先に「LINEのはじめかた」でLINEの連携を済ませておいてください。</p>
+  <div class="foot"><span>おうちノート アプリの使い方 詳細版</span><span>1 / 6</span></div>
+</section>
+<section class="page">
+  <h2><span class="num">1</span>アプリを開く・ホーム画面に置く</h2>
+  <div class="sec">
+    <p>スマホのブラウザで、次のアドレスを開きます。</p>
+    <p style="font-size:15pt;font-weight:800;color:var(--green);margin:1mm 0 2mm">family-ops-web.vercel.app</p>
+    <p class="hint">LINEの「朝のおうちノート」の下にある <b>「▶ 完了・詳細はここから」</b> のリンクからも開けます。</p>
+  </div>
+  <div class="two sec">
+    <div class="card" style="margin:0"><h3>iPhone の場合</h3>
+      <ol style="margin:0;padding-left:5mm"><li><b>Safari</b> で開く</li><li>下の <b>共有ボタン（□に↑）</b> を押す</li><li><b>「ホーム画面に追加」</b> → <b>「追加」</b></li></ol></div>
+    <div class="card" style="margin:0"><h3>Android の場合</h3>
+      <ol style="margin:0;padding-left:5mm"><li><b>Chrome</b> で開く</li><li>右上の <b>︙</b> を押す</li><li><b>「ホーム画面に追加」</b>（または「アプリをインストール」）</li></ol></div>
+  </div>
+  <p>ホーム画面に「おうちノート」のアイコンができます。次からはそこから開けます。</p>
+
+  <h2 style="margin-top:7mm"><span class="num">2</span>ログインする（はじめての時）</h2>
+  <ol style="padding-left:6mm;margin:0 0 3mm">
+    <li>ログイン画面で <b>「Google でサインイン」</b> を押す</li>
+    <li><b>自分のGmail</b> を選ぶ</li>
+    <li>「今日」の画面が出ればログイン完了</li>
+  </ol>
+  <p class="hint">Googleで入れない時は、自分のGmailのアドレスとパスワード（パスワードはパパに聞いてください）を入れて <b>「メールでログイン」</b>。</p>
+  <div class="warn"><b>「新規登録」は押さないでください。</b> 別の人として登録されてしまい、家族の予定が見えません。</div>
+  <div class="foot"><span>おうちノート アプリの使い方 詳細版</span><span>2 / 6</span></div>
+</section>
+<section class="page">
+  <h2><span class="num">3</span>画面の見方・予定を見る</h2>
+  <p>画面のいちばん下に、メニューが並んでいます。</p>
+  <div class="nav sec"><div class="on">今日</div><div>週</div><div>月</div><div>買い物</div><div>履歴</div><div class="plus">＋</div></div>
+  <table style="margin-top:-2mm">
+    <tr><td>今日</td><td>今日の予定と、自分の担当<small>終わったものは「✓ 完了」で記録できます（気が向いた時だけでOK）。</small></td></tr>
+    <tr><td>週</td><td>1週間の予定と送り迎え</td></tr>
+    <tr><td>月</td><td>1か月のカレンダー<small>日にちを押すと、その日の送り迎えと予定が出ます。「詳しく見る・編集」でくわしく見られます。</small></td></tr>
+    <tr><td>買い物</td><td>家族の買い物リスト</td></tr>
+    <tr><td>履歴</td><td>これまでの記録</td></tr>
+    <tr><td>＋</td><td>予定・お願い・買い物などを追加</td></tr>
+  </table>
+  <p class="hint">右上の <b>⚙</b> は設定、<b>「更新」</b> は画面を新しくするボタンです。</p>
+  <h3 style="margin-top:4mm">予定の右にある「•••」</h3>
+  <div class="row"><span class="t">歯医者<small>14:00 · ママ</small></span><span class="chip w">•••</span><span class="chip g">✓ 完了</span></div>
+  <p style="margin-top:2mm">「•••」を押すと、<b>「編集」「削除」「担当を調整」</b> などが出ます。間違えて完了にした時は <b>「未完了に戻す」</b> で戻せます。</p>
+  <div class="foot"><span>おうちノート アプリの使い方 詳細版</span><span>3 / 6</span></div>
+</section>
+<section class="page">
+  <h2><span class="num">4</span>予定を追加する・変える・消す</h2>
+  <div class="card"><h3>➕ 追加する</h3>
+    <p style="margin:0">下の <b>＋</b> → <b>「イベント・予定を追加」</b>（やることなら「単発ToDoを追加」）。日にち・時間・内容を入れて保存します。<br><span class="hint">LINEで「12/3 14時 歯医者」と送っても追加できます。</span></p></div>
+  <div class="card"><h3>✏️ 日にち・時間を変える</h3>
+    <ol style="margin:0;padding-left:5mm">
+      <li>今日・週・月の画面で、変えたい予定を探す</li>
+      <li>予定の <b>「•••」</b> → <b>「編集」</b></li>
+      <li>「日付」「開始時刻」「終了時刻」を直して <b>「保存」</b></li>
+    </ol>
+    <p class="hint" style="margin:1.5mm 0 0">※ 「定例から作られた項目です」と出るもの（毎日の家事など）は、ここでは変えられません。パパに相談してください。</p></div>
+  <div class="card"><h3>🗑 消す</h3>
+    <p style="margin:0">予定の <b>「•••」</b> → <b>「削除」</b> → 確認が出たら <b>OK</b>。消すと元に戻せません（Googleカレンダーからも消えます）。<br>
+    <span class="hint">くり返しの予定は「この予定だけ削除」「これ以降をすべて削除」「すべて削除」から選べます。</span></p></div>
+  <p class="hint">別の日の予定は、<b>月</b> で日にちを押して <b>「詳しく見る・編集」</b> から同じように操作できます。</p>
+  <div class="foot"><span>おうちノート アプリの使い方 詳細版</span><span>4 / 6</span></div>
+</section>
+<section class="page">
+  <h2><span class="num">5</span>送り迎えを代わる・お願いする</h2>
+  <div class="card"><h3>🤝 もう2人で話して決めた時（すぐ変わります）</h3>
+    <ol style="margin:0;padding-left:5mm">
+      <li>下の <b>月</b> → その日を押す</li>
+      <li>「送迎」のところの <b>「この日だけ変更」</b></li>
+      <li>「送りだけ変更する」「お迎えだけ変更する」で担当を選び、<b>「この日だけ変更」</b></li>
+    </ol>
+    <p class="hint" style="margin:1.5mm 0 0">元に戻す時は、同じ画面の「この日の変更を削除して基本に戻す」。いつもの曜日の決まりは変わりません。</p></div>
+  <div class="card"><h3>🙏 まだ話していない時（パパにお願いする）</h3>
+    <ol style="margin:0;padding-left:5mm">
+      <li>その日の送り迎えの <b>「•••」</b> → <b>「担当を調整」</b></li>
+      <li><b>「まだ合意していないので、お願いを送る」</b> を選ぶ（ひとこと添えてもOK）</li>
+      <li><b>「お願いを送る」</b> → パパのLINEに届きます</li>
+    </ol>
+    <p class="hint" style="margin:1.5mm 0 0">週の画面の <b>「担当を相談」</b> からも送れます。パパが引き受けるまで、担当は変わりません。</p></div>
+  <div class="card"><h3>📩 お願いを送る・返事をする</h3>
+    <p style="margin:0">送る：<b>＋</b> → <b>「お願いを送る」</b> → <b>「+ お願いを送る」</b> → 内容を入れて <b>「送信内容を確認」</b> → <b>「LINEで送る」</b><br>
+    返事：お願いの画面の <b>「受け取ったお願い」</b> で、<b>「引き受ける」「やる」「難しい」「相談する」</b> から選ぶ<br>
+    <span class="hint">LINEに届いたお願いのボタンで返事をしても同じです。</span></p></div>
+  <div class="foot"><span>おうちノート アプリの使い方 詳細版</span><span>5 / 6</span></div>
+</section>
+<section class="page">
+  <h2><span class="num">6</span>通知の設定</h2>
+  <p>右上の <b>⚙</b> → <b>「通知・LINE連携」</b> で確認・変更できます。</p>
+  <ul style="padding-left:5mm;margin:0 0 3mm">
+    <li><b>LINE連携</b>：「ママ：LINE連携済み」になっていればOK</li>
+    <li><b>この端末への通知</b>：<b>「この端末で通知を受け取る」</b> を押すと、予定の通知がスマホに直接届きます。<br><span class="hint">iPhoneは、ホーム画面に追加したおうちノートから開いた時だけオンにできます。</span></li>
+    <li><b>LINEで受け取るお知らせ</b>：種類ごとにオン・オフできます</li>
+  </ul>
+  <h2 style="margin-top:7mm">こまった時は</h2>
+  <div class="qa"><b>ログインできない</b><p>「Google でサインイン」で自分のGmailを選んでください。それでもだめな時は、パパに見せてください。</p></div>
+  <div class="qa"><b>家族の予定が見えない・「家庭を設定する」と出る</b><p>別のメールアドレスで入っている可能性があります。自分のGmailで入り直してください。</p></div>
+  <div class="qa"><b>画面が古いまま</b><p>右上の「更新」を押してください。</p></div>
+  <div class="qa"><b>間違えて完了・削除した</b><p>完了は「•••」→「未完了に戻す」で戻せます。削除は戻せないので、パパに伝えてください。</p></div>
+  <div class="card orange" style="margin-top:5mm"><p style="margin:0">アプリは<b>使いたい時だけ</b>で大丈夫です。ふだんはLINEのお知らせを見るだけでも十分です。</p></div>
+  <div class="foot"><span>おうちノート アプリの使い方 詳細版</span><span>6 / 6</span></div>
+</section>
+</body></html>
