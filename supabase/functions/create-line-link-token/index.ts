@@ -28,6 +28,30 @@ interface CreateLineLinkTokenResult {
   expires_at: string;
 }
 
+// The OA's Basic ID (@xxxx). LINE_OA_BASIC_ID wins when set; otherwise it is read once from
+// LINE (GET /v2/bot/info) with the channel token every LINE function already has. Without it the
+// screen could only show a 64-character code to copy into a chat the person had to find first.
+let cachedBasicId: string | null = null;
+export async function resolveBasicId(fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const configured = Deno.env.get("LINE_OA_BASIC_ID")?.trim();
+  if (configured) return configured;
+  if (cachedBasicId) return cachedBasicId;
+  const token = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN")?.trim();
+  if (!token) return null;
+  try {
+    const response = await fetchImpl("https://api.line.me/v2/bot/info", {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) return null;
+    const info = await response.json() as { basicId?: unknown };
+    cachedBasicId = typeof info.basicId === "string" && info.basicId.startsWith("@") ? info.basicId : null;
+    return cachedBasicId;
+  } catch {
+    return null; // The code still works when typed by hand.
+  }
+}
+
 Deno.serve(withUserMutationHandler(async (req: Request) => {
   const actorId = await requireUserActor(req);
   const body = await readJsonBody(req);
@@ -51,11 +75,14 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
       { p_actor_id: actorId, p_operation_id: operationId },
     );
 
-  const basicId = Deno.env.get("LINE_OA_BASIC_ID");
+  const basicId = await resolveBasicId();
   const responseBody: Record<string, unknown> = { ...result };
   if (basicId) {
+    // Opens the おうちノート chat with the code already typed: the person only presses 送信.
     responseBody.line_add_friend_url =
       `https://line.me/R/oaMessage/${encodeURIComponent(basicId)}/?${encodeURIComponent(result.raw_token)}`;
+    // Adds おうちノート as a friend, so the daily messages can reach this person afterwards.
+    responseBody.line_follow_url = `https://line.me/R/ti/p/${encodeURIComponent(basicId)}`;
   }
 
   return jsonResponse(responseBody);
