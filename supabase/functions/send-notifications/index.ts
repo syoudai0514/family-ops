@@ -37,6 +37,7 @@ import { buildLinePushMessages } from '../_shared/lineMessaging.ts';
 import { buildRoutineQuickReply } from './routineQuickReply.ts';
 import { buildBriefQuickReply } from './briefQuickReply.ts';
 import { loadPreviousDayReminder } from './previousDayReminder.ts';
+import { loadThanksCandidate } from './thanksCandidate.ts';
 import { logLineTurn } from '../process-line-inbox/lineRouterWiring.ts';
 import {
   buildAssignmentRequestFlex,
@@ -398,19 +399,27 @@ async function sendOne(
   const richMessage = buildRichRequestMessage(item.payload);
   const morning = item.type === 'daily_brief.v2' && (item.payload?.items ?? []).some((entry) => entry.title === '朝のおうちノート');
   const previousDay = morning ? await loadPreviousDayReminder(serviceClient, item.household_id, item.recipient_user_id) : null;
-  const bundled = buildBundledText(item.payload, item.type, item.recipient_user_id, previousDay?.text);
+  const thanks = morning ? await loadThanksCandidate(serviceClient, item.recipient_user_id, item.household_id) : null;
+  const thanksLine = thanks ? `${thanks.name}が「${thanks.title}」を${thanks.kind === 'task' ? '代わってくれました' : '引き受けてくれました'}` : null;
+  const bundled = buildBundledText(item.payload, item.type, item.recipient_user_id, previousDay?.text, thanksLine);
   const sessionIds = bundled.sessionIds;
   // Keep the reminder near the beginning so long briefs cannot truncate it.
   const text = bundled.text;
   // The evening brief is titled 夜のおうちノート (fn_dispatch_daily_brief); only it offers 入力.
   const evening = (item.payload?.items ?? []).some((entry) => entry.title === '夜のおうちノート');
-  const quickReply = item.type === 'routine'
+  let quickReply = item.type === 'routine'
     ? buildRoutineQuickReply(sessionIds)
-    : buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date });
+    : buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, thanks });
   // LINE allows up to five messages per push. Keep routine/handover content
   // and append the Flex action card, rather than losing its buttons when an
   // outbox row was bundled with another notification.
-  const messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
+  let messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
+  // Never show a thank-you action without the text identifying its recipient
+  // and reason: a very long brief may have been truncated by LINE limits.
+  if (thanksLine && !messages.some((message) => typeof message.text === 'string' && message.text.includes(thanksLine))) {
+    quickReply = buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date });
+    messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
+  }
   let response: Response;
   try {
     response = await fetchWithTimeout(LINE_PUSH_URL, {

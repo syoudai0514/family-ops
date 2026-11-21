@@ -17,6 +17,18 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
     return jsonResponse(await googleEventCommand(createServiceRoleClient(), actorId, body));
   }
 
+  if (body["action"] === "list_thanks") {
+    return jsonResponse(await callServerTx(createServiceRoleClient(), "server_read_thanks_candidates", {
+      p_actor_id: actorId,
+    }));
+  }
+  if (body["action"] === "send_thanks") {
+    return jsonResponse(await callServerTx(createServiceRoleClient(), "server_tx_send_thanks", {
+      p_actor_id: actorId, p_operation_id: operationId,
+      p_source_kind: body["source_kind"], p_source_id: body["source_id"], p_note: body["note"] ?? null,
+    }));
+  }
+
   if (body["action"] === "record_progress") {
     return jsonResponse(await recordTaskProgress(createServiceRoleClient(), actorId, operationId, body));
   }

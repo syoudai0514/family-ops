@@ -1612,6 +1612,19 @@ async function handlePostback(
   // the action/resource IDs or impersonate the provider's selected datetime.
   delete fields.datetime;
   if (typeof item.payload.postback?.params?.datetime === "string") fields.datetime = item.payload.postback.params.datetime;
+  if (fields.action === "send_thanks") {
+    if (!["task", "request"].includes(fields.kind ?? "") || !fields.id) {
+      await sendConfirmation(client, item, actor, "この「ありがとう」は確認できませんでした。");
+      return;
+    }
+    const { error } = await client.rpc("server_tx_send_thanks", {
+      p_actor_id: actor.user_id,
+      p_operation_id: await deterministicOperationId("line-thanks", item.provider_event_id, fields.kind, fields.id),
+      p_source_kind: fields.kind, p_source_id: fields.id, p_note: null,
+    });
+    await sendConfirmation(client, item, actor, error ? "この内容は更新されています。アプリで確認してください。" : "ありがとうを送りました。");
+    return;
+  }
   if (fields.action === "previous_day_keep") {
     await sendConfirmation(client, item, actor, "わかりました。");
     return;

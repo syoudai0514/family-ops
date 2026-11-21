@@ -10,6 +10,7 @@ export function buildBundledText(
   type: string,
   recipientUserId?: string | null,
   lead?: string | null,
+  ending?: string | null,
 ): { text: string; sessionIds: string[] } {
   const items = payload?.items ?? [];
   const seenSessionIds = new Set<string>();
@@ -23,7 +24,7 @@ export function buildBundledText(
   }) : [`Family Ops: ${type}`];
   const footer = buildTodayLinkFooter(type, recipientUserId);
   return {
-    text: [lead, ...blocks, footer].filter((block) => block && block.length > 0).join('\n\n'),
+    text: [lead, ...blocks, ending, footer].filter((block) => block && block.length > 0).join('\n\n'),
     sessionIds: Array.from(seenSessionIds),
   };
 }
