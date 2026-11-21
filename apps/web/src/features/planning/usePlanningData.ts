@@ -133,6 +133,7 @@ export function usePlanningData(householdId: string | null, start: string, end: 
           transparent: row.transparency === 'transparent',
           ownerUserId: typeof row.creator_mapped_user_id === 'string' ? row.creator_mapped_user_id : null,
           providerEventId: typeof row.google_event_id === 'string' ? row.google_event_id : null,
+          occurrenceId: typeof row.id === 'string' ? row.id : null,
           generatedByFamilyOps: row.family_ops_mirror === true,
           hasConflict: false,
           location: typeof row.location === 'string' && row.location ? row.location : null,

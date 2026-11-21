@@ -5,12 +5,17 @@ import { createServiceRoleClient, requireUserActor } from "../_shared/auth.ts";
 import { withUserMutationHandler, jsonResponse } from "../_shared/handler.ts";
 import { callServerTx, readJsonBody, requireOperationId } from "../_shared/rpc.ts";
 import { FamilyOpsError } from "../_shared/errors.ts";
+import { googleEventCommand } from "./googleEvent.ts";
 import { recordTaskProgress } from "../_shared/taskProgress.ts";
 
 Deno.serve(withUserMutationHandler(async (req: Request) => {
   const actorId = await requireUserActor(req);
   const body = await readJsonBody(req);
   const operationId = requireOperationId(body);
+
+  if (body["action"] === "read_google_event" || body["action"] === "save_google_event") {
+    return jsonResponse(await googleEventCommand(createServiceRoleClient(), actorId, body));
+  }
 
   if (body["action"] === "record_progress") {
     return jsonResponse(await recordTaskProgress(createServiceRoleClient(), actorId, operationId, body));

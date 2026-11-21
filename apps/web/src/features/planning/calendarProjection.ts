@@ -23,6 +23,7 @@ export interface GooglePlanningOccurrence {
   transparent: boolean;
   ownerUserId: string | null;
   providerEventId: string | null;
+  occurrenceId?: string | null;
   generatedByFamilyOps: boolean;
   hasConflict: boolean;
   location?: string | null;
@@ -69,6 +70,7 @@ export interface CalendarProjectionItem {
   ownerKind: CalendarOwnerKind;
   hasConflict: boolean;
   providerEventId: string | null;
+  occurrenceId?: string | null;
   linkedTaskId: string | null;
   familyEventId?: string | null;
   location: string | null;
@@ -238,6 +240,7 @@ export function buildCalendarProjection({
         ownerKind: owner,
         hasConflict: event.hasConflict,
         providerEventId: event.providerEventId,
+        occurrenceId: event.occurrenceId ?? null,
         linkedTaskId: null,
         familyEventId: event.familyEventId ?? null,
         location: event.location ?? null,
