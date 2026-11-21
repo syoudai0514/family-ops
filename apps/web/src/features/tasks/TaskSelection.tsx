@@ -28,6 +28,8 @@ interface TaskSelectionValue {
   isSelected: (taskId: string) => boolean;
   toggle: (taskId: string) => void;
   register: (taskId: string, runner: BulkTaskRunner) => () => void;
+  completeGroup: (taskIds: string[]) => Promise<void>;
+  busy: boolean;
 }
 
 const TaskSelectionContext = createContext<TaskSelectionValue | null>(null);
@@ -49,6 +51,7 @@ export function TaskSelectionProvider({
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   const [failures, setFailures] = useState<BulkResult[]>([]);
   const runners = useRef(new Map<string, BulkTaskRunner>());
   const offerUndo = useUndoNotice();
@@ -64,56 +67,69 @@ export function TaskSelectionProvider({
     setSelected((current) => (current.includes(taskId) ? current.filter((id) => id !== taskId) : [...current, taskId]));
   }, []);
   const isSelected = useCallback((taskId: string) => selected.includes(taskId), [selected]);
-  const value = useMemo(() => ({ isSelected, toggle, register }), [isSelected, toggle, register]);
 
   // A row that left the list (recorded elsewhere, date changed) is no longer selectable.
   const live = selected.filter((id) => runners.current.has(id));
   const partnerCount = live.filter((id) => runners.current.get(id)?.recordsPartner).length;
 
-  async function runAll(outcome: BulkOutcome) {
-    if (busy) return;
+  const runTasks = useCallback(async (ids: string[], outcome: BulkOutcome) => {
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setFailures([]);
-    const undos: Array<() => Promise<void>> = [];
-    const done: string[] = [];
-    const failed: BulkResult[] = [];
-    for (const id of live) {
-      const runner = runners.current.get(id);
-      if (!runner) continue;
-      const blocked = runner.blockedReason(outcome);
-      if (blocked) {
-        failed.push({ title: runner.title, message: blocked });
-        continue;
+    try {
+      const undos: Array<() => Promise<void>> = [];
+      const done: string[] = [];
+      const failed: BulkResult[] = [];
+      for (const id of ids) {
+        const runner = runners.current.get(id);
+        if (!runner) {
+          failed.push({ title: '作業', message: '最新の状態を確認してください' });
+          continue;
+        }
+        const blocked = runner.blockedReason(outcome);
+        if (blocked) {
+          failed.push({ title: runner.title, message: blocked });
+          continue;
+        }
+        try {
+          const undo = await runner.run(outcome);
+          done.push(id);
+          if (undo) undos.push(undo);
+        } catch (err) {
+          failed.push({
+            title: runner.title,
+            message: err instanceof FamilyOpsApiError && err.code === 'TASK_TERMINAL'
+              ? 'すでに記録済みです'
+              : err instanceof Error ? err.message : '記録できませんでした',
+          });
+        }
       }
-      try {
-        const undo = await runner.run(outcome);
-        done.push(id);
-        if (undo) undos.push(undo);
-      } catch (err) {
-        failed.push({
-          title: runner.title,
-          message: err instanceof FamilyOpsApiError && err.code === 'TASK_TERMINAL'
-            ? 'すでに記録済みです'
-            : err instanceof Error ? err.message : '記録できませんでした',
-        });
+      setSelected((current) => current.filter((id) => !done.includes(id)));
+      setFailures(failed);
+      if (done.length > 0) {
+        if (undos.length > 0) {
+          offerUndo({
+            label: `${done.length}件を${outcome === 'complete' ? '完了' : 'できなかった'}にしました`,
+            undo: async () => {
+              for (const undo of undos) await undo();
+              await onChanged();
+            },
+          });
+        }
+        try {
+          await onChanged();
+        } catch {
+          setFailures([...failed, { title: '更新', message: '最新の状態を読み込めませんでした' }]);
+        }
       }
+    } finally {
+      running.current = false;
+      setBusy(false);
     }
-    setSelected((current) => current.filter((id) => !done.includes(id)));
-    setFailures(failed);
-    if (done.length > 0) {
-      await onChanged();
-      if (undos.length > 0) {
-        offerUndo({
-          label: `${done.length}件を${outcome === 'complete' ? '完了' : 'できなかった'}にしました`,
-          undo: async () => {
-            for (const undo of undos) await undo();
-            await onChanged();
-          },
-        });
-      }
-    }
-    setBusy(false);
-  }
+  }, [onChanged, offerUndo]);
+
+  const value = useMemo(() => ({ isSelected, toggle, register, completeGroup: (ids: string[]) => runTasks(ids, 'complete'), busy }), [isSelected, toggle, register, runTasks, busy]);
 
   return (
     <TaskSelectionContext.Provider value={value}>
@@ -130,10 +146,10 @@ export function TaskSelectionProvider({
                 {partnerCount > 0 && <small>（{partnerLabel ?? '相手'}の担当{partnerCount}件は{partnerLabel ?? '相手'}がやった記録）</small>}
               </p>
               <div className="task-bulk-actions">
-                <button type="button" className="task-action task-action-primary" disabled={busy} onClick={() => void runAll('complete')}>
+                <button type="button" className="task-action task-action-primary" disabled={busy} onClick={() => void runTasks(live, 'complete')}>
                   {busy ? '記録中…' : '✓ 完了'}
                 </button>
-                <button type="button" className="task-action task-action-missed" disabled={busy} onClick={() => void runAll('could_not_do')}>
+                <button type="button" className="task-action task-action-missed" disabled={busy} onClick={() => void runTasks(live, 'could_not_do')}>
                   できなかった
                 </button>
                 <button type="button" className="text-button" disabled={busy} onClick={() => { setSelected([]); setFailures([]); }}>

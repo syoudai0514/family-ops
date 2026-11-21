@@ -27,6 +27,7 @@ export interface TaskExecutionTarget {
 
 export type TodayTaskInstance = TaskInstance & {
   execution_target?: TaskExecutionTarget | null;
+  assignee_strategy?: string | null;
 };
 
 export type TodayLoadState = 'loading' | 'ready' | 'empty' | 'stale' | 'error';
@@ -392,6 +393,21 @@ export function useTodayData(householdId: string | null, userId: string | null):
         rawTaskById.set(task.id, task);
       }
       const rawTaskRows = [...rawTaskById.values()];
+      const ruleIds = unique(rawTaskRows.map((task) => task.recurrence_rule_id ?? undefined));
+      let rules: Array<{ id: string; assignee_strategy: string }> = [];
+      if (ruleIds.length) {
+        try {
+          const result = await withTimeout(
+            supabase.from('recurrence_rules').select('id,assignee_strategy').eq('household_id', householdId).in('id', ruleIds),
+            12_000,
+            '当番を読み込めませんでした。',
+          );
+          if (!result.error) rules = result.data ?? [];
+        } catch {
+          // Individual tasks remain usable if the optional grouping cannot load.
+        }
+      }
+      const strategies = new Map(rules.map((rule) => [rule.id, rule.assignee_strategy]));
       const displayRefs = new Map([
         ...(brief.tasks ?? []), ...carryoverRefs, ...(brief.already_handled ?? []),
         ...(groupRefs.morning ?? []), ...(groupRefs.daytime ?? []), ...(groupRefs.evening ?? []),
@@ -417,6 +433,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
       }
       const taskRows: TodayTaskInstance[] = await withTaskActualParticipants(householdId, rawTaskRows.map((task): TodayTaskInstance => ({
         ...task,
+        assignee_strategy: task.recurrence_rule_id ? strategies.get(task.recurrence_rule_id) ?? null : null,
         display_title: displayRefs.get(task.id)?.display_title ?? task.display_title,
         responsibility_hint: displayRefs.get(task.id)?.responsibility_hint ?? task.responsibility_hint,
         active_claimant_user_id: task.active_claimant_actor_ref_id

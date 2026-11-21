@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskInstance } from '../../lib/types';
 import { TaskChecklistItem } from './TaskChecklistItem';
-import { TaskSelectionProvider } from './TaskSelection';
+import { TaskSelectionProvider, useTaskSelection } from './TaskSelection';
 
 const callEdgeFunction = vi.fn();
 vi.mock('../../lib/apiClient', async () => {
@@ -22,10 +22,16 @@ function task(id: string, title: string, extra: Partial<TaskInstance> = {}): Tas
   } as TaskInstance;
 }
 
+function GroupButton() {
+  const selection = useTaskSelection();
+  return <button disabled={selection?.busy} onClick={() => void selection?.completeGroup(['t1', 't2'])}>当番を済みにする</button>;
+}
+
 function List({ tasks, onChanged }: { tasks: TaskInstance[]; onChanged: () => void }) {
   return (
     <UndoNoticeProvider>
       <TaskSelectionProvider onChanged={onChanged}>
+        <GroupButton />
         <ul>
           {tasks.map((item) => (
             <TaskChecklistItem key={item.id} task={item} subtasks={[]} members={[]} hasPartner={false}
@@ -70,6 +76,16 @@ describe('ticking several tasks and recording them together', () => {
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledTimes(2));
     expect(callEdgeFunction.mock.calls.map((call) => [call[1].task_id, call[1].action, call[1].expected_revision]))
       .toEqual([['t1', 'reopen', 4], ['t2', 'reopen', 4]]);
+  });
+
+  it('records a group in one tap and offers an undo for just those tasks', async () => {
+    render(<List tasks={[task('t1', 'お風呂'), task('t2', '洗濯'), task('t3', '食洗機')]} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '当番を済みにする' }));
+    expect(await screen.findByText('2件を完了にしました')).toBeInTheDocument();
+    expect(callEdgeFunction.mock.calls.map((call) => call[1].task_id)).toEqual(['t1', 't2']);
+    callEdgeFunction.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+    await waitFor(() => expect(callEdgeFunction.mock.calls.map((call) => call[1].task_id)).toEqual(['t1', 't2']));
   });
 
   it('records ticked tasks as できなかった with the row revision', async () => {
