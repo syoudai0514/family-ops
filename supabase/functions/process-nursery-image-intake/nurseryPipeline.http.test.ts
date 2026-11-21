@@ -30,6 +30,7 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
   const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
   let replyFails = false;
   let geminiFails = false;
+  let priorFailure = false;
   let primaryTimesOut = false;
   let recorded: Record<string, unknown> | undefined;
   const modelResult = {
@@ -164,6 +165,12 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
             reply_token: 'reply',
             object_key: 'household/photo.jpg',
           };
+          break;
+        case 'server_tx_fail_nursery_line_image':
+          data = { revision: 4, status: 'failed' };
+          break;
+        case 'server_read_previous_nursery_failure':
+          data = priorFailure;
           break;
         case 'server_tx_finish_nursery_image_review':
           data = { revision: 4 };
@@ -301,6 +308,15 @@ Deno.test('nursery HTTP: real model payload survives canonical validation and re
           .body as { messages: Array<{ text: string }> };
         assertStringIncludes(reply.messages[0].text, '処理中にエラー');
         assert(!reply.messages[0].text.includes('撮り直し'));
+        const failed = calls.find((c) => c.path.endsWith('/server_tx_fail_nursery_line_image'));
+        assertEquals(failed?.body.p_error_code, 'GEMINI_HTTP_503');
+        calls.length = 0;
+        priorFailure = true;
+        await handler!(request());
+        const nextReply = calls.find((c) => c.path === '/v2/bot/message/reply')!
+          .body as { messages: Array<{ text: string }> };
+        assertStringIncludes(nextReply.messages[0].text, '内容を一言');
+        priorFailure = false;
       },
     );
     await t.step(

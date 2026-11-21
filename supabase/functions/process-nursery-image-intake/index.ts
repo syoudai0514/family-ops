@@ -46,12 +46,15 @@ async function notifySender(
     const pending = kind === 'needs_clarification'
       ? await pendingChild(client, item.actor_id, item.line_user_id)
       : null;
+    const priorFailure = kind === 'failed'
+      ? await client.rpc('server_read_previous_nursery_failure', { p_intake_id: item.id })
+      : null;
     const result = await replyOrEnqueuePush(client, {
       replyToken: delivery?.reply_token,
       lineUserId: item.line_user_id,
       householdId: item.household_id,
       recipientUserId: item.actor_id,
-      text: buildNurseryResultMessage({ kind, itemCount, hasContexts, link: base ? `${base}/nursery/reviews/${item.id}` : '' }),
+      text: buildNurseryResultMessage({ kind, itemCount, hasContexts, link: base ? `${base}/nursery/reviews/${item.id}` : '', repeatedFailure: priorFailure?.data === true }),
       quickReplyItems: pending?.id === item.id ? childButtons(pending) : undefined,
       dedupKey: `nursery-intake:${item.id}:${kind}`,
     });
@@ -155,14 +158,17 @@ export const nurseryHandler = withServiceHandler(async (req: Request) => {
     } catch (err) {
       console.error('process-nursery-image-intake failed',{intakeId:item.id,code:nurseryFailureCode(err)});
       try {
-        await client.rpc('server_tx_finish_nursery_image_review',{p_intake_id:item.id,p_expected_revision:currentRevision,p_status:'failed',p_source_document_id:null,p_extraction_id:null,p_child_school_context_id:null,p_context_confidence:null,p_ambiguity_fields:[],p_review_items:[],p_raw_deleted:false});
+        await client.rpc('server_tx_fail_nursery_line_image',{p_intake_id:item.id,p_expected_revision:currentRevision,p_error_code:nurseryFailureCode(err)});
       } catch { /* already-terminal/stale rows remain auditable; processing rows use the latest known revision */ }
-      await notifySender(client, item, 'failed', 0, true);
-      return null;
+      return { item, failed: true as const };
     }
   }));
   for (const result of completed) {
     if (!result) continue;
+    if ('failed' in result) {
+      await notifySender(client, result.item, 'failed', 0, true);
+      continue;
+    }
     const {item,analysis,previous} = result;
     const {currentRevision} = result;
       if (previous.found && previous.intake_id && previous.received_at && mayGroupNurseryPages({
