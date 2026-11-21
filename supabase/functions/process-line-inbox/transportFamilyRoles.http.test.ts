@@ -75,6 +75,7 @@ Deno.test("LINE family roles and contextual pickup corrections never become cale
     }
     if (url.hostname === "transport-family-http.supabase.co") {
       const rpc = url.pathname.split("/rpc/")[1];
+      if (rpc === "server_read_line_nursery_child_context") return Promise.resolve(Response.json(null));
       if (rpc) {
         calls.push({ rpc, args: body });
         let result: unknown;
