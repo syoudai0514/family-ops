@@ -1,3 +1,4 @@
+import { matchChild, pendingChild, resolveChild } from './nurseryChildReply.ts';
 import { isLineAssignmentAcceptanceReady, requestTransitionArgs } from '../_shared/requestTransition.ts';
 // verify_jwt=false — worker class (see supabase/config.toml +
 // EDGE_FUNCTION_AUTH_MATRIX.md "Worker"). docs/design/v6/06_LINE_INTEGRATION.md
@@ -1625,6 +1626,20 @@ async function handlePostback(
     return;
   }
 
+  if (fields.action === "nursery_choose_child") {
+    const pending = item.source_external_user_id
+      ? await pendingChild(client, actor.user_id, item.source_external_user_id)
+      : null;
+    const child = pending?.contexts.find((context) => context.id === fields.context);
+    if (!pending || pending.id !== fields.intake || String(pending.revision) !== fields.revision || !child) {
+      await sendConfirmation(client, item, actor, "この写真の確認は更新されています。アプリから最新の内容を確認してください。");
+    } else {
+      await resolveChild(client, actor.user_id, pending, child,
+        (message, actions) => sendConfirmation(client, item, actor, message, actions),
+        Deno.env.get("APP_BASE_URL") ?? "");
+    }
+    return;
+  }
   if (!fields.action?.startsWith("mc_request")) await clearLineRequestContext(mustCompleteContext(client, item, actor));
 
   if (await tryHandleSavedTaskCorrectionPostback(mustCompleteContext(client, item, actor), fields)) return;
@@ -2290,6 +2305,16 @@ async function handleText(
   if (!actor) {
     await replyToUnlinked(client, item, NOT_LINKED_TEXT);
     return;
+  }
+  if (item.source_external_user_id && text.length <= 80) {
+    const pending = await pendingChild(client, actor.user_id, item.source_external_user_id);
+    const child = pending && matchChild(text, pending.contexts);
+    if (pending && child) {
+      await resolveChild(client, actor.user_id, pending, child,
+        (message, actions) => sendConfirmation(client, item, actor, message, actions),
+        Deno.env.get("APP_BASE_URL") ?? "");
+      return;
+    }
   }
   if (!preservesRequestTopic(text)) await clearLineRequestContext(mustCompleteContext(client, item, actor));
 

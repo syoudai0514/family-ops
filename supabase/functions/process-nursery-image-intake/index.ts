@@ -8,6 +8,7 @@ import { buildNurseryResultMessage, mayGroupNurseryPages, nurseryFailureCode, ty
 import { analyzeImage, nurseryVisionModel, type ContextRow, type ModelResult } from './nurseryVision.ts';
 import { replyOrEnqueuePush } from '../_shared/lineMessaging.ts';
 import { kickNotificationDelivery } from './nurseryDelivery.ts';
+import { childButtons, pendingChild } from '../process-line-inbox/nurseryChildReply.ts';
 
 type Claimed = {
   id: string; provider_event_id: string; line_message_id: string; household_id: string;
@@ -42,12 +43,16 @@ async function notifySender(
     const base = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
     const { data: delivery, error: deliveryError } = await client.rpc('server_read_nursery_line_delivery_context', {p_intake_id:item.id});
     if (deliveryError) console.warn('nursery delivery context unavailable', {code:nurseryFailureCode(deliveryError)});
+    const pending = kind === 'needs_clarification'
+      ? await pendingChild(client, item.actor_id, item.line_user_id)
+      : null;
     const result = await replyOrEnqueuePush(client, {
       replyToken: delivery?.reply_token,
       lineUserId: item.line_user_id,
       householdId: item.household_id,
       recipientUserId: item.actor_id,
       text: buildNurseryResultMessage({ kind, itemCount, hasContexts, link: base ? `${base}/nursery/reviews/${item.id}` : '' }),
+      quickReplyItems: pending?.id === item.id ? childButtons(pending) : undefined,
       dedupKey: `nursery-intake:${item.id}:${kind}`,
     });
     if (result === 'push_fallback') await kickNotificationDelivery();
