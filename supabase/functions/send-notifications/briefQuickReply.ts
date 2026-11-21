@@ -11,14 +11,18 @@ import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
 
 const say = (label: string, text: string = label): LineQuickReplyAction => ({ type: "message", label, text });
 
-export function buildBriefQuickReply(type: string, opts: { evening?: boolean; previousDay?: string | null } = {}): LineQuickReplyAction[] | undefined {
+export function buildBriefQuickReply(type: string, opts: { evening?: boolean; previousDay?: string | null; thanks?: { kind: string; id: string } | null } = {}): LineQuickReplyAction[] | undefined {
   if (type === "daily_brief.v2") {
     return opts.evening
       ? [say("入力"), say("今日"), say("明日の予定", "明日の予定教えて"), say("買い物", "買い物リスト"), say("共有")]
       : [...(opts.previousDay ? [
         { type: 'postback' as const, label: 'ぜんぶ済み', data: new URLSearchParams({ action: 'previous_day_complete', date: opts.previousDay }).toString(), displayText: 'ぜんぶ済み' },
         { type: 'postback' as const, label: 'そのまま', data: 'action=previous_day_keep', displayText: 'そのまま' },
-      ] : []), say("今日"), say("明日の予定", "明日の予定教えて"), say("買い物", "買い物リスト"), say("共有")];
+      ] : []), ...(opts.thanks ? [{
+        type: 'postback' as const, label: 'ありがとうを送る',
+        data: new URLSearchParams({ action: 'send_thanks', kind: opts.thanks.kind, id: opts.thanks.id }).toString(),
+        displayText: 'ありがとうを送る',
+      }] : []), say("今日"), say("明日の予定", "明日の予定教えて"), say("買い物", "買い物リスト"), say("共有")];
   }
   if (type === "codmon.deadline") {
     return [say("コドモン送りました"), say("今日")];

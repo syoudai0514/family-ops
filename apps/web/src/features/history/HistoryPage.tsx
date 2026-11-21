@@ -1,3 +1,4 @@
+import { ThanksHistory } from './ThanksHistory';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold, type HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { todayIsoDate, formatDateTimeJa } from '../../lib/date';
@@ -221,6 +222,7 @@ export function HistoryPage() {
     <div className="filter-chips" aria-label="履歴の絞り込み">
       {([['all', 'すべて'], ['routine', '定例作業'], ['planned', '予定'], ['request', 'お願い']] as const).map(([key, label]) => <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => chooseFilter(key)}>{label}</button>)}
     </div>
+    {filter === 'all' && !query.trim() && !correctionDate && household?.id && user?.id && <ThanksHistory householdId={household.id} userId={user.id} start={start} end={end} />}
     {error && <p role="alert" className="error-text">{error}<button onClick={() => void refresh()}>再読み込み</button></p>}{loading && <p role="status">記録を読み込み中…</p>}
     <ul className="history-list">{!loading && !error && visibleEntries.length === 0 && <li className="empty-hint">この条件の記録はありません。</li>}{visibleEntries.map((entry) => <HistoryRow key={entry.task.id} entry={entry} members={members} onChanged={refresh} selected={selectedTaskId === entry.task.id} onSelected={() => selectTask(entry.task.id)} />)}</ul>
   </div>;

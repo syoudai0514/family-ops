@@ -16,6 +16,7 @@ function createQueryBuilder(rows: Row[]) {
     order: vi.fn(() => builder),
     gte: vi.fn(() => builder),
     lte: vi.fn(() => builder),
+    lt: vi.fn(() => builder),
     limit: vi.fn(() => builder),
     maybeSingle: vi.fn(() => Promise.resolve({ data: rows[0] ?? null, error: null })),
     then: (
