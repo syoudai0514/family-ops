@@ -1,5 +1,7 @@
 import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
 
+import { validDate } from "./lineSchedulePage.ts";
+
 type JsonObject = Record<string, unknown>;
 
 function record(value: unknown): JsonObject | null {
@@ -32,7 +34,11 @@ export function appendTodayDetailLinks(text: string, briefValue: unknown, appBas
 
   const lines = ["詳しく見る", `・今日の一覧 ${base}/today`];
   if (activeInfos.length > 0) lines.push(`・引き継ぎ・共有 ${base}/handovers`);
-  if (concreteTomorrowCount > 0) lines.push(`・明日の予定・準備 ${base}/week`);
+  if (concreteTomorrowCount > 0) {
+    const day = tomorrow.local_date;
+    const path = typeof day === "string" && validDate(day) ? `/month?date=${day}` : "/week";
+    lines.push(`・明日の予定・準備 ${base}${path}`);
+  }
   return `${text}\n\n${lines.join("\n")}`;
 }
 

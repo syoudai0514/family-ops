@@ -54,7 +54,9 @@ export function MonthView() {
   // A tapped reminder opens /month?date=YYYY-MM-DD on that day's agenda.
   const [linkedDate] = useState(() => {
     const value = new URLSearchParams(window.location.search).get('date') ?? '';
-    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const stamp = Date.parse(value);
+    return Number.isFinite(stamp) && new Date(stamp).toISOString().startsWith(value) ? value : null;
   });
   const [anchor, setAnchor] = useState(
     () => new Date(`${linkedDate ?? tokyoIsoDate(new Date())}T12:00:00`),
@@ -116,8 +118,14 @@ export function MonthView() {
       <div className="month-toolbar" aria-label="月の移動">
         <button type="button" className="month-nav-button" aria-label="前月" onClick={() => changeMonth(-1)}>‹</button>
         <div className="month-title-wrap">
-          <p className="eyebrow">全体を把握</p>
           <h1>{anchor.getFullYear()}年{anchor.getMonth() + 1}月</h1>
+          {selected !== today && (
+            <button type="button" className="month-today-button" onClick={() => {
+              setAnchor(new Date(`${today}T12:00:00`));
+              setSelected(today);
+              setSheetDate(today);
+            }}>今日の予定</button>
+          )}
         </div>
         <button type="button" className="month-nav-button" aria-label="次月" onClick={() => changeMonth(1)}>›</button>
       </div>
@@ -150,7 +158,6 @@ export function MonthView() {
                   key={date}
                   type="button"
                   onClick={() => { setSelected(date); setSheetDate(date); }}
-                  onDoubleClick={() => setSheetDate(date)}
                   aria-pressed={selected === date}
                   aria-label={`${date}を選択：${error ? '記録状況を取得できませんでした' : taskRecordingLabel(recording, date > today)}`}
                   className={['month-day', mark ? `recording-${mark}` : '', selected === date ? 'selected' : '', date === today ? 'today' : '', dayOfWeek === 6 ? 'saturday' : '', dayOfWeek === 0 ? 'sunday' : ''].filter(Boolean).join(' ')}
@@ -198,7 +205,7 @@ export function MonthView() {
             </div>
             <div className="month-inline-actions">
               <button type="button" className="secondary-button" onClick={() => setSheetDate(selected)}>詳しく見る・編集</button>
-              <button type="button" onClick={() => setTaskFormDate(selected)}>この日に追加</button>
+              <button type="button" onClick={() => setTaskFormDate(selected)}>家族の予定を追加</button>
             </div>
           </section>
         </>

@@ -109,9 +109,16 @@ export function Modal({
 
   useEffect(() => {
     const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousHistoryState = window.history.state;
+    let previousHistoryState = window.history.state;
+    let active = true;
     lockPageScroll();
-    window.history.pushState({ ...previousHistoryState, familyOpsModal: modalId }, '');
+    // StrictMode replays setup/cleanup before the first user interaction.
+    // Only the surviving setup may add a browser Back entry.
+    queueMicrotask(() => {
+      if (!active) return;
+      previousHistoryState = window.history.state;
+      window.history.pushState({ ...previousHistoryState, familyOpsModal: modalId }, '');
+    });
     panelRef.current?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -126,6 +133,7 @@ export function Modal({
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('popstate', onPopState);
     return () => {
+      active = false;
       unlockPageScroll();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('popstate', onPopState);

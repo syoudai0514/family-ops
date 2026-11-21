@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Modal } from './Modal';
@@ -7,6 +8,13 @@ describe('Modal scroll lock', () => {
     document.body.removeAttribute('style');
     document.documentElement.removeAttribute('style');
     vi.restoreAllMocks();
+  });
+
+  it('registers one Back entry when StrictMode replays the dialog effect', async () => {
+    const push = vi.spyOn(window.history, 'pushState');
+    render(<StrictMode><Modal title="予定" onClose={() => undefined}>予定</Modal></StrictMode>);
+    await Promise.resolve();
+    expect(push).toHaveBeenCalledTimes(1);
   });
 
   it('freezes the page at the current scroll position and restores it on close', () => {

@@ -7,6 +7,7 @@ Deno.test("LINE Today adds concrete links only for relevant sections", () => {
     {
       active_infos: [{ handover_id: "h1" }],
       tomorrow_impact: {
+        local_date: "2026-12-01",
         impact_count: 2,
         tasks: [{ task_id: "t1" }],
         schedule: [{ event_id: "e1" }],
@@ -17,7 +18,15 @@ Deno.test("LINE Today adds concrete links only for relevant sections", () => {
   );
   assertStringIncludes(text, "・今日の一覧 https://example.test/today");
   assertStringIncludes(text, "・引き継ぎ・共有 https://example.test/handovers");
-  assertStringIncludes(text, "・明日の予定・準備 https://example.test/week");
+  assertStringIncludes(text, "・明日の予定・準備 https://example.test/month?date=2026-12-01");
+});
+
+Deno.test("legacy or invalid tomorrow dates use the week view and an unset base adds no link", () => {
+  for (const local_date of [undefined, "2026-02-31"]) {
+    const brief = { tomorrow_impact: { local_date, tasks: [{ task_id: "t" }] } };
+    assertStringIncludes(appendTodayDetailLinks("本文", brief, "https://example.test"), "明日の予定・準備 https://example.test/week");
+    assertEquals(appendTodayDetailLinks("本文", brief, ""), "本文");
+  }
 });
 
 Deno.test("count-only tomorrow impact does not create a misleading detail link", () => {

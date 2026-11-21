@@ -5,9 +5,10 @@
   gap: 0.5rem;
   margin-bottom: 0.45rem;
 }
-.month-page .month-title-wrap { min-width: 0; text-align: center; }
+.month-page .month-title-wrap { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.month-page .month-today-button { min-height: 44px; padding: 0.25rem 0.5rem; background: transparent; color: var(--color-accent); font-size: 0.8rem; }
 .month-page .month-nav-button {
-  display: grid; place-items: center; width: 2.4rem; min-height: 2.4rem; padding: 0;
+  display: grid; place-items: center; width: 44px; min-height: 44px; padding: 0;
   border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface);
   color: var(--color-accent); font-size: 1.8rem; font-weight: 500; line-height: 1;
 }
@@ -82,9 +83,8 @@
 @media (max-width: 899px) {
   .app-shell.month-page { padding-top: 0.55rem; padding-left: max(0.16rem, env(safe-area-inset-left)); padding-right: max(0.16rem, env(safe-area-inset-right)); }
   .month-page .month-toolbar { margin-inline: 0.24rem; margin-bottom: 0.28rem; }
-  .month-page .month-title-wrap .eyebrow { display: none; }
   .month-page .month-title-wrap h1 { font-size: 1.4rem; line-height: 1.1; }
-  .month-page .month-nav-button { width: 2.18rem; min-height: 2.18rem; font-size: 1.58rem; }
+  .month-page .month-nav-button { font-size: 1.58rem; }
   .month-page .month-weekdays span { padding-block: 0.25rem; font-size: 0.69rem; }
   .month-page .month-day { min-height: 5.85rem; font-size: 0.8rem; }
   .month-page .month-day small { font-size: 0.6rem; }

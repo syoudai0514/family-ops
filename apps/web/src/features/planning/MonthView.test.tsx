@@ -110,6 +110,19 @@ describe('MonthView inline day contract', () => {
     expect(screen.getByRole('button', { name: '2026-09-01を選択：未記録 1件' })).toHaveClass('recording-pending');
   });
 
+  it('opens the linked day and returns from another month to the Tokyo date in one tap', () => {
+    window.history.replaceState(null, '', '/month?date=2026-11-24');
+    try {
+      render(<MonthView />);
+      expect(screen.getByTestId('day-agenda-sheet')).toHaveTextContent('2026-11-24');
+      fireEvent.click(screen.getByRole('button', { name: '今日の予定' }));
+      expect(screen.getByTestId('day-agenda-sheet')).toHaveTextContent('2026-09-05');
+      expect(screen.getByRole('heading', { name: '2026年9月' })).toBeInTheDocument();
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
   it('opens the selected day immediately and retains its inline add and transport controls', () => {
     render(<MonthView />);
 
@@ -129,7 +142,7 @@ describe('MonthView inline day contract', () => {
     fireEvent.click(screen.getByRole('button', { name: '詳しく見る・編集' }));
     expect(screen.getByTestId('day-agenda-sheet')).toHaveTextContent('detail:2026-09-06');
 
-    fireEvent.click(screen.getByRole('button', { name: 'この日に追加' }));
+    fireEvent.click(screen.getByRole('button', { name: '家族の予定を追加' }));
     expect(screen.getByTestId('task-form-modal')).toHaveTextContent('add:2026-09-06');
 
     fireEvent.click(screen.getByRole('button', { name: 'この日だけ変更' }));

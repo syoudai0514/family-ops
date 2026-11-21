@@ -38,16 +38,9 @@
   gap: 0.45rem;
 }
 
-.day-agenda-header-add {
-  display: grid;
-  place-items: center;
-  width: 2.35rem;
-  height: 2.35rem;
-  padding: 0;
-  border-radius: 999px;
-  font-size: 1.45rem;
-  line-height: 1;
-}
+.day-agenda-calendar-help { margin-top: 0.6rem; color: var(--color-text-muted); font-size: 0.85rem; }
+.day-agenda-calendar-help summary { padding: 0.65rem 0; cursor: pointer; }
+.day-agenda-calendar-help a { display: inline-block; padding-block: 0.65rem; }
 
 .day-agenda-modal .modal-close {
   display: grid;
