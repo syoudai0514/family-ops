@@ -15,6 +15,7 @@ import {
 } from './scheduleDetails';
 import { uploadScheduleAttachment } from './scheduleAttachments';
 import { tokyoIsoDate } from './dateHelpers';
+import { GoogleEventEditor } from './GoogleEventEditor';
 
 type Attachment = { id: string; file_name: string; object_path: string; url?: string };
 type Comment = { id: string; author_id: string; body: string; created_at: string };
@@ -43,6 +44,8 @@ export function ScheduleEventCard({
 }) {
   const { members } = useHousehold();
   const [expanded, setExpanded] = useState(false);
+  const [editingGoogle, setEditingGoogle] = useState(false);
+  const [googleSaved, setGoogleSaved] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runCommand = useCommandAttempt();
@@ -113,12 +116,17 @@ export function ScheduleEventCard({
             · {expanded ? '閉じる' : '詳細'}
           </span>
         </button>
+        {!task && item.source === 'google' && item.occurrenceId && (
+          <button type="button" className="secondary-button" onClick={() => setEditingGoogle(true)}>編集</button>
+        )}
         {task?.origin === 'manual' && task.status !== 'cancelled' && (
           <button type="button" className="secondary-button" onClick={() => onEdit(task)}>
             編集
           </button>
         )}
       </div>
+      {googleSaved && <p role="status" className="meta">{googleSaved}</p>}
+      {editingGoogle && item.occurrenceId && <GoogleEventEditor occurrenceId={item.occurrenceId} onClose={() => setEditingGoogle(false)} onSaved={(syncRequested) => { setEditingGoogle(false); setGoogleSaved(syncRequested ? 'Googleカレンダーに保存しました。アプリの表示は同期後に更新されます。' : 'Googleには保存しました。アプリへの同期を開始できなかったため、後で更新してください。'); onChanged(); }} />}
       {details.pinned && <small>📌 メモ</small>}
       {details.countdown && (
         <small>
@@ -198,7 +206,7 @@ export function ScheduleEventCard({
           {!task && (
             <p className="meta">
               {item.source === 'google'
-                ? 'Google Calendar側で編集できます。'
+                ? 'Googleカレンダーの予定です。'
                 : '取り込んだ予定です。'}
             </p>
           )}
