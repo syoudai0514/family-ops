@@ -59,6 +59,7 @@ Deno.test("LINE transport agreement preview survives follow-up and confirms only
     }
     if (url.hostname === "transport-preview-test.supabase.co") {
       const rpc = url.pathname.split("/rpc/")[1];
+      if (rpc === "server_read_line_nursery_child_context") return Promise.resolve(Response.json(null));
       if (rpc) {
         calls.push({ rpc, args: body });
         let result: unknown;

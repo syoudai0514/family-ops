@@ -62,6 +62,7 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
     }
     if (url.hostname === "closed-context-test.supabase.co") {
       const rpc = url.pathname.split("/rpc/")[1];
+      if (rpc === "server_read_line_nursery_child_context") return Promise.resolve(Response.json(null));
       if (rpc) {
         calls.push({ rpc, args: body });
         let data: unknown;
