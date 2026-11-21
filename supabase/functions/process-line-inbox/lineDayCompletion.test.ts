@@ -2,6 +2,11 @@ import { assertEquals } from 'jsr:@std/assert@1';
 import { codmonAnswer, codmonQuestionDate, completionDate, parseDayCompletion, selectDayCompletionTasks, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import type { CompletionContext } from './lineCompletionReport.ts';
 
+Deno.test('absolute dates in reminder buttons retain the original day and reject invalid dates', () => {
+  assertEquals(parseDayCompletion('2026-12-31のは全部終わっている', '2027-01-02'), { date: '2026-12-31', except: null, owner: null });
+  assertEquals(parseDayCompletion('2026-02-30のは全部終わっている', '2026-03-02'), null);
+});
+
 Deno.test('yesterday, future dates and exclusion are explicit and negatives do not mutate', () => {
   assertEquals(parseDayCompletion('昨日のは全部終わっている', '2026-10-03'), {date:'2026-10-02',except:null,owner:null});
   assertEquals(parseDayCompletion('昨日の洗濯以外は完了', '2026-10-03'), {date:'2026-10-02',except:'洗濯',owner:null});

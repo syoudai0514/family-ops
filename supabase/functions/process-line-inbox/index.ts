@@ -1611,6 +1611,20 @@ async function handlePostback(
   // the action/resource IDs or impersonate the provider's selected datetime.
   delete fields.datetime;
   if (typeof item.payload.postback?.params?.datetime === "string") fields.datetime = item.payload.postback.params.datetime;
+  if (fields.action === "previous_day_keep") {
+    await sendConfirmation(client, item, actor, "わかりました。");
+    return;
+  }
+  if (fields.action === "previous_day_complete") {
+    const date = fields.date ?? "";
+    const today = jstIsoDateOffset(0);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date >= today ||
+        !(await tryHandleDayCompletion(completionContext(client, item, actor), `${date}のは全部終わっている`))) {
+      await sendConfirmation(client, item, actor, "この日付は確認できませんでした。日付を指定して教えてください。");
+    }
+    return;
+  }
+
   if (!fields.action?.startsWith("mc_request")) await clearLineRequestContext(mustCompleteContext(client, item, actor));
 
   if (await tryHandleSavedTaskCorrectionPostback(mustCompleteContext(client, item, actor), fields)) return;

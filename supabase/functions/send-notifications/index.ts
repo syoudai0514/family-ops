@@ -406,7 +406,7 @@ async function sendOne(
   const evening = (item.payload?.items ?? []).some((entry) => entry.title === '夜のおうちノート');
   const quickReply = item.type === 'routine'
     ? buildRoutineQuickReply(sessionIds)
-    : buildBriefQuickReply(item.type, { evening, previousDay: Boolean(previousDay) });
+    : buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date });
   // LINE allows up to five messages per push. Keep routine/handover content
   // and append the Flex action card, rather than losing its buttons when an
   // outbox row was bundled with another notification.
