@@ -1,5 +1,6 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { LineQuickReplyAction } from '../_shared/lineMessaging.ts';
+import { clipScheduleText } from './lineSchedulePage.ts';
 
 export type ChildContext = { id: string; name: string; aliases: string[] | null };
 type Pending = { id: string; revision: number; contexts: ChildContext[] };
@@ -22,9 +23,9 @@ export function matchChild(text: string, contexts: ChildContext[]): ChildContext
 export function childButtons(pending: Pending): LineQuickReplyAction[] {
   return pending.contexts.slice(0, 13).map((context) => ({
     type: 'postback',
-    label: Array.from(context.name).slice(0, 18).join(''),
+    label: clipScheduleText(context.name, 20),
     data: new URLSearchParams({ action: 'nursery_choose_child', intake: pending.id, revision: String(pending.revision), context: context.id }).toString(),
-    displayText: context.name,
+    displayText: clipScheduleText(context.name, 300),
   }));
 }
 
