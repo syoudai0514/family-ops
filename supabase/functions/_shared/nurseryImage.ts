@@ -103,8 +103,10 @@ export function buildNurseryResultMessage(input: {
   itemCount: number;
   hasContexts: boolean;
   link: string;
+  repeatedFailure?: boolean;
 }): string {
   if (input.kind === 'failed') {
+    if (input.repeatedFailure) return 'うまく読めませんでした。写真はそのまま、内容を一言で送ってもらえれば登録できます。';
     return '📷 写真の処理中にエラーが発生しました。\n少し待ってからもう一度送るか、内容を文字で送ってください。';
   }
   const lines = [

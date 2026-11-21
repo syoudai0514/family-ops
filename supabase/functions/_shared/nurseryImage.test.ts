@@ -57,6 +57,8 @@ Deno.test('photo failure logs retain plain-object DB codes without private detai
 Deno.test('a failed photo tells the sender to retry or type it', () => {
   const text = buildNurseryResultMessage({ kind: 'failed', itemCount: 0, hasContexts: true, link: 'https://x/r' });
   if (!text.includes('もう一度送る') || text.includes('https://x/r')) throw new Error(text);
+  const repeated = buildNurseryResultMessage({ kind: 'failed', itemCount: 0, hasContexts: true, link: '', repeatedFailure: true });
+  if (!repeated.includes('内容を一言') || repeated === text) throw new Error(repeated);
 });
 
 Deno.test('a read photo reports the count, the missing school setup and the review link', () => {
