@@ -260,6 +260,12 @@ export function DayAgendaSheet({
         })}
       </div>
     )}
+    <details className="day-agenda-calendar-help">
+      <summary>Googleの予定が見つからないとき</summary>
+      <p>Googleで登録した「予定」は、保存先が家族カレンダーならここに表示されます。チェックマーク付きの「タスク」は個人のGoogle ToDoです。</p>
+      <p>家族にも知らせたいときは「家族の予定を追加」でこの日に登録できます。</p>
+      <a href={`https://calendar.google.com/calendar/r/day/${date.split('-').map(Number).join('/')}`} target="_blank" rel="noreferrer">Googleカレンダーでこの日を確認 ↗</a>
+    </details>
   </section>
   );
 
@@ -270,16 +276,6 @@ export function DayAgendaSheet({
         onClose={onClose}
         panelClassName="day-agenda-modal"
         backdropClassName="day-agenda-backdrop"
-        headerAction={
-          <button
-            type="button"
-            className="day-agenda-header-add"
-            aria-label="この日に予定を追加"
-            onClick={() => setCreateKind('event')}
-          >
-            ＋
-          </button>
-        }
       >
         <div className="day-agenda">
           <div className="day-agenda-handle" aria-hidden="true" />
@@ -371,7 +367,10 @@ export function DayAgendaSheet({
 
 
 
-              <div className="day-agenda-sticky-actions" aria-label="この日に追加"><button onClick={() => setCreateKind('task')}>＋ この日に追加</button></div>
+              <div className="day-agenda-sticky-actions">
+                <button type="button" onClick={() => setCreateKind('event')}>家族の予定を追加</button>
+                <button type="button" className="secondary-button" onClick={() => setCreateKind('task')}>ToDoを追加</button>
+              </div>
             </>
           )}
         </div>
