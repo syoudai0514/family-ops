@@ -5,16 +5,21 @@ import type { LineQuickReplyAction } from '../_shared/lineMessaging.ts';
 export type DayCompletionReport = { date: string; except: string | null; owner: string | null };
 export function completionDate(text: string, today: string): string | null {
   const value = text.normalize('NFKC').trim();
-  if (!/^(昨日|一昨日|今日|明日|\d{1,2}\/\d{1,2})[^。！？?]*?(?:終わ|完了|やった|済|送った|送信した|送りました)/u.test(value)) return null;
-  const token = value.match(/^(昨日|一昨日|今日|明日|\d{1,2}\/\d{1,2})/u)![1];
+  if (!/^(昨日|一昨日|今日|明日|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2})[^。！？?]*?(?:終わ|完了|やった|済|送った|送信した|送りました)/u.test(value)) return null;
+  const token = value.match(/^(昨日|一昨日|今日|明日|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2})/u)![1];
   return parseDayCompletion(`${token}のは全部完了`, today)?.date ?? null;
 }
 export function parseDayCompletion(text: string, today: string): DayCompletionReport | null {
   const value = text.normalize('NFKC').replace(/\s/gu, '').replace(/[。!！よねだ]+$/u, '').replace(/^(昨日|一昨日|今日|明日)の?(?:タスク|作業|やること)/u, '$1の');
   if (/[?？]|未完了|まだ|してない|終わってない|終わっていない|完了にしない|予定|つもり/u.test(value)) return null;
-  const match = value.match(/^(昨日|一昨日|今日|明日|\d{1,2}\/\d{1,2})(?:の)?(?:(パパ|ママ|自分|わたし|私|おれ|俺|ぼく|僕)の)?(?:は)?(?:(全部|すべて)|(.+?)以外(?:は|のは)?(?:全部|すべて)?)(?:終わって(?:いる|います|ます|る)|終わった|終わりました|完了(?:した|しました|です)?|済んだ|やった)$/u);
+  const match = value.match(/^(昨日|一昨日|今日|明日|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2})(?:の)?(?:(パパ|ママ|自分|わたし|私|おれ|俺|ぼく|僕)の)?(?:は)?(?:(全部|すべて)|(.+?)以外(?:は|のは)?(?:全部|すべて)?)(?:終わって(?:いる|います|ます|る)|終わった|終わりました|完了(?:した|しました|です)?|済んだ|やった)$/u);
   if (!match) return null;
   const base = new Date(`${today}T00:00:00Z`);
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(match[1])) {
+    const parsed = new Date(`${match[1]}T00:00:00Z`);
+    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== match[1]) return null;
+    return { date: match[1], except: match[4] ?? null, owner: match[2] ?? null };
+  }
   if (/\//u.test(match[1])) {
     const [month, day] = match[1].split('/').map(Number);
     base.setUTCMonth(month - 1, day);
