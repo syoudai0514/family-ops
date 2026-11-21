@@ -83,6 +83,15 @@ describe('useTodayData canonical snapshot states', () => {
     expect(result.current.tasks.map((item) => item.id)).toEqual(['task-1']);
   });
 
+  it('attaches recurrence strategy for the visible task without changing its normal data', async () => {
+    rows.task_instances = [{ ...task, recurrence_rule_id: 'rule-1', routine_phase: 'evening' }];
+    rows.recurrence_rules = [{ id: 'rule-1', assignee_strategy: 'pickup_assignee' }];
+    rpc.mockResolvedValueOnce({ data: populatedBrief, error: null });
+    const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.tasks[0]).toMatchObject({ id: 'task-1', assignee_strategy: 'pickup_assignee' });
+  });
+
   it('uses Empty only after a fresh successful canonical read and never for an initial error', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'initial read failed' } });
     const first = renderHook(() => useTodayData('household-1', 'user-1'));

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
@@ -6,11 +6,13 @@ import {
   useTodayData,
   type DailyBriefScheduleItem,
   type TodayRequestAttempt,
+  type TodayTaskInstance,
 } from './useTodayData';
 import { IncomingRequestRow } from '../requests/Requests';
 import { usePendingActions } from './usePendingActions';
 import { TodayTaskItem } from './TodayTaskItem';
-import { TaskSelectionProvider } from '../tasks/TaskSelection';
+import { TaskSelectionProvider, useTaskSelection } from '../tasks/TaskSelection';
+import { routineGroupTasks } from './routineGroupTasks';
 import { TomorrowPreparationCard } from './TomorrowPreparationCard';
 import { PendingActionCard } from './PendingActionCard';
 import { PendingActionEditModal } from './PendingActionEditModal';
@@ -30,6 +32,19 @@ import { useDayTaskRecording } from './useDayTaskRecording';
 import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
 import { readAssignmentEntry } from '../tasks/assignmentEntry';
 import { LineConnectPrompt } from './LineConnectPrompt';
+
+function RoutineGroup({ title, tasks, children }: { title: string; tasks: TodayTaskInstance[]; children: ReactNode }) {
+  const selection = useTaskSelection();
+  return <div className="today-routine-group">
+    <div className="section-heading">
+      <strong>{title}（{tasks.length}件）</strong>
+      <button type="button" disabled={!selection || selection.busy} onClick={() => void selection?.completeGroup(tasks.map((task) => task.id))}>
+        {selection?.busy ? '記録中…' : '済み'}
+      </button>
+    </div>
+    <details><summary>当番の内容を見る</summary>{children}</details>
+  </div>;
+}
 
 const INPUT_LABELS: Record<string, string> = {
   dropoff: '朝の入力',
@@ -335,8 +350,12 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     );
   }
 
-  function renderTaskSection(title: string, tasks: TaskInstance[], eyebrow?: string) {
+  function renderTaskSection(title: string, tasks: TodayTaskInstance[], eyebrow?: string) {
     if (tasks.length === 0) return null;
+    const phase = title === '朝やること' ? 'morning' : title === '夜にやること' ? 'evening' : null;
+    const group = phase ? routineGroupTasks(tasks, phase, user?.id, tokyoIsoDate(clock.now)) : [];
+    const groupedIds = new Set(group.map((task) => task.id));
+    const others = tasks.filter((task) => !groupedIds.has(task.id));
     return (
       <section className="card task-section" data-current={eyebrow === 'いま' || undefined}>
         <div className="section-heading">
@@ -346,7 +365,8 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
           </div>
           <span>{tasks.length}件</span>
         </div>
-        {renderTasksByResponsibility(tasks)}
+        {group.length > 0 && <RoutineGroup title={phase === 'morning' ? '朝の当番' : '夜の当番'} tasks={group}>{renderTaskList(group)}</RoutineGroup>}
+        {others.length > 0 && renderTasksByResponsibility(others)}
       </section>
     );
   }
