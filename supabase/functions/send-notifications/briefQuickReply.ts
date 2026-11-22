@@ -25,6 +25,9 @@ export function buildBriefQuickReply(type: string, opts: { evening?: boolean; pr
       }] : []), ...(opts.consultDate ? [{ type: 'postback' as const, label: '送り迎えを相談',
         data: new URLSearchParams({ action: 'transport_consult', date: opts.consultDate }).toString(),
         displayText: '送り迎えを相談',
+      }, { type: 'postback' as const, label: '今日は静かに',
+        data: new URLSearchParams({ action: 'quiet_today', date: opts.consultDate }).toString(),
+        displayText: '今日は静かに',
       }] : []), say("今日"), say("明日の予定", "明日の予定教えて"), say("買い物", "買い物リスト"), say("共有")];
   }
   if (type === "codmon.deadline") {

@@ -106,6 +106,7 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
             }
             return Promise.resolve(Response.json({ code: "P0001", message: "PENDING_ACTION_NOT_EDITABLE" }, { status: 400 }));
           case "server_tx_log_line_turn":
+          case "server_tx_line_quiet_today_v1":
           case "server_tx_confirm_pending_action":
           case "server_tx_complete_webhook_inbox_item": data = { ok: true }; break;
           default: unexpected.push(rpc); data = null;
@@ -274,6 +275,18 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       await run("");
       assertEquals(pendingCalls().length, 0);
       assertStringIncludes(rendered(), "担当は変わっていません");
+    });
+    await t.step("quiet today applies only to the sender and rejects yesterday's button", async () => {
+      postback = `action=quiet_today&date=${today}`;
+      await run("");
+      const quietCalls = calls.filter((call) => call.rpc === "server_tx_line_quiet_today_v1");
+      assertEquals(quietCalls.length, 1);
+      assertEquals(quietCalls[0].args, { p_actor_id: actorId, p_local_date: today });
+      assertStringIncludes(rendered(), "朝の残りと夜のおうちノート");
+      postback = "action=quiet_today&date=2000-01-01";
+      await run("");
+      assertEquals(calls.some((call) => call.rpc === "server_tx_line_quiet_today_v1"), false);
+      assertStringIncludes(rendered(), "日付が変わりました");
     });
   } finally {
     Object.defineProperty(Deno, "serve", originalServe);
