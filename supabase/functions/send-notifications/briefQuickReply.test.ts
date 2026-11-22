@@ -24,4 +24,9 @@ Deno.test("morning transport consultation stays bound to its date", () => {
   const data = new URLSearchParams(button?.type === "postback" ? button.data : "");
   assertEquals(data.get("action"), "transport_consult");
   assertEquals(data.get("date"), "2026-12-31");
+  const quiet = items.find((action) => action.label === "今日は静かに");
+  assertEquals(quiet?.type, "postback");
+  const quietData = new URLSearchParams(quiet?.type === "postback" ? quiet.data : "");
+  assertEquals(quietData.get("action"), "quiet_today");
+  assertEquals(quietData.get("date"), "2026-12-31");
 });

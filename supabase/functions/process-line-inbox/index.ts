@@ -1613,6 +1613,19 @@ async function handlePostback(
   // the action/resource IDs or impersonate the provider's selected datetime.
   delete fields.datetime;
   if (typeof item.payload.postback?.params?.datetime === "string") fields.datetime = item.payload.postback.params.datetime;
+  if (fields.action === "quiet_today") {
+    if (fields.date !== jstIsoDateOffset(0)) {
+      await sendConfirmation(client, item, actor, "この案内は日付が変わりました。今日は変更していません。");
+      return;
+    }
+    const { error } = await client.rpc("server_tx_line_quiet_today_v1", {
+      p_actor_id: actor.user_id, p_local_date: fields.date,
+    });
+    await sendConfirmation(client, item, actor, error
+      ? "設定できませんでした。もう一度お試しください。"
+      : "今日は朝の残りと夜のおうちノートをお休みします。送信準備中のものは届く場合があります。");
+    return;
+  }
   if (fields.action === "transport_consult") {
     const today = jstIsoDateOffset(0);
     if (fields.date !== today) {
