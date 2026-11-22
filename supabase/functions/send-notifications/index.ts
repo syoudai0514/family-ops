@@ -407,9 +407,10 @@ async function sendOne(
   const text = bundled.text;
   // The evening brief is titled 夜のおうちノート (fn_dispatch_daily_brief); only it offers 入力.
   const evening = (item.payload?.items ?? []).some((entry) => entry.title === '夜のおうちノート');
+  const consultDate = morning ? new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) : null;
   let quickReply = item.type === 'routine'
     ? buildRoutineQuickReply(sessionIds)
-    : buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, thanks });
+    : buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, thanks, consultDate });
   // LINE allows up to five messages per push. Keep routine/handover content
   // and append the Flex action card, rather than losing its buttons when an
   // outbox row was bundled with another notification.
@@ -417,7 +418,7 @@ async function sendOne(
   // Never show a thank-you action without the text identifying its recipient
   // and reason: a very long brief may have been truncated by LINE limits.
   if (thanksLine && !messages.some((message) => typeof message.text === 'string' && message.text.includes(thanksLine))) {
-    quickReply = buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date });
+    quickReply = buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, consultDate });
     messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
   }
   let response: Response;

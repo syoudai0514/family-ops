@@ -133,6 +133,7 @@ import { formatScheduleDate, inferredNight, leadingScheduleDates } from './sched
 import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
 import { loadTodayTaskBlock, mergeTodayBrief } from "./lineTodayTasks.ts";
 import { resolveLineTransportAssignment } from "./lineTransportAssignment.ts";
+import { transportConsultChoices, validTransportConsultChoice } from "./lineTransportConsult.ts";
 import { parseTransportAssignmentCorrection } from "../_shared/transportAssignmentIntent.ts";
 import { detectTransportAssignmentPending } from "../_shared/transportAssignmentDraft.ts";
 import { groundLineSourceDate } from "../_shared/lineSourceDate.ts";
@@ -1612,6 +1613,61 @@ async function handlePostback(
   // the action/resource IDs or impersonate the provider's selected datetime.
   delete fields.datetime;
   if (typeof item.payload.postback?.params?.datetime === "string") fields.datetime = item.payload.postback.params.datetime;
+  if (fields.action === "transport_consult") {
+    const today = jstIsoDateOffset(0);
+    if (fields.date !== today) {
+      await sendConfirmation(client, item, actor, "この案内は日付が変わりました。今日の予定から相談してください。");
+      return;
+    }
+    await sendConfirmation(client, item, actor, "どの送り迎えを相談しますか？\n確認してから、相手にお願いを送れます。", transportConsultChoices(today));
+    return;
+  }
+  if (fields.action === "transport_consult_choose") {
+    if (!validTransportConsultChoice(fields, jstIsoDateOffset(0))) {
+      await sendConfirmation(client, item, actor, "この案内は日付が変わったか、対象を確認できませんでした。今日の予定から相談してください。");
+      return;
+    }
+    const { data: definition, error: definitionError } = await client.from("task_definitions")
+      .select("id").eq("household_id", actor.household_id).eq("code", fields.code).maybeSingle();
+    const { data: partners, error: partnerError } = await client.from("household_members")
+      .select("user_id").eq("household_id", actor.household_id).neq("user_id", actor.user_id).limit(2);
+    const { data: actorRef, error: actorRefError } = await client.from("domain_actor_refs")
+      .select("id").eq("household_id", actor.household_id).eq("actor_kind", "real_user")
+      .eq("real_user_id", actor.user_id).is("test_context_id", null).maybeSingle();
+    if (definitionError || !definition || partnerError || !Array.isArray(partners) || partners.length !== 1 || !partners[0].user_id || actorRefError || !actorRef?.id) {
+      await sendConfirmation(client, item, actor, "送り迎えの予定か相談相手を確認できませんでした。担当は変わっていません。");
+      return;
+    }
+    const { data: tasks, error: taskError } = await client.from("task_instances")
+      .select("id,title,due_at,scheduled_date,revision,planned_assignee_id,planned_assignee_actor_ref_id")
+      .eq("household_id", actor.household_id).eq("task_definition_id", definition.id)
+      .eq("scheduled_date", fields.date).eq("planned_assignee_id", actor.user_id)
+      .is("test_context_id", null).in("status", ["todo", "in_progress"]).limit(2);
+    const task = Array.isArray(tasks) && tasks.length === 1 ? tasks[0] : null;
+    if (taskError || !task || task.planned_assignee_id !== actor.user_id || task.planned_assignee_actor_ref_id !== actorRef.id ||
+        task.scheduled_date !== fields.date || !Number.isSafeInteger(task.revision) || task.revision < 1) {
+      await sendConfirmation(client, item, actor, "あなたが担当する未完了の送り迎えを確認できませんでした。担当は変わっていません。");
+      return;
+    }
+    const payload = {
+      task_id: task.id, recipient_user_id: partners[0].user_id,
+      title: task.title, due_at: task.due_at, scheduled_date: task.scheduled_date,
+      shared_message: `${fields.code === "dropoff" ? "送り" : "お迎え"}と、その日の当番を代わってもらえますか？`,
+      scope: "once", expected_task_revision: task.revision,
+    };
+    const { data: pending, error: pendingError } = await client.rpc("server_tx_create_pending_action", {
+      p_actor_id: actor.user_id, p_household_id: actor.household_id,
+      p_operation_id: await deterministicOperationId("line-transport-consult", item.provider_event_id),
+      p_source: "line", p_action_type: "assignment_change_request", p_normalized_payload: payload,
+      p_ttl_minutes: PENDING_ACTION_TTL_MINUTES,
+    });
+    if (pendingError || !pending?.pending_action_id) {
+      await sendConfirmation(client, item, actor, "お願いの確認を用意できませんでした。担当は変わっていません。");
+      return;
+    }
+    await sendPendingActionPreview(client, item, actor, pending.pending_action_id, "assignment_change_request", payload);
+    return;
+  }
   if (fields.action === "send_thanks") {
     if (!["task", "request"].includes(fields.kind ?? "") || !fields.id) {
       await sendConfirmation(client, item, actor, "この「ありがとう」は確認できませんでした。");

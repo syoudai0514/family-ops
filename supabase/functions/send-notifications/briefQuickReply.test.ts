@@ -16,3 +16,12 @@ Deno.test("other notification types get no buttons here", () => {
   assertEquals(buildBriefQuickReply("routine"), undefined);
   assertEquals(buildBriefQuickReply("request.accepted"), undefined);
 });
+
+Deno.test("morning transport consultation stays bound to its date", () => {
+  const items = buildBriefQuickReply("daily_brief.v2", { consultDate: "2026-12-31" }) ?? [];
+  const button = items.find((action) => action.label === "送り迎えを相談");
+  assertEquals(button?.type, "postback");
+  const data = new URLSearchParams(button?.type === "postback" ? button.data : "");
+  assertEquals(data.get("action"), "transport_consult");
+  assertEquals(data.get("date"), "2026-12-31");
+});

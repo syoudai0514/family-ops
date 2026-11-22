@@ -26,6 +26,7 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
   const householdId = "30000000-0000-4000-8000-000000000001";
   const closedId = "40000000-0000-4000-8000-000000000001";
   const tomorrow = new Date(Date.now() + (9 + 24) * 3600_000).toISOString().slice(0, 10);
+  const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
   let text = "";
   let postback: string | null = null;
   let aiEnabled = false;
@@ -36,6 +37,8 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
   let transportDate = tomorrow;
   let transportCode = "dropoff";
   let transportAssignee = partnerId;
+  let transportAssigneeRef = "actor-ref";
+  let consultPending: Record<string, unknown> | null = null;
   let eventNumber = 0;
   const calls: Array<{ rpc: string; args: Record<string, unknown> }> = [];
   const replies: Array<Record<string, unknown>> = [];
@@ -81,7 +84,9 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
           case "server_tx_reserve_ai_call": data = true; break;
           case "server_read_line_turns": data = [{ role: "assistant", text: "✓ 登録しました。" }]; break;
           case "server_tx_get_line_pending_text_edit": data = null; break;
-          case "server_tx_create_pending_action": data = { pending_action_id: "40000000-0000-4000-8000-000000000002" }; break;
+          case "server_tx_create_pending_action":
+            if (body.p_action_type === "assignment_change_request") consultPending = body.p_normalized_payload;
+            data = { pending_action_id: "40000000-0000-4000-8000-000000000002" }; break;
           case "server_tx_prepare_line_transport_assignment_v1": data = {
             id: "50000000-0000-4000-8000-000000000001", status: "draft", household_id: householdId, actor_id: actorId,
             task_id: "60000000-0000-4000-8000-000000000001", scheduled_date: transportDate, due_at: `${transportDate}T08:00:00+09:00`,
@@ -90,6 +95,10 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
             expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
           }; break;
           case "server_tx_get_pending_action":
+            if (consultPending && body.p_pending_action_id === "40000000-0000-4000-8000-000000000002") {
+              data = { id: body.p_pending_action_id, status: "draft", action_type: "assignment_change_request", revision: 0, normalized_payload: consultPending };
+              break;
+            }
             if (genericConfirm) {
               data = { id: closedId, status: "draft", action_type: genericActionType, revision: 0,
                 normalized_payload: { title: "送り・お迎え担当を変更", raw_text: genericRawText, scheduled_date: transportDate, recipient_user_id: partnerId } };
@@ -97,6 +106,7 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
             }
             return Promise.resolve(Response.json({ code: "P0001", message: "PENDING_ACTION_NOT_EDITABLE" }, { status: 400 }));
           case "server_tx_log_line_turn":
+          case "server_tx_confirm_pending_action":
           case "server_tx_complete_webhook_inbox_item": data = { ok: true }; break;
           default: unexpected.push(rpc); data = null;
         }
@@ -112,10 +122,11 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       if (table === "task_definitions" && url.searchParams.get("code") === `eq.${transportCode}`) {
         return Promise.resolve(Response.json([{ id: "transport-definition", household_id: householdId, code: transportCode }]));
       }
+      if (table === "domain_actor_refs") return Promise.resolve(Response.json([{ id: "actor-ref" }]));
       if (table === "task_instances" && url.searchParams.get("task_definition_id") === "eq.transport-definition") {
         taskReadDates.push(url.searchParams.get("scheduled_date") ?? "");
         return Promise.resolve(Response.json([{ id: "60000000-0000-4000-8000-000000000001", household_id: householdId, task_definition_id: "transport-definition",
-          scheduled_date: transportDate, planned_assignee_id: transportAssignee, status: "todo", revision: 1, due_at: `${transportDate}T08:00:00+09:00`, test_context_id: null }]));
+          title: transportCode === "pickup" ? "お迎え" : "送り", scheduled_date: transportDate, planned_assignee_id: transportAssignee, planned_assignee_actor_ref_id: transportAssigneeRef, status: "todo", revision: 1, due_at: `${transportDate}T08:00:00+09:00`, test_context_id: null }]));
       }
       if (["task_instances", "task_definitions", "shopping_items", "child_school_contexts", "handovers"].includes(table ?? "")) {
         return Promise.resolve(Response.json([]));
@@ -222,6 +233,47 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       assertStringIncludes(rendered(), "担当は変更できません");
       assertEquals(rendered().includes(transportDate), false);
       assertEquals(taskReadDates, []);
+    });
+    await t.step("transport consultation offers choices and prepares only a revision-bound draft", async () => {
+      postback = `action=transport_consult&date=${today}`;
+      await run("");
+      assertEquals(pendingCalls().length, 0);
+      assertStringIncludes(rendered(), "今日の送り");
+      assertStringIncludes(rendered(), "明日のお迎え");
+      transportDate = today;
+      transportCode = "dropoff";
+      transportAssignee = actorId;
+      postback = `action=transport_consult_choose&date=${today}&code=dropoff`;
+      await run("");
+      assertEquals(pendingCalls().length, 1);
+      assertEquals(pendingCalls()[0].args.p_action_type, "assignment_change_request");
+      const payload = pendingCalls()[0].args.p_normalized_payload as Record<string, unknown>;
+      assertEquals(payload.expected_task_revision, 1);
+      assertEquals(payload.recipient_user_id, partnerId);
+      assertEquals(payload.scheduled_date, today);
+      assertStringIncludes(rendered(), "お願いの確認");
+      assertStringIncludes(rendered(), "action=confirm_pending");
+      assertEquals(calls.some((call) => call.rpc === "server_tx_confirm_pending_action"), false);
+      postback = "action=confirm_pending&pending_action_id=40000000-0000-4000-8000-000000000002";
+      await run("");
+      assertEquals(calls.filter((call) => call.rpc === "server_tx_confirm_pending_action").length, 1);
+      assertStringIncludes(rendered(), "相手の返事を待っています");
+    });
+    await t.step("stale buttons and someone else's task never create a draft", async () => {
+      postback = "action=transport_consult&date=2000-01-01";
+      await run("");
+      assertEquals(pendingCalls().length, 0);
+      assertStringIncludes(rendered(), "日付が変わりました");
+      transportAssignee = partnerId;
+      postback = `action=transport_consult_choose&date=${today}&code=dropoff`;
+      await run("");
+      assertEquals(pendingCalls().length, 0);
+      assertStringIncludes(rendered(), "担当は変わっていません");
+      transportAssignee = actorId;
+      transportAssigneeRef = "outdated-ref";
+      await run("");
+      assertEquals(pendingCalls().length, 0);
+      assertStringIncludes(rendered(), "担当は変わっていません");
     });
   } finally {
     Object.defineProperty(Deno, "serve", originalServe);
