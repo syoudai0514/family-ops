@@ -84,6 +84,14 @@ describe('routines grouped by who does them', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
+  it('marks only the author-visible tentative routine as under discussion', async () => {
+    render(<RoutineRoleEditor tentativeIds={['bath']} />);
+    const bath = await screen.findByRole('button', { name: /^お風呂/ });
+    expect(within(bath).getByText(/相談中/)).toBeTruthy();
+    const breakfast = screen.getByRole('button', { name: /^朝ごはん/ });
+    expect(within(breakfast).queryByText(/相談中/)).toBeNull();
+  });
+
   it('lists every routine except the transport legs under who does it', async () => {
     render(<RoutineRoleEditor />);
     const headings = (await screen.findAllByRole('heading', { level: 3 })).map((h) => h.textContent);

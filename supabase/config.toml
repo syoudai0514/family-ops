@@ -114,6 +114,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.create-line-link-token]
 verify_jwt = true
+[functions.assignment-consent-review]
+verify_jwt = true
 [functions.get-routine-session]
 verify_jwt = true
 [functions.routine-session-item-action]

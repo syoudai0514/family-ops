@@ -73,6 +73,8 @@ const GAP_FILL_FUNCTIONS = new Set([
   'resolve-google-event-review',
   // Issue #48 final UX: period-scoped weekly transport template + occurrence override.
   'transport-schedule',
+  // Issue #200: authenticated, actor-scoped review of the caller's own routines.
+  'assignment-consent-review',
 ]);
 
 const actualConfigPath = path.join(repoRoot, 'supabase/config.toml');

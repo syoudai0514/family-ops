@@ -49,6 +49,7 @@
 - update-notification-preferences
 - update-routine-schedule
 - get-routine-session
+- assignment-consent-review
 - complete-routine-session
 - routine-session-item-action
 - google-calendar-oauth-start

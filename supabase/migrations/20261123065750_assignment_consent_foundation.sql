@@ -838,3 +838,104 @@ begin
   return jsonb_build_object('enabled',true,'dispatched',v_dispatched);
 end;
 $$;
+
+-- Suggestions are shown only to the definition's original designer and only
+-- if a scheduled occurrence existed in the previous four weeks with no
+-- completion or subtask/work-progress record from anyone. This is a private
+-- review prompt, not a score for the person who was assigned the work.
+create table private.assignment_review_snoozes (
+  household_id uuid not null,
+  actor_id uuid not null,
+  definition_id uuid not null,
+  until_date date not null,
+  primary key(household_id,actor_id,definition_id),
+  foreign key(household_id,actor_id) references public.household_members(household_id,user_id) on delete cascade,
+  foreign key(household_id,definition_id) references public.task_definitions(household_id,id) on delete cascade
+);
+alter table private.assignment_review_snoozes enable row level security;
+revoke all on private.assignment_review_snoozes from public,anon,authenticated;
+
+create function private.fn_assignment_review_suggested_v1(p_household uuid,p_actor uuid,p_definition uuid)
+returns boolean language sql stable security definer set search_path='' as $$
+  select exists(
+    select 1 from public.task_definitions d
+    where d.household_id=p_household and d.id=p_definition and d.created_by=p_actor and d.is_active
+      and d.task_kind in ('morning_chore','evening_chore','morning_preparation','generic_once') and d.code not like 'codmon%'
+      and coalesce(d.default_expectation,'required')<>'optional'
+      and exists(select 1 from public.recurrence_rules r where r.household_id=d.household_id
+        and r.task_definition_id=d.id and r.active and r.created_by=p_actor)
+      and not exists(select 1 from private.assignment_review_snoozes s where s.household_id=d.household_id
+        and s.actor_id=p_actor and s.definition_id=d.id and s.until_date>(now() at time zone 'Asia/Tokyo')::date)
+      and exists(select 1 from public.task_instances t where t.household_id=d.household_id and t.task_definition_id=d.id
+        and t.recurrence_rule_id is not null and t.test_context_id is null
+        and t.scheduled_date>=(now() at time zone 'Asia/Tokyo')::date-28 and t.scheduled_date<(now() at time zone 'Asia/Tokyo')::date)
+      and not exists(select 1 from public.task_instances t where t.household_id=d.household_id and t.task_definition_id=d.id
+        and t.recurrence_rule_id is not null and t.test_context_id is null
+        and ((t.status='completed' and t.completed_at>=now()-interval '28 days')
+          or (t.status='skipped' and t.updated_at>=now()-interval '28 days')
+          or exists(select 1 from public.task_events e where e.household_id=t.household_id
+          and e.task_instance_id=t.id and e.test_context_id is null
+          and e.created_at>=now()-interval '28 days'
+          and e.event_type in ('completed','skipped','subtask_completed','work_progress_recorded'))))
+  );
+$$;
+revoke all on function private.fn_assignment_review_suggested_v1(uuid,uuid,uuid) from public,anon,authenticated,service_role;
+
+create function public.server_read_assignment_review_v1(p_actor_id uuid)
+returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare ctx jsonb; hh uuid; result jsonb; transport_tentative boolean;
+begin
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid;
+  select coalesce(jsonb_agg(jsonb_build_object('definition_id',d.id,'title',d.title,
+    'review_suggested',private.fn_assignment_review_suggested_v1(hh,p_actor_id,d.id),
+    'tentative',exists(
+      select 1 from public.recurrence_rules r where r.household_id=hh and r.task_definition_id=d.id and r.active and r.created_by=p_actor_id
+        and ((r.assignee_strategy='fixed' and r.planned_assignee_id is not null and r.planned_assignee_id<>p_actor_id
+          and not private.fn_has_assignment_consent_v1(hh,r.planned_assignee_id,'rule',r.id))
+        or (r.assignee_strategy not in ('fixed','unassigned','anyone_adult') and exists(
+          select 1 from public.task_instances t where t.household_id=hh and t.recurrence_rule_id=r.id and t.test_context_id is null
+            and t.planned_assignee_id is not null and t.planned_assignee_id<>p_actor_id
+            and t.scheduled_date between (now() at time zone 'Asia/Tokyo')::date and (now() at time zone 'Asia/Tokyo')::date+28
+            and not private.fn_has_assignment_consent_v1(hh,t.planned_assignee_id,'rule',r.id))))
+  )) order by d.sort_order,d.title,d.id),'[]'::jsonb) into result
+  from public.task_definitions d where d.household_id=hh and d.created_by=p_actor_id and d.is_active
+    and d.task_kind<>'transport' and d.code not in ('dropoff','pickup')
+    and exists(select 1 from public.recurrence_rules r where r.household_id=hh and r.task_definition_id=d.id and r.active and r.created_by=p_actor_id);
+  select exists(select 1 from public.transport_weekly_templates t
+    join public.transport_weekly_template_days day on day.household_id=t.household_id and day.template_id=t.id
+    cross join lateral unnest(array[day.dropoff_user_id,day.pickup_user_id]) as member(user_id)
+    where t.household_id=hh and t.created_by=p_actor_id and (t.valid_to is null or t.valid_to>=(now() at time zone 'Asia/Tokyo')::date)
+      and t.valid_from<=(now() at time zone 'Asia/Tokyo')::date+28
+      and member.user_id is not null and member.user_id<>p_actor_id
+      and not private.fn_has_assignment_consent_v1(hh,member.user_id,'transport',t.id)) into transport_tentative;
+  return jsonb_build_object('routines',result,'transport_tentative',transport_tentative);
+end $$;
+revoke all on function public.server_read_assignment_review_v1(uuid) from public,anon,authenticated;
+grant execute on function public.server_read_assignment_review_v1(uuid) to service_role;
+
+create function public.server_tx_review_assignment_v1(p_actor_id uuid,p_operation_id uuid,p_definition_id uuid,p_action text)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare ctx jsonb; hh uuid; actor_ref uuid; claim jsonb; receipt uuid; d public.task_definitions%rowtype; result jsonb;
+begin
+  if p_actor_id is null or p_operation_id is null or p_definition_id is null or p_action is null or p_action not in ('keep','stop','optional') then raise exception 'INVALID_INPUT'; end if;
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid; actor_ref:=(ctx->>'actor_ref_id')::uuid;
+  claim:=private.fn_claim_canonical_operation_v1(hh,p_actor_id,actor_ref,null,p_operation_id,'assignment.review',
+    private.fn_canonical_request_hash_v1(jsonb_build_object('definition_id',p_definition_id,'action',p_action)));
+  if claim->>'disposition'='replay' then return claim->'result_payload'; end if;
+  receipt:=(claim->>'receipt_id')::uuid;
+  select * into d from public.task_definitions where household_id=hh and id=p_definition_id and created_by=p_actor_id for no key update;
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  if not private.fn_assignment_review_suggested_v1(hh,p_actor_id,d.id) then raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
+  if p_action in ('stop','optional') then
+    perform public.server_tx_set_routine_definition_options(p_actor_id,pg_catalog.md5(p_operation_id::text||':review-options')::uuid,
+      d.id,p_action<>'stop',d.include_in_routine_line,case when p_action='optional' then 'optional' else null end);
+  end if;
+  insert into private.assignment_review_snoozes(household_id,actor_id,definition_id,until_date)
+    values(hh,p_actor_id,d.id,(now() at time zone 'Asia/Tokyo')::date+28)
+    on conflict(household_id,actor_id,definition_id) do update set until_date=excluded.until_date;
+  result:=jsonb_build_object('ok',true,'action',p_action);
+  perform private.fn_complete_canonical_operation_v1(receipt,'task_definition',d.id,result);
+  return result;
+end $$;
+revoke all on function public.server_tx_review_assignment_v1(uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.server_tx_review_assignment_v1(uuid,uuid,uuid,text) to service_role;
