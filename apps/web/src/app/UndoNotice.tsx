@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 // Long enough to notice a mistap, short enough not to keep covering the list (owner 2026-10-10).
 const UNDO_VISIBLE_MS = 8000;
 
-type UndoAction = { label: string; undo: () => Promise<void> };
+type UndoAction = { label: string; undo?: () => Promise<void> };
 const UndoContext = createContext<(action: UndoAction) => void>(() => {});
 export function useUndoNotice() {
   return useContext(UndoContext);
@@ -22,7 +22,7 @@ export function UndoNoticeProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [action, busy, error]);
   async function undo() {
-    if (!action || busy) return;
+    if (!action?.undo || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -49,16 +49,16 @@ export function UndoNoticeProvider({ children }: { children: ReactNode }) {
     >
       {children}
       {action && (
-        <aside className="undo-notice" aria-label="操作の取り消し">
+        <aside className="undo-notice" aria-label={action.undo ? '操作の取り消し' : '操作の結果'}>
           <span role="status">{action.label}</span>
-          <button type="button" disabled={busy} onClick={() => void undo()}>
+          {action.undo && <button type="button" disabled={busy} onClick={() => void undo()}>
             {busy ? '確認中…' : '元に戻す'}
-          </button>
+          </button>}
           <button
             type="button"
             className="text-button"
             disabled={busy}
-            aria-label="取り消しの案内を閉じる"
+            aria-label={action.undo ? '取り消しの案内を閉じる' : '結果の案内を閉じる'}
             onClick={() => {
               latestAction.current = null;
               setAction(null);

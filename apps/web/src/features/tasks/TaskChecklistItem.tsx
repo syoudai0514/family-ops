@@ -245,6 +245,9 @@ export function TaskChecklistItem({
       EDGE_FUNCTIONS.completeTask,
       (operationId) => ({ operation_id: operationId, task_id: task.id, completion_actor: completionActor, complete_remaining_subtasks: task.completion_mode === 'subtasks' }),
     );
+    // The server cannot reopen a completed checklist as one task: doing so
+    // could erase work that was already checked by somebody else.
+    if (task.completion_mode === 'subtasks') return null;
     if (!Number.isSafeInteger(result.revision)) return null;
     const revision = result.revision!;
     return async () => { await runCommand(`task:${task.id}:reopen:r${revision}`, EDGE_FUNCTIONS.reopenTask, operation_id => ({ operation_id, task_id: task.id, action: 'reopen', expected_revision: revision })); };
@@ -326,6 +329,10 @@ export function TaskChecklistItem({
         complete_remaining_subtasks: task.completion_mode === 'subtasks',
       }),
       result => {
+        if (task.completion_mode === 'subtasks') {
+          offerUndo({ label: `${taskTitle}を完了にしました。修正するときはチェック項目を確認してください。` });
+          return;
+        }
         if (!Number.isSafeInteger(result.revision)) return;
         const revision = result.revision!;
         offerUndo({ label: `${taskTitle}を完了にしました`, undo: async () => {
