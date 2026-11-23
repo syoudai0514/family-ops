@@ -6,6 +6,7 @@ import {
   parseCodmonSentReport,
   parseCompletionReport,
   rankCompletionCandidates,
+  reopenTaskAndReply,
   tryHandleCompletionReport,
 } from "./lineCompletionReport.ts";
 
@@ -147,7 +148,7 @@ Deno.test("handler: a single match completes through the canonical RPC and offer
   const { ctx, calls, replies } = fakeContext({ tasks: [rows[1]], defs });
   assertEquals(await tryHandleCompletionReport(ctx, "送りました！"), true);
   assertEquals(calls.length, 1);
-  assertEquals(calls[0].fn, "server_tx_complete_task");
+  assertEquals(calls[0].fn, "server_tx_complete_task_with_checklist_undo_v1");
   assertEquals(calls[0].args.p_task_id, "t-d");
   assertEquals(calls[0].args.p_source, "line");
   assertEquals(calls[0].args.p_completion_actor, "self");
@@ -164,17 +165,25 @@ Deno.test("undo: a completion or replay keeps its receipt revision after another
   assertEquals(undo.data, "action=reopen_task&task_id=t-d&revision=2");
 });
 
+Deno.test("undo: LINE uses the snapshot-aware command with the original revision", async () => {
+  const { ctx, calls, replies } = fakeContext({ tasks: rows, defs });
+  await reopenTaskAndReply(ctx, "t-d", 4, "undo-operation");
+  assertEquals(calls[0].fn, "server_tx_reopen_task_with_checklist_undo_v1");
+  assertEquals(calls[0].args.p_expected_revision, 4);
+  assertEquals(calls[0].args.p_source, "line");
+  assertEquals(replies[0].text, "元に戻しました（未完了）。");
+});
+
 Deno.test("undo: old completion receipts without a revision never borrow a later revision", async () => {
   const { ctx, replies } = fakeContext({ tasks: rows, defs, rpcData: { ok: true } });
   await completeTaskAndReply(ctx, "t-d", { operationId: "old-op", code: "dropoff" });
   assertEquals(replies[0].quick, [{ type: "message", label: "今日を見る", text: "今日" }]);
 });
 
-Deno.test("undo: Codmon acknowledgement uses the submit completion receipt revision", async () => {
+Deno.test("undo: Codmon acknowledgement does not offer a partial undo", async () => {
   const { ctx, replies } = fakeContext({ tasks: rows, defs, rpcData: { ok: true, revision: 2, inputs_closed: 0 } });
   await completeTaskAndReply(ctx, "t-c", { operationId: "op", code: "codmon_submit" });
-  const undo = (replies[0].quick as Array<{ data?: string }>)[0];
-  assertEquals(undo.data, "action=reopen_task&task_id=t-c&revision=2");
+  assertEquals(replies[0].quick, [{ type: "message", label: "今日を見る", text: "今日" }]);
 });
 
 // Live 2026-09-30 05:43: "コドモン送りました！" was refused with

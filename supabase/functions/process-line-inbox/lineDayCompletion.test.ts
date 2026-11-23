@@ -37,7 +37,7 @@ Deno.test('a dated bulk report reads exactly that day and ordinary completions u
   assertEquals(await tryHandleDayCompletion(ctx,'昨日の洗濯以外は完了'),true);
   assertEquals(filters.find(([key])=>key==='scheduled_date')?.[1],'2026-10-02');
   assertEquals(calls.map((call)=>call.payload.p_task_id),['b']);
-  assertEquals(calls[0].name,'server_tx_complete_task');
+  assertEquals(calls[0].name,'server_tx_complete_task_with_checklist_undo_v1');
   assertEquals(replies[0].includes('コドモンは送信まで済みましたか'),true);
 });
 
@@ -109,7 +109,7 @@ Deno.test('"昨日のパパのは全部終わってます": the date is yesterda
   // The papa says "パパの": his own open tasks of 10/8 are closed (and nothing of other days).
   assertEquals(await tryHandleDayCompletion(ctx(make('papa')), '昨日のパパのは全部終わってます。'), true);
   assertEquals(filters.filter(([k]) => k === 'scheduled_date').map(([, v]) => v), ['2026-10-08']);
-  assertEquals(calls.map((c) => [c.name, c.payload.p_task_id]), [['server_tx_complete_task', 'a']]);
+  assertEquals(calls.map((c) => [c.name, c.payload.p_task_id]), [['server_tx_complete_task_with_checklist_undo_v1', 'a']]);
 
   // The mama's list named by the papa is not closed here (left to the normal path).
   calls.length = 0;

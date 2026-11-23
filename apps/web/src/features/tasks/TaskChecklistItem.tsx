@@ -240,14 +240,13 @@ export function TaskChecklistItem({
       return null;
     }
     const completionActor = partnersTask ? 'partner' : 'self';
-    const result = await runCommand<{ revision?: number }>(
+    const result = await runCommand<{ revision?: number; checklist_undo_available?: boolean }>(
       `task:${task.id}:complete:${completionActor}:r${task.revision ?? 1}`,
       EDGE_FUNCTIONS.completeTask,
       (operationId) => ({ operation_id: operationId, task_id: task.id, completion_actor: completionActor, complete_remaining_subtasks: task.completion_mode === 'subtasks' }),
     );
-    // The server cannot reopen a completed checklist as one task: doing so
-    // could erase work that was already checked by somebody else.
-    if (task.completion_mode === 'subtasks') return null;
+    // Offer a checklist undo only when the server saved its exact prior state.
+    if (task.completion_mode === 'subtasks' && result.checklist_undo_available !== true) return null;
     if (!Number.isSafeInteger(result.revision)) return null;
     const revision = result.revision!;
     return async () => { await runCommand(`task:${task.id}:reopen:r${revision}`, EDGE_FUNCTIONS.reopenTask, operation_id => ({ operation_id, task_id: task.id, action: 'reopen', expected_revision: revision })); };
@@ -276,12 +275,12 @@ export function TaskChecklistItem({
     logicalKey: string,
     endpoint: Parameters<typeof runCommand>[1],
     buildPayload: (operationId: string) => Record<string, unknown>,
-    onSuccess?: (result: { revision?: number }) => void,
+    onSuccess?: (result: { revision?: number; checklist_undo_available?: boolean }) => void,
   ): Promise<boolean> {
     setError(null);
     setBusy(true);
     try {
-      const result = await runCommand<{ revision?: number }>(logicalKey, endpoint, buildPayload);
+      const result = await runCommand<{ revision?: number; checklist_undo_available?: boolean }>(logicalKey, endpoint, buildPayload);
       onSuccess?.(result);
       await onChanged();
       return true;
@@ -329,7 +328,7 @@ export function TaskChecklistItem({
         complete_remaining_subtasks: task.completion_mode === 'subtasks',
       }),
       result => {
-        if (task.completion_mode === 'subtasks') {
+        if (task.completion_mode === 'subtasks' && result.checklist_undo_available !== true) {
           offerUndo({ label: `${taskTitle}を完了にしました。修正するときはチェック項目を確認してください。` });
           return;
         }

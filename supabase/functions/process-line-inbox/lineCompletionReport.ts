@@ -303,7 +303,7 @@ export async function completeTaskAndReply(
       p_source: "line",
       p_partner_input_codes: partnerInputCodes.length ? partnerInputCodes : null,
     })
-    : await ctx.client.rpc("server_tx_complete_task", {
+    : await ctx.client.rpc("server_tx_complete_task_with_checklist_undo_v1", {
       p_actor_id: ctx.actorId,
       p_operation_id: options.operationId,
       p_task_id: taskId,
@@ -333,7 +333,9 @@ export async function completeTaskAndReply(
   // permission to undo the later work. Replays keep the receipt's revision.
   const revision = (data as { revision?: number } | null)?.revision;
   const quick: LineQuickReplyAction[] = [];
-  if (typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0) {
+  // Codmon acknowledgement may also close multiple inputs; reopening only the
+  // submit task would falsely imply that all of those changes were undone.
+  if (!codmon && typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0) {
     quick.push(quickPostback("取り消す", `action=reopen_task&task_id=${taskId}&revision=${revision}`));
   }
   quick.push(TODAY_QUICK_REPLY);
@@ -413,7 +415,7 @@ export async function undoCouldNotDoAndReply(ctx: CompletionContext, taskId: str
 }
 
 export async function reopenTaskAndReply(ctx: CompletionContext, taskId: string, revision: number, operationId: string): Promise<void> {
-  const { error } = await ctx.client.rpc("server_tx_reopen_task", {
+  const { error } = await ctx.client.rpc("server_tx_reopen_task_with_checklist_undo_v1", {
     p_actor_id: ctx.actorId,
     p_operation_id: operationId,
     p_task_id: taskId,
