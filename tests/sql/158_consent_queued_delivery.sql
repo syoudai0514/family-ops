@@ -11,6 +11,9 @@ begin
   insert into auth.users(id) values(a),(b);
   h:=(public.server_tx_create_household(a,gen_random_uuid(),'queued consent','A')->>'household_id')::uuid;
   token:=public.server_tx_create_household_invite(a,gen_random_uuid())->>'raw_token'; perform public.server_tx_join_household(b,gen_random_uuid(),token,'B');
+  -- This is the normal-delivery consent regression; automatic quiet delivery
+  -- has its own coverage in 160_automatic_quiet_delivery.sql.
+  update public.notification_preferences set quiet_mode='normal' where household_id=h;
   insert into public.task_definitions(household_id,code,title,category,routine_phase,completion_mode,created_by)
     values(h,'queued_test','仮の作業','household','morning','whole',a) returning id into d;
   insert into public.recurrence_rules(household_id,task_definition_id,weekday,slot_key,assignee_strategy,planned_assignee_id,effective_from,created_by)

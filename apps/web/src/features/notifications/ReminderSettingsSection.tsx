@@ -16,7 +16,10 @@ type Settings = {
   default_timed_reminders?: number[];
   default_all_day_reminders?: number[];
   schedule_line_with_push?: boolean;
+  quiet_mode?: QuietMode;
 };
+
+type QuietMode = 'auto' | 'quiet' | 'normal';
 
 async function saveSettings(settings: Settings) {
   await callEdgeFunction(EDGE_FUNCTIONS.updateNotificationPreferences, {
@@ -74,6 +77,7 @@ function ReminderDefaultPicker({
 export function ReminderSettingsSection() {
   const { household, me, refresh } = useHousehold();
   const [lineWithPush, setLineWithPush] = useState<boolean | null>(null);
+  const [quietMode, setQuietMode] = useState<QuietMode | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -86,13 +90,17 @@ export function ReminderSettingsSection() {
     void Promise.resolve(
       supabase
         .from('notification_preferences')
-        .select('schedule_line_with_push')
+        .select('schedule_line_with_push,quiet_mode')
         .eq('household_id', householdId)
         .eq('user_id', userId)
         .maybeSingle(),
     )
       .then(({ data }) => {
-        if (!cancelled) setLineWithPush(Boolean((data as { schedule_line_with_push?: boolean } | null)?.schedule_line_with_push));
+        if (!cancelled && data) {
+          const preferences = data as { schedule_line_with_push?: boolean; quiet_mode?: QuietMode };
+          setLineWithPush(Boolean(preferences.schedule_line_with_push));
+          setQuietMode(preferences.quiet_mode ?? 'auto');
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -107,7 +115,8 @@ export function ReminderSettingsSection() {
     try {
       await saveSettings(settings);
       if ('schedule_line_with_push' in settings) setLineWithPush(Boolean(settings.schedule_line_with_push));
-      else await refresh();
+      if (settings.quiet_mode) setQuietMode(settings.quiet_mode);
+      if (!('schedule_line_with_push' in settings) && !('quiet_mode' in settings)) await refresh();
       setSaved(message);
     } catch (err) {
       setError(err instanceof FamilyOpsApiError ? err.message : '保存できませんでした。もう一度お試しください。');
@@ -157,6 +166,38 @@ export function ReminderSettingsSection() {
           />
           スマホの通知をオンにしていても、予定の通知をLINEでも受け取る（自分だけの設定。LINEの無料枠を使います）
         </label>
+      )}
+      {quietMode !== null && (
+        <fieldset className="reminder-picker quiet-mode-picker">
+          <legend>自分へのLINEの受け取り方</legend>
+          <p className="form-help">
+            「おまかせ」は7日間操作がないと、予定や送り迎えを中心に短くお知らせします。
+            操作を再開すると翌朝から通常に戻ります。
+          </p>
+          <p className="form-help">
+            「静かに」はいつも短め、「ふつう」は通常の朝夜ノートです。
+            大切なお願いや予定の通知はどの設定でも届きます。
+          </p>
+          <div className="reminder-options">
+            {([
+              ['auto', 'おまかせ'],
+              ['quiet', '静かに'],
+              ['normal', 'ふつう'],
+            ] as const).map(([mode, label]) => (
+              <label key={mode} className="reminder-chip">
+                <input
+                  type="radio"
+                  name="quiet-mode"
+                  value={mode}
+                  checked={quietMode === mode}
+                  disabled={saving}
+                  onChange={() => void save({ quiet_mode: mode }, `受け取り方を「${label}」にしました。`)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
       )}
       {saved && <p role="status">{saved}</p>}
       {error && (

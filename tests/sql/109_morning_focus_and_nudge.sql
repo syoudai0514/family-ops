@@ -17,7 +17,7 @@ begin
   h := (public.server_tx_create_household(u1,gen_random_uuid(),'Nudge H','Papa')->>'household_id')::uuid;
   token := public.server_tx_create_household_invite(u1,gen_random_uuid())->>'raw_token';
   perform public.server_tx_join_household(u2,gen_random_uuid(),token,'Mama');
-  update public.notification_preferences set daily_assignment_line=true where household_id=h;
+  update public.notification_preferences set daily_assignment_line=true, quiet_mode='normal' where household_id=h;
 
   if (select morning_nudge_local_time from public.households where id=h)<>time '07:30' then raise exception 'FAIL default nudge time'; end if;
 

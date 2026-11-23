@@ -18,6 +18,8 @@ declare
   v_dispatch jsonb;
 begin
   v_hh := (public.server_tx_create_household(v_owner, gen_random_uuid(), 'Cadence HH', 'Owner')->>'household_id')::uuid;
+  -- Exercise the ordinary cadence; automatic quiet delivery has separate coverage.
+  update public.notification_preferences set quiet_mode='normal' where household_id=v_hh;
 
   -- The migration itself must carry the holidays: production never ran the CI seed.
   if not exists (select 1 from private.jp_holidays where local_date = date '2026-09-21')
