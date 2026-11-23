@@ -996,3 +996,126 @@ begin
 end $$;
 revoke all on function public.server_tx_review_assignment_v1(uuid,uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.server_tx_review_assignment_v1(uuid,uuid,uuid,text) to service_role;
+
+-- Re-render pending notices when claimed, including ones queued before the
+-- agreement rollout. This also covers consent changed after scheduling.
+create function private.fn_consent_safe_daily_text_v1(p_household uuid,p_recipient uuid,p_note uuid)
+returns text language plpgsql stable security definer set search_path='' as $$
+declare n public.user_notifications%rowtype; local_day date; raw_date text; mode text; body text; weekly text; at_time timestamptz;
+begin
+  select * into n from public.user_notifications where id=p_note and household_id=p_household and recipient_user_id=p_recipient
+    and test_context_id is null and type='daily_brief.v2' and title in ('朝のおうちノート','夜のおうちノート');
+  if not found or jsonb_typeof(n.payload->'brief') is distinct from 'object' then return null; end if;
+  raw_date:=n.payload#>>'{brief,local_date}';
+  if raw_date is null or raw_date !~ '^\d{4}-\d{2}-\d{2}$' then return null; end if;
+  begin local_day:=raw_date::date; exception when invalid_datetime_format or datetime_field_overflow then return null; end;
+  mode:=case when n.title='朝のおうちノート' then 'morning' else 'evening' end;
+  at_time:=(local_day::timestamp+case when mode='morning' then time '06:30' else time '20:30' end) at time zone 'Asia/Tokyo';
+  body:=private.fn_render_daily_brief_text_v4(private.fn_daily_brief_for_line_v1(n.payload->'brief',p_recipient,at_time,mode),
+    case when mode='morning' then 'morning_focus' else mode end);
+  if mode='morning' and n.payload->>'schedule_kind'='nonworkday_morning_brief' and extract(isodow from local_day)=7 then
+    weekly:=private.fn_render_weekly_preview_for_recipient_v1(p_household,local_day+1,p_recipient);
+    body:=body||E'\n\n📅 来週の予定\n'||coalesce(weekly,'（登録された予定はありません）');
+  end if;
+  return left(body,5000);
+exception when others then
+  -- Never fall back to the older, possibly unfiltered body.
+  return null;
+end $$;
+revoke all on function private.fn_consent_safe_daily_text_v1(uuid,uuid,uuid) from public,anon,authenticated,service_role;
+
+create function private.fn_consent_safe_nudge_lines_v1(p_household uuid,p_recipient uuid,p_day date)
+returns text language plpgsql stable security definer set search_path='' as $$
+declare items jsonb; noon_at timestamptz;
+begin
+  if p_day is distinct from (now() at time zone 'Asia/Tokyo')::date then return null; end if;
+  noon_at:=(p_day::timestamp+time '12:00') at time zone 'Asia/Tokyo';
+  select coalesce(jsonb_agg(jsonb_build_object('task_id',t.id,'title',t.title) order by t.due_at nulls last,t.title,t.id),'[]'::jsonb)
+    into items from public.task_instances t
+    left join public.task_definitions d on d.household_id=t.household_id and d.id=t.task_definition_id
+    left join public.domain_actor_refs ar on ar.household_id=t.household_id and ar.id=t.active_claimant_actor_ref_id
+      and ar.actor_kind='real_user' and ar.test_context_id is null
+    where t.household_id=p_household and t.scheduled_date=p_day and t.test_context_id is null
+      and t.status in ('todo','in_progress') and coalesce(t.expectation,'normal')<>'optional'
+      and (t.routine_phase='morning' or t.due_at<noon_at) and coalesce(d.code,'') not like 'codmon%'
+      and (t.planned_assignee_id=p_recipient or t.assignment_mode='anyone')
+      and (ar.real_user_id is null or ar.real_user_id=p_recipient)
+      and ((t.assignment_mode='anyone' and ar.real_user_id is null)
+        or private.fn_task_assignment_consent_v1(p_household,p_recipient,t.id));
+  if jsonb_array_length(items)=0 then return null; end if;
+  return private.fn_line_task_timeline_v1(private.fn_task_display_items_v1(p_household,items),p_recipient::text);
+end $$;
+revoke all on function private.fn_consent_safe_nudge_lines_v1(uuid,uuid,date) from public,anon,authenticated,service_role;
+
+alter function public.server_tx_claim_notification_outbox_batch(text,int,int) rename to server_tx_claim_notification_before_consent_v1;
+revoke all on function public.server_tx_claim_notification_before_consent_v1(text,int,int) from public,anon,authenticated,service_role;
+create function public.server_tx_claim_notification_outbox_batch(p_worker_id text,p_limit int,p_lease_seconds int)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare raw jsonb; entry jsonb; item jsonb; rewritten jsonb; out_items jsonb:='[]'::jsonb; safe text; note_id uuid; hh uuid; actor uuid; day date;
+  ordinal bigint; original_count integer; changed boolean; nudge_text text; nudge_day text;
+begin
+  raw:=public.server_tx_claim_notification_before_consent_v1(p_worker_id,p_limit,p_lease_seconds);
+  for entry in select value from jsonb_array_elements(raw) loop
+    hh:=(entry->>'household_id')::uuid; actor:=(entry->>'recipient_user_id')::uuid;
+    if jsonb_typeof(entry#>'{payload,items}') is distinct from 'array' then out_items:=out_items||jsonb_build_array(entry); continue; end if;
+    original_count:=jsonb_array_length(entry#>'{payload,items}'); rewritten:='[]'::jsonb; changed:=false;
+    for item,ordinal in select value,ord from jsonb_array_elements(entry#>'{payload,items}') with ordinality x(value,ord) order by ord loop
+      if item->>'type'='daily_brief.v2' or (entry->>'type'='daily_brief.v2' and ordinal=1 and item->>'title' in ('朝のおうちノート','夜のおうちノート')) then
+        note_id:=null;
+        if coalesce(item->>'user_notification_id','') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then note_id:=(item->>'user_notification_id')::uuid; end if;
+        safe:=private.fn_consent_safe_daily_text_v1(hh,actor,note_id);
+        item:=item||jsonb_build_object('body',coalesce(safe,coalesce(item->>'title','おうちノート')||E'\n今日の予定はアプリで確認できます。'));
+        changed:=true;
+      elsif entry->>'type'='morning_nudge' and ordinal=1 then
+        nudge_day:=split_part(coalesce(entry->>'dedup_key',''),':',2); day:=null;
+        if nudge_day ~ '^\d{4}-\d{2}-\d{2}$' then
+          begin day:=nudge_day::date; exception when invalid_datetime_format or datetime_field_overflow then day:=null; end;
+        end if;
+        nudge_text:=private.fn_consent_safe_nudge_lines_v1(hh,actor,day); changed:=true;
+        if nudge_text is null then
+          -- A never-attempted standalone nudge has nothing safe to send.
+          if original_count=1 and (entry->>'attempts')::int=1 and entry->>'quota_reservation_id' is null then
+            update private.notification_outbox set status='fallback',last_error='no_agreed_nudge_tasks',
+              lease_owner=null,lease_token=null,lease_until=null where id=(entry->>'id')::uuid and status='sending';
+            rewritten:='[]'::jsonb; exit;
+          elsif original_count>1 then continue;
+          else item:=item||jsonb_build_object('body','今日の予定はアプリで確認できます。'); end if;
+        else item:=item||jsonb_build_object('body',coalesce(item->>'title','朝のお知らせ')||E'\n'||nudge_text); end if;
+      end if;
+      rewritten:=rewritten||jsonb_build_array(item);
+    end loop;
+    if jsonb_array_length(rewritten)=0 and changed then continue; end if;
+    if changed then entry:=jsonb_set(entry,'{payload,items}',rewritten,true); end if;
+    out_items:=out_items||jsonb_build_array(entry);
+  end loop;
+  return out_items;
+end $$;
+revoke all on function public.server_tx_claim_notification_outbox_batch(text,int,int) from public,anon,authenticated;
+grant execute on function public.server_tx_claim_notification_outbox_batch(text,int,int) to service_role;
+
+alter function public.server_tx_claim_web_push_batch(int,int) rename to server_tx_claim_web_push_before_consent_v1;
+revoke all on function public.server_tx_claim_web_push_before_consent_v1(int,int) from public,anon,authenticated,service_role;
+create function public.server_tx_claim_web_push_batch(p_limit int default 50,p_lease_seconds int default 60)
+returns table(outbox_id uuid,subscription_id uuid,endpoint text,p256dh text,auth text,title text,body text,url text,tag text,attempts int,expires_at timestamptz)
+language plpgsql security definer set search_path='' as $$
+declare r record; meta private.web_push_outbox%rowtype; day_text text; day date; safe text;
+begin
+  for r in select * from public.server_tx_claim_web_push_before_consent_v1(p_limit,p_lease_seconds) loop
+    if r.tag='morning-nudge' then
+      select * into meta from private.web_push_outbox o where o.id=r.outbox_id;
+      day_text:=split_part(coalesce(meta.dedup_key,''),':',2); day:=null;
+      if day_text ~ '^\d{4}-\d{2}-\d{2}$' then
+        begin day:=day_text::date; exception when invalid_datetime_format or datetime_field_overflow then day:=null; end;
+      end if;
+      safe:=private.fn_consent_safe_nudge_lines_v1(meta.household_id,meta.recipient_user_id,day);
+      if safe is null then
+        update private.web_push_outbox o set status='dead',lease_until=null,last_error='no_agreed_nudge_tasks' where o.id=r.outbox_id and o.status='processing';
+        continue;
+      end if;
+      r.body:=left(safe,1000);
+    end if;
+    return query select r.outbox_id,r.subscription_id,r.endpoint,r.p256dh,r.auth,r.title,r.body,r.url,r.tag,r.attempts,r.expires_at;
+  end loop;
+end $$;
+revoke all on function public.server_tx_claim_web_push_batch(int,int) from public,anon,authenticated;
+grant execute on function public.server_tx_claim_web_push_batch(int,int) to service_role;
