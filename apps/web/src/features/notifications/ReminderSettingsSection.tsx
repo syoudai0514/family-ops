@@ -168,11 +168,15 @@ export function ReminderSettingsSection() {
         </label>
       )}
       {quietMode !== null && (
-        <fieldset className="reminder-picker">
+        <fieldset className="reminder-picker quiet-mode-picker">
           <legend>自分へのLINEの受け取り方</legend>
           <p className="form-help">
             「おまかせ」は7日間操作がないと、予定や送り迎えを中心に短くお知らせします。
-            操作を再開すると翌朝から通常に戻ります。大切なお願いや予定の通知は届きます。
+            操作を再開すると翌朝から通常に戻ります。
+          </p>
+          <p className="form-help">
+            「静かに」はいつも短め、「ふつう」は通常の朝夜ノートです。
+            大切なお願いや予定の通知はどの設定でも届きます。
           </p>
           <div className="reminder-options">
             {([
