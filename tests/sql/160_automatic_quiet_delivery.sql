@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
 do $$
-declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; task uuid; note uuid; nudge uuid;
+declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; task uuid; note uuid; nudge uuid; transport_def uuid; transport_rule uuid;
   daily_out uuid; bundle_out uuid; nudge_out uuid; critical_note uuid; sub uuid; push_id uuid; rows jsonb; row jsonb;
   today date:=(now() at time zone 'Asia/Tokyo')::date; weekday date:=date '2026-11-24'; sunday date:=date '2026-11-29'; rendered text;
 begin
@@ -35,10 +35,17 @@ begin
     values(h,'manual','家族の予定','other','anytime',weekday,'anyone','whole','todo','pwa',a,'special') returning id into task;
   insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,calendar_visibility)
     values(h,'manual','来週の予定','other','anytime',sunday+1,'anyone','whole','todo','pwa',a,'special');
+  select id into transport_def from public.task_definitions where household_id=h and code='dropoff';
+  insert into public.recurrence_rules(household_id,task_definition_id,weekday,slot_key,assignee_strategy,planned_assignee_id,effective_from,created_by)
+    values(h,transport_def,extract(isodow from weekday)::integer,'autoquiet-test','fixed',b,weekday,a) returning id into transport_rule;
+  insert into public.task_instances(household_id,task_definition_id,recurrence_rule_id,origin,title,category,routine_phase,scheduled_date,
+    planned_assignee_id,assignment_mode,completion_mode,status,source,created_by)
+    values(h,transport_def,transport_rule,'recurring','送り','household','morning',weekday,b,'person','whole','todo','test',a);
   insert into public.requests(household_id,requester_id,recipient_id,shared_title,status) values(h,a,b,'お迎えをお願い','pending');
   rendered:=private.fn_quiet_morning_text_v1(h,b,weekday);
   if rendered not like '%家族の予定%' or rendered not like '%お迎えをお願い%' or rendered like '%残り%' or rendered like '%忘れずに%' then
     raise exception 'unexpected quiet morning %',rendered; end if;
+  if rendered not like '%送り 相談中%' then raise exception 'unagreed transport was presented as agreed: %',rendered; end if;
   rendered:=private.fn_quiet_morning_text_v1(h,b,sunday);
   if rendered not like '%来週の予定%' or rendered like '%お迎えをお願い%' then raise exception 'unexpected Sunday %',rendered; end if;
   insert into public.user_notifications(household_id,recipient_user_id,type,title,body,payload,dedup_key)
