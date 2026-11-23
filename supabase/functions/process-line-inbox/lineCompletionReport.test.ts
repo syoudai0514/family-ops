@@ -1,12 +1,14 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   completeTaskAndReply,
+  couldNotDoAndReply,
   type CompletionContext,
   type OpenTask,
   parseCodmonSentReport,
   parseCompletionReport,
   rankCompletionCandidates,
   reopenTaskAndReply,
+  undoCouldNotDoAndReply,
   tryHandleCompletionReport,
 } from "./lineCompletionReport.ts";
 
@@ -134,6 +136,19 @@ const rows = [
   { id: "t-d", title: "送り", due_at: null, revision: 3, task_definition_id: "d-d", planned_assignee_id: "u1" },
 ];
 const defs = [{ id: "d-c", code: "codmon_submit" }, { id: "d-d", code: "dropoff" }];
+
+Deno.test("unperformed work is clearly recorded and can be undone without claiming completion", async () => {
+  const { ctx, calls, replies } = fakeContext({ tasks: rows, defs });
+  await couldNotDoAndReply(ctx, "t-d", { operationId: "op", title: "送り" });
+  assertEquals(calls[0].fn, "server_tx_mark_task_could_not_do_v1");
+  assertEquals(calls[0].args.p_undo, false);
+  assertEquals(replies[0].text, "− 「送り」は「今日はなし（実施せず）」で記録しました（未記録とは別に残ります）。");
+  assertEquals((replies[0].quick as Array<{ data?: string }>)[0].data, "action=could_not_do_undo&task_id=t-d");
+  await undoCouldNotDoAndReply(ctx, "t-d", "undo-op");
+  assertEquals(calls[1].fn, "server_tx_mark_task_could_not_do_v1");
+  assertEquals(calls[1].args.p_undo, true);
+  assertEquals(replies[1].text, "「今日はなし（実施せず）」の記録を取り消しました（未記録に戻しました）。");
+});
 
 Deno.test("handler: 送りました with Codmon and dropoff open asks which one and completes nothing", async () => {
   const { ctx, calls, replies } = fakeContext({ tasks: rows, defs });

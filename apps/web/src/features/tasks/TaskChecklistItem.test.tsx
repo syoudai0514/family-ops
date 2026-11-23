@@ -362,7 +362,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
   it('records a forgotten task as できなかった, apart from an open (未記録) one', async () => {
     render(<TaskChecklistItem {...props} task={makeAnyoneTask()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬をできなかったとして記録' }));
+    fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬を今日はなし（実施せず）として記録' }));
 
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
       operation_id: expect.any(String),
@@ -376,10 +376,10 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     const forgotten = { ...makeAnyoneTask(), status: 'skipped', outcome_reason: 'could_not_do' } as TaskInstance;
     render(<TaskChecklistItem {...props} hasPartner task={forgotten} />);
 
-    expect(screen.getByRole('img', { name: '詩乃（便秘）の薬：できなかった・記録済み' })).toBeInTheDocument();
-    expect(screen.getByText(/できなかった$/)).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '詩乃（便秘）の薬：今日はなし・実施せず記録済み' })).toBeInTheDocument();
+    expect(screen.getByText(/今日はなし（実施せず）$/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '相手が完了' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '詩乃（便秘）の薬をできなかったとして記録' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '詩乃（便秘）の薬を今日はなし（実施せず）として記録' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '記録を戻す' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', {
@@ -593,7 +593,7 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     render(<TaskChecklistItem {...props} task={unnecessary} subtasks={laundrySubtasks} />);
     expect(screen.getByRole('img', { name: '洗濯：記録済み' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '洗濯を完了にする' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '洗濯をできなかったとして記録' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '洗濯を今日はなし（実施せず）として記録' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '洗濯のチェック項目を開く' }));
     expect(screen.getByRole('checkbox', { name: '回す' })).toBeDisabled();
   });
@@ -640,7 +640,7 @@ it('keeps immediate undo available after a could-not-do row leaves the list, usi
     return <UndoNoticeProvider>{visible && <TaskChecklistItem {...props} task={makeAnyoneTask()} onChanged={() => setVisible(false)} />}</UndoNoticeProvider>;
   }
   render(<List />);
-  fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬をできなかったとして記録' }));
+  fireEvent.click(screen.getByRole('button', { name: '詩乃（便秘）の薬を今日はなし（実施せず）として記録' }));
   const undo = await screen.findByRole('button', { name: '元に戻す' });
   expect(screen.queryByText('詩乃（便秘）の薬', { exact: true })).not.toBeInTheDocument();
   fireEvent.click(undo);

@@ -55,7 +55,7 @@ function mark(row: TodayTaskRow, quiet: boolean): string {
 
 function line(row: TodayTaskRow, note = "", quiet = false): string {
   const time = jstClock(row.due_at);
-  const tail = row.status === "skipped" ? "（できなかった）" : note;
+  const tail = row.status === "skipped" ? "（今日はなし・実施せず）" : note;
   return `${mark(row, quiet)} ${time ? `${time} ` : ""}${row.display_title || row.title}${tail}`;
 }
 

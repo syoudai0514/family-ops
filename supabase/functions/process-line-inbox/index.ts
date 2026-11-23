@@ -2334,7 +2334,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     const labels: Record<string, string> = {
       complete: "✓ 完了にしました",
       partner_handled: "✓ 相手対応にしました",
-      failed: "✓ できなかったとして記録しました",
+      failed: "− 今日はなし（実施せず）として記録しました",
       skip: "✓ 今回は不要にしました",
       cancelled: "✓ 中止にしました",
       rescheduled: "✓ 明日に再予定しました",

@@ -33,7 +33,7 @@ export function buildItemQuickReply(sessionId: string, taskInstanceId: string): 
   return [
     mutation(sessionId, taskInstanceId, "complete", "完了"),
     mutation(sessionId, taskInstanceId, "partner_handled", "相手が対応"),
-    mutation(sessionId, taskInstanceId, "failed", "できなかった"),
+    mutation(sessionId, taskInstanceId, "failed", "今日はなし（実施せず）"),
     mutation(sessionId, taskInstanceId, "skip", "今回は不要"),
     mutation(sessionId, taskInstanceId, "cancelled", "中止"),
     mutation(sessionId, taskInstanceId, "rescheduled", "明日に再予定"),

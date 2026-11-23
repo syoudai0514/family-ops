@@ -131,6 +131,14 @@ Deno.test("prompt: a task recorded as できなかった is shown as such, not a
   assertEquals(prompt.includes('"type":"could_not_do"'), true);
 });
 
+Deno.test("prompt: 今日はなし requires a clear task and never treats later work as recorded", () => {
+  const prompt = buildUnderstandPrompt(snap(), "薬は今日はなし");
+  assertEquals(prompt.includes("今日はなし"), true);
+  assertEquals(prompt.includes("対象が明確で、実施しなかった・しないと本人が明言した場合だけ"), true);
+  assertEquals(prompt.includes("あとでやる」「まだ」「これからやる」は記録しない"), true);
+  assertEquals(prompt.includes("できなかった"), true);
+});
+
 Deno.test("yesterday: 「昨日の作業は？」 shows yesterday's list; a y-ref can be recorded, never by 「全部」", async () => {
   assertEquals(parsePlan('{"reply":"昨日のはこれだよ👇","actions":[{"type":"show_schedule","range":"yesterday"}],"confidence":"high"}')?.actions,
     [{ type: "show_schedule", range: "yesterday" }]);
