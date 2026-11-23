@@ -38,6 +38,12 @@ begin
 
   perform public.server_tx_complete_task(u1,gen_random_uuid(),
     (select id from public.task_instances where household_id=h and title='洗濯物を干す'),'self',false,'pwa');
+  -- The simulated dispatch is in 2027; both recipients have recorded work
+  -- within its preceding seven days. An unknown dropoff does not assign shared work.
+  insert into public.task_events(household_id,task_instance_id,actor_id,event_type,source,created_at)
+    select h,id,u1,'completed','pwa',at_0730-interval '1 day' from public.task_instances where household_id=h and title='洗濯物を干す';
+  insert into public.task_events(household_id,task_instance_id,actor_id,event_type,source,created_at)
+    select h,id,u2,'completed','pwa',at_0730-interval '1 day' from public.task_instances where household_id=h and title='洗濯物を干す';
 
   -- Nothing before the time, and nothing on a weekend.
   if public.server_tx_dispatch_morning_nudges(at_0730 - interval '31 minutes')<>0 then raise exception 'FAIL nudge before its time'; end if;
@@ -47,10 +53,10 @@ begin
   if n<>2 then raise exception 'FAIL expected 2 nudges, got %', n; end if;
   select body into body1 from public.user_notifications where recipient_user_id=u1 and type='morning_nudge';
   select body into body2 from public.user_notifications where recipient_user_id=u2 and type='morning_nudge';
-  if body1 not like E'%07:00 朝ごはん\n・07:00 食洗機を空ける（先に家を出る人）%' or body1 like '%体操着%' or body1 like '%洗濯物%'
+  if body1 not like '%07:00 朝ごはん%' or body1 like '%食洗機%' or body1 like '%体操着%' or body1 like '%洗濯物%'
      or body1 like '%コドモン%' or body1 like '%お風呂%' or body1 like '%窓拭き%' then
     raise exception 'FAIL papa nudge: %', body1; end if;
-  if body2 not like '%07:20 将生：体操着に着替える%' or body2 not like '%食洗機を空ける%' or body2 like '%朝ごはん%' then
+  if body2 not like '%07:20 将生：体操着に着替える%' or body2 like '%食洗機を空ける%' or body2 like '%朝ごはん%' then
     raise exception 'FAIL mama nudge: %', body2; end if;
   if (select count(*) from private.notification_outbox where household_id=h and type='morning_nudge' and channel='line')<>2 then
     raise exception 'FAIL expected a LINE message each'; end if;
