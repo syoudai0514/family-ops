@@ -26,7 +26,7 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
 
     const result = await callServerTx<{ ok: true; task_id: string; status: string; revision: number }>(
       serviceClient,
-      "server_tx_reopen_task",
+      "server_tx_reopen_task_with_checklist_undo_v1",
       {
         p_actor_id: actorId,
         p_operation_id: operationId,
@@ -87,13 +87,14 @@ Deno.serve(withUserMutationHandler(async (req: Request) => {
 
   const result = await callServerTx<{ ok: true }>(
     serviceClient,
-    "server_tx_complete_task",
+    "server_tx_complete_task_with_checklist_undo_v1",
     {
       p_actor_id: actorId,
       p_operation_id: operationId,
       p_task_id: taskId,
       p_completion_actor: completionActor,
       p_complete_remaining_subtasks: body["complete_remaining_subtasks"] === true,
+      p_source: "pwa",
     },
   );
 

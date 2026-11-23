@@ -108,6 +108,18 @@ describe('ticking several tasks and recording them together', () => {
     expect(screen.queryByRole('button', { name: '元に戻す' })).not.toBeInTheDocument();
   });
 
+  it('offers a checklist undo when the server saved its prior state', async () => {
+    const check: TaskSubtaskInstance = { id: 's1', household_id: 'household-1', task_instance_id: 't2', title: '干す', required: true, sort_order: 1, is_completed: false, completed_by: null, completed_at: null };
+    callEdgeFunction.mockResolvedValue({ ok: true, revision: 4, checklist_undo_available: true });
+    render(<List tasks={[task('t1', 'お風呂'), task('t2', '洗濯', { completion_mode: 'subtasks' })]} subtasks={{ t2: [check] }} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '当番を済みにする' }));
+    expect(await screen.findByText('2件を完了にしました')).toBeInTheDocument();
+    callEdgeFunction.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+    await waitFor(() => expect(callEdgeFunction.mock.calls.map((call) => call[1].task_id)).toEqual(['t1', 't2']));
+    expect(callEdgeFunction.mock.calls[1][1]).toEqual(expect.objectContaining({ action: 'reopen', expected_revision: 4 }));
+  });
+
   it('shows a result without an undo button when every completed task needs individual correction', async () => {
     const check: TaskSubtaskInstance = { id: 's1', household_id: 'household-1', task_instance_id: 't2', title: '干す', required: true, sort_order: 1, is_completed: false, completed_by: null, completed_at: null };
     render(<List tasks={[task('t2', '洗濯', { completion_mode: 'subtasks' })]} subtasks={{ t2: [check] }} onChanged={vi.fn()} />);
