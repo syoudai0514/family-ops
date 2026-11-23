@@ -95,11 +95,12 @@ Deno.test('notification worker sends bulk button only with its visible scope', a
         constructor(value?: string | number) { super(value ?? sunday); }
         static override now() { return sunday; }
       }
-      weekly = [{ offer_id: batchId, kind: 'rule', snapshot: {
+      const rule = {
         title: '朝の準備', strategy: 'fixed', phase: 'morning', weekday: 1, scheduled_local_time: '07:10:00',
         effective_from: '2026-11-01', effective_to: null, fallback_assignee_id: null,
         subtasks: [{ title: '体操着', required: true }],
-      } }];
+      };
+      weekly = [{ offer_id: batchId, kind: 'rule', snapshot: { ...rule, group_rules: [rule] } }];
       try {
         globalThis.Date = SundayDate as DateConstructor;
         const sent = await run();

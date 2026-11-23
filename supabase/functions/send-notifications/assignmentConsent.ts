@@ -24,13 +24,20 @@ export function consentOfferText(offer: Offer): string[] | null {
   const s = offer.snapshot;
   if (offer.kind === 'rule') {
     if (!short(s.title) || typeof s.strategy !== 'string' || !STRATEGY[s.strategy] || typeof s.phase !== 'string' || !PHASE[s.phase] ||
-      typeof s.weekday !== 'number' || s.weekday < 1 || s.weekday > 7 || !Number.isInteger(s.weekday) ||
-      !iso(s.effective_from) || !(s.effective_to === null || iso(s.effective_to)) || !Array.isArray(s.subtasks) || s.subtasks.length > 8) return null;
-    const at = time(s.scheduled_local_time);
-    if (!at) return null;
-    const fallback = s.fallback_assignee_id === null ? '' : '（担当が決まらない日は予備担当）';
-    const lines = [`「${s.title}」`, `毎週${DAY[s.weekday - 1]}曜 ${PHASE[s.phase]} ${at}`, `担当：${STRATEGY[s.strategy]}${fallback}`,
-      `期間：${s.effective_from}〜${s.effective_to ?? '終了日なし'}`];
+      !Array.isArray(s.group_rules) || s.group_rules.length < 1 || s.group_rules.length > 14 ||
+      !Array.isArray(s.subtasks) || s.subtasks.length > 8) return null;
+    if (s.fallback_assignee_id !== null && typeof s.recipient_is_fallback !== 'boolean') return null;
+    const fallback = s.fallback_assignee_id === null ? '' : s.recipient_is_fallback
+      ? '（担当が決まらない日はあなたが予備）' : '（担当が決まらない日は別の予備担当）';
+    const lines = [`「${s.title}」`, `担当：${STRATEGY[s.strategy]}${fallback}`];
+    for (const rule of s.group_rules) {
+      if (!obj(rule) || rule.title !== s.title || rule.strategy !== s.strategy || rule.phase !== s.phase ||
+        typeof rule.weekday !== 'number' || rule.weekday < 1 || rule.weekday > 7 || !Number.isInteger(rule.weekday) ||
+        !iso(rule.effective_from) || !(rule.effective_to === null || iso(rule.effective_to))) return null;
+      const at = time(rule.scheduled_local_time);
+      if (!at) return null;
+      lines.push(`毎週${DAY[rule.weekday - 1]}曜 ${PHASE[s.phase]} ${at}（${rule.effective_from}〜${rule.effective_to ?? '終了日なし'}）`);
+    }
     if (s.subtasks.length) {
       lines.push('内容：');
       for (const item of s.subtasks) {

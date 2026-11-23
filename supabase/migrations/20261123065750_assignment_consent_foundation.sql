@@ -62,10 +62,7 @@ begin
       -- Template-backed transport is agreed separately as a weekly plan.
       and r.transport_template_id is null
       and ((r.assignee_strategy='fixed' and r.planned_assignee_id=p_recipient_id)
-        or (r.assignee_strategy not in ('fixed','unassigned','anyone_adult') and exists(
-          select 1 from public.task_instances t where t.household_id=r.household_id and t.recurrence_rule_id=r.id
-            and t.planned_assignee_id=p_recipient_id and t.test_context_id is null
-            and t.scheduled_date between today and today+28)));
+        or r.assignee_strategy not in ('fixed','unassigned','anyone_adult'));
   elsif p_kind='transport' then
     select jsonb_build_object('template_id',t.id,'revision',t.revision,'valid_from',t.valid_from,
       'valid_to',t.valid_to,'created_by',t.created_by,
@@ -101,6 +98,32 @@ begin
 end $$;
 revoke all on function private.fn_has_assignment_consent_v1(uuid,uuid,text,uuid) from public,anon,authenticated,service_role;
 
+-- Group weekdays of the same chore and responsibility into one explicit
+-- offer. Every member keeps its own immutable snapshot for later checking.
+create function private.fn_assignment_consent_offer_snapshot_v1(
+  p_household uuid,p_recipient uuid,p_kind text,p_target uuid
+) returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare base jsonb; target public.recurrence_rules%rowtype; members jsonb;
+begin
+  base:=private.fn_assignment_consent_snapshot_v1(p_household,p_recipient,p_kind,p_target);
+  if base is null or p_kind<>'rule' then return base; end if;
+  select * into target from public.recurrence_rules where household_id=p_household and id=p_target;
+  if not found then return null; end if;
+  select coalesce(jsonb_agg(s.snapshot order by s.weekday,s.slot_key,s.id),'[]'::jsonb) into members
+  from (
+    select r.id,r.weekday,r.slot_key,private.fn_assignment_consent_snapshot_v1(p_household,p_recipient,'rule',r.id) snapshot
+    from public.recurrence_rules r where r.household_id=p_household and r.task_definition_id=target.task_definition_id
+      and r.assignee_strategy=target.assignee_strategy and r.created_by=target.created_by
+      and r.planned_assignee_id is not distinct from target.planned_assignee_id
+      and r.fallback_assignee_id is not distinct from target.fallback_assignee_id
+      and r.transport_template_id is null and r.active
+  ) s where s.snapshot is not null;
+  if jsonb_array_length(members)=0 or jsonb_array_length(members)>14 then return null; end if;
+  return base||jsonb_build_object('group_rules',members,
+    'recipient_is_fallback',target.fallback_assignee_id=p_recipient);
+end $$;
+revoke all on function private.fn_assignment_consent_offer_snapshot_v1(uuid,uuid,text,uuid) from public,anon,authenticated,service_role;
+
 -- Internal preparation; not yet connected to the weekly LINE scheduler.
 -- The recipient's membership row serializes duplicate preparations.
 create function public.server_tx_prepare_assignment_consent_v1(p_actor_id uuid,p_kind text,p_target_id uuid)
@@ -110,8 +133,13 @@ begin
   if p_actor_id is null or p_target_id is null or p_kind is null or p_kind not in ('rule','transport') then raise exception 'INVALID_INPUT'; end if;
   ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid;
   perform 1 from public.household_members where household_id=hh and user_id=p_actor_id for update;
-  v_snapshot:=private.fn_assignment_consent_snapshot_v1(hh,p_actor_id,p_kind,p_target_id);
+  v_snapshot:=private.fn_assignment_consent_offer_snapshot_v1(hh,p_actor_id,p_kind,p_target_id);
   if v_snapshot is null then return jsonb_build_object('ok',false,'unavailable',true); end if;
+  if p_kind='rule' and v_snapshot->>'strategy'<>'fixed' and not exists(
+    select 1 from public.task_instances t where t.household_id=hh and t.recurrence_rule_id=p_target_id and t.test_context_id is null
+      and t.planned_assignee_id=p_actor_id and t.scheduled_date between (now() at time zone 'Asia/Tokyo')::date
+        and (now() at time zone 'Asia/Tokyo')::date+28
+  ) then return jsonb_build_object('ok',false,'unavailable',true); end if;
   if private.fn_has_assignment_consent_v1(hh,p_actor_id,p_kind,p_target_id) then
     return jsonb_build_object('ok',false,'already_agreed',true);
   end if;
@@ -132,14 +160,15 @@ grant execute on function public.server_tx_prepare_assignment_consent_v1(uuid,te
 -- acceptance on the next check even if a writer reuses a numeric version.
 create function public.server_tx_accept_assignment_consent_v1(p_actor_id uuid,p_offer_id uuid)
 returns jsonb language plpgsql security definer set search_path='' as $$
-declare ctx jsonb; hh uuid; offer private.assignment_consent_offers%rowtype; v_snapshot jsonb; definition_id uuid;
+declare ctx jsonb; hh uuid; offer private.assignment_consent_offers%rowtype; v_snapshot jsonb; definition_id uuid; member jsonb;
 begin
   if p_actor_id is null or p_offer_id is null then raise exception 'INVALID_INPUT'; end if;
   ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid;
   select * into offer from private.assignment_consent_offers where id=p_offer_id and household_id=hh and recipient_id=p_actor_id for update;
   if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
   if offer.status='agreed' then
-    if private.fn_has_assignment_consent_v1(hh,p_actor_id,offer.kind,offer.target_id) then
+    if private.fn_has_assignment_consent_v1(hh,p_actor_id,offer.kind,offer.target_id)
+      and private.fn_assignment_consent_offer_snapshot_v1(hh,p_actor_id,offer.kind,offer.target_id)=offer.snapshot then
       return jsonb_build_object('ok',true,'already_agreed',true);
     end if;
     return jsonb_build_object('ok',false,'stale',true);
@@ -148,16 +177,27 @@ begin
   if offer.kind='rule' then
     select task_definition_id into definition_id from public.recurrence_rules where household_id=hh and id=offer.target_id;
     perform 1 from public.task_definitions where household_id=hh and id=definition_id for no key update;
-    perform 1 from public.recurrence_rules where household_id=hh and id=offer.target_id for no key update;
+    perform 1 from public.recurrence_rules where household_id=hh
+      and id in (select (x->>'rule_id')::uuid from jsonb_array_elements(offer.snapshot->'group_rules') x)
+      order by id for no key update;
   else
     perform 1 from public.transport_weekly_templates where household_id=hh and id=offer.target_id for no key update;
   end if;
-  v_snapshot:=private.fn_assignment_consent_snapshot_v1(hh,p_actor_id,offer.kind,offer.target_id);
+  v_snapshot:=private.fn_assignment_consent_offer_snapshot_v1(hh,p_actor_id,offer.kind,offer.target_id);
   if v_snapshot is distinct from offer.snapshot then return jsonb_build_object('ok',false,'stale',true); end if;
-  insert into private.assignment_consents(household_id,recipient_id,kind,target_id,snapshot,offer_id)
-  values(hh,p_actor_id,offer.kind,offer.target_id,offer.snapshot,offer.id)
-  on conflict(household_id,recipient_id,kind,target_id) do update
-    set snapshot=excluded.snapshot,offer_id=excluded.offer_id,agreed_at=now();
+  if offer.kind='rule' then
+    for member in select value from jsonb_array_elements(offer.snapshot->'group_rules') loop
+      insert into private.assignment_consents(household_id,recipient_id,kind,target_id,snapshot,offer_id)
+      values(hh,p_actor_id,'rule',(member->>'rule_id')::uuid,member,offer.id)
+      on conflict(household_id,recipient_id,kind,target_id) do update
+        set snapshot=excluded.snapshot,offer_id=excluded.offer_id,agreed_at=now();
+    end loop;
+  else
+    insert into private.assignment_consents(household_id,recipient_id,kind,target_id,snapshot,offer_id)
+    values(hh,p_actor_id,offer.kind,offer.target_id,offer.snapshot,offer.id)
+    on conflict(household_id,recipient_id,kind,target_id) do update
+      set snapshot=excluded.snapshot,offer_id=excluded.offer_id,agreed_at=now();
+  end if;
   update private.assignment_consent_offers set status='agreed',responded_at=now() where id=offer.id;
   return jsonb_build_object('ok',true);
 end $$;
@@ -197,7 +237,7 @@ begin
   else
     perform 1 from public.transport_weekly_templates where household_id=hh and id=offer.target_id for no key update;
   end if;
-  snapshot:=private.fn_assignment_consent_snapshot_v1(hh,p_actor_id,offer.kind,offer.target_id);
+  snapshot:=private.fn_assignment_consent_offer_snapshot_v1(hh,p_actor_id,offer.kind,offer.target_id);
   if snapshot is distinct from offer.snapshot then return jsonb_build_object('ok',false,'stale',true); end if;
   if p_action='change' then
     -- Historical created_by is not reliable evidence of the latest editor.
@@ -310,6 +350,9 @@ begin
             and r.effective_from<=day_jst+28 and (r.effective_to is null or r.effective_to>=day_jst)
             and r.assignee_strategy in ('fixed','dropoff_assignee','pickup_assignee','nonpickup_adult',
               'next_day_nondropoff_adult','previous_evening_assignee')
+            and (r.assignee_strategy='fixed' or exists(select 1 from public.task_instances t
+              where t.household_id=hh and t.recurrence_rule_id=r.id and t.test_context_id is null
+                and t.planned_assignee_id=p_actor_id and t.scheduled_date between day_jst and day_jst+28))
             -- The LINE proposal must show all of the work being agreed to.
             and char_length(d.title)<=120
             and (select count(*) from public.task_subtask_definitions s where s.household_id=hh and s.task_definition_id=d.id and s.is_active)<=8
@@ -334,7 +377,7 @@ begin
   select coalesce(jsonb_agg(jsonb_build_object('offer_id',o.id,'kind',o.kind,'snapshot',o.snapshot) order by x.ord),'[]'::jsonb)
     into result from unnest(ids) with ordinality x(id,ord)
     join private.assignment_consent_offers o on o.id=x.id and o.household_id=hh and o.recipient_id=p_actor_id
-    where o.status='pending' and o.snapshot=private.fn_assignment_consent_snapshot_v1(hh,p_actor_id,o.kind,o.target_id);
+    where o.status='pending' and o.snapshot=private.fn_assignment_consent_offer_snapshot_v1(hh,p_actor_id,o.kind,o.target_id);
   return result;
 end $$;
 revoke all on function public.server_tx_prepare_weekly_assignment_consent_v1(uuid,uuid,timestamptz) from public,anon,authenticated;
@@ -494,8 +537,22 @@ end $$;
 -- caller just chose these exact contents. Historical created_by is not proof.
 create function private.fn_record_self_assignment_consent_v1(p_actor uuid,p_kind text,p_target uuid)
 returns void language plpgsql security definer set search_path='' as $$
-declare proposal jsonb; accepted jsonb;
+declare proposal jsonb; accepted jsonb; ctx jsonb; hh uuid; own_snapshot jsonb; offer_id uuid;
 begin
+  if p_kind='rule' then
+    ctx:=private.fn_require_production_actor_context_v1(p_actor); hh:=(ctx->>'household_id')::uuid;
+    own_snapshot:=private.fn_assignment_consent_snapshot_v1(hh,p_actor,'rule',p_target);
+    if own_snapshot is null or own_snapshot->>'strategy'<>'fixed' or own_snapshot->>'assignee_id'<>p_actor::text
+      or own_snapshot->>'created_by'<>p_actor::text then return; end if;
+    -- A save proves this specific new rule, not older grouped rules.
+    insert into private.assignment_consent_offers(household_id,recipient_id,kind,target_id,snapshot,status,responded_at)
+      values(hh,p_actor,'rule',p_target,own_snapshot,'agreed',now()) returning id into offer_id;
+    insert into private.assignment_consents(household_id,recipient_id,kind,target_id,snapshot,offer_id)
+      values(hh,p_actor,'rule',p_target,own_snapshot,offer_id)
+      on conflict(household_id,recipient_id,kind,target_id) do update
+        set snapshot=excluded.snapshot,offer_id=excluded.offer_id,agreed_at=now();
+    return;
+  end if;
   proposal:=public.server_tx_prepare_assignment_consent_v1(p_actor,p_kind,p_target);
   if proposal->>'ok'='true' then
     accepted:=public.server_tx_accept_assignment_consent_v1(p_actor,(proposal->>'offer_id')::uuid);

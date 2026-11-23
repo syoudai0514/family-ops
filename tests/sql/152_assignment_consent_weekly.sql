@@ -3,7 +3,7 @@ begin;
 do $$
 declare
   a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid(); h uuid; h2 uuid; token text;
-  def uuid; note uuid; note2 uuid; first_offer uuid; first_items jsonb; r jsonb; i int;
+  def uuid; note uuid; note2 uuid; first_offer uuid; second_offer uuid; first_items jsonb; r jsonb; i int;
   today date:=(now() at time zone 'Asia/Tokyo')::date;
   sunday date:=today+(7-extract(isodow from today)::integer);
   fake_now timestamptz;
@@ -33,9 +33,18 @@ begin
   if first_items is distinct from public.server_tx_prepare_weekly_assignment_consent_v1(b,note,fake_now) then raise exception 'retry changed weekly cards'; end if;
   if public.server_tx_prepare_weekly_assignment_consent_v1(b,note2,fake_now)<>'[]'::jsonb then raise exception 'second weekly round'; end if;
   first_offer:=(first_items->0->>'offer_id')::uuid;
+  if jsonb_array_length(first_items#>'{0,snapshot,group_rules}')<>2 then raise exception 'weekdays were not grouped'; end if;
   perform public.server_tx_accept_assignment_consent_v1(b,first_offer);
+  if exists(select 1 from jsonb_array_elements(first_items#>'{0,snapshot,group_rules}') x
+    where not private.fn_has_assignment_consent_v1(h,b,'rule',(x->>'rule_id')::uuid)) then raise exception 'accepted group missed a weekday'; end if;
   r:=public.server_tx_prepare_weekly_assignment_consent_v1(b,note,fake_now);
   if jsonb_array_length(r)<>2 then raise exception 'already answered card was resent'; end if;
+  second_offer:=(first_items->1->>'offer_id')::uuid;
+  update public.recurrence_rules set scheduled_local_time='09:30'
+    where id=(first_items#>>'{1,snapshot,group_rules,1,rule_id}')::uuid;
+  if (public.server_tx_accept_assignment_consent_v1(b,second_offer)->>'stale')<>'true' then raise exception 'changed grouped rule was accepted'; end if;
+  if exists(select 1 from jsonb_array_elements(first_items#>'{1,snapshot,group_rules}') x
+    where private.fn_has_assignment_consent_v1(h,b,'rule',(x->>'rule_id')::uuid)) then raise exception 'stale group partly accepted'; end if;
   if has_function_privilege('authenticated','public.server_tx_prepare_weekly_assignment_consent_v1(uuid,uuid,timestamptz)','execute') then raise exception 'public weekly preparation'; end if;
 end $$;
 rollback;

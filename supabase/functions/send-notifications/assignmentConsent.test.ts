@@ -3,17 +3,20 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { buildConsentCarousel, consentOfferText, loadConsentCarousel } from './assignmentConsent.ts';
 
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const offer = { offer_id: id, kind: 'rule' as const, snapshot: { title: '準備', strategy: 'dropoff_assignee', phase: 'morning', weekday: 1,
+const rule = { title: '準備', strategy: 'dropoff_assignee', phase: 'morning', weekday: 1,
   scheduled_local_time: '07:10:00', effective_from: '2026-11-01', effective_to: null, fallback_assignee_id: null,
-  subtasks: [{ title: '体操着', required: true }, { title: '余裕があれば', required: false }] } };
+  subtasks: [{ title: '体操着', required: true }, { title: '余裕があれば', required: false }] };
+const offer = { offer_id: id, kind: 'rule' as const, snapshot: { ...rule, group_rules: [rule, { ...rule, weekday: 3, scheduled_local_time: '07:30:00' }] } };
 
 Deno.test('proposal shows exact weekday, role, dates and all subtasks; buttons use its own offer id', () => {
   const lines = consentOfferText(offer)!;
   assertStringIncludes(lines.join('\n'), '月曜 朝 07:10');
+  assertStringIncludes(lines.join('\n'), '水曜 朝 07:30');
   assertStringIncludes(lines.join('\n'), '送りを担当する人');
   assertStringIncludes(lines.join('\n'), '2026-11-01〜終了日なし');
   assertStringIncludes(lines.join('\n'), '・体操着');
   assertStringIncludes(lines.join('\n'), '・余裕があれば（任意）');
+  assertStringIncludes(consentOfferText({ ...offer, snapshot: { ...offer.snapshot, fallback_assignee_id: id, recipient_is_fallback: true } })!.join('\n'), 'あなたが予備');
   const text = JSON.stringify(buildConsentCarousel([offer]));
   for (const answer of ['agree', 'change', 'later']) assertStringIncludes(text, `offer_id=${id}&answer=${answer}`);
 });
