@@ -387,13 +387,13 @@ export async function couldNotDoAndReply(
     await ctx.reply(
       message.includes("TASK_TERMINAL")
         ? `${name}はすでに完了か取り消しになっています。`
-        : `${name}を「できなかった」にできませんでした。Todayから操作してください。`,
+        : `${name}を「今日はなし（実施せず）」として記録できませんでした。アプリから操作してください。`,
       [TODAY_QUICK_REPLY],
     );
     return;
   }
   await ctx.reply(
-    `− ${name}は今日は「できなかった」で記録しました（未記録とは別に残ります）。`,
+    `− ${name}は「今日はなし（実施せず）」で記録しました（未記録とは別に残ります）。`,
     [quickPostback("取り消す", `action=could_not_do_undo&task_id=${taskId}`), TODAY_QUICK_REPLY],
   );
 }
@@ -411,7 +411,7 @@ export async function undoCouldNotDoAndReply(ctx: CompletionContext, taskId: str
     await ctx.reply("元に戻せませんでした。すでに状態が変わっている可能性があります。Todayで確認してください。", [TODAY_QUICK_REPLY]);
     return;
   }
-  await ctx.reply("「できなかった」を取り消しました（未完了に戻しました）。", [TODAY_QUICK_REPLY]);
+  await ctx.reply("「今日はなし（実施せず）」の記録を取り消しました（未記録に戻しました）。", [TODAY_QUICK_REPLY]);
 }
 
 export async function reopenTaskAndReply(ctx: CompletionContext, taskId: string, revision: number, operationId: string): Promise<void> {

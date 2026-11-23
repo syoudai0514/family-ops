@@ -87,7 +87,7 @@ async function recentTasks(ctx: LineMustCompleteContext, day: string): Promise<R
 }
 
 function taskStatus(row: Row): string {
-  return row.status === "completed" ? "完了済み" : row.status === "skipped" ? row.outcome_reason === "could_not_do" ? "できなかった" : "今回は不要など" : "未完了";
+  return row.status === "completed" ? "完了済み" : row.status === "skipped" ? row.outcome_reason === "could_not_do" ? "今日はなし（実施せず）" : "今回は不要など" : "未完了";
 }
 export async function handleDailyInputPostback(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<boolean> {
   if (!["mc_input_open", "mc_input_tasks", "mc_input_task", "mc_input_undo_failed", "mc_input_complete", "mc_input_children", "mc_input_uncheck"].includes(fields.action)) return false;
@@ -113,7 +113,7 @@ export async function handleDailyInputPostback(ctx: LineMustCompleteContext, fie
       p_actor_id: ctx.actorId, p_operation_id: op, p_task_id: fields.task_id,
       p_expected_revision: Number(fields.revision), p_day: day,
     });
-    await ctx.reply(error ? "訂正結果を確認できませんでした。最新の記録を開いて確認してください。" : `${day}の「できなかった」を未完了に戻しました。`,
+    await ctx.reply(error ? "訂正結果を確認できませんでした。最新の記録を開いて確認してください。" : `${day}の「今日はなし（実施せず）」を未記録に戻しました。`,
       [button("記録を確認", "mc_input_tasks", { day, page: "0" })]);
     return true;
   }
@@ -182,7 +182,7 @@ export async function handleDailyInputPostback(ctx: LineMustCompleteContext, fie
   if (task.status === "completed" && task.completion_mode !== "subtasks") actions.push(button("未完了に戻す", "reopen_task", { task_id: taskId, revision: String(task.revision) }));
   else if (task.status === "skipped" && task.outcome_reason === "could_not_do") {
     // The canonical six-argument undo preserves a later partner revision.
-    actions.push(button("できなかったを訂正", "mc_input_undo_failed", { task_id: taskId, revision: String(task.revision), day }));
+    actions.push(button("今日はなしを訂正", "mc_input_undo_failed", { task_id: taskId, revision: String(task.revision), day }));
   } else if (task.status === "todo" || task.status === "in_progress") {
     const definition = task.task_definitions as Row | null;
     const codmon = definition?.code === "codmon_submit";

@@ -368,7 +368,7 @@ export function TaskChecklistItem({
       result => {
         if (undo || !Number.isSafeInteger(result.revision)) return;
         const revision = result.revision!;
-        offerUndo({ label: `${taskTitle}をできなかったと記録しました`, undo: async () => {
+        offerUndo({ label: `${taskTitle}を「今日はなし（実施せず）」と記録しました`, undo: async () => {
           await runCommand(`task:${task.id}:could-not-do:undo:r${revision}`, EDGE_FUNCTIONS.completeTask, operation_id => ({ operation_id, task_id: task.id, action: 'could_not_do_undo', expected_revision: revision }));
           await onChanged();
         } });
@@ -377,7 +377,7 @@ export function TaskChecklistItem({
   }
 
   function handleCancel() {
-    // Deleting cannot be undone (unlike 完了/できなかった), so ask once.
+    // Deleting cannot be undone (unlike 完了/今日はなし), so ask once.
     if (
       !window.confirm(
         `「${taskTitle}」を削除しますか？\n削除すると元に戻せません。予定ならカレンダーからも消えます。`,
@@ -509,9 +509,9 @@ export function TaskChecklistItem({
     }
   }
 
-  const resultLabel = completed ? '' : couldNotDo ? 'できなかった' : finished ? '記録済み' : '';
+  const resultLabel = completed ? '' : couldNotDo ? '今日はなし（実施せず）' : finished ? '記録済み' : '';
   const taskContent = <>
-    <strong>{taskTitle}</strong>{specialToday && <span className="status-chip">⭐ 今日、忘れずに</span>}
+    <strong>{taskTitle}</strong>{specialToday && <span className="status-chip">⭐ 今日だけの予定</span>}
     <span className="task-item-meta">
       {showTime && task.due_at ? `${localClock(task.due_at)} · ` : ''}
       {assigneeLabel(task, members)}
@@ -527,7 +527,7 @@ export function TaskChecklistItem({
     <li id={`task-${task.id}`} className={['task-item', 'task-checklist-item', completed ? 'completed' : '', couldNotDo ? 'could-not-do' : '', partnersTask ? 'task-owner-partner' : '', compact ? 'task-compact' : '', selectable ? 'task-selectable' : '', selected ? 'task-selected' : ''].filter(Boolean).join(' ')}>
       <div className="task-checklist-main">
         {selectable ? (
-          <label className="task-select" title="選んでから、下の「完了」「できなかった」でまとめて記録します">
+          <label className="task-select" title="選んでから、下の「完了」「今日はなし」でまとめて記録します">
             <input
               type="checkbox"
               checked={selected}
@@ -538,7 +538,7 @@ export function TaskChecklistItem({
           </label>
         ) : (
           <span className="task-result-icon" role="img"
-            aria-label={`${taskTitle}：${completed ? '完了済み' : couldNotDo ? 'できなかった・記録済み' : finished ? '記録済み' : '未記録'}`}>
+            aria-label={`${taskTitle}：${completed ? '完了済み' : couldNotDo ? '今日はなし・実施せず記録済み' : finished ? '記録済み' : '未記録'}`}>
             {completed ? '✓' : finished ? '−' : '○'}
           </span>
         )}
@@ -559,7 +559,7 @@ export function TaskChecklistItem({
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
-            {compact && !finished && <button type="button" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${taskTitle}をできなかったとして記録`}>できなかった</button>}
+            {compact && !finished && <button type="button" className="task-action task-action-missed" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${taskTitle}を今日はなし（実施せず）として記録`}>今日はなし（実施せず）</button>}
             {compact && hasPartner && !partnersTask && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && <button type="button" disabled={busy} onClick={() => handleComplete('partner')} aria-label={`${partnerLabel}が完了`}>{partnerLabel}がやった</button>}
             {/* A recorded task is one quiet line; undo lives here (owner 2026-10-10: a list of done
                 cards each with a button was hard to read). */}
@@ -681,9 +681,9 @@ export function TaskChecklistItem({
 
           {!compact && !finished && (
             <button type="button" className="task-action task-action-missed" onClick={() => handleCouldNotDo()} disabled={busy}
-              aria-label={`${taskTitle}をできなかったとして記録`}
-              title="忘れた・間に合わなかった作業を、この日の記録として確定します">
-              できなかった
+              aria-label={`${taskTitle}を今日はなし（実施せず）として記録`}
+              title="実施しなかったことを、この日の記録として残します">
+              今日はなし（実施せず）
             </button>
           )}
 

@@ -217,7 +217,7 @@ export function describeCode(code: string): string {
     case "TASK_REOPEN_USE_SUBTASKS":
       return "チェック項目を外すと未完了に戻せます";
     case "TASK_NOT_COULD_NOT_DO":
-      return "この項目は「できなかった」になっていません。最新の状態を確認してください";
+      return "この項目は「今日はなし（実施せず）」になっていません。最新の状態を確認してください";
     case "REQUEST_NOT_PENDING":
       return "このお願いは既に対応済みです";
     case "REQUEST_NOT_RECIPIENT":

@@ -14,7 +14,7 @@ import { getTaskDisplay } from '../tasks/taskDisplay';
 
 const OUTCOME_LABELS: Record<PlannedVsActualOutcome, string> = {
   completed_on_time: '完了（期限内）', completed_late: '完了（期限超過）', not_needed: '今回は不要',
-  could_not_do: 'できなかった', expired_occurrence: '期限終了', waiting: '待ち', cancelled: 'キャンセル',
+  could_not_do: '今日はなし（実施せず）', expired_occurrence: '期限終了', waiting: '待ち', cancelled: 'キャンセル',
   overdue_open: '未完了（期限超過）', in_progress: '進行中', upcoming: '予定',
 };
 

@@ -1572,6 +1572,7 @@ input[type="time"]::-webkit-date-and-time-value, input[type="date"]::-webkit-dat
 .today-dashboard .task-compact .task-item-meta,
 .task-compact .task-item-meta { margin: 0; line-height: 1.35; }
 .task-checklist-item.task-compact .task-action { min-height: 40px; padding: .3rem .6rem; }
+.task-checklist-item.task-compact .task-overflow .task-action-missed { min-height: 44px; }
 .task-compact .task-select { min-height: 40px; margin-top: 0; }
 .task-compact .task-overflow summary { min-height: 40px; }
 /* The list inside a card needs no extra bottom room (the mobile scroll padding left a blank strip). */

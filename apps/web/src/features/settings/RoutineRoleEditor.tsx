@@ -478,7 +478,7 @@ function RoutineSheet({ item, members, memberLabel, onCancel, onSaved, onSavingC
           )}
         </>
       )}
-      <label className="inline-check"><input type="checkbox" checked={draft.optional} onChange={(e) => set({ optional: e.target.checked })} />余裕があれば（やらなくても「できなかった」にしない）</label>
+      <label className="inline-check"><input type="checkbox" checked={draft.optional} onChange={(e) => set({ optional: e.target.checked })} />余裕があれば（やらなくても「今日はなし」にしない）</label>
       <div className="routine-sheet-subtasks">
         <p className="routine-role-hint">チェック項目（任意）</p>
         {draft.subtasks.map((subtask, index) => (

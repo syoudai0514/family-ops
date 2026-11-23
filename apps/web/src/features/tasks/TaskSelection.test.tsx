@@ -151,8 +151,8 @@ describe('ticking several tasks and recording them together', () => {
   it('records ticked tasks as できなかった with the row revision', async () => {
     render(<List tasks={[task('t1', 'お風呂'), task('t2', '洗濯')]} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole('checkbox', { name: '洗濯を選ぶ' }));
-    fireEvent.click(screen.getByRole('button', { name: 'できなかった' }));
-    expect(await screen.findByText('1件をできなかったにしました')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '今日はなし（実施せず）' }));
+    expect(await screen.findByText('1件を今日はなしにしました')).toBeInTheDocument();
     expect(callEdgeFunction).toHaveBeenCalledWith('complete-task', expect.objectContaining({ task_id: 't2', action: 'could_not_do', expected_revision: 3 }));
   });
 

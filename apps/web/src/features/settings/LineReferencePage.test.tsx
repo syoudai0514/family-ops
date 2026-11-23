@@ -20,7 +20,7 @@ describe('LineReferencePage', () => {
   it('states that seven individual outcomes share canonical truth across PWA and LINE', () => {
     render(<MemoryRouter><LineReferencePage /></MemoryRouter>);
 
-    expect(screen.getByText(/完了・相手が対応・できなかった・今回は不要・中止・再予定・不明/)).toBeInTheDocument();
+    expect(screen.getByText(/完了・相手が対応・今日はなし・今回は不要・中止・再予定・不明/)).toBeInTheDocument();
     expect(screen.getByText(/別の実績コピーは作りません/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'PWAで入力する' })).toHaveAttribute('href', '/today?entry=checkin');
     expect(screen.getByRole('link', { name: '履歴で結果を確認' })).toHaveAttribute('href', '/history');

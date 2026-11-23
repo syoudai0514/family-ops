@@ -599,7 +599,7 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     const missed = tasks.filter((task) => task.status === 'skipped');
     const done = tasks.filter((task) => task.status !== 'skipped');
     return [
-      { label: 'できなかった', tasks: missed },
+      { label: '今日はなし', tasks: missed },
       { label: '朝', tasks: done.filter((task) => task.routine_phase === 'morning') },
       { label: '日中・いつでも', tasks: done.filter((task) => task.routine_phase !== 'morning' && task.routine_phase !== 'evening') },
       { label: '夜', tasks: done.filter((task) => task.routine_phase === 'evening') },
@@ -617,11 +617,11 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
           className="collapsible-toggle"
           onClick={() => setCompletedCollapsed((value) => !value)}
         >
-          記録済み（{completedTasks.length}件{couldNotDoCount > 0 ? `・できなかった${couldNotDoCount}件` : ''}）{completedCollapsed ? '▼' : '▲'}
+          記録済み（{completedTasks.length}件{couldNotDoCount > 0 ? `・今日はなし${couldNotDoCount}件` : ''}）{completedCollapsed ? '▼' : '▲'}
         </button>
         {!completedCollapsed && (
           <>
-            <p className="empty-hint">✓＝完了、−＝できなかった。押し間違えは各行の「•••」から戻せます。</p>
+            <p className="empty-hint">✓＝完了、−＝今日はなし（実施せず）。押し間違えは各行の「•••」から戻せます。</p>
             {completedGroups(completedTasks).map((group) => (
               <div className="completed-group" key={group.label}>
                 <h3 className="completed-group-heading">{group.label}<span>{group.tasks.length}件</span></h3>

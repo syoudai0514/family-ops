@@ -9,7 +9,7 @@ export const OUTCOME_CHOICES = [
   },
   {
     title: '予定は正しいが、今回はやらなかった',
-    description: '「できなかった」または「今回は不要」を結果として記録します。項目の存在自体は消しません。',
+    description: '「今日はなし」は実施せずの記録、「今回は不要」は不要だった記録です。項目の存在自体は消しません。',
     to: '/today?entry=checkin',
     action: 'Check-inで結果を選ぶ',
   },
@@ -49,7 +49,7 @@ export function OutcomeSemanticsPage() {
       </section>
       <section className="card">
         <h2>履歴は消さない</h2>
-        <p>キャンセル・できなかった・今回は不要・再予定は別の結果として残ります。訂正しても、前の記録は消えません。</p>
+        <p>キャンセル・今日はなし・今回は不要・再予定は別の結果として残ります。訂正しても、前の記録は消えません。</p>
       </section>
     </main>
   );

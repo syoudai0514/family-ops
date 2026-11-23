@@ -25,7 +25,7 @@ Deno.test("pickNextUnfinished returns null once no unfinished items remain", () 
 Deno.test("Q64 LINE item menu exposes all seven canonical outcomes plus non-mutating next", () => {
   const actions = buildItemQuickReply("session-1", "task-1");
   assertEquals(actions.length, 8);
-  assertEquals(actions.map((a) => a.label), ["完了", "相手が対応", "できなかった", "今回は不要", "中止", "明日に再予定", "不明", "次へ"]);
+  assertEquals(actions.map((a) => a.label), ["完了", "相手が対応", "今日はなし（実施せず）", "今回は不要", "中止", "明日に再予定", "不明", "次へ"]);
   assertEquals(actions.slice(0, 7).map((a) => new URLSearchParams(a.data).get("value")), ["complete", "partner_handled", "failed", "skip", "cancelled", "rescheduled", "unknown"]);
   assertEquals(actions[7].data, "action=routine_item_next&session_id=session-1&task_instance_id=task-1");
   for (const action of actions) {

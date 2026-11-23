@@ -77,7 +77,7 @@ const GROUP_ORDER: Array<{ key: string; title: string; hint?: string; anchor?: s
   { key: 'anyone_adult', title: '誰でもOK', hint: '手が空いている人がやる' },
   { key: 'unassigned', title: '担当を決めていない' },
   { key: 'mixed', title: '曜日で担当が変わる' },
-  { key: 'optional', title: '余裕があれば', hint: 'やらなくても「できなかった」にならない' },
+  { key: 'optional', title: '余裕があれば', hint: 'やらなくても「今日はなし」にならない' },
   { key: 'noschedule', title: '曜日が決まっていない' },
   { key: 'stopped', title: '止めている定例', hint: '今は作られません。押すと再開できます' },
 ];

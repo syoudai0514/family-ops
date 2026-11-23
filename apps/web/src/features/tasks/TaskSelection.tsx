@@ -5,7 +5,7 @@ import { FamilyOpsApiError } from '../../lib/apiClient';
 /**
  * Tick several tasks, then record them together (owner 2026-10-10).
  *
- * Ticking a box only selects; nothing is saved until 完了 or できなかった is
+ * Ticking a box only selects; nothing is saved until 完了 or 今日はなし is
  * pressed in the bar, so a family member can tick quickly without waiting for
  * the network after each tap. Each row registers how it records itself, so the
  * bar reuses the row's own command, idempotency key and completion rules.
@@ -114,7 +114,7 @@ export function TaskSelectionProvider({
           ? `。${undos.length}件は元に戻せます。残りは個別に確認してください。`
           : '。修正するときは個別に確認してください。';
         offerUndo({
-          label: `${done.length}件を${outcome === 'complete' ? '完了' : 'できなかった'}にしました${undoGuidance}`,
+          label: `${done.length}件を${outcome === 'complete' ? '完了' : '今日はなし'}にしました${undoGuidance}`,
           ...(undos.length > 0 ? { undo: async () => {
             const failedUndos: Array<() => Promise<void>> = [];
             for (const undo of pendingUndos) {
@@ -158,7 +158,7 @@ export function TaskSelectionProvider({
                   {busy ? '記録中…' : '✓ 完了'}
                 </button>
                 <button type="button" className="task-action task-action-missed" disabled={busy} onClick={() => void runTasks(live, 'could_not_do')}>
-                  できなかった
+                  今日はなし（実施せず）
                 </button>
                 <button type="button" className="text-button" disabled={busy} onClick={() => { setSelected([]); setFailures([]); }}>
                   選択を解除
