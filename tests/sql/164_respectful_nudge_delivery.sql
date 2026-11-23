@@ -2,7 +2,7 @@
 begin;
 do $$
 declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; own uuid; shared uuid; transport uuid; td uuid;
-  day date:=(now() at time zone 'Asia/Tokyo')::date; actor_out uuid; bundle_out uuid; legacy_bundle uuid; empty_out uuid;
+  day date:=(now() at time zone 'Asia/Tokyo')::date; actor_out uuid; bundle_out uuid; legacy_bundle uuid; empty_out uuid; retry_out uuid; reservation uuid;
   suba uuid; subb uuid; pusha uuid; pushb uuid; rows jsonb; row jsonb; p record; found_push boolean:=false;
 begin
   update private.notification_outbox set status='dead',lease_owner=null,lease_token=null,lease_until=null where status in ('queued','sending');
@@ -35,6 +35,15 @@ begin
   insert into private.notification_outbox(household_id,recipient_user_id,channel,type,payload,dedup_key,priority,business_expires_at)
     values(h,b,'line','morning_nudge',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('title','⏰ 朝の残り','body','古い内容'))),
       'morning-nudge:'||day||':empty','normal',now()+interval '1 hour') returning id into empty_out;
+  insert into private.notification_outbox(household_id,recipient_user_id,channel,type,payload,dedup_key,priority,business_expires_at,
+      attempts,provider_retry_key,provider_first_attempt_at,provider_retry_expires_at)
+    values(h,b,'line','morning_nudge',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('title','⏰ 朝の残り','body','古い内容'))),
+      'morning-nudge:'||day||':retry','normal',now()+interval '1 hour',1,gen_random_uuid(),now()-interval '1 minute',now()+interval '1 hour') returning id into retry_out;
+  insert into private.line_quota_state(billing_month,provider_limit,provider_consumed) values(date_trunc('month',day)::date,200,0)
+    on conflict(billing_month) do nothing;
+  insert into private.line_quota_reservations(billing_month,notification_outbox_id,status,provider_consumed_snapshot)
+    values(date_trunc('month',day)::date,retry_out,'reserved',0) returning id into reservation;
+  update private.notification_outbox set quota_reservation_id=reservation where id=retry_out;
   insert into private.web_push_subscriptions(household_id,user_id,endpoint,p256dh,auth)
     values(h,a,'https://example.test/nudge-a',repeat('a',20),repeat('b',8)) returning id into suba;
   insert into private.web_push_subscriptions(household_id,user_id,endpoint,p256dh,auth)
@@ -56,6 +65,10 @@ begin
     then raise exception 'legacy bundled notice lost: %',row; end if;
   if exists(select 1 from jsonb_array_elements(rows) where value->>'id'=empty_out::text)
     or (select status from private.notification_outbox where id=empty_out)<>'fallback' then raise exception 'no-recording nudge delivered'; end if;
+  if exists(select 1 from jsonb_array_elements(rows) where value->>'id'=retry_out::text)
+    or (select status from private.notification_outbox where id=retry_out)<>'delivery_unknown'
+    or (select status from private.line_quota_reservations where id=reservation)<>'ambiguous'
+    then raise exception 'ambiguous retry was delivered or its reservation released'; end if;
   for p in select * from public.server_tx_claim_web_push_batch(20,60) loop
     if p.outbox_id=pushb then raise exception 'no-recording web push delivered'; end if;
     if p.outbox_id=pusha then

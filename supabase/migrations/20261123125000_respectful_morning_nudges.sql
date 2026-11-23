@@ -93,7 +93,7 @@ revoke all on function public.server_tx_claim_notification_before_respectful_nud
 create function public.server_tx_claim_notification_outbox_batch(p_worker_id text,p_limit int,p_lease_seconds int)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare raw jsonb; entry jsonb; item jsonb; kept jsonb; output jsonb:='[]'::jsonb; ordinal bigint;
-  hh uuid; actor uuid; safe text; first_type text; day_text text; local_day date; changed boolean;
+  hh uuid; actor uuid; safe text; first_type text; day_text text; local_day date; changed boolean; reservation_status text;
 begin
   raw:=public.server_tx_claim_notification_before_respectful_nudge_v1(p_worker_id,p_limit,p_lease_seconds);
   for entry in select value from jsonb_array_elements(raw) loop
@@ -118,8 +118,17 @@ begin
       kept:=kept||jsonb_build_array(item);
     end loop;
     if changed and jsonb_array_length(kept)=0 then
+      -- This key may already have reached LINE. Keep its quota counted, and
+      -- record uncertainty instead of claiming it definitely failed.
+      if entry->>'quota_reservation_id' is not null then
+        select q.status into reservation_status from private.line_quota_reservations q
+          where q.id=(entry->>'quota_reservation_id')::uuid for update;
+        if reservation_status in ('reserved','ambiguous') then
+          perform public.server_tx_mark_line_quota_ambiguous((entry->>'quota_reservation_id')::uuid);
+        end if;
+      end if;
       update private.notification_outbox set
-        status=case when (entry->>'attempts')::int=1 and entry->>'quota_reservation_id' is null then 'fallback' else 'dead' end,
+        status=case when (entry->>'attempts')::int=1 and entry->>'quota_reservation_id' is null then 'fallback' else 'delivery_unknown' end,
         last_error='no_recent_recorded_nudge',lease_owner=null,lease_token=null,lease_until=null
         where id=(entry->>'id')::uuid and status='sending';
       continue;
