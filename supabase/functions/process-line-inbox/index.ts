@@ -1613,6 +1613,25 @@ async function handlePostback(
   // the action/resource IDs or impersonate the provider's selected datetime.
   delete fields.datetime;
   if (typeof item.payload.postback?.params?.datetime === "string") fields.datetime = item.payload.postback.params.datetime;
+  if (fields.action === "assignment_consent") {
+    const offerId = fields.offer_id ?? "";
+    const answer = fields.answer ?? "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(offerId) ||
+      !["agree", "change", "later"].includes(answer)) {
+      await sendConfirmation(client, item, actor, "この相談を確認できませんでした。");
+      return;
+    }
+    const { data, error } = answer === "agree"
+      ? await client.rpc("server_tx_accept_assignment_consent_v1", { p_actor_id: actor.user_id, p_offer_id: offerId })
+      : await client.rpc("server_tx_defer_assignment_consent_v1", { p_actor_id: actor.user_id, p_offer_id: offerId, p_action: answer });
+    if (error || !data?.ok) {
+      await sendConfirmation(client, item, actor, data?.stale ? "内容が変わったため、もう一度確認してください。" :
+        "この相談を確認できませんでした。設定画面を確認してください。");
+      return;
+    }
+    await sendConfirmation(client, item, actor, answer === "change" ? "相談を伝えました。" : "わかりました。");
+    return;
+  }
   if (fields.action === "line_bulk_later") {
     await sendConfirmation(client, item, actor, "わかりました。");
     return;
@@ -1727,13 +1746,26 @@ async function handlePostback(
     await sendConfirmation(client, item, actor, "わかりました。");
     return;
   }
-  if (fields.action === "previous_day_complete") {
-    const date = fields.date ?? "";
-    const today = jstIsoDateOffset(0);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date >= today ||
-        !(await tryHandleDayCompletion(completionContext(client, item, actor), `${date}のは全部終わっている`))) {
-      await sendConfirmation(client, item, actor, "この日付は確認できませんでした。日付を指定して教えてください。");
+  if (fields.action === "previous_day_complete" || fields.action === "previous_day_undo") {
+    const batchId = fields.batch_id ?? "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(batchId)) {
+      await sendConfirmation(client, item, actor, "この案内は更新されています。記録は変えていません。アプリで確認してください。");
+      return;
     }
+    const undo = fields.action === "previous_day_undo";
+    const { data, error } = await client.rpc(undo ? "server_tx_undo_previous_day_consent_v1" : "server_tx_complete_previous_day_consent_v1", {
+      p_actor_id: actor.user_id, p_batch_id: batchId,
+    });
+    if (error || !data?.ok) {
+      await sendConfirmation(client, item, actor, data?.already_undone ? "この記録は取り消し済みです。" :
+        "内容が変わったため、記録を変更できませんでした。アプリで確認してください。");
+      return;
+    }
+    if (undo) await sendConfirmation(client, item, actor, "元に戻しました。");
+    else await sendConfirmation(client, item, actor, "記録しました。", [{
+      type: "postback", label: "取り消す", displayText: "取り消す",
+      data: new URLSearchParams({ action: "previous_day_undo", batch_id: batchId }).toString(),
+    }]);
     return;
   }
 

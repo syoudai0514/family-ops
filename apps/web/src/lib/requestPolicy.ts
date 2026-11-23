@@ -55,6 +55,7 @@ export const REQUEST_POLICY = {
   confirmRequestDraft: 'mutation',
   createAssignmentChangeRequest: 'mutation',
   acceptAssignmentChangeRequest: 'mutation',
+  assignmentConsentReview: 'mutation',
   getRoutineSession: 'read',
   routineSessionItemAction: 'mutation',
   reconcileRoutineSession: 'mutation',

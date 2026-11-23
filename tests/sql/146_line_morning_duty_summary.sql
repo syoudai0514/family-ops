@@ -34,7 +34,8 @@ begin
       'due_at',t.due_at,'assignment_mode',t.assignment_mode,'expectation',t.expectation) order by t.due_at),
     'daytime','[]'::jsonb,'evening','[]'::jsonb,'optional','[]'::jsonb))
     into source from public.task_instances t where t.household_id=h and t.source='test';
-  result:=private.fn_daily_brief_for_line_v1(source,actor,timestamptz '2027-02-02 06:30+09','morning');
+  -- Isolate duty grouping; the consent wrapper is exercised separately.
+  result:=private.fn_daily_brief_before_consent_v1(source,actor,timestamptz '2027-02-02 06:30+09','morning');
   body:=private.fn_render_daily_brief_text_v4(result,'morning_focus');
   if body not like '%朝の当番（3件）%' or body not like '%07:00 朝の当番%' or body not like '%09:15 コドモン送信%' then
     raise exception 'missing summary, endpoint, or codmon deadline: %',body;
@@ -44,7 +45,7 @@ begin
   end if;
   interactive:=private.fn_render_daily_brief_text_v4(source,'morning');
   if interactive not like '%着替え%' or interactive like '%朝の当番（3件）%' then raise exception 'interactive list changed: %',interactive; end if;
-  result:=private.fn_daily_brief_for_line_v1(source,actor,timestamptz '2027-02-02 20:00+09','evening');
+  result:=private.fn_daily_brief_before_consent_v1(source,actor,timestamptz '2027-02-02 20:00+09','evening');
   if result::text like '%朝の当番（3件）%' then raise exception 'evening brief unexpectedly grouped'; end if;
 end $$;
 rollback;

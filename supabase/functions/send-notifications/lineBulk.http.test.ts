@@ -19,6 +19,8 @@ Deno.test('notification worker sends bulk button only with its visible scope', a
   let unavailable = false;
   let phase: 'morning' | 'evening' = 'morning';
   let body = '今日の内容';
+  let previousBatch: Record<string, unknown> | null = null;
+  let weekly: unknown[] = [];
   globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const args = init?.body ? JSON.parse(String(init.body)) : {};
@@ -41,6 +43,9 @@ Deno.test('notification worker sends bulk button only with its visible scope', a
           business_expires_at: null, quota_reservation_id: null, lease_token: 'lease', line_user_id: 'line-user',
         }]));
         case 'server_tx_reserve_line_quota': return Promise.resolve(Response.json({ permitted: true }));
+        case 'server_tx_log_line_turn': return Promise.resolve(Response.json({ ok: true }));
+        case 'server_tx_prepare_previous_day_consent_v1': return Promise.resolve(Response.json(previousBatch));
+        case 'server_tx_prepare_weekly_assignment_consent_v1': return Promise.resolve(Response.json(weekly));
         case 'server_read_thanks_candidates': return Promise.resolve(Response.json([]));
         case 'server_tx_prepare_line_bulk_v1': return unavailable
           ? Promise.resolve(Response.json({ message: 'unavailable' }, { status: 503 }))
@@ -72,6 +77,44 @@ Deno.test('notification worker sends bulk button only with its visible scope', a
       assertStringIncludes(sent, `batch_id=${batchId}`);
       assertEquals(calls.find((call) => call.name === 'server_tx_prepare_line_bulk_v1')?.args,
         { p_actor_id: 'actor', p_notification_id: notificationId });
+    });
+    await t.step('previous day uses a server-issued snapshot and discloses its scope', async () => {
+      const yesterday = new Date(Date.now() + 9 * 3600_000);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      previousBatch = { id: batchId, date: yesterday.toISOString().slice(0, 10), status: 'ready' };
+      const sent = await run();
+      assertStringIncludes(sent, '昨日の自分の分、記録しますか');
+      assertStringIncludes(sent, '任意・コドモン送信を除く');
+      assertStringIncludes(sent, `action=previous_day_complete&date=${previousBatch.date}&batch_id=${batchId}`);
+      previousBatch = null;
+    });
+    await t.step('Sunday consent cards keep the original quick replies on the last message', async () => {
+      const RealDate = globalThis.Date;
+      const sunday = new RealDate('2026-11-29T00:00:00Z').getTime();
+      class SundayDate extends RealDate {
+        constructor(value?: string | number) { super(value ?? sunday); }
+        static override now() { return sunday; }
+      }
+      const rule = {
+        title: '朝の準備', strategy: 'fixed', phase: 'morning', weekday: 1, scheduled_local_time: '07:10:00',
+        effective_from: '2026-11-01', effective_to: null, fallback_assignee_id: null,
+        subtasks: [{ title: '体操着', required: true }],
+      };
+      weekly = [{ offer_id: batchId, kind: 'rule', snapshot: { ...rule, group_rules: [rule] } }];
+      try {
+        globalThis.Date = SundayDate as DateConstructor;
+        const sent = await run();
+        assertStringIncludes(sent, 'この担当でいい？');
+        assertStringIncludes(sent, '体操着');
+        assertStringIncludes(sent, `offer_id=${batchId}&answer=agree`);
+        const messages = pushes[0].messages as Record<string, unknown>[];
+        assertEquals(messages.length <= 5, true);
+        assertEquals(messages.at(-1)?.type, 'flex');
+        assertEquals(Boolean(messages.at(-1)?.quickReply), true);
+      } finally {
+        globalThis.Date = RealDate;
+        weekly = [];
+      }
     });
     await t.step('evening uses the evening button and the same explicit scope', async () => {
       phase = 'evening';

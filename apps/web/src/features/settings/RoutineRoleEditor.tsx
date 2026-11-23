@@ -149,7 +149,7 @@ function sameSubtasks(a: RoutineSubtask[], b: RoutineSubtask[]) {
     === JSON.stringify(b.map(({ id, title, required }) => [id ?? null, title.trim(), required]));
 }
 
-export function RoutineRoleEditor() {
+export function RoutineRoleEditor({ tentativeIds = [] }: { tentativeIds?: string[] }) {
   const { household, members, me } = useHousehold();
   const householdId = household?.id ?? null;
   const userId = me?.user_id ?? '';
@@ -252,7 +252,7 @@ export function RoutineRoleEditor() {
                   disabled={saving}
                   onClick={() => { setNotice(null); setOpenId(openId === item.id ? null : item.id); }}>
                   <span className="routine-role-title">{item.title}{item.subtasks.length > 0 && <small>（{item.subtasks.length}項目）</small>}</span>
-                  <span className="routine-role-meta">{routineSummary(item, memberLabel)}</span>
+                  <span className="routine-role-meta">{routineSummary(item, memberLabel)}{tentativeIds.includes(item.id) && <small> · 相談中</small>}</span>
                 </button>
                 {openId === item.id && (
                   <RoutineSheet key={`${householdId}:${userId}:${item.id}`} storageKey={`family-ops:routine-save:v1:${householdId}:${userId}:${item.id}`} item={item} members={members} memberLabel={memberLabel} onCancel={() => setOpenId(null)} onSaved={afterSave} onSavingChange={setSaving} />

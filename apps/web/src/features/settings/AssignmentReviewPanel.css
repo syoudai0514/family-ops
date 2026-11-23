@@ -1,0 +1,7 @@
+.assignment-review-item + .assignment-review-item {
+  margin-top: 0.65rem;
+}
+
+.assignment-review-actions button {
+  min-height: 44px;
+}

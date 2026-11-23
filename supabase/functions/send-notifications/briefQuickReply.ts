@@ -11,7 +11,7 @@ import type { LineQuickReplyAction } from "../_shared/lineMessaging.ts";
 
 const say = (label: string, text: string = label): LineQuickReplyAction => ({ type: "message", label, text });
 
-export function buildBriefQuickReply(type: string, opts: { evening?: boolean; previousDay?: string | null; thanks?: { kind: string; id: string } | null; consultDate?: string | null; bulk?: { id: string; phase: 'morning' | 'evening' } | null } = {}): LineQuickReplyAction[] | undefined {
+export function buildBriefQuickReply(type: string, opts: { evening?: boolean; previousDay?: { date: string; id: string } | null; thanks?: { kind: string; id: string } | null; consultDate?: string | null; bulk?: { id: string; phase: 'morning' | 'evening' } | null } = {}): LineQuickReplyAction[] | undefined {
   if (type === "daily_brief.v2") {
     const bulk = opts.bulk && (opts.evening ? opts.bulk.phase === 'evening' : opts.bulk.phase === 'morning')
       ? [{ type: 'postback' as const, label: opts.evening ? '夜の分ぜんぶOK' : '朝の分ぜんぶOK',
@@ -20,7 +20,7 @@ export function buildBriefQuickReply(type: string, opts: { evening?: boolean; pr
     return opts.evening
       ? [...bulk, ...(bulk.length ? [{ type: 'postback' as const, label: 'あとで', data: 'action=line_bulk_later', displayText: 'あとで' }] : []), say("入力"), say("今日"), say("明日の予定", "明日の予定教えて"), say("買い物", "買い物リスト"), say("共有")]
       : [...bulk, ...(opts.previousDay ? [
-        { type: 'postback' as const, label: 'ぜんぶ済み', data: new URLSearchParams({ action: 'previous_day_complete', date: opts.previousDay }).toString(), displayText: 'ぜんぶ済み' },
+        { type: 'postback' as const, label: 'ぜんぶ済み', data: new URLSearchParams({ action: 'previous_day_complete', date: opts.previousDay.date, batch_id: opts.previousDay.id }).toString(), displayText: 'ぜんぶ済み' },
         { type: 'postback' as const, label: 'そのまま', data: 'action=previous_day_keep', displayText: 'そのまま' },
       ] : []), ...(opts.thanks ? [{
         type: 'postback' as const, label: 'ありがとうを送る',

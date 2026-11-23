@@ -53,6 +53,7 @@ export const EDGE_FUNCTIONS = {
   confirmRequestDraft: 'confirm-request-draft',
   createAssignmentChangeRequest: 'create-assignment-change-request',
   acceptAssignmentChangeRequest: 'accept-assignment-change-request',
+  assignmentConsentReview: 'assignment-consent-review',
   getRoutineSession: 'get-routine-session',
   routineSessionItemAction: 'routine-session-item-action',
   reconcileRoutineSession: 'reconcile-routine-session',

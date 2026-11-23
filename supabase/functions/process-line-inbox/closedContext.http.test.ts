@@ -108,6 +108,10 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
           case "server_tx_log_line_turn":
           case "server_tx_complete_line_bulk_v1":
           case "server_tx_undo_line_bulk_v1":
+          case "server_tx_complete_previous_day_consent_v1":
+          case "server_tx_undo_previous_day_consent_v1":
+          case "server_tx_accept_assignment_consent_v1":
+          case "server_tx_defer_assignment_consent_v1":
           case "server_tx_line_quiet_today_v1":
           case "server_tx_confirm_pending_action":
           case "server_tx_complete_webhook_inbox_item": data = { ok: true }; break;
@@ -313,6 +317,37 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       await run("");
       assertEquals(calls.some((call) => call.rpc === "server_tx_complete_line_bulk_v1" || call.rpc === "server_tx_undo_line_bulk_v1"), false);
       assertStringIncludes(rendered(), "わかりました。");
+    });
+    await t.step("previous-day completion and undo require the issued snapshot", async () => {
+      const batchId = "50000000-0000-4000-8000-000000000005";
+      postback = `action=previous_day_complete&batch_id=${batchId}`;
+      await run("");
+      assertEquals(calls.find((call) => call.rpc === "server_tx_complete_previous_day_consent_v1")?.args, { p_actor_id: actorId, p_batch_id: batchId });
+      assertStringIncludes(rendered(), "記録しました。");
+      assertStringIncludes(rendered(), "action=previous_day_undo");
+      postback = `action=previous_day_undo&batch_id=${batchId}`;
+      await run("");
+      assertEquals(calls.find((call) => call.rpc === "server_tx_undo_previous_day_consent_v1")?.args, { p_actor_id: actorId, p_batch_id: batchId });
+      assertStringIncludes(rendered(), "元に戻しました。");
+      postback = "action=previous_day_complete&date=2026-11-22";
+      await run("");
+      assertEquals(calls.some((call) => call.rpc === "server_tx_complete_previous_day_consent_v1"), false);
+      assertStringIncludes(rendered(), "記録は変えていません。");
+    });
+    await t.step("consent answers bind the sender and server offer", async () => {
+      const offerId = "50000000-0000-4000-8000-000000000004";
+      for (const answer of ["agree", "change", "later"]) {
+        postback = `action=assignment_consent&offer_id=${offerId}&answer=${answer}`;
+        await run("");
+        const rpc = answer === "agree" ? "server_tx_accept_assignment_consent_v1" : "server_tx_defer_assignment_consent_v1";
+        const args = answer === "agree" ? { p_actor_id: actorId, p_offer_id: offerId } : { p_actor_id: actorId, p_offer_id: offerId, p_action: answer };
+        assertEquals(calls.find((call) => call.rpc === rpc)?.args, args);
+        assertStringIncludes(rendered(), answer === "change" ? "相談を伝えました。" : "わかりました。");
+      }
+      postback = "action=assignment_consent&offer_id=invalid&answer=agree";
+      await run("");
+      assertEquals(calls.some((call) => call.rpc === "server_tx_accept_assignment_consent_v1"), false);
+      assertStringIncludes(rendered(), "確認できませんでした");
     });
   } finally {
     Object.defineProperty(Deno, "serve", originalServe);
