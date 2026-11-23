@@ -2,7 +2,7 @@
 begin;
 do $$
 declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; task uuid; note uuid; nudge uuid; transport_def uuid; transport_rule uuid;
-  daily_out uuid; bundle_out uuid; nudge_out uuid; critical_note uuid; sub uuid; push_id uuid; rows jsonb; row jsonb;
+  daily_out uuid; legacy_out uuid; bundle_out uuid; nudge_out uuid; critical_note uuid; sub uuid; push_id uuid; rows jsonb; row jsonb;
   today date:=(now() at time zone 'Asia/Tokyo')::date; weekday date:=date '2026-11-24'; sunday date:=date '2026-11-29'; rendered text;
 begin
   update private.notification_outbox set status='dead',lease_owner=null,lease_token=null,lease_until=null where status in ('queued','sending');
@@ -20,6 +20,10 @@ begin
       jsonb_build_object('type','daily_brief.v2','title','朝のおうちノート','body','古い担当一覧','user_notification_id',note),
       jsonb_build_object('type','request.received','title','お願い','body','大切なお願い'))),
       'autoquiet-daily','normal',now()+interval '1 hour') returning id into daily_out;
+  insert into private.notification_outbox(household_id,recipient_user_id,channel,type,payload,dedup_key,priority,business_expires_at)
+    values(h,b,'line','daily_brief.v2',jsonb_build_object('items',jsonb_build_array(
+      jsonb_build_object('title','朝のおうちノート','body','古い担当一覧','user_notification_id',note))),
+      'autoquiet-legacy-daily','normal',now()+interval '1 hour') returning id into legacy_out;
   insert into private.notification_outbox(household_id,recipient_user_id,channel,type,payload,dedup_key,priority,business_expires_at)
     values(h,b,'line','morning_nudge',jsonb_build_object('items',jsonb_build_array(
       jsonb_build_object('title','朝の残り','body','古い担当一覧'),
@@ -74,6 +78,9 @@ begin
   select value into row from jsonb_array_elements(rows) where value->>'id'=daily_out::text;
   if row::text like '%古い担当一覧%' or row::text not like '%家族の予定%' or row::text not like '%大切なお願い%'
     or row#>>'{payload,items,0,quiet_mode}'<>'true' then raise exception 'old note was not rewritten %',row; end if;
+  select value into row from jsonb_array_elements(rows) where value->>'id'=legacy_out::text;
+  if row::text like '%古い担当一覧%' or row::text not like '%家族の予定%'
+    or row#>>'{payload,items,0,quiet_mode}'<>'true' then raise exception 'legacy note was not rewritten %',row; end if;
   select value into row from jsonb_array_elements(rows) where value->>'id'=bundle_out::text;
   if row::text like '%古い担当一覧%' or row::text not like '%別の大切なお願い%' or row->>'type'<>'request.received'
     then raise exception 'bundled request lost %',row; end if;

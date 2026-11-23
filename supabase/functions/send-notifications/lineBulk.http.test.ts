@@ -20,6 +20,7 @@ Deno.test('notification worker sends bulk button only with its visible scope', a
   let phase: 'morning' | 'evening' = 'morning';
   let body = '今日の内容';
   let quiet = false;
+  let legacyType = false;
   let previousBatch: Record<string, unknown> | null = null;
   let weekly: unknown[] = [];
   globalThis.fetch = (input, init) => {
@@ -38,7 +39,7 @@ Deno.test('notification worker sends bulk button only with its visible scope', a
         case 'server_tx_get_line_quota_refresh_state': return Promise.resolve(Response.json({ stale: false }));
         case 'server_tx_claim_notification_outbox_batch': return Promise.resolve(Response.json([{
           id: 'outbox', household_id: 'household', recipient_user_id: 'actor', type: 'daily_brief.v2',
-          payload: { items: [{ type: 'daily_brief.v2', title: phase === 'morning' ? '朝のおうちノート' : '夜のおうちノート',
+          payload: { items: [{ type: legacyType ? undefined : 'daily_brief.v2', title: phase === 'morning' ? '朝のおうちノート' : '夜のおうちノート',
             body, user_notification_id: notificationId, quiet_mode: quiet }] },
           dedup_key: 'daily', priority: 'normal', attempts: 1, provider_retry_key: batchId,
           business_expires_at: null, quota_reservation_id: null, lease_token: 'lease', line_user_id: 'line-user',
@@ -86,6 +87,11 @@ Deno.test('notification worker sends bulk button only with its visible scope', a
       assertEquals(sent.includes('quickReply'), false);
       assertEquals(calls.some((call) => ['server_tx_prepare_line_bulk_v1', 'server_tx_prepare_previous_day_consent_v1',
         'server_tx_prepare_weekly_assignment_consent_v1', 'server_read_thanks_candidates'].includes(call.name)), false);
+      legacyType = true;
+      const legacy = await run();
+      assertEquals(legacy.includes('quickReply'), false);
+      assertEquals(calls.some((call) => call.name === 'server_tx_prepare_line_bulk_v1'), false);
+      legacyType = false;
       quiet = false;
     });
     await t.step('previous day uses a server-issued snapshot and discloses its scope', async () => {

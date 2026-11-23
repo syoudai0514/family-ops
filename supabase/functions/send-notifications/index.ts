@@ -401,7 +401,8 @@ async function sendOne(
   await enrichRequestOutcomeItems(serviceClient, item.payload);
   const richMessage = buildRichRequestMessage(item.payload);
   const morning = item.type === 'daily_brief.v2' && (item.payload?.items ?? []).some((entry) => entry.title === '朝のおうちノート');
-  const quiet = (item.payload?.items ?? []).some((entry) => entry.type === 'daily_brief.v2' && entry.quiet_mode === true);
+  const quiet = (item.payload?.items ?? []).some((entry) => entry.quiet_mode === true &&
+    (entry.type === 'daily_brief.v2' || (item.type === 'daily_brief.v2' && entry.title === '朝のおうちノート')));
   const previousDay = morning && !quiet ? await loadPreviousDayReminder(serviceClient, item.recipient_user_id, item.payload) : null;
   const thanks = morning && !quiet ? await loadThanksCandidate(serviceClient, item.recipient_user_id, item.household_id) : null;
   const bulk = item.type === 'daily_brief.v2' && !quiet ? await loadLineBulk(serviceClient, item.recipient_user_id, item.payload) : null;
