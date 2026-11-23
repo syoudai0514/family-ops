@@ -38,6 +38,18 @@ begin
   other_offer:=(public.server_tx_prepare_assignment_consent_v1(b,'rule',rule_id)->>'offer_id')::uuid;
   update public.task_definitions set title='別の準備' where id=definition;
   if (public.server_tx_accept_assignment_consent_v1(b,other_offer)->>'stale')<>'true' then raise exception 'changed title accepted'; end if;
+  other_offer:=(public.server_tx_prepare_assignment_consent_v1(b,'rule',rule_id)->>'offer_id')::uuid;
+  r:=public.server_tx_defer_assignment_consent_v1(b,other_offer,'later');
+  if r->>'ok'<>'true' or exists(select 1 from public.user_notifications where household_id=h and type='assignment.consent_change_requested')
+    or private.fn_has_assignment_consent_v1(h,b,'rule',rule_id) then raise exception 'later changed state or notified'; end if;
+  other_offer:=(public.server_tx_prepare_assignment_consent_v1(b,'rule',rule_id)->>'offer_id')::uuid;
+  r:=public.server_tx_defer_assignment_consent_v1(b,other_offer,'change');
+  if r->>'ok'<>'true' or (select count(*) from public.user_notifications where household_id=h and recipient_user_id=a
+      and type='assignment.consent_change_requested' and body='「別の準備」の担当を相談したいそうです。')<>1
+    or (select planned_assignee_id from public.recurrence_rules where id=rule_id) is distinct from b
+    or private.fn_has_assignment_consent_v1(h,b,'rule',rule_id) then raise exception 'change request modified assignment or did not notify'; end if;
+  if (public.server_tx_defer_assignment_consent_v1(b,other_offer,'change')->>'already_answered')<>'true'
+    or (select count(*) from public.user_notifications where household_id=h and type='assignment.consent_change_requested')<>1 then raise exception 'change request was sent twice'; end if;
   -- Role-dependent rules require an actual upcoming assignment to this person.
   insert into public.recurrence_rules(household_id,task_definition_id,weekday,slot_key,assignee_strategy,effective_from,created_by)
   values(h,definition,3,'dynamic','dropoff_assignee',today,a) returning id into dyn_rule;
@@ -61,8 +73,11 @@ begin
     or private.fn_has_assignment_consent_v1(h,a,'transport',v_template_id) then raise exception 'transport recipient consent incorrect'; end if;
   update public.transport_weekly_template_days set dropoff_local_time='08:30' where transport_weekly_template_days.template_id=v_template_id and weekday=1;
   if private.fn_has_assignment_consent_v1(h,b,'transport',v_template_id) then raise exception 'changed transport reused consent'; end if;
+  if private.fn_line_preference_column_for_type('assignment.consent_change_requested') is distinct from 'request_line'
+    or private.fn_line_preference_column_for_type('thanks') is distinct from 'request_line' then raise exception 'notification preference mapping lost'; end if;
   if has_function_privilege('authenticated','public.server_tx_prepare_assignment_consent_v1(uuid,text,uuid)','execute')
-    or has_function_privilege('authenticated','public.server_tx_accept_assignment_consent_v1(uuid,uuid)','execute') then raise exception 'public consent RPC'; end if;
+    or has_function_privilege('authenticated','public.server_tx_accept_assignment_consent_v1(uuid,uuid)','execute')
+    or has_function_privilege('authenticated','public.server_tx_defer_assignment_consent_v1(uuid,uuid,text)','execute') then raise exception 'public consent RPC'; end if;
 end $$;
 rollback;
 select 'assignment_consent_foundation: PASS' as result;

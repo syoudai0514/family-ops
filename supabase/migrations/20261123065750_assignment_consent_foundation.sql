@@ -163,3 +163,56 @@ begin
 end $$;
 revoke all on function public.server_tx_accept_assignment_consent_v1(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.server_tx_accept_assignment_consent_v1(uuid,uuid) to service_role;
+
+-- A request to discuss is a direct, optional family message and respects the
+-- same recipient preference as existing requests. Preserve all existing maps.
+alter function private.fn_line_preference_column_for_type(text) rename to fn_line_preference_before_assignment_consent_v1;
+create function private.fn_line_preference_column_for_type(p_type text)
+returns text language sql immutable security invoker set search_path='' as $$
+  select case when p_type='assignment.consent_change_requested' then 'request_line'
+    else private.fn_line_preference_before_assignment_consent_v1(p_type) end;
+$$;
+revoke all on function private.fn_line_preference_column_for_type(text) from public,anon,authenticated;
+grant execute on function private.fn_line_preference_column_for_type(text) to service_role;
+
+-- No assignment or existing task is mutated by either answer. A change
+-- request creates at most one notification and never asks for a reason.
+create function public.server_tx_defer_assignment_consent_v1(p_actor_id uuid,p_offer_id uuid,p_action text)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare
+  ctx jsonb; hh uuid; actor_ref uuid; offer private.assignment_consent_offers%rowtype;
+  definition_id uuid; snapshot jsonb; target uuid; target_ref uuid; body text; outcome text;
+begin
+  if p_actor_id is null or p_offer_id is null or p_action is null or p_action not in ('change','later') then raise exception 'INVALID_INPUT'; end if;
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid; actor_ref:=(ctx->>'actor_ref_id')::uuid;
+  select * into offer from private.assignment_consent_offers where id=p_offer_id and household_id=hh and recipient_id=p_actor_id for update;
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  outcome:=case when p_action='change' then 'change_requested' else 'later' end;
+  if offer.status=outcome then return jsonb_build_object('ok',true,'already_answered',true); end if;
+  if offer.status<>'pending' then return jsonb_build_object('ok',false,'closed',true); end if;
+  if offer.kind='rule' then
+    select task_definition_id into definition_id from public.recurrence_rules where household_id=hh and id=offer.target_id;
+    perform 1 from public.task_definitions where household_id=hh and id=definition_id for no key update;
+    perform 1 from public.recurrence_rules where household_id=hh and id=offer.target_id for no key update;
+  else
+    perform 1 from public.transport_weekly_templates where household_id=hh and id=offer.target_id for no key update;
+  end if;
+  snapshot:=private.fn_assignment_consent_snapshot_v1(hh,p_actor_id,offer.kind,offer.target_id);
+  if snapshot is distinct from offer.snapshot then return jsonb_build_object('ok',false,'stale',true); end if;
+  if p_action='change' then
+    target:=(snapshot->>'created_by')::uuid;
+    -- Never pretend a message went to someone when the old creator cannot
+    -- be identified as another current member.
+    if target is null or target=p_actor_id then return jsonb_build_object('ok',false,'unavailable',true); end if;
+    select id into target_ref from public.domain_actor_refs where household_id=hh and real_user_id=target and actor_kind='real_user' and test_context_id is null;
+    if target_ref is null then return jsonb_build_object('ok',false,'unavailable',true); end if;
+    body:='「'||case when offer.kind='transport' then '送り迎え' else left(snapshot->>'title',100) end||'」の担当を相談したいそうです。';
+    perform private.fn_emit_notification_intent_v1(hh,p_actor_id,actor_ref,null,target_ref,
+      'assignment.consent_change_requested',body,body,jsonb_build_object('offer_id',offer.id),
+      'assignment-consent-change:'||offer.id::text,'immediate','normal',null,null,'assignment_consent_offer',offer.id,null);
+  end if;
+  update private.assignment_consent_offers set status=outcome,responded_at=now() where id=offer.id;
+  return jsonb_build_object('ok',true);
+end $$;
+revoke all on function public.server_tx_defer_assignment_consent_v1(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.server_tx_defer_assignment_consent_v1(uuid,uuid,text) to service_role;
