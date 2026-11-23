@@ -70,7 +70,7 @@ begin
   if item is null or item->>'display_title'<>'10/15(木)の保育園準備（持ち物・着替え）' or item->>'scheduled_date'<>'2026-10-14'
     or item->>'preparation_target_date'<>'2026-10-15' then raise exception 'FAIL: tomorrow execution day confused with preparation target day: %',item; end if;
   rendered:=private.fn_render_daily_brief_text_v4(private.fn_brief_split_special_v1(b),'morning');
-  if rendered not like '%⭐ 今日、忘れずに%' or rendered like '%平日は毎日ないこと%'
+  if rendered not like '%⭐ 今日だけの予定%' or rendered like '%平日は毎日ないこと%'
     or rendered like '%食洗機を空ける（誰でもOK）%' or rendered not like '%先に家を出る人%'
     or rendered not like '%2人で分担（誰でもOK）%' then raise exception 'FAIL: task instruction grouping remains ambiguous: %',rendered; end if;
   if rendered not like '%明日 10/14(水)の予定・作業%21:00 10/15(木)の保育園準備%'

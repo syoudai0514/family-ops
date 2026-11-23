@@ -100,4 +100,6 @@ Deno.test("today: claimed shared work follows the current taker, and display dat
 Deno.test("today: full task list replaces special, shared and optional sections without duplication", () => {
   const brief = "朝のおうちノート\n\n⭐ 今日、忘れずに\n・ゴミ出し\n\n朝やること\n先に家を出る人\n・食洗機\n\n余裕があれば\n◦掃除\n\n相手の担当で確認したいこと\n・お迎え\n\n明日 10/14(水)の予定・作業\n・10/15(木)の準備";
   assertEquals(mergeTodayBrief(brief, "TASKS"), "朝のおうちノート\n\nTASKS\n\n明日 10/14(水)の予定・作業\n・10/15(木)の準備");
+  assertEquals(mergeTodayBrief(brief.replace("⭐ 今日、忘れずに", "⭐ 今日だけの予定"), "TASKS"),
+    "朝のおうちノート\n\nTASKS\n\n明日 10/14(水)の予定・作業\n・10/15(木)の準備");
 });
