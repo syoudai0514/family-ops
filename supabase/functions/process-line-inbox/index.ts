@@ -1613,6 +1613,25 @@ async function handlePostback(
   // the action/resource IDs or impersonate the provider's selected datetime.
   delete fields.datetime;
   if (typeof item.payload.postback?.params?.datetime === "string") fields.datetime = item.payload.postback.params.datetime;
+  if (fields.action === "assignment_consent") {
+    const offerId = fields.offer_id ?? "";
+    const answer = fields.answer ?? "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(offerId) ||
+      !["agree", "change", "later"].includes(answer)) {
+      await sendConfirmation(client, item, actor, "この相談を確認できませんでした。");
+      return;
+    }
+    const { data, error } = answer === "agree"
+      ? await client.rpc("server_tx_accept_assignment_consent_v1", { p_actor_id: actor.user_id, p_offer_id: offerId })
+      : await client.rpc("server_tx_defer_assignment_consent_v1", { p_actor_id: actor.user_id, p_offer_id: offerId, p_action: answer });
+    if (error || !data?.ok) {
+      await sendConfirmation(client, item, actor, data?.stale ? "内容が変わったため、もう一度確認してください。" :
+        "この相談を確認できませんでした。設定画面を確認してください。");
+      return;
+    }
+    await sendConfirmation(client, item, actor, answer === "change" ? "相談を伝えました。" : "わかりました。");
+    return;
+  }
   if (fields.action === "line_bulk_later") {
     await sendConfirmation(client, item, actor, "わかりました。");
     return;

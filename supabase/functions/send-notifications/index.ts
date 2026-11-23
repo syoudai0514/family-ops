@@ -39,6 +39,7 @@ import { buildBriefQuickReply } from './briefQuickReply.ts';
 import { loadPreviousDayReminder } from './previousDayReminder.ts';
 import { loadThanksCandidate } from './thanksCandidate.ts';
 import { loadLineBulk } from './lineBulk.ts';
+import { loadConsentCarousel } from './assignmentConsent.ts';
 import { logLineTurn } from '../process-line-inbox/lineRouterWiring.ts';
 import {
   buildAssignmentRequestFlex,
@@ -427,6 +428,16 @@ async function sendOne(
     quickReply = buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, consultDate,
       thanks: hasThanksContext ? thanks : null, bulk: hasBulkContext ? bulk : null });
     messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
+  }
+  // Ask only when the whole note and its existing actions fit alongside the
+  // cards. Reserving the week before checking this would silently lose it.
+  if (morning && !richMessage && messages.length < 5) {
+    const consent = await loadConsentCarousel(serviceClient, item.recipient_user_id, item.payload);
+    if (consent) {
+      const last = messages[messages.length - 1];
+      if (last.quickReply) { consent.quickReply = last.quickReply; delete last.quickReply; }
+      messages.push(consent);
+    }
   }
   let response: Response;
   try {

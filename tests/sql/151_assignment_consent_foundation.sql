@@ -50,6 +50,10 @@ begin
     or private.fn_has_assignment_consent_v1(h,b,'rule',rule_id) then raise exception 'change request modified assignment or did not notify'; end if;
   if (public.server_tx_defer_assignment_consent_v1(b,other_offer,'change')->>'already_answered')<>'true'
     or (select count(*) from public.user_notifications where household_id=h and type='assignment.consent_change_requested')<>1 then raise exception 'change request was sent twice'; end if;
+  other_offer:=(public.server_tx_prepare_assignment_consent_v1(a,'rule',own_rule)->>'offer_id')::uuid;
+  r:=public.server_tx_defer_assignment_consent_v1(a,other_offer,'change');
+  if r->>'ok'<>'true' or (select count(*) from public.user_notifications where household_id=h and recipient_user_id=b
+      and type='assignment.consent_change_requested')<>1 then raise exception 'consultation sent to old creator instead of other adult'; end if;
   -- Role-dependent rules require an actual upcoming assignment to this person.
   insert into public.recurrence_rules(household_id,task_definition_id,weekday,slot_key,assignee_strategy,effective_from,created_by)
   values(h,definition,3,'dynamic','dropoff_assignee',today,a) returning id into dyn_rule;
