@@ -45,4 +45,15 @@ describe('ReminderSettingsSection', () => {
     expect(callEdgeFunction.mock.calls[0][1]).toMatchObject({ reminder_settings: { schedule_line_with_push: true } });
     expect(await screen.findByText(/LINEでも受け取ります/)).toBeInTheDocument();
   });
+
+  it('saves only the current person’s quiet preference and shows the result', async () => {
+    render(<ReminderSettingsSection />);
+    const auto = await screen.findByRole('radio', { name: 'おまかせ' });
+    expect(auto).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: '静かに' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledOnce());
+    expect(callEdgeFunction.mock.calls[0][1]).toMatchObject({ reminder_settings: { quiet_mode: 'quiet' } });
+    expect(await screen.findByRole('radio', { name: '静かに' })).toBeChecked();
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });

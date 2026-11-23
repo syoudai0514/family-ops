@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
 do $$
-declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; op uuid:=gen_random_uuid();
+declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; op uuid:=gen_random_uuid(); actor_ref uuid;
   start_at timestamptz:=date_trunc('day',now() at time zone 'Asia/Tokyo') at time zone 'Asia/Tokyo';
   operation jsonb; rejected boolean:=false;
 begin
@@ -11,6 +11,20 @@ begin
   perform public.server_tx_join_household(b,gen_random_uuid(),token,'B');
   delete from private.mutation_receipts where actor_id in (a,b);
   if not private.fn_recipient_quiet_mode_v1(h,a,start_at+interval '8 hours') then raise exception 'inactive auto was not quiet'; end if;
+  insert into private.mutation_receipts(actor_id,operation_id,action_type,request_hash,created_at)
+    values(a,op,'complete-task','test',start_at-interval '1 day');
+  if not private.fn_recipient_quiet_mode_v1(h,a,start_at+interval '8 hours') then raise exception 'unfinished mutation counted'; end if;
+  update private.mutation_receipts set result_payload='{"ok":true}' where actor_id=a and operation_id=op;
+  if private.fn_recipient_quiet_mode_v1(h,a,start_at+interval '8 hours') then raise exception 'own app operation ignored'; end if;
+  delete from private.mutation_receipts where actor_id=a and operation_id=op;
+  select id into actor_ref from public.domain_actor_refs where household_id=h and real_user_id=a and test_context_id is null;
+  insert into private.canonical_operation_receipts(household_id,operator_user_id,actor_ref_id,operation_id,action_type,request_hash,created_at,completed_at)
+    values(h,a,actor_ref,gen_random_uuid(),'family_event.provider_transfer','test',start_at-interval '1 day',start_at-interval '1 day');
+  if not private.fn_recipient_quiet_mode_v1(h,a,start_at+interval '8 hours') then raise exception 'background provider transfer counted'; end if;
+  insert into private.canonical_operation_receipts(household_id,operator_user_id,actor_ref_id,operation_id,action_type,request_hash,created_at,completed_at)
+    values(h,a,actor_ref,gen_random_uuid(),'shopping.create','test',start_at-interval '1 day',start_at-interval '1 day');
+  if private.fn_recipient_quiet_mode_v1(h,a,start_at+interval '8 hours') then raise exception 'shopping action ignored'; end if;
+  delete from private.canonical_operation_receipts where household_id=h and operator_user_id=a;
   insert into private.line_user_links(household_id,user_id,line_user_id,linked_at) values(h,b,'quiet-test-'||b,start_at-interval '9 days');
   insert into private.webhook_inbox(provider,provider_event_id,source_external_user_id,payload,received_at)
     values('line','quiet-test-follow-'||b,'quiet-test-'||b,'{"type":"follow"}',start_at-interval '1 day');

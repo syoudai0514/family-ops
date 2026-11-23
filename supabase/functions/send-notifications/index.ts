@@ -68,6 +68,7 @@ const LINE_QUOTA_URL = 'https://api.line.me/v2/bot/message/quota';
 const LINE_QUOTA_CONSUMPTION_URL = 'https://api.line.me/v2/bot/message/quota/consumption';
 
 type OutboxItem = {
+  quiet_mode?: boolean;
   user_notification_id?: string;
   type?: string;
   title?: string;
@@ -400,9 +401,10 @@ async function sendOne(
   await enrichRequestOutcomeItems(serviceClient, item.payload);
   const richMessage = buildRichRequestMessage(item.payload);
   const morning = item.type === 'daily_brief.v2' && (item.payload?.items ?? []).some((entry) => entry.title === '朝のおうちノート');
-  const previousDay = morning ? await loadPreviousDayReminder(serviceClient, item.recipient_user_id, item.payload) : null;
-  const thanks = morning ? await loadThanksCandidate(serviceClient, item.recipient_user_id, item.household_id) : null;
-  const bulk = item.type === 'daily_brief.v2' ? await loadLineBulk(serviceClient, item.recipient_user_id, item.payload) : null;
+  const quiet = (item.payload?.items ?? []).some((entry) => entry.type === 'daily_brief.v2' && entry.quiet_mode === true);
+  const previousDay = morning && !quiet ? await loadPreviousDayReminder(serviceClient, item.recipient_user_id, item.payload) : null;
+  const thanks = morning && !quiet ? await loadThanksCandidate(serviceClient, item.recipient_user_id, item.household_id) : null;
+  const bulk = item.type === 'daily_brief.v2' && !quiet ? await loadLineBulk(serviceClient, item.recipient_user_id, item.payload) : null;
   const thanksLine = thanks ? `${thanks.name}が「${thanks.title}」を${thanks.kind === 'task' ? '代わってくれました' : '引き受けてくれました'}` : null;
   const bulkLine = bulk ? `「${bulk.phase === 'morning' ? '朝' : '夜'}の分ぜんぶOK」はコドモン送信を除く、あなたの作業を記録します。` : null;
   const lead = [previousDay?.text, bulkLine].filter(Boolean).join('\n\n');
@@ -413,7 +415,7 @@ async function sendOne(
   // The evening brief is titled 夜のおうちノート (fn_dispatch_daily_brief); only it offers 入力.
   const evening = (item.payload?.items ?? []).some((entry) => entry.title === '夜のおうちノート');
   const consultDate = morning ? new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) : null;
-  let quickReply = item.type === 'routine'
+  let quickReply = quiet ? undefined : item.type === 'routine'
     ? buildRoutineQuickReply(sessionIds)
     : buildBriefQuickReply(item.type, { evening, previousDay, thanks, consultDate, bulk });
   // LINE allows up to five messages per push. Keep routine/handover content
@@ -431,7 +433,7 @@ async function sendOne(
   }
   // Ask only when the whole note and its existing actions fit alongside the
   // cards. Reserving the week before checking this would silently lose it.
-  if (morning && !richMessage && messages.length < 5) {
+  if (morning && !quiet && !richMessage && messages.length < 5) {
     const consent = await loadConsentCarousel(serviceClient, item.recipient_user_id, item.payload);
     if (consent) {
       const last = messages[messages.length - 1];
