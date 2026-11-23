@@ -84,6 +84,19 @@ Deno.test("recent task detail preserves revision in canonical reopen action", as
   assertEquals(f.calls.length, 0);
 });
 
+Deno.test("auto-closed unrecorded work does not count as a completed or failed record", async () => {
+  const day = inputDates().yesterday;
+  const f = fixture([], [
+    { id: "unknown", title: "薬の記録なし", status: "skipped", outcome_reason: "unrecorded", revision: 2, planned_assignee_id: "actor" },
+    { id: "done", title: "記録した作業", status: "completed", revision: 3, planned_assignee_id: "actor" },
+  ]);
+  await handleDailyInputPostback(f.ctx, { action: "mc_input_tasks", day, page: "0" });
+  assertStringIncludes(f.replies[0].text, `${day}の記録（1件）`);
+  assertStringIncludes(f.replies[0].text, "記録した作業（完了済み）");
+  assert(!f.replies[0].text.includes("薬の記録なし"));
+  assertEquals(f.calls.length, 0);
+});
+
 Deno.test("stale task detail and old-day input cards do not offer a mutation", async () => {
   const f = fixture([], [{ id: "t", title: "洗濯", status: "completed", revision: 13, planned_assignee_id: "actor" }]);
   await handleDailyInputPostback(f.ctx, { action: "mc_input_task", task_id: "t", day: inputDates().yesterday, revision: "12" });

@@ -9,8 +9,12 @@ export type RecordingTask = Pick<TaskInstance, 'scheduled_date' | 'status' | 'ou
 };
 export type TaskRecordingSummary = ReturnType<typeof summarizeTaskRecording>;
 
-export function isTaskRecorded(task: Pick<TaskInstance, 'status'>) {
-  return task.status === 'completed' || task.status === 'skipped';
+export function isAutoClosedUnrecorded(task: Pick<TaskInstance, 'status' | 'outcome_reason'>) {
+  return task.status === 'skipped' && task.outcome_reason === 'unrecorded';
+}
+
+export function isTaskRecorded(task: Pick<TaskInstance, 'status' | 'outcome_reason'>) {
+  return task.status === 'completed' || (task.status === 'skipped' && !isAutoClosedUnrecorded(task));
 }
 
 /**
@@ -35,9 +39,14 @@ export function summarizeTaskRecording(tasks: RecordingTask[], date: string, opt
   let completed = 0;
   let missed = 0;
   let recorded = 0;
+  let unrecorded = 0;
   for (const task of tasks) {
     if (task.scheduled_date !== date || task.status === 'cancelled') continue;
     if (options.userId && !isTaskOnUsersList(task, options.userId)) continue;
+    if (isAutoClosedUnrecorded(task)) {
+      if (task.expectation !== 'optional') unrecorded++;
+      continue;
+    }
     if (task.expectation === 'optional' && !isTaskRecorded(task)) continue;
     total++;
     if (task.status === 'completed') completed++;
@@ -46,18 +55,21 @@ export function summarizeTaskRecording(tasks: RecordingTask[], date: string, opt
   }
   const pending = total - recorded;
   const state =
-    total === 0
-      ? 'empty'
-      : pending > 0
-        ? 'pending'
-        : completed === total
-          ? 'completed'
-          : 'recorded';
-  return { total, completed, missed, recorded, pending, state } as const;
+    pending > 0
+      ? 'pending'
+      : unrecorded > 0
+        ? 'unrecorded'
+        : total === 0
+          ? 'empty'
+          : completed === total
+            ? 'completed'
+            : 'recorded';
+  return { total, completed, missed, recorded, pending, unrecorded, state } as const;
 }
 
 export function taskRecordingLabel(summary: TaskRecordingSummary, future = false) {
   if (summary.state === 'empty') return 'やることなし';
+  if (summary.state === 'unrecorded') return summary.total > 0 ? '一部は記録なし' : '記録なし';
   if (summary.pending > 0) return `${future ? '未完了' : '未記録'} ${summary.pending}件`;
   if (summary.state === 'completed') return 'すべて完了';
   return summary.missed > 0 ? `記録済み・今日はなし ${summary.missed}件` : 'すべて記録済み';

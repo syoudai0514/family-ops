@@ -13,12 +13,14 @@ import { newOperationId } from '../../lib/id';
 import { getTaskDisplay } from '../tasks/taskDisplay';
 
 const OUTCOME_LABELS: Record<PlannedVsActualOutcome, string> = {
+  unrecorded: '記録なし',
   completed_on_time: '完了（期限内）', completed_late: '完了（期限超過）', not_needed: '今回は不要',
   could_not_do: '今日はなし（実施せず）', expired_occurrence: '期限終了', waiting: '待ち', cancelled: 'キャンセル',
   overdue_open: '未完了（期限超過）', in_progress: '進行中', upcoming: '予定',
 };
 
 const OUTCOME_CLASS: Record<PlannedVsActualOutcome, string> = {
+  unrecorded: 'history-outcome pending',
   completed_on_time: 'history-outcome ok', completed_late: 'history-outcome late', not_needed: 'history-outcome skipped',
   could_not_do: 'history-outcome skipped', expired_occurrence: 'history-outcome skipped', waiting: 'history-outcome pending',
   cancelled: 'history-outcome skipped', overdue_open: 'history-outcome late', in_progress: 'history-outcome pending', upcoming: 'history-outcome pending',

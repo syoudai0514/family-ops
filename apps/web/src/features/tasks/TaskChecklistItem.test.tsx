@@ -390,6 +390,16 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     }));
   });
 
+  it('shows an auto-closed unrecorded medication as unknown, never as done or not taken', () => {
+    const unknown = { ...makeAnyoneTask(), status: 'skipped', outcome_reason: 'unrecorded' } as TaskInstance;
+    render(<TaskChecklistItem {...props} task={unknown} />);
+    expect(screen.getByRole('img', { name: '詩乃（便秘）の薬：記録なし' })).toBeInTheDocument();
+    expect(screen.getByText(/記録なし$/)).toBeInTheDocument();
+    expect(screen.queryByText(/今日はなし（実施せず）/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '詩乃（便秘）の薬を完了にする' })).not.toBeInTheDocument();
+    expect(callEdgeFunction).not.toHaveBeenCalled();
+  });
+
   it("on the other adult's task, the main button records THEIR completion; doing it myself is in the menu", async () => {
     const members = [
       { user_id: 'user-1', family_role: 'papa', profile: { display_name: 'パパ' } },

@@ -67,6 +67,7 @@ export interface TaskSubtaskDefinition {
 
 export type TaskInstanceStatus = 'todo' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
 export type TaskOutcomeReason =
+  | 'unrecorded'
   | 'could_not_do'
   | 'not_needed_this_occurrence'
   | 'expired_occurrence'

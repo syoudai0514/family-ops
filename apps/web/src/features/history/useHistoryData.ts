@@ -8,6 +8,7 @@ const HISTORY_WINDOW_DAYS = 14;
 const HISTORY_REALTIME_TABLES = ['task_instances', 'task_events'];
 
 export type PlannedVsActualOutcome =
+  | 'unrecorded'
   | 'completed_on_time'
   | 'completed_late'
   | 'not_needed'
@@ -52,6 +53,7 @@ export function classifyOutcome(task: TaskInstance, nowIso: string): PlannedVsAc
     return 'completed_on_time';
   }
   if (task.status === 'skipped') {
+    if (task.outcome_reason === 'unrecorded') return 'unrecorded';
     if (task.outcome_reason === 'not_needed_this_occurrence') return 'not_needed';
     if (task.outcome_reason === 'could_not_do') return 'could_not_do';
     if (task.outcome_reason === 'expired_occurrence') return 'expired_occurrence';

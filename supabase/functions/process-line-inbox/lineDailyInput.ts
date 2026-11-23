@@ -87,7 +87,7 @@ async function recentTasks(ctx: LineMustCompleteContext, day: string): Promise<R
 }
 
 function taskStatus(row: Row): string {
-  return row.status === "completed" ? "完了済み" : row.status === "skipped" ? row.outcome_reason === "could_not_do" ? "今日はなし（実施せず）" : "今回は不要など" : "未完了";
+  return row.status === "completed" ? "完了済み" : row.status === "skipped" ? row.outcome_reason === "unrecorded" ? "記録なし" : row.outcome_reason === "could_not_do" ? "今日はなし（実施せず）" : "今回は不要など" : "未完了";
 }
 export async function handleDailyInputPostback(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<boolean> {
   if (!["mc_input_open", "mc_input_tasks", "mc_input_task", "mc_input_undo_failed", "mc_input_complete", "mc_input_children", "mc_input_uncheck"].includes(fields.action)) return false;
@@ -195,8 +195,10 @@ export async function handleDailyInputPostback(ctx: LineMustCompleteContext, fie
   return true;
 }
 async function showRecent(ctx: LineMustCompleteContext, day: string, page: number): Promise<void> {
-  const tasks = await recentTasks(ctx, day);
-  if (tasks === null) { await ctx.reply("記録を読み込めませんでした。もう一度開いてください。", choices()); return; }
+  const recent = await recentTasks(ctx, day);
+  if (recent === null) { await ctx.reply("記録を読み込めませんでした。もう一度開いてください。", choices()); return; }
+  // Auto-closed, unrecorded occurrences are not completed or failed records.
+  const tasks = recent.filter((row) => !(row.status === "skipped" && row.outcome_reason === "unrecorded"));
   const offset = Math.min(page, Math.max(0, Math.ceil(tasks.length / PAGE_SIZE) - 1)) * PAGE_SIZE;
   const shown = tasks.slice(offset, offset + PAGE_SIZE);
   const actions = shown.map((row, i) => button(`${offset + i + 1}を確認・訂正`, "mc_input_task", { day, task_id: String(row.id), revision: String(row.revision) }));
