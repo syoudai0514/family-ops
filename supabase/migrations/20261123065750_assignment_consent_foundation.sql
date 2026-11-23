@@ -216,3 +216,33 @@ begin
 end $$;
 revoke all on function public.server_tx_defer_assignment_consent_v1(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.server_tx_defer_assignment_consent_v1(uuid,uuid,text) to service_role;
+
+-- Future notification and bulk-action integrations share this predicate.
+-- It is intentionally not wired in this foundation: individual accepted
+-- assignment changes and transport-dependent duties need end-to-end tests
+-- before any existing family notifications are suppressed.
+create function private.fn_task_assignment_consent_v1(p_household_id uuid,p_recipient_id uuid,p_task_id uuid)
+returns boolean language plpgsql stable security definer set search_path='' as $$
+declare task public.task_instances%rowtype; rule public.recurrence_rules%rowtype; ref uuid;
+begin
+  if p_household_id is null or p_recipient_id is null or p_task_id is null then return false; end if;
+  select id into ref from public.domain_actor_refs where household_id=p_household_id and real_user_id=p_recipient_id
+    and actor_kind='real_user' and test_context_id is null;
+  if ref is null then return false; end if;
+  select * into task from public.task_instances where household_id=p_household_id and id=p_task_id and test_context_id is null;
+  if not found then return false; end if;
+  -- Claiming shared work is a direct choice by this person. Never treat
+  -- someone else's claim as their agreement.
+  if task.assignment_mode='anyone' then return coalesce(task.active_claimant_actor_ref_id=ref,false); end if;
+  if task.planned_assignee_id is distinct from p_recipient_id then return false; end if;
+  -- An accepted one-off handoff is independent of a standing rule.
+  if task.assignment_source='agreement' then return true; end if;
+  if task.recurrence_rule_id is null then return true; end if;
+  select * into rule from public.recurrence_rules where household_id=p_household_id and id=task.recurrence_rule_id;
+  if not found then return false; end if;
+  if rule.transport_template_id is not null then
+    return private.fn_has_assignment_consent_v1(p_household_id,p_recipient_id,'transport',rule.transport_template_id);
+  end if;
+  return private.fn_has_assignment_consent_v1(p_household_id,p_recipient_id,'rule',rule.id);
+end $$;
+revoke all on function private.fn_task_assignment_consent_v1(uuid,uuid,uuid) from public,anon,authenticated,service_role;

@@ -57,11 +57,18 @@ begin
   insert into public.task_instances(household_id,task_definition_id,recurrence_rule_id,origin,title,category,routine_phase,scheduled_date,
     planned_assignee_id,assignment_mode,completion_mode,status,source,created_by)
   values(h,definition,dyn_rule,'recurring','別の準備','chore','morning',today,b,'person','whole','todo','test',a) returning id into task_id;
+  if private.fn_task_assignment_consent_v1(h,b,task_id) or private.fn_task_assignment_consent_v1(h,a,task_id) then
+    raise exception 'unagreed task was allowed'; end if;
   other_offer:=(public.server_tx_prepare_assignment_consent_v1(b,'rule',dyn_rule)->>'offer_id')::uuid;
   r:=public.server_tx_accept_assignment_consent_v1(b,other_offer);
   if other_offer is null or r->>'ok'<>'true'
     or not private.fn_has_assignment_consent_v1(h,b,'rule',dyn_rule)
+    or not private.fn_task_assignment_consent_v1(h,b,task_id)
     or private.fn_has_assignment_consent_v1(h,a,'rule',dyn_rule) then raise exception 'dynamic recipient consent incorrect'; end if;
+  update public.recurrence_rules set scheduled_local_time='09:00' where id=dyn_rule;
+  if private.fn_task_assignment_consent_v1(h,b,task_id) then raise exception 'changed rule allowed task'; end if;
+  update public.task_instances set assignment_source='agreement' where id=task_id;
+  if not private.fn_task_assignment_consent_v1(h,b,task_id) then raise exception 'accepted one-off handoff was hidden'; end if;
   insert into public.transport_weekly_templates(household_id,valid_from,created_by,created_by_actor_ref_id)
     values(h,today,a,a_ref) returning id into v_template_id;
   insert into public.transport_weekly_template_days(household_id,template_id,weekday,dropoff_user_id,pickup_user_id,dropoff_local_time)
