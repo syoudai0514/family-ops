@@ -147,6 +147,14 @@ begin
   if (select planned_assignee_id from public.task_instances where id=pickup_task) is distinct from u2 then
     raise exception 'FAIL transport dependency: pickup did not move to recipient';
   end if;
+  -- Accepting this one-off pickup is an explicit agreement for that pickup.
+  -- Its rule-derived extra chores still require their own standing consent.
+  if not private.fn_task_assignment_consent_v1(hh,u2,pickup_task) then
+    raise exception 'FAIL accepted pickup was hidden by standing consent';
+  end if;
+  if private.fn_task_assignment_consent_v1(hh,u2,dinner_task) then
+    raise exception 'FAIL pickup acceptance silently agreed to a separate chore';
+  end if;
   if (select planned_assignee_id from public.task_instances where id=dinner_task) is distinct from u2 then
     raise exception 'FAIL transport dependency: pickup_assignee routine did not follow accepted pickup';
   end if;

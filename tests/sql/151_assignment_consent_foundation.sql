@@ -14,6 +14,8 @@ begin
   select id into a_ref from public.domain_actor_refs where household_id=h and real_user_id=a and actor_kind='real_user';
   insert into public.task_definitions(household_id,code,title,category,routine_phase,completion_mode,created_by)
   values(h,'consent_test','準備','chore','morning','whole',a) returning id into definition;
+  insert into public.task_subtask_definitions(household_id,task_definition_id,title,required,sort_order,is_active)
+  values(h,definition,'今の準備',true,1,true),(h,definition,'削除済み',true,2,false);
   insert into public.recurrence_rules(household_id,task_definition_id,weekday,slot_key,assignee_strategy,planned_assignee_id,effective_from,created_by)
   values(h,definition,1,'other','fixed',b,today,a) returning id into rule_id;
   insert into public.recurrence_rules(household_id,task_definition_id,weekday,slot_key,assignee_strategy,planned_assignee_id,effective_from,created_by)
@@ -22,6 +24,7 @@ begin
   if private.fn_has_assignment_consent_v1(h,a,'rule',own_rule) then raise exception 'historical creator treated as latest editor'; end if;
   if (public.server_tx_prepare_assignment_consent_v1(a,'rule',rule_id)->>'unavailable')<>'true' then raise exception 'wrong person could prepare'; end if;
   r:=public.server_tx_prepare_assignment_consent_v1(b,'rule',rule_id); offer_id:=(r->>'offer_id')::uuid;
+  if jsonb_array_length(r#>'{snapshot,subtasks}')<>1 or r::text like '%削除済み%' then raise exception 'inactive subtask shown'; end if;
   if offer_id is null or (public.server_tx_prepare_assignment_consent_v1(b,'rule',rule_id)->>'offer_id')::uuid<>offer_id then raise exception 'preparation is not idempotent'; end if;
   begin perform public.server_tx_accept_assignment_consent_v1(a,offer_id); raise exception 'wrong person accepted';
     exception when others then if sqlerrm<>'CROSS_HOUSEHOLD_RESOURCE' then raise; end if; end;

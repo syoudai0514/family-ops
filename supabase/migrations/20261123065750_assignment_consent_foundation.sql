@@ -54,7 +54,7 @@ begin
       'transport_template_id',r.transport_template_id,'transport_leg',r.transport_leg,
       'subtasks',coalesce((select jsonb_agg(jsonb_build_object('id',s.id,'title',s.title,
         'required',s.required,'sort_order',s.sort_order) order by s.sort_order,s.id)
-        from public.task_subtask_definitions s where s.household_id=d.household_id and s.task_definition_id=d.id),'[]'::jsonb))
+        from public.task_subtask_definitions s where s.household_id=d.household_id and s.task_definition_id=d.id and s.is_active),'[]'::jsonb))
     into result
     from public.recurrence_rules r join public.task_definitions d on d.household_id=r.household_id and d.id=r.task_definition_id
     where r.household_id=p_household_id and r.id=p_target_id and r.active and d.is_active
@@ -312,9 +312,9 @@ begin
               'next_day_nondropoff_adult','previous_evening_assignee')
             -- The LINE proposal must show all of the work being agreed to.
             and char_length(d.title)<=120
-            and (select count(*) from public.task_subtask_definitions s where s.household_id=hh and s.task_definition_id=d.id)<=8
+            and (select count(*) from public.task_subtask_definitions s where s.household_id=hh and s.task_definition_id=d.id and s.is_active)<=8
             and not exists(select 1 from public.task_subtask_definitions s where s.household_id=hh
-              and s.task_definition_id=d.id and char_length(s.title)>120)
+              and s.task_definition_id=d.id and s.is_active and char_length(s.title)>120)
             and private.fn_assignment_consent_snapshot_v1(hh,p_actor_id,'rule',r.id) is not null
             and not private.fn_has_assignment_consent_v1(hh,p_actor_id,'rule',r.id)
           order by r.task_definition_id,r.weekday,r.id
