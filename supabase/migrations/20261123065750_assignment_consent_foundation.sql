@@ -547,3 +547,102 @@ begin
 end $$;
 revoke all on function public.server_tx_save_transport_template_v2(uuid,uuid,date,jsonb) from public,anon,authenticated;
 grant execute on function public.server_tx_save_transport_template_v2(uuid,uuid,date,jsonb) to service_role;
+
+-- Yesterday's former generic "all done" button must also honor agreement.
+-- Bind its exact eligible work to the actual morning note and revalidate the
+-- entire set under lock; no newly added or tentative item can be closed.
+create table private.previous_day_consent_batches (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null,
+  actor_id uuid not null,
+  notification_id uuid not null unique references public.user_notifications(id) on delete cascade,
+  local_date date not null,
+  items jsonb not null check(jsonb_typeof(items)='array'),
+  completed_items jsonb,
+  status text not null default 'ready' check(status in ('ready','completed','undone')),
+  completed_at timestamptz,
+  foreign key(household_id,actor_id) references public.household_members(household_id,user_id) on delete cascade
+);
+alter table private.previous_day_consent_batches enable row level security;
+revoke all on private.previous_day_consent_batches from public,anon,authenticated;
+
+create function public.server_tx_prepare_previous_day_consent_v1(p_actor_id uuid,p_notification_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare ctx jsonb; hh uuid; today date:=(now() at time zone 'Asia/Tokyo')::date; n public.user_notifications%rowtype;
+  b private.previous_day_consent_batches%rowtype; items jsonb; bid uuid;
+begin
+  if p_actor_id is null or p_notification_id is null then raise exception 'INVALID_INPUT'; end if;
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid;
+  select * into n from public.user_notifications where id=p_notification_id and household_id=hh and recipient_user_id=p_actor_id
+    and type='daily_brief.v2' and title='朝のおうちノート' and test_context_id is null;
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  if n.payload#>>'{brief,local_date}' is distinct from today::text then return null; end if;
+  select * into b from private.previous_day_consent_batches where notification_id=p_notification_id;
+  if found then return jsonb_build_object('id',b.id,'date',b.local_date,'status',b.status); end if;
+  if not exists(select 1 from public.task_events e where e.household_id=hh and e.actor_id=p_actor_id and e.test_context_id is null
+    and e.created_at>=now()-interval '7 days' and e.event_type in ('completed','skipped','subtask_completed','work_progress_recorded')) then return null; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id',t.id,'revision',t.revision) order by t.id),'[]'::jsonb) into items
+  from public.task_instances t left join public.task_definitions d on d.household_id=t.household_id and d.id=t.task_definition_id
+  where t.household_id=hh and t.test_context_id is null and t.scheduled_date=today-1 and t.planned_assignee_id=p_actor_id
+    and t.status in ('todo','in_progress') and coalesce(t.expectation,'normal')<>'optional'
+    and coalesce(d.code,'')<>'codmon_submit' and private.fn_task_assignment_consent_v1(hh,p_actor_id,t.id);
+  if jsonb_array_length(items)=0 or jsonb_array_length(items)>80 then return null; end if;
+  insert into private.previous_day_consent_batches(household_id,actor_id,notification_id,local_date,items)
+    values(hh,p_actor_id,p_notification_id,today-1,items) on conflict(notification_id) do nothing returning id into bid;
+  if bid is null then select id into bid from private.previous_day_consent_batches where notification_id=p_notification_id and actor_id=p_actor_id; end if;
+  return jsonb_build_object('id',bid,'date',today-1,'status','ready');
+end $$;
+revoke all on function public.server_tx_prepare_previous_day_consent_v1(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.server_tx_prepare_previous_day_consent_v1(uuid,uuid) to service_role;
+
+create function public.server_tx_complete_previous_day_consent_v1(p_actor_id uuid,p_batch_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare ctx jsonb; hh uuid; b private.previous_day_consent_batches%rowtype; x jsonb; task public.task_instances%rowtype; r jsonb; done jsonb:='[]'::jsonb;
+begin
+  if p_actor_id is null or p_batch_id is null then raise exception 'INVALID_INPUT'; end if;
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid;
+  select * into b from private.previous_day_consent_batches where id=p_batch_id and household_id=hh and actor_id=p_actor_id for update;
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  if b.status='completed' then return jsonb_build_object('ok',true,'already_completed',true); end if;
+  if b.status='undone' then return jsonb_build_object('ok',false,'already_undone',true); end if;
+  if b.local_date<>(now() at time zone 'Asia/Tokyo')::date-1 then raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
+  for x in select value from jsonb_array_elements(b.items) order by value->>'id' loop
+    select * into task from public.task_instances where household_id=hh and id=(x->>'id')::uuid and test_context_id is null for update;
+    if not found or task.revision<>(x->>'revision')::bigint or task.scheduled_date<>b.local_date
+      or task.planned_assignee_id is distinct from p_actor_id or task.status not in ('todo','in_progress')
+      or coalesce(task.expectation,'normal')='optional' or not private.fn_task_assignment_consent_v1(hh,p_actor_id,task.id) then
+      raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
+  end loop;
+  for x in select value from jsonb_array_elements(b.items) order by value->>'id' loop
+    r:=private.fn_line_bulk_complete_one_v1(p_actor_id,pg_catalog.md5(b.id::text||':previous-complete:'||(x->>'id'))::uuid,(x->>'id')::uuid);
+    done:=done||jsonb_build_array(jsonb_build_object('id',x->>'id','revision',(r->>'revision')::bigint));
+  end loop;
+  update private.previous_day_consent_batches set status='completed',completed_items=done,completed_at=now() where id=b.id;
+  return jsonb_build_object('ok',true);
+end $$;
+revoke all on function public.server_tx_complete_previous_day_consent_v1(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.server_tx_complete_previous_day_consent_v1(uuid,uuid) to service_role;
+
+create function public.server_tx_undo_previous_day_consent_v1(p_actor_id uuid,p_batch_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare ctx jsonb; hh uuid; b private.previous_day_consent_batches%rowtype; x jsonb; task public.task_instances%rowtype;
+begin
+  if p_actor_id is null or p_batch_id is null then raise exception 'INVALID_INPUT'; end if;
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid;
+  select * into b from private.previous_day_consent_batches where id=p_batch_id and household_id=hh and actor_id=p_actor_id for update;
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  if b.status='undone' then return jsonb_build_object('ok',true,'already_undone',true); end if;
+  if b.status<>'completed' or b.completed_at is null or b.completed_at<now()-interval '24 hours' then raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
+  for x in select value from jsonb_array_elements(b.completed_items) order by value->>'id' loop
+    select * into task from public.task_instances where household_id=hh and id=(x->>'id')::uuid and test_context_id is null for update;
+    if not found or task.revision<>(x->>'revision')::bigint or task.status<>'completed' then raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
+  end loop;
+  for x in select value from jsonb_array_elements(b.completed_items) order by value->>'id' loop
+    perform public.server_tx_reopen_task_with_checklist_undo_v1(p_actor_id,pg_catalog.md5(b.id::text||':previous-undo:'||(x->>'id'))::uuid,
+      (x->>'id')::uuid,(x->>'revision')::bigint,'line');
+  end loop;
+  update private.previous_day_consent_batches set status='undone' where id=b.id;
+  return jsonb_build_object('ok',true);
+end $$;
+revoke all on function public.server_tx_undo_previous_day_consent_v1(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.server_tx_undo_previous_day_consent_v1(uuid,uuid) to service_role;

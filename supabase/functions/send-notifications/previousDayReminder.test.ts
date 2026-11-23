@@ -1,42 +1,31 @@
-import { assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { loadPreviousDayReminder } from './previousDayReminder.ts';
 import { buildBriefQuickReply } from './briefQuickReply.ts';
 
-function fixture(recordings: unknown[], tasks: unknown[]) {
-  const calls: Array<{ table: string; method: string; args: unknown[] }> = [];
-  const client = {
-    from(table: string) {
-      const query: Record<string, unknown> = {};
-      for (const method of ['select', 'eq', 'is', 'gte', 'in']) {
-        query[method] = (...args: unknown[]) => { calls.push({ table, method, args }); return query; };
-      }
-      query.limit = () => Promise.resolve({ data: table === 'task_events' ? recordings : tasks, error: null });
-      return query;
-    },
-  } as unknown as SupabaseClient;
-  return { client, calls };
-}
+const noteId = '11111111-1111-4111-8111-111111111111';
+const batchId = '22222222-2222-4222-8222-222222222222';
+const now = new Date('2026-11-21T00:00:00Z');
+const payload = { items: [{ type: 'daily_brief.v2', title: '朝のおうちノート', user_notification_id: noteId }] };
 
-Deno.test('previous-day follow-up is limited to people who recently recorded work', async () => {
-  const inactive = fixture([], [{ id: 'task' }]);
-  assertEquals(await loadPreviousDayReminder(inactive.client, 'household', 'mama', new Date('2026-11-21T00:00:00Z')), null);
-  assertEquals(inactive.calls.some((call) => call.table === 'task_instances'), false);
-
-  const active = fixture([{ id: 'recording' }], [{ id: 'task' }]);
-  assertEquals(await loadPreviousDayReminder(active.client, 'household', 'papa', new Date('2026-11-21T00:00:00Z')), {
-    date: '2026-11-20', text: '昨日の分、まとめて済みにしますか？',
+Deno.test('previous-day follow-up is bound to the sender and server snapshot', async () => {
+  const calls: unknown[] = [];
+  let data: unknown = null;
+  const client = { rpc(name: string, args: unknown) { calls.push({ name, args }); return Promise.resolve({ data, error: null }); } } as unknown as SupabaseClient;
+  assertEquals(await loadPreviousDayReminder(client, 'papa', payload, now), null);
+  data = { id: batchId, date: '2026-11-20', status: 'ready' };
+  assertEquals(await loadPreviousDayReminder(client, 'papa', payload, now), {
+    id: batchId, date: '2026-11-20', text: '昨日の自分の分、記録しますか？（任意・コドモン送信を除く）',
   });
-  assertEquals(active.calls.some((call) => call.table === 'task_events' && call.method === 'eq' && call.args[0] === 'actor_id' && call.args[1] === 'papa'), true);
-
-  const nothingOpen = fixture([{ id: 'recording' }], []);
-  assertEquals(await loadPreviousDayReminder(nothingOpen.client, 'household', 'papa', new Date('2026-11-21T00:00:00Z')), null);
+  assertEquals(calls[1], { name: 'server_tx_prepare_previous_day_consent_v1', args: { p_actor_id: 'papa', p_notification_id: noteId } });
+  data = { id: batchId, date: '2026-11-19', status: 'ready' };
+  assertEquals(await loadPreviousDayReminder(client, 'papa', payload, now), null);
+  assertEquals(await loadPreviousDayReminder(client, 'papa', { items: [{ title: 'other' }, ...payload.items] }, now), null);
 });
 
-Deno.test('follow-up buttons keep the original date and provide a no-op', () => {
-  const buttons = buildBriefQuickReply('daily_brief.v2', { previousDay: '2026-12-31' })!;
-  assertEquals(buttons.slice(0, 2), [
-    { type: 'postback', label: 'ぜんぶ済み', data: 'action=previous_day_complete&date=2026-12-31', displayText: 'ぜんぶ済み' },
-    { type: 'postback', label: 'そのまま', data: 'action=previous_day_keep', displayText: 'そのまま' },
-  ]);
+Deno.test('follow-up buttons bind the server snapshot and offer a no-op', () => {
+  const buttons = buildBriefQuickReply('daily_brief.v2', { previousDay: { date: '2026-12-31', id: batchId } })!;
+  assertEquals(buttons[0].type, 'postback');
+  assertStringIncludes(buttons[0].type === 'postback' ? buttons[0].data : '', `batch_id=${batchId}`);
+  assertEquals(buttons[1], { type: 'postback', label: 'そのまま', data: 'action=previous_day_keep', displayText: 'そのまま' });
 });

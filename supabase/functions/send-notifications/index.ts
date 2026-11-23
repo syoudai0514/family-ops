@@ -400,7 +400,7 @@ async function sendOne(
   await enrichRequestOutcomeItems(serviceClient, item.payload);
   const richMessage = buildRichRequestMessage(item.payload);
   const morning = item.type === 'daily_brief.v2' && (item.payload?.items ?? []).some((entry) => entry.title === '朝のおうちノート');
-  const previousDay = morning ? await loadPreviousDayReminder(serviceClient, item.household_id, item.recipient_user_id) : null;
+  const previousDay = morning ? await loadPreviousDayReminder(serviceClient, item.recipient_user_id, item.payload) : null;
   const thanks = morning ? await loadThanksCandidate(serviceClient, item.recipient_user_id, item.household_id) : null;
   const bulk = item.type === 'daily_brief.v2' ? await loadLineBulk(serviceClient, item.recipient_user_id, item.payload) : null;
   const thanksLine = thanks ? `${thanks.name}が「${thanks.title}」を${thanks.kind === 'task' ? '代わってくれました' : '引き受けてくれました'}` : null;
@@ -415,7 +415,7 @@ async function sendOne(
   const consultDate = morning ? new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) : null;
   let quickReply = item.type === 'routine'
     ? buildRoutineQuickReply(sessionIds)
-    : buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, thanks, consultDate, bulk });
+    : buildBriefQuickReply(item.type, { evening, previousDay, thanks, consultDate, bulk });
   // LINE allows up to five messages per push. Keep routine/handover content
   // and append the Flex action card, rather than losing its buttons when an
   // outbox row was bundled with another notification.
@@ -425,7 +425,7 @@ async function sendOne(
   const hasThanksContext = !thanksLine || messages.some((message) => typeof message.text === 'string' && message.text.includes(thanksLine));
   const hasBulkContext = !bulkLine || messages.some((message) => typeof message.text === 'string' && message.text.includes(bulkLine));
   if (!hasThanksContext || !hasBulkContext) {
-    quickReply = buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, consultDate,
+    quickReply = buildBriefQuickReply(item.type, { evening, previousDay, consultDate,
       thanks: hasThanksContext ? thanks : null, bulk: hasBulkContext ? bulk : null });
     messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
   }
