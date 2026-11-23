@@ -12,6 +12,7 @@ begin
   h:=(public.server_tx_create_household(a,gen_random_uuid(),'LINE batch','A')->>'household_id')::uuid;
   token:=public.server_tx_create_household_invite(a,gen_random_uuid())->>'raw_token';
   perform public.server_tx_join_household(b,gen_random_uuid(),token,'B');
+  update public.notification_preferences set quiet_mode='normal' where household_id=h;
   other_h:=(public.server_tx_create_household(outsider,gen_random_uuid(),'Other','O')->>'household_id')::uuid;
   select id into actor_ref from public.domain_actor_refs where household_id=h and real_user_id=a and actor_kind='real_user';
   select id into other_ref from public.domain_actor_refs where household_id=h and real_user_id=b and actor_kind='real_user';

@@ -12,6 +12,7 @@ begin
   h:=(public.server_tx_create_household(actor,gen_random_uuid(),'Quiet','パパ')->>'household_id')::uuid;
   token:=public.server_tx_create_household_invite(actor,gen_random_uuid())->>'raw_token';
   perform public.server_tx_join_household(partner,gen_random_uuid(),token,'ママ');
+  update public.notification_preferences set quiet_mode='normal' where household_id=h;
   mkey:='morning-nudge:'||day::text||':'||actor::text;
   insert into public.user_notifications(household_id,recipient_user_id,type,title,body,payload,dedup_key)
   values(h,actor,'daily_brief.v2','夜のおうちノート','night',jsonb_build_object('brief',jsonb_build_object('local_date',day)),'quiet-test-evening') returning id into evening_id;
