@@ -646,3 +646,195 @@ begin
 end $$;
 revoke all on function public.server_tx_undo_previous_day_consent_v1(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.server_tx_undo_previous_day_consent_v1(uuid,uuid) to service_role;
+
+
+-- The Sunday preview used to be household-wide and could reveal a tentative
+-- transport assignment even after the daily task list was filtered. Render it
+-- for the recipient, without altering calendars or individually agreed rides.
+create function private.fn_render_weekly_preview_for_recipient_v1(
+  p_household_id uuid,
+  p_monday date,
+  p_recipient uuid
+) returns text
+language plpgsql stable security invoker set search_path = ''
+as $$
+declare
+  v_day date;
+  v_dropoff text;
+  v_pickup text;
+  v_special text;
+  v_cal text;
+  v_hl text;
+  v_block text;
+  v_out text := '';
+begin
+  for v_day in select d::date from generate_series(p_monday, p_monday + 6, interval '1 day') d loop
+    select case when ti.planned_assignee_id=p_recipient and ti.recurrence_rule_id is not null
+      and not private.fn_task_assignment_consent_v1(p_household_id,p_recipient,ti.id) then '相談中'
+      else regexp_replace(coalesce(p.display_name,'未定'), '（仮）$', '') end into v_dropoff
+    from public.task_instances ti
+    join public.task_definitions td on td.household_id=ti.household_id and td.id=ti.task_definition_id
+    left join public.profiles p on p.user_id=ti.planned_assignee_id
+    where ti.household_id=p_household_id and ti.scheduled_date=v_day and ti.test_context_id is null
+      and td.code='dropoff' and ti.status in ('todo','in_progress')
+    limit 1;
+    select case when ti.planned_assignee_id=p_recipient and ti.recurrence_rule_id is not null
+      and not private.fn_task_assignment_consent_v1(p_household_id,p_recipient,ti.id) then '相談中'
+      else regexp_replace(coalesce(p.display_name,'未定'), '（仮）$', '') end into v_pickup
+    from public.task_instances ti
+    join public.task_definitions td on td.household_id=ti.household_id and td.id=ti.task_definition_id
+    left join public.profiles p on p.user_id=ti.planned_assignee_id
+    where ti.household_id=p_household_id and ti.scheduled_date=v_day and ti.test_context_id is null
+      and td.code='pickup' and ti.status in ('todo','in_progress')
+    limit 1;
+
+    select string_agg('・'||ti.title, E'\n' order by ti.due_at nulls last, ti.title) into v_special
+    from public.task_instances ti
+    where ti.household_id=p_household_id and ti.scheduled_date=v_day and ti.test_context_id is null
+      and ti.calendar_visibility='special' and ti.status in ('todo','in_progress')
+      and (ti.planned_assignee_id is distinct from p_recipient or ti.recurrence_rule_id is null
+        or private.fn_task_assignment_consent_v1(p_household_id,p_recipient,ti.id));
+
+    begin v_cal := private.fn_calendar_day_lines(p_household_id, v_day);
+    exception when others then v_cal := null; end;
+    begin
+  with manual_hl as (
+    select
+      '・' || ti.title
+        || coalesce(' (期限' || to_char(ti.due_at at time zone 'Asia/Tokyo', 'MM/DD HH24:MI') || ')', '') as line,
+      ti.due_at as sort_ts
+    from public.task_instances ti
+    where ti.household_id = p_household_id
+      and ti.origin = 'manual'
+      and (ti.calendar_visibility is distinct from 'special' or ti.scheduled_date <> v_day)
+      and ti.status in ('todo', 'in_progress')
+      and ti.due_at is not null
+      and (ti.due_at at time zone 'Asia/Tokyo')::date between v_day and v_day
+
+  ),
+  request_hl as (
+    select
+      '・' || r.shared_title
+        || coalesce(' (期限' || to_char(r.due_at at time zone 'Asia/Tokyo', 'MM/DD HH24:MI') || ')', '') as line,
+      r.due_at as sort_ts
+    from public.requests r
+    where r.household_id = p_household_id
+      and r.status in ('pending', 'accepted')
+      and r.due_at is not null
+      and (r.due_at at time zone 'Asia/Tokyo')::date between v_day and v_day
+  ),
+  shopping_hl as (
+    select
+      '・' || si.title
+        || coalesce(' (期限' || to_char(si.due_at at time zone 'Asia/Tokyo', 'MM/DD HH24:MI') || ')', '') as line,
+      si.due_at as sort_ts
+    from public.shopping_items si
+    where si.household_id = p_household_id
+      and si.status in ('wanted', 'assigned', 'ordered')
+      and si.due_at is not null
+      and (si.due_at at time zone 'Asia/Tokyo')::date between v_day and v_day
+  )
+  select string_agg(line, E'\n' order by sort_ts, line)
+  into v_hl
+  from (
+    select * from manual_hl
+    union all
+    select * from request_hl
+    union all
+    select * from shopping_hl
+  ) x;
+    exception when others then v_hl := null; end;
+
+    v_cal := private.fn_weekly_preview_lines_v1(v_cal, v_special, v_hl, v_dropoff is not null or v_pickup is not null);
+
+    if v_dropoff is null and v_pickup is null and v_cal is null then
+      continue;
+    end if;
+    v_block := to_char(v_day,'FMMM/FMDD')||'('||(array['月','火','水','木','金','土','日'])[extract(isodow from v_day)::int]||')'
+      || case when v_dropoff is not null or v_pickup is not null
+           then E'\n送り '||coalesce(v_dropoff,'-')||' / 迎え '||coalesce(v_pickup,'-') else '' end
+      || coalesce(E'\n'||v_cal,'');
+    v_out := v_out || case when v_out='' then '' else E'\n\n' end || v_block;
+  end loop;
+  return nullif(v_out,'');
+end;
+$$;
+revoke all on function private.fn_render_weekly_preview_for_recipient_v1(uuid,date,uuid) from public,anon,authenticated;
+grant execute on function private.fn_render_weekly_preview_for_recipient_v1(uuid,date,uuid) to service_role;
+
+create or replace function public.server_tx_dispatch_daily_briefs(p_now timestamptz default now())
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_enabled boolean;
+  r record;
+  v_brief jsonb;
+  v_receipt uuid;
+  v_actor_ref uuid;
+  v_dispatched int := 0;
+  v_dedup text;
+  v_mode text;
+  v_body text;
+  v_week text;
+begin
+  select writer_enabled and not mutation_paused and release_stage='P1' into v_enabled
+  from private.canonical_capability_gates where capability='daily_brief_v2';
+  if coalesce(v_enabled,false) is not true then
+    return jsonb_build_object('enabled',false,'dispatched',0,'reason','CAPABILITY_NOT_AT_P1');
+  end if;
+
+  for r in select * from jsonb_to_recordset(public.server_read_due_daily_brief_slots(p_now)) as x(
+    household_id uuid,recipient_user_id uuid,schedule_kind text,local_date date,
+    local_time time,scheduled_at timestamptz,schedule_source text,dispatch_slot_key text
+  ) loop
+    v_receipt := null;
+    insert into private.scheduled_dispatch_receipts(
+      household_id,schedule_kind,scheduled_local_date,recipient_user_id,dispatch_slot_key
+    ) values (r.household_id,r.schedule_kind,r.local_date,r.recipient_user_id,r.dispatch_slot_key)
+    on conflict do nothing returning id into v_receipt;
+    if v_receipt is null then continue; end if;
+
+    v_brief := public.server_read_daily_brief(r.recipient_user_id,r.local_date);
+    v_mode := case when r.schedule_kind='evening_brief' then 'evening' else 'morning' end;
+    v_body := private.fn_render_daily_brief_text_v4(
+      private.fn_daily_brief_for_line_v1(v_brief, r.recipient_user_id, r.scheduled_at, v_mode),
+      case when v_mode='morning' then 'morning_focus' else v_mode end);
+
+    v_week := null;
+    if r.schedule_kind='nonworkday_morning_brief' and extract(isodow from r.local_date)=7 then
+      begin
+        v_week := private.fn_render_weekly_preview_for_recipient_v1(r.household_id, r.local_date + 1, r.recipient_user_id);
+      exception when others then
+        v_week := null; -- never lose the morning brief over the preview
+      end;
+      v_body := v_body || E'\n\n📅 来週の予定' || E'\n' || coalesce(v_week, '（登録された予定はありません）');
+    end if;
+    v_body := left(v_body, 5000); -- LINE text message limit
+
+    select id into v_actor_ref from public.domain_actor_refs where household_id=r.household_id
+      and actor_kind='real_user' and real_user_id=r.recipient_user_id;
+    v_dedup := 'daily-brief:'||r.dispatch_slot_key;
+
+    insert into public.user_notifications(
+      household_id,recipient_user_id,type,title,body,payload,dedup_key,
+      recipient_actor_ref_id,notification_kind,urgency,safety_class,bundle_key,
+      business_expires_at,aggregate_type,aggregate_revision,test_context_id
+    ) values (
+      r.household_id,r.recipient_user_id,'daily_brief.v2',
+      case when r.schedule_kind='evening_brief' then '夜のおうちノート' else '朝のおうちノート' end,
+      v_body,
+      jsonb_build_object('brief',v_brief,'schedule_kind',r.schedule_kind,
+        'weekly_preview', v_week is not null),
+      v_dedup,
+      v_actor_ref,'daily_brief.v2','immediate','normal','daily-brief:'||r.recipient_user_id::text,
+      r.scheduled_at+interval '8 hours','daily_brief',1,null
+    ) on conflict(recipient_user_id,dedup_key) do nothing;
+    v_dispatched := v_dispatched+1;
+  end loop;
+
+  return jsonb_build_object('enabled',true,'dispatched',v_dispatched);
+end;
+$$;
