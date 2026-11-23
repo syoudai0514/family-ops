@@ -248,6 +248,7 @@ begin
   return private.fn_has_assignment_consent_v1(p_household_id,p_recipient_id,'rule',rule.id);
 end $$;
 revoke all on function private.fn_task_assignment_consent_v1(uuid,uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function private.fn_task_assignment_consent_v1(uuid,uuid,uuid) to service_role;
 
 -- A recipient sees at most three proposals per local week, even when a push
 -- is retried or two workers race. The notification identity binds the
@@ -338,3 +339,153 @@ begin
 end $$;
 revoke all on function public.server_tx_prepare_weekly_assignment_consent_v1(uuid,uuid,timestamptz) from public,anon,authenticated;
 grant execute on function public.server_tx_prepare_weekly_assignment_consent_v1(uuid,uuid,timestamptz) to service_role;
+
+-- Hide only the recipient's unagreed recurring assignments in scheduled
+-- LINE briefs. Remove every reference to the task, including when the brief
+-- places it in a special, waiting or carryover section, before summarization.
+create function private.fn_filter_unagreed_line_brief_v1(p_value jsonb,p_household uuid,p_recipient uuid)
+returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare result jsonb; k text; v jsonb; child jsonb; task_id uuid;
+begin
+  if p_value is null then return null; end if;
+  if jsonb_typeof(p_value)='object' then
+    if coalesce(p_value->>'task_id','') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      task_id:=(p_value->>'task_id')::uuid;
+      if exists(select 1 from public.task_instances t where t.household_id=p_household and t.id=task_id
+        and t.test_context_id is null and t.recurrence_rule_id is not null and t.planned_assignee_id=p_recipient
+        and not private.fn_task_assignment_consent_v1(p_household,p_recipient,t.id)) then return null; end if;
+    end if;
+    result:='{}'::jsonb;
+    for k,v in select key,value from jsonb_each(p_value) loop
+      child:=private.fn_filter_unagreed_line_brief_v1(v,p_household,p_recipient);
+      if child is not null then result:=result||jsonb_build_object(k,child); end if;
+    end loop;
+    return result;
+  elsif jsonb_typeof(p_value)='array' then
+    result:='[]'::jsonb;
+    for v in select value from jsonb_array_elements(p_value) with ordinality as x(value,ord) order by ord loop
+      child:=private.fn_filter_unagreed_line_brief_v1(v,p_household,p_recipient);
+      if child is not null then result:=result||jsonb_build_array(child); end if;
+    end loop;
+    return result;
+  end if;
+  return p_value;
+end $$;
+revoke all on function private.fn_filter_unagreed_line_brief_v1(jsonb,uuid,uuid) from public,anon,authenticated,service_role;
+
+alter function private.fn_daily_brief_for_line_v1(jsonb,uuid,timestamptz,text) rename to fn_daily_brief_before_consent_v1;
+create function private.fn_daily_brief_for_line_v1(p_brief jsonb,p_recipient uuid,p_at timestamptz,p_mode text)
+returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare hh uuid;
+begin
+  select household_id into hh from public.household_members where user_id=p_recipient;
+  if hh is null then return '{}'::jsonb; end if;
+  return private.fn_daily_brief_before_consent_v1(
+    private.fn_filter_unagreed_line_brief_v1(p_brief,hh,p_recipient),p_recipient,p_at,p_mode);
+end $$;
+revoke all on function private.fn_daily_brief_for_line_v1(jsonb,uuid,timestamptz,text) from public,anon,authenticated;
+grant execute on function private.fn_daily_brief_for_line_v1(jsonb,uuid,timestamptz,text) to service_role;
+
+-- Previously prepared batches may exist when consent is first enabled.
+-- Filter preparation and revalidate at tap time, so an old LINE button can
+-- never record a newly tentative assignment.
+alter function public.server_tx_prepare_line_bulk_v1(uuid,uuid) rename to server_tx_prepare_line_bulk_before_consent_v1;
+revoke all on function public.server_tx_prepare_line_bulk_before_consent_v1(uuid,uuid) from public,anon,authenticated,service_role;
+create function public.server_tx_prepare_line_bulk_v1(p_actor_id uuid,p_notification_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare ctx jsonb; hh uuid; prepared jsonb; batch private.line_bulk_batches%rowtype; allowed jsonb;
+begin
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid;
+  prepared:=public.server_tx_prepare_line_bulk_before_consent_v1(p_actor_id,p_notification_id);
+  if prepared is null or prepared->>'id' is null then return null; end if;
+  select * into batch from private.line_bulk_batches where id=(prepared->>'id')::uuid and household_id=hh and actor_id=p_actor_id for update;
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  if batch.status<>'ready' then return prepared; end if;
+  select coalesce(jsonb_agg(x.item order by x.ord),'[]'::jsonb) into allowed
+  from jsonb_array_elements(batch.items) with ordinality x(item,ord)
+  where private.fn_task_assignment_consent_v1(hh,p_actor_id,(x.item->>'id')::uuid);
+  update private.line_bulk_batches set items=allowed where id=batch.id;
+  if jsonb_array_length(allowed)=0 then return null; end if;
+  return prepared;
+end $$;
+revoke all on function public.server_tx_prepare_line_bulk_v1(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.server_tx_prepare_line_bulk_v1(uuid,uuid) to service_role;
+
+alter function public.server_tx_complete_line_bulk_v1(uuid,uuid) rename to server_tx_complete_line_bulk_before_consent_v1;
+revoke all on function public.server_tx_complete_line_bulk_before_consent_v1(uuid,uuid) from public,anon,authenticated,service_role;
+create function public.server_tx_complete_line_bulk_v1(p_actor_id uuid,p_batch_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare ctx jsonb; hh uuid; batch private.line_bulk_batches%rowtype;
+begin
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); hh:=(ctx->>'household_id')::uuid;
+  select * into batch from private.line_bulk_batches where id=p_batch_id and household_id=hh and actor_id=p_actor_id for update;
+  if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  if batch.status='ready' and (jsonb_array_length(batch.items)=0 or exists(
+    select 1 from jsonb_array_elements(batch.items) x where not private.fn_task_assignment_consent_v1(hh,p_actor_id,(x->>'id')::uuid)
+  )) then raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
+  return public.server_tx_complete_line_bulk_before_consent_v1(p_actor_id,p_batch_id);
+end $$;
+revoke all on function public.server_tx_complete_line_bulk_v1(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.server_tx_complete_line_bulk_v1(uuid,uuid) to service_role;
+
+
+-- The morning nudge also respects the same rule; unclaimed shared work is
+-- still available because no person has been assigned it.
+create or replace function public.server_tx_dispatch_morning_nudges(p_now timestamptz default now())
+returns integer language plpgsql security invoker set search_path = '' as $$
+declare
+  v_local timestamp := p_now at time zone 'Asia/Tokyo';
+  v_date date := (p_now at time zone 'Asia/Tokyo')::date;
+  v_noon timestamptz := ((v_date + time '12:00') at time zone 'Asia/Tokyo');
+  h record; m record; v_items jsonb; v_part text; v_message text; v_header text; v_key text; v_note uuid; v_sent integer := 0;
+begin
+  if private.is_jp_nonworkday(v_date) then return 0; end if;
+  for h in
+    select id, morning_nudge_local_time as nudge_at from public.households
+    where morning_nudge_local_time is not null
+      and v_local >= (v_date + morning_nudge_local_time)
+      and v_local < (v_date + morning_nudge_local_time) + interval '45 minutes'
+  loop
+    for m in select user_id from public.household_members where household_id = h.id loop
+      -- This person's open morning work: their own, shared ones nobody has taken, and ones they took.
+      select coalesce(jsonb_agg(jsonb_build_object('task_id', t.id, 'title', t.title)
+          order by t.due_at nulls last, t.title, t.id), '[]'::jsonb)
+      into v_items
+      from public.task_instances t
+      left join public.task_definitions d on d.household_id = t.household_id and d.id = t.task_definition_id
+      left join public.domain_actor_refs ar on ar.household_id = t.household_id
+        and ar.id = t.active_claimant_actor_ref_id and ar.actor_kind = 'real_user' and ar.test_context_id is null
+      where t.household_id = h.id and t.scheduled_date = v_date and t.test_context_id is null
+        and t.status in ('todo', 'in_progress')
+        and coalesce(t.expectation, 'normal') <> 'optional'
+        and (t.routine_phase = 'morning' or t.due_at < v_noon)
+        and coalesce(d.code, '') not like 'codmon%'
+        and (t.planned_assignee_id = m.user_id or t.assignment_mode = 'anyone')
+        and (ar.real_user_id is null or ar.real_user_id = m.user_id)
+        and ((t.assignment_mode='anyone' and ar.real_user_id is null)
+          or private.fn_task_assignment_consent_v1(h.id,m.user_id,t.id));
+      continue when jsonb_array_length(v_items) = 0;
+      v_part := private.fn_line_task_timeline_v1(private.fn_task_display_items_v1(h.id, v_items), m.user_id::text);
+      continue when v_part is null;
+      v_header := '⏰ 朝の残り（' || to_char(v_local, 'HH24:MI') || '）';
+      v_message := v_header || E'\n' || v_part;  -- opens with the LINE item title, so it is shown once
+      v_key := 'morning-nudge:' || v_date::text || ':' || m.user_id::text;
+      v_note := null;
+      insert into public.user_notifications(household_id, recipient_user_id, type, title, body, payload, dedup_key)
+      values (h.id, m.user_id, 'morning_nudge', '朝の残り', v_message,
+        jsonb_build_object('date', v_date, 'task_count', jsonb_array_length(v_items)), v_key)
+      on conflict do nothing returning id into v_note;
+      continue when v_note is null;
+      perform public.server_tx_enqueue_web_push(h.id, m.user_id, '朝の残り', v_part, '/', 'morning-nudge', v_key, v_noon);
+      if exists (select 1 from public.notification_preferences
+        where household_id = h.id and user_id = m.user_id and daily_assignment_line) then
+        insert into private.notification_outbox(household_id, recipient_user_id, channel, type, payload, dedup_key, priority, business_expires_at)
+        values (h.id, m.user_id, 'line', 'morning_nudge',
+          jsonb_build_object('items', jsonb_build_array(jsonb_build_object('title', v_header, 'body', v_message))),
+          v_key, 'reminder', p_now + interval '90 minutes') on conflict do nothing;
+      end if;
+      v_sent := v_sent + 1;
+    end loop;
+  end loop;
+  return v_sent;
+end $$;
