@@ -121,6 +121,9 @@ begin
   select * into n from public.user_notifications where id=p_notification_id and household_id=hh
     and recipient_user_id=p_actor_id and type='daily_brief.v2' and test_context_id is null;
   if not found then raise exception 'CROSS_HOUSEHOLD_RESOURCE'; end if;
+  -- The scheduler truncates notes at 5,000 characters. Never offer an "all"
+  -- action when the recipient may not have seen the full source note.
+  if char_length(n.body)>=5000 then return null; end if;
   phase:=case n.title when '朝のおうちノート' then 'morning' when '夜のおうちノート' then 'evening' else null end;
   raw_date:=n.payload#>>'{brief,local_date}';
   if phase is null or raw_date is null or raw_date !~ '^\d{4}-\d{2}-\d{2}$' then return null; end if;
@@ -131,9 +134,13 @@ begin
   if jsonb_typeof(n.payload#>array['brief','own_task_groups',phase]) is distinct from 'array' then return null; end if;
   for candidate in select value from jsonb_array_elements(n.payload#>array['brief','own_task_groups',phase]) loop
     continue when candidate->>'expectation'='optional';
-    continue when not (coalesce(candidate->>'planned_assignee_id','')=p_actor_id::text
-      and coalesce(candidate->>'assignment_mode','person')<>'anyone')
-      and not (candidate->>'assignment_mode'='anyone' and candidate->>'active_claimant_user_id'=p_actor_id::text);
+    -- A task claimed by the other person is rendered as their work, even if
+    -- the original plan named this recipient. Never record it on their behalf.
+    continue when nullif(candidate->>'active_claimant_user_id','') is not null
+      and candidate->>'active_claimant_user_id'<>p_actor_id::text;
+    continue when not (coalesce((candidate->>'planned_assignee_id'=p_actor_id::text
+      and coalesce(candidate->>'assignment_mode','person')<>'anyone'),false)
+      or coalesce((candidate->>'assignment_mode'='anyone' and candidate->>'active_claimant_user_id'=p_actor_id::text),false));
     if coalesce(candidate->>'status','') not in ('todo','in_progress') then return null; end if;
     if coalesce(candidate->>'task_id','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
       or coalesce(candidate->>'revision','') !~ '^[1-9][0-9]{0,15}$' then return null; end if;
@@ -141,8 +148,9 @@ begin
     if not found or task_row.scheduled_date<>local_day or task_row.routine_phase<>phase
       or task_row.revision<>(candidate->>'revision')::bigint or task_row.status not in ('todo','in_progress')
       or coalesce(task_row.expectation,'normal')='optional'
-      or not ((task_row.assignment_mode is distinct from 'anyone' and task_row.planned_assignee_id=p_actor_id)
-        or (task_row.assignment_mode='anyone' and task_row.active_claimant_actor_ref_id=actor_ref)) then return null; end if;
+      or (task_row.active_claimant_actor_ref_id is not null and task_row.active_claimant_actor_ref_id<>actor_ref)
+      or not coalesce((task_row.assignment_mode is distinct from 'anyone' and task_row.planned_assignee_id=p_actor_id)
+        or (task_row.assignment_mode='anyone' and task_row.active_claimant_actor_ref_id=actor_ref),false) then return null; end if;
     -- Saying "all done" does not assert that Codmon was actually submitted.
     continue when exists(select 1 from public.task_definitions d where d.household_id=hh
       and d.id=task_row.task_definition_id and d.code='codmon_submit');
@@ -213,8 +221,9 @@ begin
     if not found or t.revision<>(x->>'revision')::bigint or t.scheduled_date<>b.local_date
       or t.routine_phase<>b.phase or t.status not in ('todo','in_progress')
       or coalesce(t.expectation,'normal')='optional'
-      or not ((t.assignment_mode is distinct from 'anyone' and t.planned_assignee_id=p_actor_id)
-        or (t.assignment_mode='anyone' and t.active_claimant_actor_ref_id=actor_ref)) then
+      or (t.active_claimant_actor_ref_id is not null and t.active_claimant_actor_ref_id<>actor_ref)
+      or not coalesce((t.assignment_mode is distinct from 'anyone' and t.planned_assignee_id=p_actor_id)
+        or (t.assignment_mode='anyone' and t.active_claimant_actor_ref_id=actor_ref),false) then
       raise exception 'AGGREGATE_REVISION_CONFLICT';
     end if;
   end loop;

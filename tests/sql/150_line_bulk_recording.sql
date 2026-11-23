@@ -3,9 +3,9 @@ begin;
 set local role service_role;
 do $$
 declare
-  a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid(); h uuid; other_h uuid; token text;
-  whole uuid; checklist uuid; first_item uuid; remaining uuid; later_task uuid; optional_task uuid; codmon uuid; codmon_def uuid; partner_task uuid;
-  note uuid; next_note uuid; stale_note uuid; undo_note uuid; batch uuid; stale_batch uuid; undo_batch uuid; before_first timestamptz;
+  a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid(); h uuid; other_h uuid; token text; actor_ref uuid; other_ref uuid;
+  whole uuid; checklist uuid; first_item uuid; remaining uuid; later_task uuid; optional_task uuid; codmon uuid; codmon_def uuid; partner_task uuid; evening_task uuid;
+  note uuid; next_note uuid; stale_note uuid; undo_note uuid; evening_note uuid; codmon_note uuid; long_note uuid; batch uuid; stale_batch uuid; undo_batch uuid; evening_batch uuid; before_first timestamptz;
   today date:=(now() at time zone 'Asia/Tokyo')::date; groups jsonb; brief jsonb; result jsonb;
 begin
   insert into auth.users(id) values(a),(b),(outsider);
@@ -13,6 +13,8 @@ begin
   token:=public.server_tx_create_household_invite(a,gen_random_uuid())->>'raw_token';
   perform public.server_tx_join_household(b,gen_random_uuid(),token,'B');
   other_h:=(public.server_tx_create_household(outsider,gen_random_uuid(),'Other','O')->>'household_id')::uuid;
+  select id into actor_ref from public.domain_actor_refs where household_id=h and real_user_id=a and actor_kind='real_user';
+  select id into other_ref from public.domain_actor_refs where household_id=h and real_user_id=b and actor_kind='real_user';
   whole:=(public.server_tx_create_task(a,gen_random_uuid(),'朝食','chore',today,null,a,'whole','morning','[]'::jsonb)->>'task_id')::uuid;
   update public.task_instances set status='in_progress',attention_state='waiting',waiting_note='返事待ち',next_check_at=now()+interval '1 hour' where id=whole;
   checklist:=(public.server_tx_create_task(a,gen_random_uuid(),'準備','preparation',today,null,a,'subtasks','morning',jsonb_build_array(
@@ -72,6 +74,19 @@ begin
   insert into public.user_notifications(household_id,recipient_user_id,type,title,body,payload,dedup_key)
     values(h,a,'daily_brief.v2','朝のおうちノート','body',jsonb_build_object('brief',brief),'line-bulk-stale') returning id into stale_note;
   stale_batch:=(public.server_tx_prepare_line_bulk_v1(a,stale_note)->>'id')::uuid;
+  insert into public.user_notifications(household_id,recipient_user_id,type,title,body,payload,dedup_key)
+    values(h,a,'daily_brief.v2','朝のおうちノート',repeat('長',5000),jsonb_build_object('brief',brief),'line-bulk-long') returning id into long_note;
+  if public.server_tx_prepare_line_bulk_v1(a,long_note) is not null then raise exception 'truncated note offered an all-done action'; end if;
+  update public.task_instances set planned_assignee_id=null,planned_assignee_actor_ref_id=null,assignment_mode='unassigned' where id=whole;
+  begin perform public.server_tx_complete_line_bulk_v1(a,stale_batch); raise exception 'unassigned task completed';
+    exception when others then if sqlerrm<>'AGGREGATE_REVISION_CONFLICT' then raise; end if; end;
+  update public.task_instances set planned_assignee_id=a,planned_assignee_actor_ref_id=actor_ref,assignment_mode='person' where id=whole;
+  update public.task_instances set assignment_mode='anyone',planned_assignee_id=null,planned_assignee_actor_ref_id=null,
+    active_claimant_actor_ref_id=other_ref,claimed_at=now() where id=whole;
+  begin perform public.server_tx_complete_line_bulk_v1(a,stale_batch); raise exception 'other person claim completed';
+    exception when others then if sqlerrm<>'AGGREGATE_REVISION_CONFLICT' then raise; end if; end;
+  update public.task_instances set assignment_mode='person',planned_assignee_id=a,planned_assignee_actor_ref_id=actor_ref,
+    active_claimant_actor_ref_id=null,claimed_at=null where id=whole;
   update public.task_instances set revision=revision+1 where id=whole;
   begin perform public.server_tx_complete_line_bulk_v1(a,stale_batch); raise exception 'stale batch completed';
     exception when others then if sqlerrm<>'AGGREGATE_REVISION_CONFLICT' then raise; end if; end;
@@ -92,6 +107,25 @@ begin
   insert into public.user_notifications(household_id,recipient_user_id,type,title,body,payload,dedup_key)
     values(h,a,'daily_brief.v2','朝のおうちノート','body',jsonb_build_object('brief',brief),'line-bulk-future') returning id into next_note;
   if public.server_tx_prepare_line_bulk_v1(a,next_note) is not null then raise exception 'future notification prepared'; end if;
+  select jsonb_build_object('local_date',today,'own_task_groups',jsonb_build_object('morning',jsonb_build_array(
+    jsonb_build_object('task_id',id,'revision',revision,'status',status,'expectation',expectation,
+      'assignment_mode',assignment_mode,'planned_assignee_id',planned_assignee_id)))) into brief
+    from public.task_instances where id=codmon;
+  insert into public.user_notifications(household_id,recipient_user_id,type,title,body,payload,dedup_key)
+    values(h,a,'daily_brief.v2','朝のおうちノート','body',jsonb_build_object('brief',brief),'line-bulk-codmon-only') returning id into codmon_note;
+  if public.server_tx_prepare_line_bulk_v1(a,codmon_note) is not null then raise exception 'codmon-only batch should not be offered'; end if;
+  evening_task:=(public.server_tx_create_task(a,gen_random_uuid(),'夜の作業','chore',today,null,a,'whole','evening','[]'::jsonb)->>'task_id')::uuid;
+  select jsonb_build_object('local_date',today,'own_task_groups',jsonb_build_object('evening',jsonb_build_array(
+    jsonb_build_object('task_id',id,'revision',revision,'status',status,'expectation',expectation,
+      'assignment_mode',assignment_mode,'planned_assignee_id',planned_assignee_id)))) into brief
+    from public.task_instances where id=evening_task;
+  insert into public.user_notifications(household_id,recipient_user_id,type,title,body,payload,dedup_key)
+    values(h,a,'daily_brief.v2','夜のおうちノート','body',jsonb_build_object('brief',brief),'line-bulk-evening') returning id into evening_note;
+  evening_batch:=(public.server_tx_prepare_line_bulk_v1(a,evening_note)->>'id')::uuid;
+  if evening_batch is null or (select phase from private.line_bulk_batches where id=evening_batch)<>'evening' then raise exception 'evening batch missing'; end if;
+  perform public.server_tx_complete_line_bulk_v1(a,evening_batch);
+  perform public.server_tx_undo_line_bulk_v1(a,evening_batch);
+  if (select status from public.task_instances where id=evening_task)<>'todo' then raise exception 'evening task not restored'; end if;
   if has_function_privilege('authenticated','public.server_tx_prepare_line_bulk_v1(uuid,uuid)','execute')
     or has_function_privilege('authenticated','public.server_tx_complete_line_bulk_v1(uuid,uuid)','execute')
     or has_function_privilege('authenticated','public.server_tx_undo_line_bulk_v1(uuid,uuid)','execute') then

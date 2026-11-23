@@ -1613,6 +1613,35 @@ async function handlePostback(
   // the action/resource IDs or impersonate the provider's selected datetime.
   delete fields.datetime;
   if (typeof item.payload.postback?.params?.datetime === "string") fields.datetime = item.payload.postback.params.datetime;
+  if (fields.action === "line_bulk_later") {
+    await sendConfirmation(client, item, actor, "わかりました。");
+    return;
+  }
+  if (fields.action === "line_bulk_complete" || fields.action === "line_bulk_undo") {
+    const batchId = fields.batch_id ?? "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(batchId)) {
+      await sendConfirmation(client, item, actor, "この記録を確認できませんでした。今日の一覧を確認してください。");
+      return;
+    }
+    const undo = fields.action === "line_bulk_undo";
+    const { data, error } = await client.rpc(undo ? "server_tx_undo_line_bulk_v1" : "server_tx_complete_line_bulk_v1", {
+      p_actor_id: actor.user_id, p_batch_id: batchId,
+    });
+    if (error || !data?.ok) {
+      await sendConfirmation(client, item, actor, data?.already_undone ? "この記録は取り消し済みです。" :
+        `${undo ? "元に戻せませんでした" : "記録できませんでした"}。今日の一覧を確認してください。`);
+      return;
+    }
+    if (undo) {
+      await sendConfirmation(client, item, actor, "元に戻しました。");
+    } else {
+      await sendConfirmation(client, item, actor, "記録しました。", [{
+        type: "postback", label: "取り消す", displayText: "取り消す",
+        data: new URLSearchParams({ action: "line_bulk_undo", batch_id: batchId }).toString(),
+      }]);
+    }
+    return;
+  }
   if (fields.action === "quiet_today") {
     if (fields.date !== jstIsoDateOffset(0)) {
       await sendConfirmation(client, item, actor, "この案内は日付が変わりました。今日は変更していません。");
