@@ -54,6 +54,8 @@ begin
   -- accepting its current contents makes the nudge appear.
   while private.is_jp_nonworkday(workday) loop workday:=workday+1; end loop;
   work_time:=(workday::timestamp+time '07:30') at time zone 'Asia/Tokyo';
+  insert into public.task_events(household_id,task_instance_id,actor_id,event_type,source,created_at)
+    values(h,manual,b,'completed','pwa',work_time-interval '1 day');
   update public.task_instances set status='cancelled' where id=manual;
   update public.task_instances set scheduled_date=workday,due_at=(workday::timestamp+time '08:00') at time zone 'Asia/Tokyo' where id=recurring;
   if public.server_tx_dispatch_morning_nudges(work_time)<>0 then raise exception 'tentative task generated nudge'; end if;

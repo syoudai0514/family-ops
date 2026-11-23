@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
 do $$
-declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; own uuid; shared uuid; transport uuid; td uuid; rule uuid;
+declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; own uuid; shared uuid; transport uuid; td uuid; rule uuid; actor_ref uuid;
   day date:=(now() at time zone 'Asia/Tokyo')::date; result text; at_time timestamptz:=now();
 begin
   insert into auth.users(id) values(a),(b);
@@ -12,6 +12,11 @@ begin
   insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by)
     values(h,'manual','共通の朝','household','morning',day,'anyone','whole','todo','test',a) returning id into shared;
   if private.fn_morning_nudge_lines_v2(h,a,day,at_time) is not null then raise exception 'no recording still got nudge'; end if;
+  insert into public.task_events(household_id,task_instance_id,actor_id,event_type,source,created_at) values
+    (h,own,a,'created','pwa',at_time-interval '1 hour'),
+    (h,own,a,'completed','scheduler',at_time-interval '1 hour'),
+    (h,own,a,'completed','pwa',at_time+interval '1 hour');
+  if private.fn_morning_nudge_lines_v2(h,a,day,at_time) is not null then raise exception 'creation, automation or future event counted'; end if;
   insert into public.task_events(household_id,task_instance_id,actor_id,event_type,source,created_at)
     values(h,own,a,'completed','pwa',at_time-interval '8 days');
   if private.fn_morning_nudge_lines_v2(h,a,day,at_time) is not null then raise exception 'expired recording counted'; end if;
@@ -34,6 +39,12 @@ begin
   update public.task_instances set recurrence_rule_id=rule,origin='recurring' where id=transport;
   result:=private.fn_morning_nudge_lines_v2(h,a,day,at_time);
   if result like '%共通の朝%' then raise exception 'unagreed dropoff was treated as definite: %',result; end if;
+  select id into actor_ref from public.domain_actor_refs where household_id=h and real_user_id=a and test_context_id is null;
+  update public.task_instances set active_claimant_actor_ref_id=actor_ref,claimed_at=at_time where id=shared;
+  result:=private.fn_morning_nudge_lines_v2(h,a,day,at_time);
+  if result not like '%共通の朝%' then raise exception 'self-claimed shared work omitted: %',result; end if;
+  result:=private.fn_morning_nudge_lines_v2(h,b,day,at_time);
+  if result like '%共通の朝%' then raise exception 'someone else’s claimed work was shown: %',result; end if;
   if has_function_privilege('authenticated','private.fn_morning_nudge_lines_v2(uuid,uuid,date,timestamp with time zone)','EXECUTE') then raise exception 'private function exposed'; end if;
 end $$;
 rollback;
