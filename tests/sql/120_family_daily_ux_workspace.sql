@@ -62,7 +62,7 @@ begin
       'evening',jsonb_build_array(jsonb_build_object('title','夜の作業')),
       'optional',jsonb_build_array(jsonb_build_object('title','任意の掃除'))));
   if private.fn_render_daily_brief_text_v4(readback,'evening') like '%朝 1/4 完了%'
-    or private.fn_render_daily_brief_text_v4(readback,'evening') not like '%朝の残り%'
+    or private.fn_render_daily_brief_text_v4(readback,'evening') like '%朝の残り%'
     or private.fn_render_daily_brief_text_v4(readback,'evening') not like '%余裕があれば%' then
     raise exception 'FAIL: brief compacting changed task truth'; end if;
 end $$;
