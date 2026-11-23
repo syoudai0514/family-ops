@@ -15,7 +15,7 @@ describe('OutcomeSemanticsPage', () => {
       '結果を付け間違えた',
     ]);
     expect(screen.getByText(/同じ削除にしません/)).toBeInTheDocument();
-    expect(screen.getByText(/キャンセル・できなかった・今回は不要・再予定は別の結果/)).toBeInTheDocument();
+    expect(screen.getByText(/キャンセル・今日はなし・今回は不要・再予定は別の結果/)).toBeInTheDocument();
   });
 
   it('routes every semantic choice to an existing operational surface', () => {
