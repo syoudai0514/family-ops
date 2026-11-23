@@ -108,15 +108,23 @@ export function TaskSelectionProvider({
       setSelected((current) => current.filter((id) => !done.includes(id)));
       setFailures(failed);
       if (done.length > 0) {
-        if (undos.length > 0) {
-          offerUndo({
-            label: `${done.length}件を${outcome === 'complete' ? '完了' : 'できなかった'}にしました`,
-            undo: async () => {
-              for (const undo of undos) await undo();
-              await onChanged();
-            },
-          });
-        }
+        let pendingUndos = undos;
+        const missingUndo = done.length - undos.length;
+        const undoGuidance = missingUndo === 0 ? '' : undos.length > 0
+          ? `。${undos.length}件は元に戻せます。残りは個別に確認してください。`
+          : '。修正するときは個別に確認してください。';
+        offerUndo({
+          label: `${done.length}件を${outcome === 'complete' ? '完了' : 'できなかった'}にしました${undoGuidance}`,
+          ...(undos.length > 0 ? { undo: async () => {
+            const failedUndos: Array<() => Promise<void>> = [];
+            for (const undo of pendingUndos) {
+              try { await undo(); } catch { failedUndos.push(undo); }
+            }
+            pendingUndos = failedUndos;
+            await onChanged();
+            if (failedUndos.length) throw new Error(`${failedUndos.length}件を元に戻せませんでした。最新の記録を確認してください。`);
+          } } : {}),
+        });
         try {
           await onChanged();
         } catch {

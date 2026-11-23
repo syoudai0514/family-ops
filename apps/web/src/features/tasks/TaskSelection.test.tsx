@@ -1,7 +1,7 @@
 import { UndoNoticeProvider } from '../../app/UndoNotice';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TaskInstance } from '../../lib/types';
+import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import { TaskChecklistItem } from './TaskChecklistItem';
 import { TaskSelectionProvider, useTaskSelection } from './TaskSelection';
 
@@ -27,14 +27,14 @@ function GroupButton() {
   return <button disabled={selection?.busy} onClick={() => void selection?.completeGroup(['t1', 't2'])}>当番を済みにする</button>;
 }
 
-function List({ tasks, onChanged }: { tasks: TaskInstance[]; onChanged: () => void }) {
+function List({ tasks, onChanged, subtasks = {} }: { tasks: TaskInstance[]; onChanged: () => void; subtasks?: Record<string, TaskSubtaskInstance[]> }) {
   return (
     <UndoNoticeProvider>
       <TaskSelectionProvider onChanged={onChanged}>
         <GroupButton />
         <ul>
           {tasks.map((item) => (
-            <TaskChecklistItem key={item.id} task={item} subtasks={[]} members={[]} hasPartner={false}
+            <TaskChecklistItem key={item.id} task={item} subtasks={subtasks[item.id] ?? []} members={[]} hasPartner={false}
               currentUserId="user-1" onEdit={vi.fn()} onChanged={onChanged} compact />
           ))}
         </ul>
@@ -86,6 +86,54 @@ describe('ticking several tasks and recording them together', () => {
     callEdgeFunction.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
     await waitFor(() => expect(callEdgeFunction.mock.calls.map((call) => call[1].task_id)).toEqual(['t1', 't2']));
+  });
+
+  it('explains that checklist work needs individual correction and only undoes eligible tasks', async () => {
+    const check: TaskSubtaskInstance = { id: 's1', household_id: 'household-1', task_instance_id: 't2', title: '干す', required: true, sort_order: 1, is_completed: false, completed_by: null, completed_at: null };
+    render(<List tasks={[task('t1', 'お風呂'), task('t2', '洗濯', { completion_mode: 'subtasks' })]} subtasks={{ t2: [check] }} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '当番を済みにする' }));
+    expect(await screen.findByText('2件を完了にしました。1件は元に戻せます。残りは個別に確認してください。')).toBeInTheDocument();
+    callEdgeFunction.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+    await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledTimes(1));
+    expect(callEdgeFunction.mock.calls[0][1]).toEqual(expect.objectContaining({ task_id: 't1', action: 'reopen' }));
+  });
+
+  it('does not offer the unsupported task-level undo for a single checklist', async () => {
+    const check: TaskSubtaskInstance = { id: 's1', household_id: 'household-1', task_instance_id: 't2', title: '干す', required: true, sort_order: 1, is_completed: false, completed_by: null, completed_at: null };
+    render(<UndoNoticeProvider><ul><TaskChecklistItem task={task('t2', '洗濯', { completion_mode: 'subtasks' })}
+      subtasks={[check]} members={[]} hasPartner={false} currentUserId="user-1" onEdit={vi.fn()} onChanged={vi.fn()} compact /></ul></UndoNoticeProvider>);
+    fireEvent.click(screen.getByRole('button', { name: '洗濯を完了にする' }));
+    expect(await screen.findByText('洗濯を完了にしました。修正するときはチェック項目を確認してください。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '元に戻す' })).not.toBeInTheDocument();
+  });
+
+  it('shows a result without an undo button when every completed task needs individual correction', async () => {
+    const check: TaskSubtaskInstance = { id: 's1', household_id: 'household-1', task_instance_id: 't2', title: '干す', required: true, sort_order: 1, is_completed: false, completed_by: null, completed_at: null };
+    render(<List tasks={[task('t2', '洗濯', { completion_mode: 'subtasks' })]} subtasks={{ t2: [check] }} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: '洗濯を選ぶ' }));
+    fireEvent.click(screen.getByRole('button', { name: '✓ 完了' }));
+    expect(await screen.findByText('1件を完了にしました。修正するときは個別に確認してください。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '元に戻す' })).not.toBeInTheDocument();
+  });
+
+  it('continues undoing other tasks after a conflict and retries only the failed task', async () => {
+    const onChanged = vi.fn();
+    render(<List tasks={[task('t1', 'お風呂'), task('t2', '洗濯')]} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole('button', { name: '当番を済みにする' }));
+    await screen.findByText('2件を完了にしました');
+    callEdgeFunction.mockClear();
+    let firstFailure = true;
+    callEdgeFunction.mockImplementation((_name, body: { task_id: string }) => {
+      if (body.task_id === 't1' && firstFailure) { firstFailure = false; return Promise.reject(new Error('changed')); }
+      return Promise.resolve({ ok: true, revision: 5 });
+    });
+    fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('1件を元に戻せませんでした');
+    expect(callEdgeFunction.mock.calls.map((call) => call[1].task_id)).toEqual(['t1', 't2']);
+    callEdgeFunction.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+    await waitFor(() => expect(callEdgeFunction.mock.calls.map((call) => call[1].task_id)).toEqual(['t1']));
   });
 
   it('records ticked tasks as できなかった with the row revision', async () => {
