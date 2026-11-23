@@ -489,3 +489,61 @@ begin
   end loop;
   return v_sent;
 end $$;
+
+-- Record a self-assignment only at the command boundary that proves the
+-- caller just chose these exact contents. Historical created_by is not proof.
+create function private.fn_record_self_assignment_consent_v1(p_actor uuid,p_kind text,p_target uuid)
+returns void language plpgsql security definer set search_path='' as $$
+declare proposal jsonb; accepted jsonb;
+begin
+  proposal:=public.server_tx_prepare_assignment_consent_v1(p_actor,p_kind,p_target);
+  if proposal->>'ok'='true' then
+    accepted:=public.server_tx_accept_assignment_consent_v1(p_actor,(proposal->>'offer_id')::uuid);
+    if accepted->>'ok' is distinct from 'true' then raise exception 'AGGREGATE_REVISION_CONFLICT'; end if;
+  end if;
+end $$;
+revoke all on function private.fn_record_self_assignment_consent_v1(uuid,text,uuid) from public,anon,authenticated,service_role;
+
+alter function public.server_tx_change_recurrence(uuid,uuid,uuid,int,text,text,uuid,time,int,date) rename to server_tx_change_recurrence_before_consent_v1;
+revoke all on function public.server_tx_change_recurrence_before_consent_v1(uuid,uuid,uuid,int,text,text,uuid,time,int,date) from public,anon,authenticated,service_role;
+create function public.server_tx_change_recurrence(
+  p_actor_id uuid,p_operation_id uuid,p_task_definition_id uuid,p_weekday int,p_slot_key text,
+  p_assignee_strategy text,p_planned_assignee_user_id uuid,p_scheduled_local_time time,
+  p_conflict_window_minutes int,p_effective_from date
+) returns jsonb language plpgsql security definer set search_path='' as $$
+declare result jsonb; replay boolean;
+begin
+  if p_actor_id is null or p_operation_id is null then raise exception 'INVALID_INPUT'; end if;
+  perform private.fn_require_production_actor_context_v1(p_actor_id);
+  -- Serialize the preflight and command, so an idempotent retry cannot accept
+  -- a rule that somebody edited after the original successful operation.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('self-consent:recurrence:'||p_actor_id::text||':'||p_operation_id::text,0));
+  select exists(select 1 from private.mutation_receipts where actor_id=p_actor_id and operation_id=p_operation_id) into replay;
+  result:=public.server_tx_change_recurrence_before_consent_v1(p_actor_id,p_operation_id,p_task_definition_id,p_weekday,p_slot_key,
+    p_assignee_strategy,p_planned_assignee_user_id,p_scheduled_local_time,p_conflict_window_minutes,p_effective_from);
+  if not replay and p_assignee_strategy='fixed' and p_planned_assignee_user_id=p_actor_id and result->>'rule_id' is not null then
+    perform private.fn_record_self_assignment_consent_v1(p_actor_id,'rule',(result->>'rule_id')::uuid);
+  end if;
+  return result;
+end $$;
+revoke all on function public.server_tx_change_recurrence(uuid,uuid,uuid,int,text,text,uuid,time,int,date) from public,anon,authenticated;
+grant execute on function public.server_tx_change_recurrence(uuid,uuid,uuid,int,text,text,uuid,time,int,date) to service_role;
+
+alter function public.server_tx_save_transport_template_v2(uuid,uuid,date,jsonb) rename to server_tx_save_transport_template_before_consent_v1;
+revoke all on function public.server_tx_save_transport_template_before_consent_v1(uuid,uuid,date,jsonb) from public,anon,authenticated,service_role;
+create function public.server_tx_save_transport_template_v2(p_actor_id uuid,p_operation_id uuid,p_valid_from date,p_days jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare ctx jsonb; actor_ref uuid; result jsonb; replay boolean;
+begin
+  if p_actor_id is null or p_operation_id is null then raise exception 'INVALID_INPUT'; end if;
+  ctx:=private.fn_require_production_actor_context_v1(p_actor_id); actor_ref:=(ctx->>'actor_ref_id')::uuid;
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('self-consent:transport:'||p_actor_id::text||':'||p_operation_id::text,0));
+  select exists(select 1 from private.canonical_operation_receipts where actor_ref_id=actor_ref and operation_id=p_operation_id and test_context_id is null) into replay;
+  result:=public.server_tx_save_transport_template_before_consent_v1(p_actor_id,p_operation_id,p_valid_from,p_days);
+  if not replay and result->>'template_id' is not null then
+    perform private.fn_record_self_assignment_consent_v1(p_actor_id,'transport',(result->>'template_id')::uuid);
+  end if;
+  return result;
+end $$;
+revoke all on function public.server_tx_save_transport_template_v2(uuid,uuid,date,jsonb) from public,anon,authenticated;
+grant execute on function public.server_tx_save_transport_template_v2(uuid,uuid,date,jsonb) to service_role;
