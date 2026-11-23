@@ -106,6 +106,8 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
             }
             return Promise.resolve(Response.json({ code: "P0001", message: "PENDING_ACTION_NOT_EDITABLE" }, { status: 400 }));
           case "server_tx_log_line_turn":
+          case "server_tx_complete_line_bulk_v1":
+          case "server_tx_undo_line_bulk_v1":
           case "server_tx_line_quiet_today_v1":
           case "server_tx_confirm_pending_action":
           case "server_tx_complete_webhook_inbox_item": data = { ok: true }; break;
@@ -287,6 +289,30 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       await run("");
       assertEquals(calls.some((call) => call.rpc === "server_tx_line_quiet_today_v1"), false);
       assertStringIncludes(rendered(), "日付が変わりました");
+    });
+    await t.step("bulk confirmation and undo use only the sender's server-issued batch", async () => {
+      const batchId = "50000000-0000-4000-8000-000000000003";
+      postback = `action=line_bulk_complete&batch_id=${batchId}`;
+      await run("");
+      const complete = calls.find((call) => call.rpc === "server_tx_complete_line_bulk_v1");
+      assertEquals(complete?.args, { p_actor_id: actorId, p_batch_id: batchId });
+      assertStringIncludes(rendered(), "記録しました。");
+      assertStringIncludes(rendered(), "action=line_bulk_undo");
+      postback = `action=line_bulk_undo&batch_id=${batchId}`;
+      await run("");
+      const undo = calls.find((call) => call.rpc === "server_tx_undo_line_bulk_v1");
+      assertEquals(undo?.args, { p_actor_id: actorId, p_batch_id: batchId });
+      assertStringIncludes(rendered(), "元に戻しました。");
+      postback = "action=line_bulk_complete&batch_id=invalid";
+      await run("");
+      assertEquals(calls.some((call) => call.rpc === "server_tx_complete_line_bulk_v1"), false);
+      assertStringIncludes(rendered(), "確認できませんでした");
+    });
+    await t.step("later acknowledges without recording anything", async () => {
+      postback = "action=line_bulk_later";
+      await run("");
+      assertEquals(calls.some((call) => call.rpc === "server_tx_complete_line_bulk_v1" || call.rpc === "server_tx_undo_line_bulk_v1"), false);
+      assertStringIncludes(rendered(), "わかりました。");
     });
   } finally {
     Object.defineProperty(Deno, "serve", originalServe);

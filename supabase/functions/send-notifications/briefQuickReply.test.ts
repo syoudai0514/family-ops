@@ -30,3 +30,15 @@ Deno.test("morning transport consultation stays bound to its date", () => {
   assertEquals(quietData.get("action"), "quiet_today");
   assertEquals(quietData.get("date"), "2026-12-31");
 });
+
+Deno.test("bulk actions name the phase and bind the server-issued batch", () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const morning = buildBriefQuickReply('daily_brief.v2', { bulk: { id, phase: 'morning' } }) ?? [];
+  assertEquals(morning[0].label, '朝の分ぜんぶOK');
+  assertEquals(morning[0].type === 'postback' ? new URLSearchParams(morning[0].data).get('batch_id') : null, id);
+  const evening = buildBriefQuickReply('daily_brief.v2', { evening: true, bulk: { id, phase: 'evening' } }) ?? [];
+  assertEquals(evening[0].label, '夜の分ぜんぶOK');
+  assertEquals(evening[1].label, 'あとで');
+  assertEquals(evening[1].type === 'postback' ? evening[1].data : null, 'action=line_bulk_later');
+  assertEquals((buildBriefQuickReply('daily_brief.v2', { evening: true, bulk: { id, phase: 'morning' } }) ?? []).some((item) => item.label.includes('ぜんぶOK')), false);
+});

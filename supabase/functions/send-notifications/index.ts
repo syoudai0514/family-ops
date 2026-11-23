@@ -38,6 +38,7 @@ import { buildRoutineQuickReply } from './routineQuickReply.ts';
 import { buildBriefQuickReply } from './briefQuickReply.ts';
 import { loadPreviousDayReminder } from './previousDayReminder.ts';
 import { loadThanksCandidate } from './thanksCandidate.ts';
+import { loadLineBulk } from './lineBulk.ts';
 import { logLineTurn } from '../process-line-inbox/lineRouterWiring.ts';
 import {
   buildAssignmentRequestFlex,
@@ -400,8 +401,11 @@ async function sendOne(
   const morning = item.type === 'daily_brief.v2' && (item.payload?.items ?? []).some((entry) => entry.title === '朝のおうちノート');
   const previousDay = morning ? await loadPreviousDayReminder(serviceClient, item.household_id, item.recipient_user_id) : null;
   const thanks = morning ? await loadThanksCandidate(serviceClient, item.recipient_user_id, item.household_id) : null;
+  const bulk = item.type === 'daily_brief.v2' ? await loadLineBulk(serviceClient, item.recipient_user_id, item.payload) : null;
   const thanksLine = thanks ? `${thanks.name}が「${thanks.title}」を${thanks.kind === 'task' ? '代わってくれました' : '引き受けてくれました'}` : null;
-  const bundled = buildBundledText(item.payload, item.type, item.recipient_user_id, previousDay?.text, thanksLine);
+  const bulkLine = bulk ? `「${bulk.phase === 'morning' ? '朝' : '夜'}の分ぜんぶOK」はコドモン送信を除く、あなたの作業を記録します。` : null;
+  const lead = [previousDay?.text, bulkLine].filter(Boolean).join('\n\n');
+  const bundled = buildBundledText(item.payload, item.type, item.recipient_user_id, lead, thanksLine);
   const sessionIds = bundled.sessionIds;
   // Keep the reminder near the beginning so long briefs cannot truncate it.
   const text = bundled.text;
@@ -410,15 +414,18 @@ async function sendOne(
   const consultDate = morning ? new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10) : null;
   let quickReply = item.type === 'routine'
     ? buildRoutineQuickReply(sessionIds)
-    : buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, thanks, consultDate });
+    : buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, thanks, consultDate, bulk });
   // LINE allows up to five messages per push. Keep routine/handover content
   // and append the Flex action card, rather than losing its buttons when an
   // outbox row was bundled with another notification.
   let messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
   // Never show a thank-you action without the text identifying its recipient
   // and reason: a very long brief may have been truncated by LINE limits.
-  if (thanksLine && !messages.some((message) => typeof message.text === 'string' && message.text.includes(thanksLine))) {
-    quickReply = buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, consultDate });
+  const hasThanksContext = !thanksLine || messages.some((message) => typeof message.text === 'string' && message.text.includes(thanksLine));
+  const hasBulkContext = !bulkLine || messages.some((message) => typeof message.text === 'string' && message.text.includes(bulkLine));
+  if (!hasThanksContext || !hasBulkContext) {
+    quickReply = buildBriefQuickReply(item.type, { evening, previousDay: previousDay?.date, consultDate,
+      thanks: hasThanksContext ? thanks : null, bulk: hasBulkContext ? bulk : null });
     messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
   }
   let response: Response;
