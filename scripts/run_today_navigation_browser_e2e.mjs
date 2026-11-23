@@ -406,6 +406,32 @@ async function main() {
       screenshot: await screenshot(client, 'today-ready.png'),
     });
 
+    // The gentle outcome is explicit about non-performance and remains a
+    // usable tap target in the compact mobile menu. Do not submit it here.
+    const noWorkAction = await evaluate(client, `(() => {
+      const row = document.getElementById('task-${task.id}');
+      if (!row) return null;
+      for (let parent = row.parentElement; parent; parent = parent.parentElement) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+      }
+      const menu = row.querySelector('details.task-overflow');
+      if (!menu) return null;
+      menu.open = true;
+      const button = [...menu.querySelectorAll('button')].find(node => node.textContent.includes('今日はなし'));
+      if (!button) return null;
+      button.scrollIntoView({ block: 'center' });
+      const rect = button.getBoundingClientRect();
+      return { label: button.textContent.trim(), aria: button.getAttribute('aria-label'),
+        left: rect.left, right: rect.right, height: rect.height, viewport: window.innerWidth };
+    })()`);
+    assert.ok(noWorkAction, 'unperformed-work action must be available');
+    assert.equal(noWorkAction.label, '今日はなし（実施せず）');
+    assert.ok(noWorkAction.aria.includes('実施せず'), 'accessible action must describe non-performance');
+    assert.ok(noWorkAction.height >= 44 && noWorkAction.left >= 0 && noWorkAction.right <= noWorkAction.viewport,
+      `unperformed-work action must fit and be tappable: ${JSON.stringify(noWorkAction)}`);
+    scenarios.push({ id: 'gentle-unperformed-action', assertion: 'The unperformed-work action clearly states its meaning and fits a 44px mobile tap target', screenshot: await screenshot(client, 'gentle-unperformed-action.png') });
+    await evaluate(client, `document.getElementById('task-${task.id}').querySelector('details.task-overflow').open = false`);
+
     await evaluate(client, `document.body.style.minHeight='2600px'; window.scrollTo(0, 640);`);
     await waitFor(() => evaluate(client, 'window.scrollY >= 600'), { label: 'Today scroll position' });
     assert.equal(await evaluate(client, `(() => {

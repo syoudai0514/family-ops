@@ -559,7 +559,7 @@ export function TaskChecklistItem({
         <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
-            {compact && !finished && <button type="button" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${taskTitle}を今日はなし（実施せず）として記録`}>今日はなし（実施せず）</button>}
+            {compact && !finished && <button type="button" className="task-action task-action-missed" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${taskTitle}を今日はなし（実施せず）として記録`}>今日はなし（実施せず）</button>}
             {compact && hasPartner && !partnersTask && !finished && !completionPrerequisite?.blocking && !completionPrerequisite?.actionLabel && <button type="button" disabled={busy} onClick={() => handleComplete('partner')} aria-label={`${partnerLabel}が完了`}>{partnerLabel}がやった</button>}
             {/* A recorded task is one quiet line; undo lives here (owner 2026-10-10: a list of done
                 cards each with a button was hard to read). */}
