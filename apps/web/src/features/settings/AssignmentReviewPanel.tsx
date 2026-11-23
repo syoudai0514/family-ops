@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { callEdgeFunction, FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
+import './AssignmentReviewPanel.css';
 
 export type AssignmentReview = { definition_id: string; title: string; review_suggested: boolean; tentative: boolean };
 export type AssignmentReviewState = { routines: AssignmentReview[]; transport_tentative: boolean };
@@ -58,9 +59,9 @@ export function AssignmentReviewPanel({ onLoaded, onChanged }: {
       {error && <p role="alert">{error} <button type="button" className="text-button" onClick={() => void load()}>もう一度確認</button></p>}
       {notice && <p role="status">{notice}</p>}
       {suggestions.map((item) => (
-        <article key={item.definition_id} className="routine-rule">
+        <article key={item.definition_id} className="routine-rule assignment-review-item">
           <strong>{item.title}</strong>
-          <div className="filter-chips">
+          <div className="filter-chips assignment-review-actions">
             <button type="button" disabled={busy !== null} aria-label={`${item.title}をそのまま続ける`} onClick={() => void act(item, 'keep')}>そのまま</button>
             <button type="button" disabled={busy !== null} aria-label={`${item.title}を余裕があればにする`} onClick={() => void act(item, 'optional')}>余裕があれば</button>
             <button type="button" disabled={busy !== null} aria-label={`${item.title}をやめる`} onClick={() => void act(item, 'stop')}>やめる</button>
