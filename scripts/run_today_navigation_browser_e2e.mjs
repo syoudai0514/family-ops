@@ -48,7 +48,7 @@ const transportTask = {
 const state = {
   initialBriefDelayMs: 800, requests: [], browserEvents: [], networkEvents: [],
   progressEvents: [], progressCommands: [], handovers: [],
-  transportNavigation: false, transportTaskReads: 0, assignmentCommands: [], mutations: [],
+  transportNavigation: false, transportTaskReads: 0, assignmentCommands: [], mutations: [], thanksSent: false,
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -209,6 +209,15 @@ async function fulfillRequest(client, { requestId, request }) {
     response = jsonResponse(state.progressEvents);
   } else if (pathname === '/rest/v1/handovers') {
     response = jsonResponse(state.handovers);
+  } else if (pathname === '/functions/v1/edit-task' && JSON.parse(request.postData || '{}').action === 'list_thanks') {
+    response = jsonResponse(state.thanksSent || state.transportNavigation ? [] : [
+      { kind: 'request', id: 'thanks-first', title: '今日はお迎えを交代', recipient_id: 'partner', target_date: TODAY },
+      { kind: 'request', id: 'thanks-second', title: '明日のお迎えを交代', recipient_id: 'partner', target_date: TOMORROW },
+    ]);
+  } else if (pathname === '/functions/v1/edit-task' && JSON.parse(request.postData || '{}').action === 'send_thanks') {
+    assert.equal(JSON.parse(request.postData || '{}').source_id, 'thanks-first');
+    state.thanksSent = true;
+    response = jsonResponse({ sent: true });
   } else if (pathname === '/functions/v1/edit-task' && JSON.parse(request.postData || '{}').action === 'record_progress') {
     const body = JSON.parse(request.postData || '{}');
     assert.equal(body.task_id, task.id);
@@ -412,6 +421,23 @@ async function main() {
       assertion: 'Real mobile Chrome renders actionable Today content without the removed KPI dashboard or partner completion scoreboard, while preserving tomorrow impact and おうちノート identity',
       screenshot: await screenshot(client, 'today-ready.png'),
     });
+
+    await waitForText(client, '今日はお迎えを交代');
+    assert.equal(await evaluate(client, `(() => {
+      const card = document.querySelector('.thanks-prompt');
+      const schedule = document.querySelector('[aria-label="今日の予定"]');
+      const button = card?.querySelector('button');
+      if (!card || !schedule || !button || !card.querySelector('time') || card.querySelector('.thanks-more')?.open) return false;
+      const rect = button.getBoundingClientRect();
+      if (schedule.getBoundingClientRect().top >= card.getBoundingClientRect().top || rect.height < 44
+        || rect.left < 0 || rect.right > window.innerWidth) return false;
+      button.click();
+      return true;
+    })()`), true);
+    await waitFor(() => evaluate(client, `document.querySelector('.thanks-prompt .thanks-item [role="status"]')?.textContent.includes('送信済み')`),
+      { label: 'Thanks status in the original row' });
+    assert.equal(await evaluate(client, `Boolean(document.querySelector('.thanks-prompt > .thanks-item button'))`), false);
+    scenarios.push({ id: 'thanks-sent-in-place', assertion: 'Calendar comes first and sending thanks changes the same dated row to Sent on mobile', screenshot: await screenshot(client, 'thanks-sent-in-place.png') });
 
     // The gentle outcome is explicit about non-performance and remains a
     // usable tap target in the compact mobile menu. Do not submit it here.
