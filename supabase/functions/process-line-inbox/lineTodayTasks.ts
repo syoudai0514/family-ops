@@ -74,7 +74,7 @@ export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel:
   const isShared = (r: TodayTaskRow) => r.assignment_mode === "anyone" && !r.active_claimant_user_id;
   const mineAll = visible.filter((r) => r.assignment_mode === "anyone"
     ? r.active_claimant_user_id === actorId
-    : !r.planned_assignee_id || r.planned_assignee_id === actorId);
+    : !r.planned_assignee_id || (r.planned_assignee_id === actorId && r.assignment_confirmed !== false));
   const mine = mineAll.filter((r) => !isOptional(r));
   const shared = visible.filter((r) => isShared(r) && !isOptional(r));
   const mineOptional = visible.filter((r) => isOptional(r) && (mineAll.includes(r) || isShared(r)));
@@ -112,11 +112,11 @@ export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel:
     for (const r of mineOptional.sort(byTime)) lines.push(line(r, "", true));
   }
 
-  const transport = open(theirs).filter((r) => (r.task_kind === "transport" || ["dropoff", "pickup"].includes(r.task_code ?? ""))
-    && r.assignment_confirmed === true).sort(byTime);
+  const transport = open(theirs).filter((r) => r.task_kind === "transport" || ["dropoff", "pickup"].includes(r.task_code ?? "")).sort(byTime);
   if (transport.length) {
     lines.push("", "送り迎え");
-    for (const r of transport) lines.push(line(r, `（${r.assigned_label || partnerLabel}）`));
+    for (const r of transport) lines.push(line(r, r.assignment_confirmed === true
+      ? `（${r.assigned_label || partnerLabel}）` : "（担当は未確認）"));
   }
   // A shared task already taken by someone else is coordination, not an
   // inventory of their assigned work; showing it prevents duplicate work.

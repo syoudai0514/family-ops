@@ -100,7 +100,7 @@ Deno.test("today: claimed shared work follows the current taker, and display dat
   assertEquals(text.includes("21:00 10/15(木)の保育園準備"), true);
 });
 
-Deno.test("today: only agreed transport appears; tentative or missing consent stays hidden", () => {
+Deno.test("today: transport remains visible but tentative or missing consent never names an assignee", () => {
   const transport = (title: string, assignment_confirmed?: boolean): TodayTaskRow => ({
     title, status: "todo", task_code: "pickup", planned_assignee_id: PARTNER, assignment_confirmed,
   });
@@ -108,13 +108,27 @@ Deno.test("today: only agreed transport appears; tentative or missing consent st
     transport("合意済み", true), transport("未合意", false), transport("確認できない"),
     { title: "相手の普通の日課", status: "todo", planned_assignee_id: PARTNER, assignment_confirmed: true },
   ], ME, "パパ", "ママ");
-  assertEquals(text.includes("送り迎え\n・ 合意済み（ママ）"), true);
-  assertEquals(/未合意|確認できない|相手の普通の日課|残り1件・済み/.test(text), false);
+  assertEquals(text.includes("・ 合意済み（ママ）"), true);
+  assertEquals(text.includes("・ 未合意（担当は未確認）"), true);
+  assertEquals(text.includes("・ 確認できない（担当は未確認）"), true);
+  assertEquals(text.includes("未合意（ママ）") || text.includes("確認できない（ママ）")
+    || text.includes("相手の普通の日課") || text.includes("残り1件・済み"), false);
   const named = formatTodayTasks([{ ...transport("お迎え", true), assigned_label: "パパ" }], ME, "自分", "相手");
   assertEquals(named.includes("お迎え（パパ）"), true);
   const manual = formatTodayTasks([{ title: "今日だけの迎え", status: "todo", task_kind: "transport",
     planned_assignee_id: PARTNER, assignment_confirmed: true }], ME, "パパ", "ママ");
   assertEquals(manual.includes("今日だけの迎え（ママ）"), true);
+});
+
+Deno.test("today: an unagreed own assignment is not presented as assigned work", () => {
+  const text = formatTodayTasks([
+    { title: "仮の朝支度", status: "todo", planned_assignee_id: ME, assignment_confirmed: false },
+    { title: "仮の送り", status: "todo", task_kind: "transport", planned_assignee_id: ME, assignment_confirmed: false },
+  ], ME, "パパ", "ママ");
+  assertEquals(text.includes("仮の朝支度"), false);
+  assertEquals(text.includes("パパの担当（0件・残り0件）"), true);
+  assertEquals(text.includes("仮の送り（担当は未確認）"), true);
+  assertEquals(text.includes("仮の送り（ママ）"), false);
 });
 
 Deno.test("today: the agreed transport shows the actual assignee even with multiple other members", async () => {
