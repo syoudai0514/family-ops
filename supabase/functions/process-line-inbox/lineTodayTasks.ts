@@ -34,7 +34,7 @@ const PHASES: Array<{ label: string; match: (phase: string | null | undefined) =
 ];
 
 /** Sections of the brief that list tasks; they are replaced by the full list. */
-const TASK_SECTIONS = /^(?:朝やること|朝の残り|日中にやること|日中の残り|夜にやること|今やること|このあと（夜）|まだ残っていること|相手の今日|相手の担当で確認したいこと|家族が対応中|今日の送り迎え|余裕があれば|先に家を出る人|2人で分担（誰でもOK）|⭐ 今日、忘れずに|⭐ 今日だけの予定)$/u;
+const TASK_SECTIONS = /^(?:朝やること|朝の残り|日中にやること|日中の残り|夜にやること|今やること|このあと（夜）|まだ残っていること|相手の今日|相手の担当で確認したいこと|家族が対応中|家族の共有事項|今日の送り迎え|余裕があれば|先に家を出る人|2人で分担（誰でもOK）|⭐ 今日、忘れずに|⭐ 今日だけの予定)$/u;
 const PARTNER_WORK_SECTIONS = /^(?:相手の今日|相手の担当で確認したいこと)$/u;
 
 function jstClock(iso: string | null | undefined): string {
