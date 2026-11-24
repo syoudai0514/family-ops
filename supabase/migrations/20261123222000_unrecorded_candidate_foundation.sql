@@ -16,10 +16,12 @@ returns table(household_id uuid,task_id uuid) language sql stable security defin
     -- or any Google-visible definition; leave all such work untouched.
     and t.calendar_visibility='hidden' and t.task_kind not in ('special','transport') and t.event_id is null
     and not exists(select 1 from public.task_definitions d where d.household_id=t.household_id and d.id=t.task_definition_id
-      and (coalesce(d.calendar_visibility,'')<>'hidden' or coalesce(d.task_kind,'') in ('transport','special')))
+      and (coalesce(d.calendar_visibility,'')<>'hidden' or coalesce(d.task_kind,'') in ('transport','special')
+        or coalesce(d.category,'') in ('shopping','purchase','health','medical','nursery')
+        or lower(coalesce(d.code,'')) like 'codmon%'))
     and t.attention_state='active' and coalesce(t.carryover_policy,'occurrence_ends') not in ('until_done','until_deadline')
     and coalesce(t.duplicate_sensitivity,'normal')<>'safety_critical'
-    and coalesce(t.category,'') not in ('shopping','purchase')
+    and coalesce(t.category,'') not in ('shopping','purchase','health','medical','nursery')
     and not exists(select 1 from public.requests r where r.household_id=t.household_id
       and (r.linked_task_instance_id=t.id or r.assignment_task_instance_id=t.id))
     and not exists(select 1 from public.assignment_change_request_tasks x
