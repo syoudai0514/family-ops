@@ -53,6 +53,10 @@ begin
   prepared:=private.fn_daily_brief_for_line_v1(brief,a,now(),'morning');
   body:=private.fn_render_daily_brief_text_v4(prepared,'morning');
   if body not like '%園のお迎え（担当: ママ）%' then raise exception 'old queued transport hidden: %',body; end if;
+  update public.task_instances set scheduled_date=day+1 where id=pickup;
+  body:=private.fn_consent_safe_daily_text_v1(h,a,note);
+  if body like '%園のお迎え%' then raise exception 'moved transport remained in old queued note: %',body; end if;
+  update public.task_instances set scheduled_date=day where id=pickup;
   -- A stale or cross-household task reference cannot borrow an assignee label.
   brief:=jsonb_set(brief,'{partner_summary,critical_items,0}',
     (brief#>'{partner_summary,critical_items,0}')||jsonb_build_object('task_id',foreign_task,'task_kind','transport'));

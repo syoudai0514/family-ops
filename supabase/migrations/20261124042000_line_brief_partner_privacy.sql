@@ -21,7 +21,8 @@ begin
       and t.id=case when coalesce(item->>'task_id','') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
         then (item->>'task_id')::uuid else null end
     left join public.task_definitions d on d.household_id=hh and d.id=t.task_definition_id
-    left join public.household_members hm on hm.household_id=hh and hm.user_id=t.planned_assignee_id;
+    left join public.household_members hm on hm.household_id=hh and hm.user_id=t.planned_assignee_id
+    where t.id is null or (t.status in ('todo','in_progress') and t.scheduled_date=(p_at at time zone 'Asia/Tokyo')::date);
     brief:=jsonb_set(brief,'{partner_summary,critical_items}',critical);
   end if;
   return brief;
