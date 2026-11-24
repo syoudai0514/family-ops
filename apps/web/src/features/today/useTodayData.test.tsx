@@ -117,24 +117,28 @@ describe('useTodayData canonical snapshot states', () => {
     expect(result.current.morningSummary).toEqual({ completedCount: 2, totalCount: 2 });
   });
 
-  it('keeps material partner state out of the Empty state even without critical item rows', async () => {
+  it('does not let hidden partner counts or ordinary tasks suppress the Empty state', async () => {
     rows.task_instances = [];
     rpc.mockResolvedValueOnce({
       data: {
         ...emptyBrief,
-        partner_summary: { open_assigned: 2, waiting: 1, completed_today: 1, critical_items: [] },
+        partner_summary: { open_assigned: 2, waiting: 1, completed_today: 1,
+          critical_items: [{ task_id: 'private', title: '夕食対応', task_kind: 'evening_chore' }] },
       },
       error: null,
     });
     const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
 
+    await waitFor(() => expect(result.current.status).toBe('empty'));
+  });
+
+  it('keeps shared transport visible when it is the only relevant partner item', async () => {
+    rows.task_instances = [];
+    rpc.mockResolvedValueOnce({ data: { ...emptyBrief, partner_summary: {
+      critical_items: [{ task_id: 'pickup', title: 'お迎え', task_kind: 'transport' }],
+    } }, error: null });
+    const { result } = renderHook(() => useTodayData('household-1', 'user-1'));
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(result.current.partnerSummary).toEqual({
-      open_assigned: 2,
-      waiting: 1,
-      completed_today: 1,
-      critical_items: [],
-    });
   });
 
   it('loads same-day completed work for a quiet correction surface', async () => {

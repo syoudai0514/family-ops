@@ -133,32 +133,30 @@ describe('Today first-flow priority contract', () => {
     expect(section).toHaveTextContent('押し間違えは各行の「•••」から戻せます');
   });
 
-  it('shows the partner state without scoring their day', () => {
+  it('does not show a partner card for counts alone', () => {
     render(<MemoryRouter><Today /></MemoryRouter>);
-
-    const partner = screen.getByRole('region', { name: '相手の今日' });
-    expect(partner).not.toHaveTextContent('完了');
-    expect(partner).toHaveTextContent('担当している残り 2件');
-    expect(partner.querySelector('h2')).toBeNull();
+    expect(screen.queryByRole('region', { name: '相手の今日' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '今日の送り迎え' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/担当している残り/)).not.toBeInTheDocument();
   });
 
-  it('leads the partner card with the items that change the reader\'s own behaviour', () => {
+  it('shows shared transport but does not list the other parent’s ordinary tasks', () => {
     mockToday.mockReturnValue(data({
       partnerSummary: {
         open_assigned: 11,
         completed_today: 0,
         critical_items: [
-          { task_id: 'p1', title: 'お迎え' },
-          { task_id: 'p2', title: '夕食対応' },
+          { task_id: 'p1', title: 'お迎え', task_kind: 'transport' },
+          { task_id: 'p2', title: '夕食対応', task_kind: 'evening_chore' },
         ],
       },
     }));
     render(<MemoryRouter><Today /></MemoryRouter>);
 
-    const partner = screen.getByRole('region', { name: '相手の今日' });
+    const partner = screen.getByRole('region', { name: '今日の送り迎え' });
     expect(partner).toHaveTextContent('お迎え');
-    expect(partner).toHaveTextContent('夕食対応');
-    expect(partner).not.toHaveTextContent('完了 0');
+    expect(partner).not.toHaveTextContent('夕食対応');
+    expect(partner).not.toHaveTextContent(/完了|残り/);
   });
 
   it('lets an unassigned Today item open a real assignment action instead of a dead end', async () => {

@@ -33,6 +33,7 @@ import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
 import { readAssignmentEntry } from '../tasks/assignmentEntry';
 import { LineConnectPrompt } from './LineConnectPrompt';
 import { ThanksPrompt } from './ThanksPrompt';
+import { partnerTransportItems } from './partnerTransport';
 
 function RoutineGroup({ title, tasks, children }: { title: string; tasks: TodayTaskInstance[]; children: ReactNode }) {
   const selection = useTaskSelection();
@@ -530,34 +531,15 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
     );
   }
 
-  // This card used to headline `残り {open}件・完了 {completed}件` at <h2> size --
-  // the largest text on the screen. On a real household morning it read
-  // "残り 11件・完了 0件": a scoreboard of how little the other parent had done
-  // yet, at 10am. Requirements §3 forbids 勝率/ポイント/ランキング and design 04
-  // §5 and §16.2 say a partner's ordinary completions belong in detail/history
-  // and must not be pushed as scorekeeping, so `完了` is dropped here entirely:
-  // it changes nothing the reader does, and the one case where a partner's
-  // completion genuinely reduces the reader's own work is already carried by
-  // the separate `もう済んでいること` section.
-  //
-  // The "summary counts" 04 §5 asks for are kept, demoted to a quiet meta line.
-  // What leads instead is `critical_items` -- お迎え / 夕食対応 / お風呂 -- which is
-  // the part §5 describes as "tasks that alter user's behavior".
   function renderPartnerState() {
-    const items = data.partnerSummary.critical_items ?? [];
-    const open = data.partnerSummary.open_assigned ?? 0;
-    if (items.length === 0 && open === 0) return null;
+    const items = partnerTransportItems(data.partnerSummary);
+    if (items.length === 0) return null;
     return (
-      <section className="card compact-section partner-summary" aria-label="相手の今日">
-        <p className="eyebrow">相手の今日</p>
-        {items.length > 0 ? (
-          <ul className="today-schedule-list">
-            {items.slice(0, 3).map((item) => <li key={item.task_id}>{item.display_title ?? item.title}</li>)}
-          </ul>
-        ) : (
-          <p className="task-item-meta">こちらに関係する予定はありません。</p>
-        )}
-        {open > 0 && <p className="task-item-meta">担当している残り {open}件</p>}
+      <section className="card compact-section partner-summary" aria-label="今日の送り迎え">
+        <p className="eyebrow">今日の送り迎え</p>
+        <ul className="today-schedule-list">
+          {items.slice(0, 3).map((item) => <li key={item.task_id}>{item.display_title ?? item.title}</li>)}
+        </ul>
       </section>
     );
   }
