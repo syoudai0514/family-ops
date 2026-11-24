@@ -143,7 +143,12 @@ export function mergeTodayBrief(brief: string, taskBlock: string): string {
     }
     out.push(section);
   }
-  if (!placed) out.splice(Math.min(1, out.length), 0, taskBlock);
+  if (!placed) {
+    // A calendar-only note has no task section to replace. Keep its schedule
+    // above the full list returned separately by the task reader.
+    const scheduleIndex = out.findIndex((section) => /^(?:⭐ )?今日の予定$/u.test(section.split("\n", 1)[0].trim()));
+    out.splice(scheduleIndex < 0 ? Math.min(1, out.length) : scheduleIndex + 1, 0, taskBlock);
+  }
   return out.join("\n\n");
 }
 

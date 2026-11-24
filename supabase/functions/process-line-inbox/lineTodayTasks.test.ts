@@ -52,6 +52,13 @@ Deno.test("today: task read failure still removes the old partner summary withou
   assertEquals(hidePartnerWorkSections("今日のおうちノート\n\n相手の今日\n・相手の日課"), "今日のおうちノート");
 });
 
+Deno.test("today: calendar stays at the top when the reply adds or replaces the task list", () => {
+  const schedule = "今日のおうちノート\n\nまず確認\n・返事が必要\n\n⭐ 今日の予定\n・12:00 家族の予定";
+  assertEquals(mergeTodayBrief(schedule, "作業一覧"), `${schedule}\n\n作業一覧`);
+  assertEquals(mergeTodayBrief(`${schedule}\n\n⭐ 今日だけの予定\n・特別な作業\n\n日中にやること\n・日課`, "作業一覧"),
+    `${schedule}\n\n作業一覧`);
+});
+
 Deno.test("today: an optional task (掃除) is listed apart as 余裕があれば and never counted as left", () => {
   const rows: TodayTaskRow[] = [
     { title: "送り", status: "todo", routine_phase: "morning", due_at: at("08:00"), planned_assignee_id: ME },
