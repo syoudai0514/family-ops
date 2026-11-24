@@ -153,7 +153,10 @@ function dailyBrief() {
       is_all_day: false, starts_at: `${TODAY}T06:00:00Z`, ends_at: `${TODAY}T06:30:00Z`,
       all_day_start: null, all_day_end_exclusive: null,
     }],
-    partner_summary: { open_assigned: 2, waiting: 0, completed_today: 4, critical_items: [{ task_id: 'partner-critical', title: 'お迎え' }] },
+    partner_summary: { open_assigned: 2, waiting: 0, completed_today: 4, critical_items: [
+      { task_id: 'partner-critical', title: 'お迎え', task_kind: 'transport' },
+      { task_id: 'partner-chore', title: '相手の日課', task_kind: 'evening_chore' },
+    ] },
     reconciliation: { sessions: [], remaining_count: 0, actionable: false },
     tomorrow_impact: {
       local_date: TOMORROW, task_count: 1, schedule_count: 0, carryover_count: 0, impact_count: 1,
@@ -389,7 +392,11 @@ async function main() {
     scenarios.push({ id: 'CF03-loading', assertion: 'Loading is visible and Empty is not rendered during the unresolved canonical read' });
 
     await waitForText(client, task.title, 12_000);
-    for (const text of ['明日の着替え準備', 'お迎え', '担当している残り 2件']) await waitForText(client, text);
+    for (const text of ['明日の着替え準備', '今日の送り迎え', 'お迎え']) await waitForText(client, text);
+    for (const hidden of ['担当している残り', '相手の日課']) {
+      assert.equal(await evaluate(client, `document.body.innerText.includes(${JSON.stringify(hidden)})`), false,
+        `partner work must not be presented as a checklist: ${hidden}`);
+    }
     for (const removedKpi of ['要対応 0', '残り 1', '待ち 0', '明日影響 1', '完了 4']) {
       assert.equal(
         // The removed tiles began their own line ("残り 1"). Match line starts, so a section such
