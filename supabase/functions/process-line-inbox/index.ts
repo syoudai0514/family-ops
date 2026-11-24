@@ -131,7 +131,7 @@ import type { GeminiThinkingLevel } from "../_shared/gemini.ts";
 import { loadSnapshot, logLineTurn, markUnderstandModelBusy, reserveAiCall, understandEnabled, understandModelSetting } from "./lineRouterWiring.ts";
 import { formatScheduleDate, inferredNight, leadingScheduleDates } from './scheduleLanguage.ts';
 import { completionDate, tryHandleDayCompletion } from './lineDayCompletion.ts';
-import { loadTodayTaskBlock, mergeTodayBrief } from "./lineTodayTasks.ts";
+import { hidePartnerWorkSections, loadTodayTaskBlock, mergeTodayBrief } from "./lineTodayTasks.ts";
 import { resolveLineTransportAssignment } from "./lineTransportAssignment.ts";
 import { transportConsultChoices, validTransportConsultChoice } from "./lineTransportConsult.ts";
 import { parseTransportAssignmentCorrection } from "../_shared/transportAssignmentIntent.ts";
@@ -352,10 +352,11 @@ async function sendLineSchedule(
   const briefText = typeof rendered.data === "string" && rendered.data.trim()
     ? rendered.data
     : "今日のおうちノート\n\n確認が必要な項目はありません。";
-  // Every one of the sender's tasks, done ones included; the partner's summarised.
+  // Every one of the sender's tasks, done ones included; ordinary partner work stays private.
   const taskBlock = await loadTodayTaskBlock(client, actor.household_id, actor.user_id, jstIsoDateOffset(0))
     .catch(() => null);
-  const baseText = taskBlock ? mergeTodayBrief(briefText, taskBlock) : briefText;
+  const baseText = taskBlock ? mergeTodayBrief(briefText, taskBlock)
+    : `${hidePartnerWorkSections(briefText)}\n\n作業の一覧を読み込めませんでした。送り迎えなどはアプリで確認してください。`;
   const todayText = appendTodayDetailLinks(
     baseText,
     structured.data,

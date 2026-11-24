@@ -35,6 +35,7 @@ const PHASES: Array<{ label: string; match: (phase: string | null | undefined) =
 
 /** Sections of the brief that list tasks; they are replaced by the full list. */
 const TASK_SECTIONS = /^(?:朝やること|朝の残り|日中にやること|日中の残り|夜にやること|今やること|このあと（夜）|まだ残っていること|相手の今日|相手の担当で確認したいこと|家族が対応中|今日の送り迎え|余裕があれば|先に家を出る人|2人で分担（誰でもOK）|⭐ 今日、忘れずに|⭐ 今日だけの予定)$/u;
+const PARTNER_WORK_SECTIONS = /^(?:相手の今日|相手の担当で確認したいこと)$/u;
 
 function jstClock(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -144,6 +145,13 @@ export function mergeTodayBrief(brief: string, taskBlock: string): string {
   }
   if (!placed) out.splice(Math.min(1, out.length), 0, taskBlock);
   return out.join("\n\n");
+}
+
+/** A failed task read must not put the old partner-work summary back. */
+export function hidePartnerWorkSections(brief: string): string {
+  return brief.split(/\n{2,}/u)
+    .filter((section) => !PARTNER_WORK_SECTIONS.test(section.split("\n", 1)[0].trim()))
+    .join("\n\n");
 }
 
 function roleLabel(role: unknown, fallback: string): string {

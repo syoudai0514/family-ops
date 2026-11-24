@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { formatTodayTasks, loadTodayTaskBlock, mergeTodayBrief, type TodayTaskRow } from "./lineTodayTasks.ts";
+import { formatTodayTasks, hidePartnerWorkSections, loadTodayTaskBlock, mergeTodayBrief, type TodayTaskRow } from "./lineTodayTasks.ts";
 
 const ME = "me";
 const PARTNER = "her";
@@ -44,6 +44,12 @@ Deno.test("today: the brief keeps its other sections; its task sections are repl
   assertEquals(mergeTodayBrief(brief, "TASKS"), "朝のおうちノート\n\n今日の予定\n・14:00 プール\n\nTASKS\n\nコドモン 9:15まで\n・残り: 朝食");
   // A brief without task sections gets the list right after its title.
   assertEquals(mergeTodayBrief("今日のおうちノート\n\n確認が必要な項目はありません。", "TASKS"), "今日のおうちノート\n\nTASKS\n\n確認が必要な項目はありません。");
+});
+
+Deno.test("today: task read failure still removes the old partner summary without dropping own tasks or appointments", () => {
+  const brief = "今日のおうちノート\n\n今日の予定\n・プール\n\n朝やること\n・送り\n\n相手の担当で確認したいこと\n・相手の日課\n・ほか 8件\n\n買い物\n・牛乳";
+  assertEquals(hidePartnerWorkSections(brief), "今日のおうちノート\n\n今日の予定\n・プール\n\n朝やること\n・送り\n\n買い物\n・牛乳");
+  assertEquals(hidePartnerWorkSections("今日のおうちノート\n\n相手の今日\n・相手の日課"), "今日のおうちノート");
 });
 
 Deno.test("today: an optional task (掃除) is listed apart as 余裕があれば and never counted as left", () => {
