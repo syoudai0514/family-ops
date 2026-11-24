@@ -13,6 +13,7 @@ import { withTimeout } from '../../lib/withTimeout';
 import { withTaskActualParticipants } from '../../lib/taskActualParticipants';
 import { TASK_PROGRESS_SELECT } from '../../lib/taskProgress';
 import type { CodmonReadiness } from './codmonReadiness';
+import { partnerTransportItems } from './partnerTransport';
 
 export interface TaskExecutionTarget {
   id: string;
@@ -266,10 +267,7 @@ function isSnapshotEmpty(snapshot: TodaySnapshot) {
     && snapshot.unreadHandovers.length === 0
     && snapshot.openShoppingItems.length === 0
     && snapshot.briefSchedule.length === 0
-    && (snapshot.partnerSummary.critical_items?.length ?? 0) === 0
-    && (snapshot.partnerSummary.open_assigned ?? 0) === 0
-    && (snapshot.partnerSummary.waiting ?? 0) === 0
-    && (snapshot.partnerSummary.completed_today ?? 0) === 0
+    && partnerTransportItems(snapshot.partnerSummary).length === 0
     && snapshot.reconciliation.remaining_count === 0
     && snapshot.tomorrowImpact.impact_count === 0
     && snapshot.morningSummary.totalCount === 0;
