@@ -76,9 +76,9 @@ begin
   if rendered not like '%明日 10/14(水)の予定・作業%21:00 10/15(木)の保育園準備%'
     or rendered not like '%相手が対応中の作業（ママ対応中）%'
     or rendered not like '%自分が対応中の作業（パパ対応中）%' then raise exception 'FAIL: target dates or claimant labels lost: %',rendered; end if;
-  if position('相手が対応中の作業' in rendered)<position('相手の担当で確認したいこと' in rendered) then
+  if position('相手が対応中の作業' in rendered)<position('家族の共有事項' in rendered) then
     raise exception 'FAIL: other claimant task remains in own section'; end if;
-  if rendered not like '%相手の担当で確認したいこと%◦相手が始めた任意の窓拭き（余裕があれば／ママ対応中）%'
+  if rendered not like '%家族の共有事項%◦相手が始めた任意の窓拭き（余裕があれば／ママ対応中）%'
     or (length(rendered)-length(replace(rendered,'相手が始めた任意の窓拭き','')))/length('相手が始めた任意の窓拭き')<>1 then
     raise exception 'FAIL: optional other claimant vanished or was duplicated as required work: %',rendered; end if;
   b:=public.server_tx_get_week_schedule(u1,day+1,day+1);

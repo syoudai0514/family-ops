@@ -150,4 +150,6 @@ Deno.test("today: full task list replaces special, shared and optional sections 
   assertEquals(mergeTodayBrief(brief, "TASKS"), "朝のおうちノート\n\nTASKS\n\n明日 10/14(水)の予定・作業\n・10/15(木)の準備");
   assertEquals(mergeTodayBrief(brief.replace("⭐ 今日、忘れずに", "⭐ 今日だけの予定"), "TASKS"),
     "朝のおうちノート\n\nTASKS\n\n明日 10/14(水)の予定・作業\n・10/15(木)の準備");
+  assertEquals(mergeTodayBrief(brief.replace("相手の担当で確認したいこと", "家族の共有事項"), "TASKS"),
+    "朝のおうちノート\n\nTASKS\n\n明日 10/14(水)の予定・作業\n・10/15(木)の準備");
 });
