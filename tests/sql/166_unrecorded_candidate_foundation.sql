@@ -4,7 +4,7 @@ do $$
 declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; day date:=(now() at time zone 'Asia/Tokyo')::date;
   basic uuid; health uuid; transport uuid; special uuid; manual uuid; today uuid; shopping uuid; linked uuid; assigned uuid; junction uuid; pending uuid; simulated uuid; test_context uuid; request_id uuid; session_id uuid;
   waiting uuid; until_done uuid; until_deadline uuid; critical uuid; special_kind uuid; event_task uuid; event_id uuid; actor_ref uuid;
-  started uuid; partial uuid; noted uuid; participant uuid; handover_task uuid;
+  started uuid; partial uuid; noted uuid; participant uuid; handover_task uuid; old_outcome uuid; old_actor uuid; rescheduled uuid;
   ids uuid[]; before_outbox bigint; after_outbox bigint;
 begin
   insert into auth.users(id) values(a),(b);
@@ -65,6 +65,12 @@ begin
     values(h,'recurring','引き継ぎ中','household','morning',day-1,'unassigned','whole','todo','test',a) returning id into handover_task;
   insert into public.handovers(household_id,author_id,shared_text,period,occurred_on,related_task_id)
     values(h,a,'家族に引き継ぎ中','day',day-1,handover_task);
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,outcome_reason)
+    values(h,'recurring','結果の記録あり','household','morning',day-1,'unassigned','whole','todo','test',a,'unknown') returning id into old_outcome;
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,actual_completed_by_id)
+    values(h,'recurring','以前の実施者あり','household','morning',day-1,'unassigned','whole','todo','test',a,a) returning id into old_actor;
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,outcome_reason,rescheduled_to)
+    values(h,'recurring','日付変更済み','household','morning',day-1,'unassigned','whole','todo','test',a,'rescheduled',day+1) returning id into rescheduled;
   insert into public.requests(household_id,requester_id,recipient_id,shared_title,status,linked_task_instance_id,assignment_task_instance_id)
     values(h,a,b,'お願い','pending',linked,assigned) returning id into request_id;
   insert into public.assignment_change_request_tasks(household_id,request_id,task_instance_id) values(h,request_id,junction);
@@ -78,7 +84,7 @@ begin
   select array_agg(task_id order by task_id) into ids from private.fn_unrecorded_routine_candidates_v1(day) where household_id=h;
   select count(*) into after_outbox from private.family_ops_calendar_mirrors;
   if cardinality(ids)<>3 or not (ids @> array[basic,health,transport]) then raise exception 'wrong eligible tasks: %',ids; end if;
-  if ids && array[special,manual,today,shopping,linked,assigned,junction,pending,simulated,waiting,until_done,until_deadline,critical,special_kind,event_task,started,partial,noted,participant,handover_task] then raise exception 'protected task selected'; end if;
+  if ids && array[special,manual,today,shopping,linked,assigned,junction,pending,simulated,waiting,until_done,until_deadline,critical,special_kind,event_task,started,partial,noted,participant,handover_task,old_outcome,old_actor,rescheduled] then raise exception 'protected task selected'; end if;
   if exists(select 1 from private.fn_unrecorded_routine_candidates_v1(day+30) where household_id=h and task_id=today) then
     raise exception 'future cutoff included today'; end if;
   if before_outbox<>after_outbox or (select status from public.task_instances where id=health)<>'todo' then raise exception 'candidate read mutated data'; end if;

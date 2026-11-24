@@ -9,6 +9,7 @@ returns table(household_id uuid,task_id uuid) language sql stable security defin
     -- A started task or any evidence of partial work is already a record.
     -- Leave it for explicit follow-up instead of calling it wholly unrecorded.
     and t.status='todo' and t.scheduled_date<least(p_before,(now() at time zone 'Asia/Tokyo')::date)
+    and t.outcome_reason is null and t.actual_completed_by_id is null and t.rescheduled_to is null
     and t.calendar_visibility<>'special' and t.task_kind<>'special' and t.event_id is null
     and t.attention_state='active' and coalesce(t.carryover_policy,'occurrence_ends') not in ('until_done','until_deadline')
     and coalesce(t.duplicate_sensitivity,'normal')<>'safety_critical'
