@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { formatTodayTasks, mergeTodayBrief, type TodayTaskRow } from "./lineTodayTasks.ts";
+import { formatTodayTasks, hidePartnerWorkSections, loadTodayTaskBlock, mergeTodayBrief, type TodayTaskRow } from "./lineTodayTasks.ts";
 
 const ME = "me";
 const PARTNER = "her";
@@ -19,7 +19,7 @@ const rows: TodayTaskRow[] = [
   { title: "コドモン入力", status: "completed", routine_phase: "morning", planned_assignee_id: PARTNER },
 ];
 
-Deno.test("today: every one of my tasks is listed (done, できなかった, open), the partner's are summarised", () => {
+Deno.test("today: every one of my tasks is listed without summarising the partner's work", () => {
   const text = formatTodayTasks(rows, ME, "パパ", "ママ");
   assertEquals(text, [
     "パパの担当（4件・残り2件）",
@@ -35,11 +35,8 @@ Deno.test("today: every one of my tasks is listed (done, できなかった, ope
     "2人で分担（誰でもOK）",
     "朝",
     "・ 7:00 食洗機を空ける",
-    "",
-    "ママの今日（残り5件・済み1件）",
-    "・お迎え、お風呂、寝かしつけ ほか2件",
   ].join("\n"));
-  assertEquals(text.includes("ほか") && !text.split("ママの今日")[0].includes("ほか"), true);
+  assertEquals(text.includes("夕食対応") || text.includes("ママの今日") || text.includes("ほか"), false);
 });
 
 Deno.test("today: the brief keeps its other sections; its task sections are replaced in place", () => {
@@ -49,11 +46,17 @@ Deno.test("today: the brief keeps its other sections; its task sections are repl
   assertEquals(mergeTodayBrief("今日のおうちノート\n\n確認が必要な項目はありません。", "TASKS"), "今日のおうちノート\n\nTASKS\n\n確認が必要な項目はありません。");
 });
 
+Deno.test("today: task read failure still removes the old partner summary without dropping own tasks or appointments", () => {
+  const brief = "今日のおうちノート\n\n今日の予定\n・プール\n\n朝やること\n・送り\n\n相手の担当で確認したいこと\n・相手の日課\n・ほか 8件\n\n買い物\n・牛乳";
+  assertEquals(hidePartnerWorkSections(brief), "今日のおうちノート\n\n今日の予定\n・プール\n\n朝やること\n・送り\n\n買い物\n・牛乳");
+  assertEquals(hidePartnerWorkSections("今日のおうちノート\n\n相手の今日\n・相手の日課"), "今日のおうちノート");
+});
+
 Deno.test("today: an optional task (掃除) is listed apart as 余裕があれば and never counted as left", () => {
   const rows: TodayTaskRow[] = [
     { title: "送り", status: "todo", routine_phase: "morning", due_at: at("08:00"), planned_assignee_id: ME },
     { title: "掃除（ルンバのほかにやったら）", status: "todo", routine_phase: "evening", assignment_mode: "anyone", expectation: "optional" },
-    { title: "お迎え", status: "todo", routine_phase: "evening", due_at: at("18:20"), planned_assignee_id: PARTNER },
+    { title: "お迎え", status: "todo", routine_phase: "evening", due_at: at("18:20"), planned_assignee_id: PARTNER, task_code: "pickup", assignment_confirmed: true },
     { title: "partner optional", status: "todo", routine_phase: "evening", planned_assignee_id: PARTNER, expectation: "optional" },
   ];
   assertEquals(formatTodayTasks(rows, ME, "パパ", "ママ"), [
@@ -65,8 +68,8 @@ Deno.test("today: an optional task (掃除) is listed apart as 余裕があれ�
     "余裕があれば",
     "◦ 掃除（ルンバのほかにやったら）",
     "",
-    "ママの今日（残り1件・済み0件）",
-    "・お迎え",
+    "送り迎え",
+    "・ 18:20 お迎え（ママ）",
   ].join("\n"));
   // Done optional work is shown as done.
   const done = formatTodayTasks([{ ...rows[1], status: "completed" }], ME, "パパ", "ママ");
@@ -90,11 +93,56 @@ Deno.test("today: claimed shared work follows the current taker, and display dat
     { title: "相手が始めた作業", status: "in_progress", routine_phase: "morning", assignment_mode: "anyone", active_claimant_user_id: PARTNER, active_claimant_label: "ママ" },
     { title: "明日の保育園準備", display_title: "10/15(木)の保育園準備", status: "todo", routine_phase: "evening", planned_assignee_id: ME, due_at: at("21:00") },
   ], ME, "パパ", "ママ");
-  const mine = text.split("ママの今日")[0];
+  const mine = text.split("家族が対応中")[0];
   assertEquals(mine.includes("自分が始めた作業（パパ対応中）"), true);
   assertEquals(mine.includes("相手が始めた作業"), false);
-  assertEquals(text.includes("ママの今日（残り1件・済み0件）\n・相手が始めた作業（ママ対応中）"), true);
+  assertEquals(text.includes("家族が対応中\n・ 相手が始めた作業（ママ対応中）"), true);
   assertEquals(text.includes("21:00 10/15(木)の保育園準備"), true);
+});
+
+Deno.test("today: transport remains visible but tentative or missing consent never names an assignee", () => {
+  const transport = (title: string, assignment_confirmed?: boolean): TodayTaskRow => ({
+    title, status: "todo", task_code: "pickup", planned_assignee_id: PARTNER, assignment_confirmed,
+  });
+  const text = formatTodayTasks([
+    transport("合意済み", true), transport("未合意", false), transport("確認できない"),
+    { title: "相手の普通の日課", status: "todo", planned_assignee_id: PARTNER, assignment_confirmed: true },
+  ], ME, "パパ", "ママ");
+  assertEquals(text.includes("・ 合意済み（ママ）"), true);
+  assertEquals(text.includes("・ 未合意（担当は未確認）"), true);
+  assertEquals(text.includes("・ 確認できない（担当は未確認）"), true);
+  assertEquals(text.includes("未合意（ママ）") || text.includes("確認できない（ママ）")
+    || text.includes("相手の普通の日課") || text.includes("残り1件・済み"), false);
+  const named = formatTodayTasks([{ ...transport("お迎え", true), assigned_label: "パパ" }], ME, "自分", "相手");
+  assertEquals(named.includes("お迎え（パパ）"), true);
+  const manual = formatTodayTasks([{ title: "今日だけの迎え", status: "todo", task_kind: "transport",
+    planned_assignee_id: PARTNER, assignment_confirmed: true }], ME, "パパ", "ママ");
+  assertEquals(manual.includes("今日だけの迎え（ママ）"), true);
+});
+
+Deno.test("today: an unagreed own assignment is not presented as assigned work", () => {
+  const text = formatTodayTasks([
+    { title: "仮の朝支度", status: "todo", planned_assignee_id: ME, assignment_confirmed: false },
+    { title: "仮の送り", status: "todo", task_kind: "transport", planned_assignee_id: ME, assignment_confirmed: false },
+  ], ME, "パパ", "ママ");
+  assertEquals(text.includes("仮の朝支度"), false);
+  assertEquals(text.includes("パパの担当（0件・残り0件）"), true);
+  assertEquals(text.includes("仮の送り（担当は未確認）"), true);
+  assertEquals(text.includes("仮の送り（ママ）"), false);
+});
+
+Deno.test("today: the agreed transport shows the actual assignee even with multiple other members", async () => {
+  const client = {
+    rpc: () => Promise.resolve({ data: [{ title: "お迎え", status: "todo", task_code: "pickup",
+      planned_assignee_id: "another", assignment_confirmed: true }], error: null }),
+    from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: [
+      { user_id: ME, family_role: "papa" }, { user_id: PARTNER, family_role: "mama" },
+      { user_id: "another", family_role: null },
+    ] }) }) }),
+  };
+  const text = await loadTodayTaskBlock(client as never, "household", ME, "2026-10-07");
+  assertEquals(text?.includes("お迎え（家族）"), true);
+  assertEquals(text?.includes("お迎え（ママ）"), false);
 });
 
 Deno.test("today: full task list replaces special, shared and optional sections without duplication", () => {

@@ -3,7 +3,7 @@
 // しょうりゃくしていいから。」 The daily brief lists only open tasks and folds the rest,
 // so finished ones vanished and the list read as if things were missing. Here the
 // sender's tasks are all listed (done ✓, できなかった −, open ・) by time of day; the
-// partner's are summarised. The brief's other sections (予定・引き継ぎ・コドモン・買い物
+// partner's ordinary work is not summarised. The brief's other sections (予定・引き継ぎ・コドモン・買い物
 // ...) are kept as they are.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
@@ -21,6 +21,10 @@ export interface TodayTaskRow {
   active_claimant_label?: string | null;
   /** "optional": 余裕があれば (e.g. 掃除 -- the Roomba does it). Never counted as left to do. */
   expectation?: string | null;
+  task_code?: string | null;
+  task_kind?: string | null;
+  assignment_confirmed?: boolean | null;
+  assigned_label?: string | null;
 }
 
 const PHASES: Array<{ label: string; match: (phase: string | null | undefined) => boolean }> = [
@@ -30,7 +34,8 @@ const PHASES: Array<{ label: string; match: (phase: string | null | undefined) =
 ];
 
 /** Sections of the brief that list tasks; they are replaced by the full list. */
-const TASK_SECTIONS = /^(?:朝やること|朝の残り|日中にやること|日中の残り|夜にやること|今やること|このあと（夜）|まだ残っていること|相手の今日|相手の担当で確認したいこと|余裕があれば|先に家を出る人|2人で分担（誰でもOK）|⭐ 今日、忘れずに|⭐ 今日だけの予定)$/u;
+const TASK_SECTIONS = /^(?:朝やること|朝の残り|日中にやること|日中の残り|夜にやること|今やること|このあと（夜）|まだ残っていること|相手の今日|相手の担当で確認したいこと|家族が対応中|今日の送り迎え|余裕があれば|先に家を出る人|2人で分担（誰でもOK）|⭐ 今日、忘れずに|⭐ 今日だけの予定)$/u;
+const PARTNER_WORK_SECTIONS = /^(?:相手の今日|相手の担当で確認したいこと)$/u;
 
 function jstClock(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -63,13 +68,13 @@ function byTime(a: TodayTaskRow, b: TodayTaskRow): number {
   return (a.due_at ?? "9999").localeCompare(b.due_at ?? "9999");
 }
 
-export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel: string, partnerLabel: string, isToday = true): string {
+export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel: string, partnerLabel: string, _isToday = true): string {
   const visible = rows.filter(shown);
   const isOptional = (r: TodayTaskRow) => r.expectation === "optional";
   const isShared = (r: TodayTaskRow) => r.assignment_mode === "anyone" && !r.active_claimant_user_id;
   const mineAll = visible.filter((r) => r.assignment_mode === "anyone"
     ? r.active_claimant_user_id === actorId
-    : !r.planned_assignee_id || r.planned_assignee_id === actorId);
+    : !r.planned_assignee_id || (r.planned_assignee_id === actorId && r.assignment_confirmed !== false));
   const mine = mineAll.filter((r) => !isOptional(r));
   const shared = visible.filter((r) => isShared(r) && !isOptional(r));
   const mineOptional = visible.filter((r) => isOptional(r) && (mineAll.includes(r) || isShared(r)));
@@ -107,11 +112,19 @@ export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel:
     for (const r of mineOptional.sort(byTime)) lines.push(line(r, "", true));
   }
 
-  const theirOpen = open(theirs).sort(byTime);
-  lines.push("", `${partnerLabel}の${isToday ? "今日" : "分"}（残り${theirOpen.length}件・済み${theirs.length - theirOpen.length}件）`);
-  if (theirOpen.length) {
-    const names = theirOpen.slice(0, 3).map((r) => `${r.display_title || r.title}${r.active_claimant_user_id ? `（${r.active_claimant_label || partnerLabel}対応中）` : ""}`);
-    lines.push(`・${names.join("、")}${theirOpen.length > 3 ? ` ほか${theirOpen.length - 3}件` : ""}`);
+  const transport = open(theirs).filter((r) => r.task_kind === "transport" || ["dropoff", "pickup"].includes(r.task_code ?? "")).sort(byTime);
+  if (transport.length) {
+    lines.push("", "送り迎え");
+    for (const r of transport) lines.push(line(r, r.assignment_confirmed === true
+      ? `（${r.assigned_label || partnerLabel}）` : "（担当は未確認）"));
+  }
+  // A shared task already taken by someone else is coordination, not an
+  // inventory of their assigned work; showing it prevents duplicate work.
+  const sharedTaken = visible.filter((r) => r.assignment_mode === "anyone" && r.active_claimant_user_id && r.active_claimant_user_id !== actorId
+    && (r.status === "todo" || r.status === "in_progress")).sort(byTime);
+  if (sharedTaken.length) {
+    lines.push("", "家族が対応中");
+    for (const r of sharedTaken) lines.push(line(r, `（${r.active_claimant_label || partnerLabel}対応中）`, isOptional(r)));
   }
   return lines.join("\n");
 }
@@ -132,6 +145,13 @@ export function mergeTodayBrief(brief: string, taskBlock: string): string {
   }
   if (!placed) out.splice(Math.min(1, out.length), 0, taskBlock);
   return out.join("\n\n");
+}
+
+/** A failed task read must not put the old partner-work summary back. */
+export function hidePartnerWorkSections(brief: string): string {
+  return brief.split(/\n{2,}/u)
+    .filter((section) => !PARTNER_WORK_SECTIONS.test(section.split("\n", 1)[0].trim()))
+    .join("\n\n");
 }
 
 function roleLabel(role: unknown, fallback: string): string {
@@ -156,8 +176,12 @@ export async function loadTodayTaskBlock(
   const memberRows = (members.data ?? []) as Array<{ user_id: string; family_role: string | null }>;
   const me = memberRows.find((m) => m.user_id === actorId);
   const partner = memberRows.find((m) => m.user_id !== actorId);
+  const displayRows = (tasks.data as TodayTaskRow[]).map((task) => ({
+    ...task,
+    assigned_label: roleLabel(memberRows.find((member) => member.user_id === task.planned_assignee_id)?.family_role, "家族"),
+  }));
   return formatTodayTasks(
-    tasks.data as TodayTaskRow[],
+    displayRows,
     actorId,
     roleLabel(me?.family_role, "自分"),
     roleLabel(partner?.family_role, "相手"),
