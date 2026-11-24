@@ -7,7 +7,10 @@ returns table(household_id uuid,task_id uuid) language sql stable security defin
   from public.task_instances t
   where p_before is not null and t.test_context_id is null and t.origin='recurring'
     and t.status in ('todo','in_progress') and t.scheduled_date<p_before
-    and t.calendar_visibility<>'special' and coalesce(t.category,'') not in ('shopping','purchase')
+    and t.calendar_visibility<>'special' and t.task_kind<>'special' and t.event_id is null
+    and t.attention_state='active' and coalesce(t.carryover_policy,'occurrence_ends') not in ('until_done','until_deadline')
+    and coalesce(t.duplicate_sensitivity,'normal')<>'safety_critical'
+    and coalesce(t.category,'') not in ('shopping','purchase')
     and not exists(select 1 from public.requests r where r.household_id=t.household_id
       and (r.linked_task_instance_id=t.id or r.assignment_task_instance_id=t.id))
     and not exists(select 1 from public.assignment_change_request_tasks x

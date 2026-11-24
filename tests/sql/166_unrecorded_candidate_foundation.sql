@@ -3,6 +3,7 @@ begin;
 do $$
 declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text; day date:=(now() at time zone 'Asia/Tokyo')::date;
   basic uuid; health uuid; transport uuid; special uuid; manual uuid; today uuid; shopping uuid; linked uuid; assigned uuid; junction uuid; pending uuid; simulated uuid; test_context uuid; request_id uuid; session_id uuid;
+  waiting uuid; until_done uuid; until_deadline uuid; critical uuid; special_kind uuid; event_task uuid; event_id uuid; actor_ref uuid;
   ids uuid[]; before_outbox bigint; after_outbox bigint;
 begin
   insert into auth.users(id) values(a),(b);
@@ -30,6 +31,22 @@ begin
     values(h,'recurring','お願い複数','household','morning',day-1,'unassigned','whole','todo','test',a,'hidden') returning id into junction;
   insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,calendar_visibility)
     values(h,'recurring','入力途中','household','morning',day-1,'unassigned','whole','todo','test',a,'hidden') returning id into pending;
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,attention_state,waiting_note)
+    values(h,'recurring','返事待ち','household','morning',day-1,'unassigned','whole','todo','test',a,'waiting','返事を確認') returning id into waiting;
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,carryover_policy)
+    values(h,'recurring','完了まで続く','household','morning',day-1,'unassigned','whole','todo','test',a,'until_done') returning id into until_done;
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,carryover_policy)
+    values(h,'recurring','期限まで続く','household','morning',day-1,'unassigned','whole','todo','test',a,'until_deadline') returning id into until_deadline;
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,duplicate_sensitivity)
+    values(h,'recurring','安全に重要','health','morning',day-1,'unassigned','whole','todo','test',a,'safety_critical') returning id into critical;
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by)
+    values(h,'recurring','特別な予定','household','morning',day-1,'unassigned','whole','todo','test',a) returning id into special_kind;
+  update public.task_instances set task_kind='special' where id=special_kind;
+  select id into actor_ref from public.domain_actor_refs where household_id=h and actor_kind='real_user' and real_user_id=a;
+  insert into public.family_events(household_id,title,status,all_day,starts_at,ends_at,calendar_sync_preference,created_by_actor_ref_id)
+    values(h,'特別な予定','active',false,now(),now()+interval '1 hour','external_follow',actor_ref) returning id into event_id;
+  insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,event_id)
+    values(h,'recurring','予定の準備','household','morning',day-1,'unassigned','whole','todo','test',a,event_id) returning id into event_task;
   insert into public.requests(household_id,requester_id,recipient_id,shared_title,status,linked_task_instance_id,assignment_task_instance_id)
     values(h,a,b,'お願い','pending',linked,assigned) returning id into request_id;
   insert into public.assignment_change_request_tasks(household_id,request_id,task_instance_id) values(h,request_id,junction);
@@ -43,7 +60,7 @@ begin
   select array_agg(task_id order by task_id) into ids from private.fn_unrecorded_routine_candidates_v1(day) where household_id=h;
   select count(*) into after_outbox from private.family_ops_calendar_mirrors;
   if cardinality(ids)<>3 or not (ids @> array[basic,health,transport]) then raise exception 'wrong eligible tasks: %',ids; end if;
-  if ids && array[special,manual,today,shopping,linked,assigned,junction,pending,simulated] then raise exception 'protected task selected'; end if;
+  if ids && array[special,manual,today,shopping,linked,assigned,junction,pending,simulated,waiting,until_done,until_deadline,critical,special_kind,event_task] then raise exception 'protected task selected'; end if;
   if before_outbox<>after_outbox or (select status from public.task_instances where id=health)<>'in_progress' then raise exception 'candidate read mutated data'; end if;
   if has_function_privilege('authenticated','private.fn_unrecorded_routine_candidates_v1(date)','execute') then raise exception 'candidate reader exposed'; end if;
 end $$;

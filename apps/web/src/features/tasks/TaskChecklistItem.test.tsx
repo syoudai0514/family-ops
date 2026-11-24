@@ -400,6 +400,17 @@ describe('TaskChecklistItem Q54/Q64/Q106', () => {
     expect(callEdgeFunction).not.toHaveBeenCalled();
   });
 
+  it('does not offer a performer or result action for an auto-closed assigned task', () => {
+    const unknown = { ...makeTask('todo'), origin: 'recurring', assignment_mode: 'person',
+      planned_assignee_id: 'user-1', status: 'skipped', outcome_reason: 'unrecorded' } as TaskInstance;
+    render(<TaskChecklistItem {...props} hasPartner currentUserId="user-1" task={unknown} />);
+    expect(screen.getByRole('img', { name: '提出物を出す：記録なし' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('実施者')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('その他の操作')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /完了にする|今日はなし/ })).not.toBeInTheDocument();
+    expect(callEdgeFunction).not.toHaveBeenCalled();
+  });
+
   it("on the other adult's task, the main button records THEIR completion; doing it myself is in the menu", async () => {
     const members = [
       { user_id: 'user-1', family_role: 'papa', profile: { display_name: 'パパ' } },

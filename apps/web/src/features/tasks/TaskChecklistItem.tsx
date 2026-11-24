@@ -559,7 +559,7 @@ export function TaskChecklistItem({
           </button>
         ) : <div className="task-checklist-content">{taskContent}</div>}
 
-        <details className="task-overflow">
+        {!archivedUnrecorded && <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
             {compact && !finished && <button type="button" className="task-action task-action-missed" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${taskTitle}を今日はなし（実施せず）として記録`}>今日はなし（実施せず）</button>}
@@ -652,7 +652,7 @@ export function TaskChecklistItem({
               </button>
             )}
           </div>
-        </details>
+        </details>}
 
         {/* The same explicit completion button for whole tasks and checklists. */}
         <div className="task-actions">
