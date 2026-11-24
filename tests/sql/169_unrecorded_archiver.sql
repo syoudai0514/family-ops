@@ -34,6 +34,9 @@ begin
     or (snap->>'claimed_at')::timestamptz<>original_claimed_at
     or not exists(select 1 from public.task_instances where id=ordinary and status='skipped' and outcome_reason='unrecorded'
       and active_claimant_actor_ref_id is null and claimed_at is null and revision=2) then raise exception 'archive lost source state: %',snap; end if;
+  r:=private.fn_archive_unrecorded_routine_v1(h,ordinary,day+1,1);
+  if r->>'archived'<>'true' or r->>'already_archived'<>'true' or (r->>'revision')::bigint<>2 then
+    raise exception 'archive retry did not replay: %',r; end if;
   r:=private.fn_archive_unrecorded_routine_v1(h,ordinary,day+1,2);
   if r->>'archived'<>'false' or (select count(*) from private.unrecorded_routine_archives where task_id=ordinary)<>1 then
     raise exception 'repeated archive changed data'; end if;

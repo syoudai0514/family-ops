@@ -73,7 +73,13 @@ begin
   end if;
   select * into t from public.task_instances where household_id=p_household and id=p_task for update;
   if not found then return jsonb_build_object('archived',false,'reason','not_found'); end if;
-  if t.revision<>p_expected_revision then return jsonb_build_object('archived',false,'reason','stale'); end if;
+  if t.revision<>p_expected_revision then
+    if t.status='skipped' and t.outcome_reason='unrecorded' and exists(
+      select 1 from private.unrecorded_routine_archives a where a.household_id=p_household and a.task_id=p_task
+        and a.before_revision=p_expected_revision and a.closed_revision=t.revision
+    ) then return jsonb_build_object('archived',true,'already_archived',true,'revision',t.revision); end if;
+    return jsonb_build_object('archived',false,'reason','stale');
+  end if;
   -- Recheck all protections after taking the task lock. The primitive is private
   -- and deliberately has no scheduler until correction/undo and races are proven.
   if not exists(select 1 from private.fn_unrecorded_routine_candidates_v1(p_before,p_household,p_task)) then
