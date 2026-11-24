@@ -663,8 +663,8 @@ function TodayDashboard({ onRecordingChanged }: { onRecordingChanged: () => Prom
 
       {renderDecisions()}
       {renderExceptions()}
-      <ThanksPrompt refreshKey={data.completedTodayTasks} />
       {renderSchedule()}
+      <ThanksPrompt key={`${household?.id}:${user?.id}:${clock.localDate}`} refreshKey={data.completedTodayTasks} />
       {clock.daypart === 'day' && nextTask && <section className="card next-task-compact" aria-label="次にやること"><strong>次にやること</strong><p>{nextTask.title}</p><div className="button-row"><button className="text-button" onClick={() => document.getElementById(`task-${nextTask.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>作業を確認</button><button className="text-button" onClick={() => setAssignmentRequest({ id: nextTask.id, token: Date.now() })}>今回だけ変更</button></div></section>}
       <section className="today-own-work" aria-label="自分のやること"><h2>自分のやること</h2>
         {renderTaskSection('持ち越し', data.carryoverTasks)}

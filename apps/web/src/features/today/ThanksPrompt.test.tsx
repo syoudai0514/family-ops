@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThanksPrompt } from './ThanksPrompt';
 
@@ -29,15 +29,24 @@ describe('thanks', () => {
     await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ note: '助かったよ' })));
   });
 
-  it('sends only after the user presses the button and removes the invitation after success', async () => {
-    render(<ThanksPrompt refreshKey="ready" />);
-    expect(await screen.findByText('ママが「お迎え」を代わってくれました')).toBeInTheDocument();
+  it('shows sent on the same dated row, even when a stale refresh returns it', async () => {
+    const candidate = { kind: 'request', id: 'pickup', title: 'お迎え', recipient_id: 'm', activity_date: '2026-11-24', target_date: '2026-11-25' };
+    const other = { ...candidate, id: 'pickup-later', target_date: '2026-11-26' };
+    read.mockResolvedValue([candidate, other]);
+    const { rerender } = render(<ThanksPrompt refreshKey="ready" />);
+    const row = (await screen.findByText('11月25日')).closest('.thanks-item') as HTMLElement;
+    const secondRow = screen.getByText('11月26日').closest('.thanks-item') as HTMLElement;
+    expect(secondRow.closest('details')).not.toHaveAttribute('open');
     expect(send).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'ありがとうを送る' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'ありがとうを送る' }));
     await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'send_thanks', source_kind: 'task', source_id: 'task',
+      action: 'send_thanks', source_kind: 'request', source_id: 'pickup',
     })));
-    expect(await screen.findByText('ありがとうを送りました。')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'ありがとうを送る' })).not.toBeInTheDocument();
+    expect(await within(row).findByRole('status')).toHaveTextContent('送信済み');
+    rerender(<ThanksPrompt refreshKey="refresh" />);
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(within(row).getByRole('status')).toHaveTextContent('送信済み');
+    expect(within(row).queryByRole('button', { name: 'ありがとうを送る' })).not.toBeInTheDocument();
+    expect(secondRow.querySelector('button')).toHaveTextContent('ありがとうを送る');
   });
 });

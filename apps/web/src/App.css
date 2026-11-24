@@ -116,6 +116,26 @@ body {
 .compact-section {
   padding-block: 0.8rem;
 }
+.today-dashboard .thanks-item-heading {
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+.thanks-item-heading p { margin: 0; }
+.thanks-item-heading button {
+  flex-shrink: 0;
+  min-height: 2.75rem;
+}
+.thanks-item-heading .thanks-sent {
+  flex-shrink: 0;
+  color: var(--color-accent);
+  font-weight: 700;
+}
+.thanks-prompt summary { cursor: pointer; padding-block: 0.4rem; }
+.thanks-more {
+  border-top: 1px solid var(--color-border);
+  margin-top: 0.35rem;
+}
+.thanks-more .thanks-item { margin-top: 0.75rem; }
 .task-overflow {
   position: relative;
 }
