@@ -62,4 +62,26 @@ wait "$archive_pid" || { cat "$out_file" >&2; fail 'archive transaction failed';
 grep -q 'AGGREGATE_REVISION_CONFLICT' "$error_file" || { cat "$error_file" >&2; fail 'unexpected recording failure'; }
 state="$(psql_test -c "select status||':'||revision||':'||(select count(*) from private.unrecorded_routine_archives where task_id='$task_id')||':'||(select count(*) from public.task_events where task_instance_id='$task_id' and event_type='work_progress_recorded') from public.task_instances where id='$task_id'")"
 [ "$state" = 'skipped:2:1:0' ] || fail "archive or concurrent recording changed unexpectedly: $state"
+
+# Two workers retrying the same task/revision converge on one snapshot.
+task_id="$(psql_test -c "insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by) values ('$household_id','recurring','duplicate race fixture','household','morning',(now() at time zone 'Asia/Tokyo')::date-1,'unassigned','whole','todo','test','$actor_id') returning id")"
+psql_test >"$out_file" 2>&1 <<SQL &
+begin;
+select private.fn_archive_unrecorded_routine_v1('$household_id','$task_id',(now() at time zone 'Asia/Tokyo')::date,1);
+select pg_advisory_xact_lock(8700135);
+select pg_sleep(2);
+commit;
+SQL
+archive_pid=$!
+ready=false
+for _ in $(seq 1 50); do
+  if [ "$(psql_test -c 'select pg_try_advisory_lock(8700135)')" = f ]; then ready=true; break; fi
+  sleep 0.1
+done
+if [ "$ready" != true ]; then wait "$archive_pid" || true; fail 'could not establish the first archive'; fi
+result="$(psql_test -c "select private.fn_archive_unrecorded_routine_v1('$household_id','$task_id',(now() at time zone 'Asia/Tokyo')::date,1)")"
+wait "$archive_pid" || { cat "$out_file" >&2; fail 'first archive transaction failed'; }
+case "$result" in *'"already_archived": true'*) ;; *) fail "duplicate archive did not replay: $result" ;; esac
+state="$(psql_test -c "select status||':'||revision||':'||(select count(*) from private.unrecorded_routine_archives where task_id='$task_id') from public.task_instances where id='$task_id'")"
+[ "$state" = 'skipped:2:1' ] || fail "duplicate archive created inconsistent state: $state"
 printf 'unrecorded_archive_race: PASS\n'
