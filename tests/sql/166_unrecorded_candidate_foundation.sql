@@ -5,6 +5,7 @@ declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); h uuid; token text
   basic uuid; health uuid; transport uuid; special uuid; manual uuid; today uuid; shopping uuid; linked uuid; assigned uuid; junction uuid; pending uuid; simulated uuid; test_context uuid; request_id uuid; session_id uuid;
   waiting uuid; until_done uuid; until_deadline uuid; critical uuid; special_kind uuid; event_task uuid; event_id uuid; actor_ref uuid;
   started uuid; partial uuid; noted uuid; participant uuid; handover_task uuid; old_outcome uuid; old_actor uuid; rescheduled uuid;
+  changed_definition uuid; changed_def_task uuid;
   ids uuid[]; before_outbox bigint; after_outbox bigint;
 begin
   insert into auth.users(id) values(a),(b);
@@ -71,6 +72,14 @@ begin
     values(h,'recurring','以前の実施者あり','household','morning',day-1,'unassigned','whole','todo','test',a,a) returning id into old_actor;
   insert into public.task_instances(household_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by,outcome_reason,rescheduled_to)
     values(h,'recurring','日付変更済み','household','morning',day-1,'unassigned','whole','todo','test',a,'rescheduled',day+1) returning id into rescheduled;
+  insert into public.task_definitions(household_id,code,title,category,routine_phase,completion_mode,created_by)
+    values(h,'archive_changed_definition','定義変更','household','morning','whole',a) returning id into changed_definition;
+  insert into public.task_instances(household_id,task_definition_id,origin,title,category,routine_phase,scheduled_date,assignment_mode,completion_mode,status,source,created_by)
+    values(h,changed_definition,'recurring','定義変更','household','morning',day-1,'unassigned','whole','todo','test',a) returning id into changed_def_task;
+  update public.task_definitions set category='pickup' where id=changed_definition;
+  if (select calendar_visibility from public.task_instances where id=changed_def_task)<>'hidden'
+    or (select calendar_visibility from public.task_definitions where id=changed_definition)<>'transport' then
+    raise exception 'calendar definition mismatch fixture invalid'; end if;
   insert into public.requests(household_id,requester_id,recipient_id,shared_title,status,linked_task_instance_id,assignment_task_instance_id)
     values(h,a,b,'お願い','pending',linked,assigned) returning id into request_id;
   insert into public.assignment_change_request_tasks(household_id,request_id,task_instance_id) values(h,request_id,junction);
@@ -83,13 +92,16 @@ begin
   select count(*) into before_outbox from private.family_ops_calendar_mirrors;
   select array_agg(task_id order by task_id) into ids from private.fn_unrecorded_routine_candidates_v1(day) where household_id=h;
   select count(*) into after_outbox from private.family_ops_calendar_mirrors;
-  if cardinality(ids)<>3 or not (ids @> array[basic,health,transport]) then raise exception 'wrong eligible tasks: %',ids; end if;
-  if ids && array[special,manual,today,shopping,linked,assigned,junction,pending,simulated,waiting,until_done,until_deadline,critical,special_kind,event_task,started,partial,noted,participant,handover_task,old_outcome,old_actor,rescheduled] then raise exception 'protected task selected'; end if;
+  if cardinality(ids)<>2 or not (ids @> array[basic,health]) then raise exception 'wrong eligible tasks: %',ids; end if;
+  if (select count(*) from private.fn_unrecorded_routine_candidates_v1(day,h,basic))<>1
+    or exists(select 1 from private.fn_unrecorded_routine_candidates_v1(day,gen_random_uuid(),basic)) then
+    raise exception 'single-task candidate scope failed'; end if;
+  if ids && array[transport,special,manual,today,shopping,linked,assigned,junction,pending,simulated,waiting,until_done,until_deadline,critical,special_kind,event_task,started,partial,noted,participant,handover_task,old_outcome,old_actor,rescheduled,changed_def_task] then raise exception 'protected task selected'; end if;
   if exists(select 1 from private.fn_unrecorded_routine_candidates_v1(day+30) where household_id=h and task_id=today) then
     raise exception 'future cutoff included today'; end if;
   if before_outbox<>after_outbox or (select status from public.task_instances where id=health)<>'todo' then raise exception 'candidate read mutated data'; end if;
-  if has_function_privilege('authenticated','private.fn_unrecorded_routine_candidates_v1(date)','execute')
-    or has_function_privilege('service_role','private.fn_unrecorded_routine_candidates_v1(date)','execute') then raise exception 'candidate reader exposed'; end if;
+  if has_function_privilege('authenticated','private.fn_unrecorded_routine_candidates_v1(date,uuid,uuid)','execute')
+    or has_function_privilege('service_role','private.fn_unrecorded_routine_candidates_v1(date,uuid,uuid)','execute') then raise exception 'candidate reader exposed'; end if;
 end $$;
 rollback;
 select 'unrecorded_candidate_foundation: PASS' as result;

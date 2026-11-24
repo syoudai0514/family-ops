@@ -1,16 +1,22 @@
 -- #198: identify candidates without changing any task or triggering external
 -- projections. Actual closure is deliberately not enabled by this foundation.
 -- Open check-in sessions and every kind of request-linked task remain intact.
-create function private.fn_unrecorded_routine_candidates_v1(p_before date)
+create function private.fn_unrecorded_routine_candidates_v1(p_before date,p_household uuid default null,p_task uuid default null)
 returns table(household_id uuid,task_id uuid) language sql stable security definer set search_path='' as $$
   select t.household_id,t.id
   from public.task_instances t
-  where p_before is not null and t.test_context_id is null and t.origin='recurring'
+  where p_before is not null and (p_household is null or t.household_id=p_household)
+    and (p_task is null or t.id=p_task) and t.test_context_id is null and t.origin='recurring'
     -- A started task or any evidence of partial work is already a record.
     -- Leave it for explicit follow-up instead of calling it wholly unrecorded.
     and t.status='todo' and t.scheduled_date<least(p_before,(now() at time zone 'Asia/Tokyo')::date)
     and t.outcome_reason is null and t.actual_completed_by_id is null and t.rescheduled_to is null
-    and t.calendar_visibility<>'special' and t.task_kind<>'special' and t.event_id is null
+    -- A later projection of another task on the same day can also read this
+    -- row. Suppressing only the archive trigger is insufficient for transport
+    -- or any Google-visible definition; leave all such work untouched.
+    and t.calendar_visibility='hidden' and t.task_kind not in ('special','transport') and t.event_id is null
+    and not exists(select 1 from public.task_definitions d where d.household_id=t.household_id and d.id=t.task_definition_id
+      and (coalesce(d.calendar_visibility,'')<>'hidden' or coalesce(d.task_kind,'') in ('transport','special')))
     and t.attention_state='active' and coalesce(t.carryover_policy,'occurrence_ends') not in ('until_done','until_deadline')
     and coalesce(t.duplicate_sensitivity,'normal')<>'safety_critical'
     and coalesce(t.category,'') not in ('shopping','purchase')
@@ -31,4 +37,4 @@ returns table(household_id uuid,task_id uuid) language sql stable security defin
       and h.status='active' and (h.valid_until is null or h.valid_until>now()))
   order by t.household_id,t.id;
 $$;
-revoke all on function private.fn_unrecorded_routine_candidates_v1(date) from public,anon,authenticated,service_role;
+revoke all on function private.fn_unrecorded_routine_candidates_v1(date,uuid,uuid) from public,anon,authenticated,service_role;
