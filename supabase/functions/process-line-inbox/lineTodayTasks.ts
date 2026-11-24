@@ -22,6 +22,7 @@ export interface TodayTaskRow {
   /** "optional": 余裕があれば (e.g. 掃除 -- the Roomba does it). Never counted as left to do. */
   expectation?: string | null;
   task_code?: string | null;
+  task_kind?: string | null;
   assignment_confirmed?: boolean | null;
   assigned_label?: string | null;
 }
@@ -110,7 +111,8 @@ export function formatTodayTasks(rows: TodayTaskRow[], actorId: string, meLabel:
     for (const r of mineOptional.sort(byTime)) lines.push(line(r, "", true));
   }
 
-  const transport = open(theirs).filter((r) => ["dropoff", "pickup"].includes(r.task_code ?? "") && r.assignment_confirmed === true).sort(byTime);
+  const transport = open(theirs).filter((r) => (r.task_kind === "transport" || ["dropoff", "pickup"].includes(r.task_code ?? ""))
+    && r.assignment_confirmed === true).sort(byTime);
   if (transport.length) {
     lines.push("", "送り迎え");
     for (const r of transport) lines.push(line(r, `（${r.assigned_label || partnerLabel}）`));

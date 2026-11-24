@@ -10,7 +10,7 @@ begin
   if h is null then raise exception 'NOT_HOUSEHOLD_MEMBER'; end if;
   select coalesce(jsonb_agg(jsonb_build_object('task_id',t.id,'title',t.title,
     'status',t.status,'outcome_reason',t.outcome_reason,'routine_phase',t.routine_phase,
-    'expectation',t.expectation,
+    'expectation',t.expectation,'task_kind',t.task_kind,
     'assignment_confirmed',coalesce(private.fn_task_assignment_consent_v1(h,t.planned_assignee_id,t.id),false))
     order by t.due_at nulls last,t.title,t.id),'[]'::jsonb)
   into items from public.task_instances t where t.household_id=h and t.scheduled_date=p_local_date

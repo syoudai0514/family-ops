@@ -26,7 +26,8 @@ begin
   if item->>'task_code'<>'pickup' or (item->>'assignment_confirmed')::boolean is distinct from false then
     raise exception 'tentative assignment incorrectly agreed: %',item; end if;
   select value into item from jsonb_array_elements(items) where value->>'task_id'=manual::text;
-  if (item->>'assignment_confirmed')::boolean is distinct from true then raise exception 'one-off assignment disappeared: %',item; end if;
+  if (item->>'assignment_confirmed')::boolean is distinct from true or item->>'task_kind'<>'transport' then
+    raise exception 'one-off transport assignment disappeared: %',item; end if;
   offer:=(public.server_tx_prepare_assignment_consent_v1(b,'rule',rule_id)->>'offer_id')::uuid;
   perform public.server_tx_accept_assignment_consent_v1(b,offer);
   items:=public.server_read_line_tasks_display(a,day);

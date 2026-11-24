@@ -106,6 +106,9 @@ Deno.test("today: only agreed transport appears; tentative or missing consent st
   assertEquals(/未合意|確認できない|相手の普通の日課|残り1件・済み/.test(text), false);
   const named = formatTodayTasks([{ ...transport("お迎え", true), assigned_label: "パパ" }], ME, "自分", "相手");
   assertEquals(named.includes("お迎え（パパ）"), true);
+  const manual = formatTodayTasks([{ title: "今日だけの迎え", status: "todo", task_kind: "transport",
+    planned_assignee_id: PARTNER, assignment_confirmed: true }], ME, "パパ", "ママ");
+  assertEquals(manual.includes("今日だけの迎え（ママ）"), true);
 });
 
 Deno.test("today: the agreed transport shows the actual assignee even with multiple other members", async () => {
