@@ -471,13 +471,11 @@ function SendRequestForm({
       }
       onSent(status);
     } catch (err) {
-      if (err instanceof FamilyOpsApiError && err.outcome === 'unknown' && user && household) {
-        setLockedAttempt(loadStableCommandAttempt(user.id, household.id, logicalKey));
-        setError('送信結果を確認できませんでした。同じ内容で送信結果を確認できます。');
-      } else {
-        setLockedAttempt(null);
-        setError('お願いを送れませんでした。内容を確認して、もう一度お試しください。');
-      }
+      const pendingAttempt = user && household ? loadStableCommandAttempt(user.id, household.id, logicalKey) : null;
+      setLockedAttempt(pendingAttempt);
+      setError(pendingAttempt || (err instanceof FamilyOpsApiError && err.outcome === 'unknown')
+        ? '送信結果を確認できませんでした。同じ内容で送信結果を確認できます。'
+        : 'お願いを送れませんでした。内容を確認して、もう一度お試しください。');
     } finally {
       setSubmitting(false);
     }

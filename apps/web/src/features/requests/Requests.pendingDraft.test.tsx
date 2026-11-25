@@ -166,6 +166,7 @@ describe('request composer confirmation', () => {
   it('restores an unknown send and reuses its operation and exact confirmed payload', async () => {
     api.callEdgeFunction
       .mockRejectedValueOnce(new FamilyOpsApiError('NETWORK_ERROR', 'lost response', 0, undefined, 'unknown'))
+      .mockRejectedValueOnce(new FamilyOpsApiError('AUTH_TIMEOUT', 'retry did not reach the server', 0, undefined, 'not_sent'))
       .mockResolvedValueOnce({ request_id: 'request-3' });
     const firstVisit = openDirectComposer();
     const message = await startDirectComposer();
@@ -181,7 +182,11 @@ describe('request composer confirmation', () => {
     expect(await screen.findByText('明日のお迎えをお願いできますか？')).toBeInTheDocument();
     expect(screen.queryByLabelText('相手へ送る文面')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '送信結果を確認' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('送信結果を確認できませんでした');
+    expect(screen.queryByRole('button', { name: '編集に戻る' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '送信結果を確認' }));
     expect(await screen.findByText(/はるさんへのお願いを送りました。/)).toHaveAttribute('role', 'status');
-    expect(api.callEdgeFunction.mock.calls[1]).toEqual(api.callEdgeFunction.mock.calls[0]);
+    expect(api.callEdgeFunction.mock.calls).toEqual(Array(3).fill(api.callEdgeFunction.mock.calls[0]));
   });
 });
