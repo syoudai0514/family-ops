@@ -38,17 +38,29 @@ const task = {
   actual_completed_by_id: null, completed_at: null, attention_state: 'active', waiting_note: null,
   next_check_at: null, revision: 3, task_definitions: null,
 };
-const consultationRequest = {
-  id: 'request-cf14-consultation', household_id: household.id,
-  requester_id: membership.user_id, recipient_id: 'partner-cf14',
-  shared_title: 'お迎えの相談', shared_message: '玄関で引き継ぐ', status: 'pending', due_at: null,
+const partner = { ...membership, user_id: 'partner-cf14', family_role: 'mama' };
+const actorRefs = {
+  [membership.user_id]: 'actor-cf14-papa',
+  [partner.user_id]: 'actor-cf14-mama',
 };
-const consultationAttempt = {
-  id: 'attempt-cf14-consultation', request_id: consultationRequest.id,
-  state: 'awaiting_confirmation', revision: 4, terms_revision: 2,
-  terms: { candidate: '玄関で引き継ぐ' }, reply_due_at: null,
+const parties = {
+  household_id: household.id,
+  requester_id: membership.user_id, requester_actor_ref_id: actorRefs[membership.user_id],
+  recipient_id: partner.user_id, recipient_actor_ref_id: actorRefs[partner.user_id],
 };
-const consultationCommands = [];
+const consultationId = '01f00000-0000-4000-8000-000000000001';
+const consultationTitle = 'お迎えの相談';
+const consultationMessage = '今日のお迎えをお願いできる？';
+const notificationTitle = '相談の内容を確認してください';
+const consultationMemo = '園で引き継ぐ\n18時30分なら対応できます。';
+const otherRequest = { ...parties, id: 'request-cf14-other', shared_title: '明日の買い物', status: 'pending', due_at: null };
+const requests = [otherRequest];
+const attempts = [{
+  id: 'attempt-cf14-other', request_id: otherRequest.id,
+  state: 'pending', revision: 1, terms_revision: 1, terms: {}, reply_due_at: null,
+  request_attempt_confirmations: [],
+}];
+const requestCommands = [];
 const state = { mode: 'normal', failAfterMutation: false, initialBriefDelayMs: 850, requestLog: [], browserEvents: [], networkEvents: [] };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -227,12 +239,14 @@ async function handleMockSupabaseRequest(request, response) {
     ? await readRequestBody(request, `${request.method} ${url.pathname}`)
     : '';
   const pathname = url.pathname;
+  const actor = request.headers.authorization === 'Bearer cf14-browser-partner-token' ? partner : membership;
+  const members = state.mode === 'consultation' ? [membership, partner] : [membership];
   if (pathname === '/rest/v1/household_members') {
-    writeJsonResponse(response, url.searchParams.has('user_id') && !url.searchParams.has('household_id') ? membership : [membership], 200, request.headers);
+    writeJsonResponse(response, url.searchParams.has('user_id') && !url.searchParams.has('household_id') ? actor : members, 200, request.headers);
   } else if (pathname === '/rest/v1/households') {
     writeJsonResponse(response, household, 200, request.headers);
   } else if (pathname === '/rest/v1/profiles') {
-    writeJsonResponse(response, [{ user_id: membership.user_id, display_name: 'パパ' }], 200, request.headers);
+    writeJsonResponse(response, members.map((member) => ({ user_id: member.user_id, display_name: member.family_role === 'papa' ? 'パパ' : 'ママ' })), 200, request.headers);
   } else if (pathname === '/rest/v1/rpc/get_my_daily_brief') {
     if (state.mode === 'initial-error') {
       writeJsonResponse(response, { code: 'CF14_INITIAL', message: 'CF14_BROWSER_INITIAL_READ_FAILED' }, 500, request.headers);
@@ -245,9 +259,20 @@ async function handleMockSupabaseRequest(request, response) {
   } else if (pathname === '/rest/v1/task_instances') {
     writeJsonResponse(response, planningTaskRows(url), 200, request.headers);
   } else if (pathname === '/rest/v1/requests') {
-    writeJsonResponse(response, [consultationRequest], 200, request.headers);
+    writeJsonResponse(response, state.mode === 'consultation' ? requests : [], 200, request.headers);
   } else if (pathname === '/rest/v1/request_attempts') {
-    writeJsonResponse(response, [consultationAttempt], 200, request.headers);
+    const includeConfirmations = url.searchParams.get('select')?.includes('request_attempt_confirmations(');
+    const attemptRows = attempts.map(({ request_attempt_confirmations: confirmations, ...attempt }) =>
+      includeConfirmations ? { ...attempt, request_attempt_confirmations: confirmations } : attempt);
+    writeJsonResponse(response, state.mode === 'consultation' ? attemptRows : [], 200, request.headers);
+  } else if (pathname === '/rest/v1/user_notifications') {
+    const notified = attempts.some((attempt) => attempt.request_id === consultationId && attempt.state === 'awaiting_confirmation');
+    writeJsonResponse(response, actor === membership && notified ? [{
+      id: 'notification-cf14-consultation', household_id: household.id, recipient_user_id: membership.user_id,
+      type: 'request.awaiting_confirmation', title: notificationTitle,
+      body: notificationTitle + '\n' + consultationMemo, created_at: new Date().toISOString(),
+      payload: { request_id: consultationId }, read_at: null,
+    }] : [], 200, request.headers);
   } else if (pathname.startsWith('/rest/v1/')) {
     writeJsonResponse(response, [], 200, request.headers);
   } else if (pathname === '/functions/v1/list-pending-actions') {
@@ -265,17 +290,66 @@ async function handleMockSupabaseRequest(request, response) {
     response.once('close', () => state.browserEvents.push({ kind: 'mock-complete-task-response-close', statusCode: response.statusCode }));
     state.failAfterMutation = true;
     writeEdgeJsonResponse(response, { task_id: task.id, status: 'completed' }, 200);
-  } else if (pathname === '/functions/v1/negotiate-request') {
-    const command = requestBody ? JSON.parse(requestBody) : {};
-    consultationCommands.push(command);
-    consultationAttempt.state = 'accepted';
-    consultationAttempt.revision += 1;
-    consultationRequest.status = 'accepted';
-    writeJsonResponse(response, { state: 'accepted' }, 200, request.headers);
+  } else if (pathname === '/functions/v1/send-request') {
+    const command = JSON.parse(requestBody);
+    assert.equal(actor.user_id, membership.user_id);
+    assert.equal(command.recipient_user_id, partner.user_id);
+    assert.equal(command.shared_title, consultationTitle);
+    assert.equal(command.shared_message, consultationMessage);
+    requestCommands.push({ actor: actor.user_id, endpoint: 'send-request', command });
+    requests.push({ ...parties, id: consultationId, shared_title: command.shared_title, shared_message: command.shared_message, status: 'pending', due_at: null });
+    attempts.push({
+      id: 'attempt-cf14-consultation', request_id: consultationId,
+      state: 'pending', revision: 1, terms_revision: 1, terms: {}, reply_due_at: null,
+      request_attempt_confirmations: [],
+    });
+    writeEdgeJsonResponse(response, { request_id: consultationId });
+  } else if (pathname === '/functions/v1/negotiate-request' || pathname === '/functions/v1/decline-request' || pathname === '/functions/v1/respond-request') {
+    const command = JSON.parse(requestBody);
+    const action = command.action ?? command.response_action ?? 'decline';
+    const row = requests.find((entry) => entry.id === command.request_id);
+    const attempt = attempts.find((entry) => entry.request_id === command.request_id);
+    assert.ok(row && attempt);
+    assert.equal(command.attempt_id, attempt.id);
+    assert.equal(command.expected_revision, attempt.revision);
+    assert.equal(command.expected_terms_revision, attempt.terms_revision);
+    requestCommands.push({ actor: actor.user_id, endpoint: pathname.split('/').at(-1), command });
+    switch (action) {
+      case 'consult':
+        assert.equal(actor.user_id, partner.user_id);
+        attempt.state = 'consulting';
+        break;
+      case 'edit_terms':
+        attempt.terms = command.terms;
+        attempt.terms_revision += 1;
+        attempt.state = 'consulting';
+        break;
+      case 'confirm_terms': {
+        const actorRef = actorRefs[actor.user_id];
+        const confirmations = attempt.request_attempt_confirmations;
+        assert.ok(!confirmations.some((entry) => entry.actor_ref_id === actorRef && entry.terms_revision === attempt.terms_revision));
+        confirmations.push({ actor_ref_id: actorRef, terms_revision: attempt.terms_revision });
+        const confirmationCount = confirmations.filter((entry) => entry.terms_revision === attempt.terms_revision).length;
+        attempt.state = confirmationCount >= 2 ? 'accepted' : 'awaiting_confirmation';
+        if (attempt.state === 'accepted') row.status = 'accepted';
+        break;
+      }
+      case 'decline':
+        assert.equal(actor.user_id, partner.user_id);
+        attempt.state = 'declined';
+        row.status = 'declined';
+        break;
+      default:
+        assert.fail(`Unexpected request action: ${action}`);
+    }
+    attempt.revision += 1;
+    writeEdgeJsonResponse(response, { state: attempt.state });
+  } else if (pathname === '/functions/v1/propose-ai-draft' || pathname === '/functions/v1/confirm-request-draft') {
+    assert.fail(`The manual request journey unexpectedly called ${pathname}`);
   } else if (pathname.startsWith('/functions/v1/')) {
     writeJsonResponse(response, {}, 200, request.headers);
   } else if (pathname === '/auth/v1/user') {
-    writeJsonResponse(response, { id: membership.user_id, aud: 'authenticated', role: 'authenticated' }, 200, request.headers);
+    writeJsonResponse(response, { id: actor.user_id, aud: 'authenticated', role: 'authenticated' }, 200, request.headers);
   } else {
     writeJsonResponse(response, { message: `Unhandled CF-14 mock path: ${pathname}` }, 404, request.headers);
   }
@@ -436,6 +510,163 @@ async function stopChild(child) {
   if (child.exitCode === null) child.kill('SIGKILL');
 }
 
+async function seedMobileSession(client, member) {
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 3, mobile: true });
+  const session = {
+    access_token: member.user_id === partner.user_id ? 'cf14-browser-partner-token' : 'cf14-browser-access-token',
+    token_type: 'bearer', expires_in: 86_400,
+    expires_at: Math.floor(Date.now() / 1000) + 86_400, refresh_token: 'cf14-browser-refresh-token',
+    user: {
+      id: member.user_id, aud: 'authenticated', role: 'authenticated', email: `${member.user_id}@example.test`,
+      app_metadata: { provider: 'email', providers: ['email'] }, user_metadata: {}, created_at: '2026-01-01T00:00:00Z',
+    },
+  };
+  await client.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `localStorage.setItem('sb-127-auth-token', ${JSON.stringify(JSON.stringify(session))});`,
+  });
+}
+
+function requestRow(title) {
+  return `[...document.querySelectorAll('.request-item')].find(row => row.querySelector('strong')?.textContent === ${JSON.stringify(title)})`;
+}
+
+function buttonWithText(text, scope = 'document') {
+  return `[...((${scope})?.querySelectorAll('button') ?? [])].find(button => button.textContent.trim() === ${JSON.stringify(text)})`;
+}
+
+async function tapButton(client, text, scope) {
+  await tapElement(client, buttonWithText(text, scope), text);
+}
+
+async function tapElement(client, expression, label) {
+  const point = await waitFor(() => evaluate(client, `(() => {
+    const element = ${expression};
+    if (!element || element.disabled) return null;
+    element.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const rect = element.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    return element.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
+  })()`), { label: `reachable element ${label}` });
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
+async function inputByLabel(client, scope, label, value) {
+  const field = `[...document.querySelectorAll(${JSON.stringify(`${scope} label`)})]
+    .find(label => label.textContent.trim() === ${JSON.stringify(label)})?.control`;
+  await tapElement(client, field, label);
+  await client.send('Input.insertText', { text: value });
+}
+
+async function assertNoHorizontalOverflow(client, selector) {
+  const widths = await evaluate(client, `(() => {
+    const node = document.querySelector(${JSON.stringify(selector)});
+    return {
+      viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth,
+      client: node?.clientWidth ?? 0, scroll: node?.scrollWidth ?? 0,
+    };
+  })()`);
+  assert.equal(widths.viewport, 393);
+  assert.ok(widths.document <= widths.viewport, `Page overflow at mobile width: ${JSON.stringify(widths)}`);
+  assert.ok(widths.client > 0 && widths.scroll <= widths.client + 1, `Panel overflow at mobile width: ${selector} ${JSON.stringify(widths)}`);
+}
+
+async function openFocusedRequest(client, url, title) {
+  await navigate(client, url);
+  await waitForFocusedRequest(client, title);
+}
+
+function waitForFocusedRequest(client, title) {
+  return waitFor(() => evaluate(client, `document.activeElement === (${requestRow(title)})`), { label: `focused request ${title}` });
+}
+
+async function runRequestJourney(sender, recipient) {
+  const listUrl = `${MOCK_SUPABASE_URL}/requests`;
+  const targetUrl = `${listUrl}?request=${consultationId}`;
+  const targetRow = requestRow(consultationTitle);
+  const confirmText = 'この案に同意する';
+  const waitingForPartner = 'あなたは同意済みです。相手の返事を待っています。';
+  const waitingForMe = '相手は同意済みです。内容を見て返事をしてください。';
+
+  await navigate(sender, listUrl);
+  await tapButton(sender, '+ お願いを送る');
+  await inputByLabel(sender, '.request-composer', 'タイトル', consultationTitle);
+  await inputByLabel(sender, '.request-composer', '相手へ送る文面', consultationMessage);
+  await tapButton(sender, '送信内容を確認');
+  await waitForText(sender, 'この内容で送りますか？');
+  await waitForText(sender, consultationMessage);
+  await waitForText(sender, 'ママさん');
+  await assertNoHorizontalOverflow(sender, '.request-composer');
+  assert.equal(requestCommands.length, 0, 'Opening the preview must not send the request');
+  await tapButton(sender, 'この内容でお願いを送る');
+  await waitForText(sender, 'ママさんへのお願いを送りました。');
+  await waitForText(sender, consultationTitle);
+
+  await openFocusedRequest(recipient, targetUrl, consultationTitle);
+  await waitForText(recipient, otherRequest.shared_title);
+  await waitForText(recipient, consultationMessage);
+  await tapButton(recipient, 'その他の返答', targetRow);
+  await tapButton(recipient, '相談する', targetRow);
+  await waitForText(recipient, 'いまの相談案');
+  await inputByLabel(recipient, '.request-consultation', '相手へ送る相談文', consultationMemo);
+  await waitFor(() => evaluate(recipient, `(${buttonWithText(confirmText, targetRow)})?.disabled === true`), {
+    label: 'unsent consultation edits disable confirmation of the saved version',
+  });
+  await tapButton(recipient, '相談案を送る', targetRow);
+  await waitForText(recipient, consultationMemo);
+  await tapButton(recipient, confirmText, targetRow);
+  await waitForText(recipient, waitingForPartner);
+  assert.equal(await evaluate(recipient, `Boolean(${buttonWithText(confirmText, targetRow)})`), false, 'The person who already agreed has no repeat confirmation action');
+  await assertNoHorizontalOverflow(recipient, '.request-consultation');
+
+  await navigate(sender, `${MOCK_SUPABASE_URL}/notifications`);
+  await waitForText(sender, notificationTitle);
+  await tapElement(sender, 'document.querySelector(".notification-copy summary")', notificationTitle);
+  const notificationLink = `document.querySelector('.notification-copy a[href="/requests?request=${consultationId}"]')`;
+  await tapElement(sender, notificationLink, 'お願いを開く');
+  await waitForFocusedRequest(sender, consultationTitle);
+  await waitForText(sender, consultationMemo);
+  await waitForText(sender, waitingForMe);
+  await assertNoHorizontalOverflow(sender, '.request-consultation');
+  await evaluate(sender, `(${targetRow}).querySelector('.request-consultation').scrollIntoView({ block: 'center' })`);
+  const consultationScreenshot = await screenshot(sender, 'request-sender-consultation.png', false);
+  await tapButton(sender, confirmText, targetRow);
+  await waitForText(sender, '履歴 1');
+
+  // The same notification URL should open the row even when it has moved into history.
+  await openFocusedRequest(recipient, targetUrl, consultationTitle);
+  await waitForText(recipient, '引き受け済み');
+  assert.equal(await evaluate(recipient, `(${buttonWithText('履歴 1')})?.classList.contains('active')`), true);
+  await tapButton(recipient, '対応中 1');
+  await tapButton(recipient, '難しい', requestRow(otherRequest.shared_title));
+  await waitForText(recipient, '履歴 2');
+
+  assert.deepEqual(requestCommands.map(({ actor, endpoint, command }) => [actor, command.action ?? command.response_action ?? endpoint]), [
+    [membership.user_id, 'send-request'],
+    [partner.user_id, 'consult'],
+    [partner.user_id, 'edit_terms'],
+    [partner.user_id, 'confirm_terms'],
+    [membership.user_id, 'confirm_terms'],
+    [partner.user_id, 'decline-request'],
+  ]);
+  assert.equal(requestCommands[2].command.terms.candidate, consultationMemo);
+  assert.equal(requestCommands[3].command.expected_terms_revision, 2);
+  assert.equal(requestCommands[4].command.expected_terms_revision, 2);
+  assert.equal(requestCommands[5].command.request_id, otherRequest.id);
+
+  assert.ok(state.requestLog.filter(({ url }) => url.includes('/functions/v1/')).every(({ url }) =>
+    !url.endsWith('/propose-ai-draft') && !url.endsWith('/confirm-request-draft'),
+  ), 'Manual request and consultation should make no AI draft calls');
+
+  return {
+    scenarioId: 'CF14-REQUEST-SENDER-CONSULTATION-REAL-BROWSER',
+    entryBoundary: 'two authenticated mobile browser sessions → manual request preview/send → consultation → both confirmations → linked history and decline',
+    visibleAssertion: 'The direct request preview precedes send, both users see the saved multiline proposal and their respective confirmation turn, and the same link opens the exact active or historical request.',
+    screenshot: consultationScreenshot,
+  };
+}
+
 async function main() {
   await rm(ARTIFACT_DIR, { recursive: true, force: true });
   await mkdir(ARTIFACT_DIR, { recursive: true });
@@ -443,6 +674,8 @@ async function main() {
   let vite;
   let chrome;
   let client;
+  let partnerBrowser;
+  let partnerClient;
   try {
     mockSupabase = await startMockSupabase();
     vite = await startVite();
@@ -492,19 +725,7 @@ async function main() {
         state.browserEvents.push({ kind: `console-${type}`, text: (args ?? []).map((arg) => arg.value ?? arg.description ?? '').join(' ') });
       }
     });
-    await client.send('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 3, mobile: true });
-
-    const session = {
-      access_token: 'cf14-browser-access-token', token_type: 'bearer', expires_in: 86_400,
-      expires_at: Math.floor(Date.now() / 1000) + 86_400, refresh_token: 'cf14-browser-refresh-token',
-      user: {
-        id: membership.user_id, aud: 'authenticated', role: 'authenticated', email: 'cf14-browser@example.test',
-        app_metadata: { provider: 'email', providers: ['email'] }, user_metadata: {}, created_at: '2026-01-01T00:00:00Z',
-      },
-    };
-    await client.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `localStorage.setItem('sb-127-auth-token', ${JSON.stringify(JSON.stringify(session))});`,
-    });
+    await seedMobileSession(client, membership);
 
     const browserVersion = await client.send('Browser.getVersion');
     const scenarios = [];
@@ -712,47 +933,13 @@ async function main() {
       screenshot: await screenshot(client, 'today-error.png'),
     });
 
-    // XC-02: exercise the sender's actual Requests route, not an isolated JSX
-    // fixture. HTTP is controlled authoring evidence, not a real-provider claim.
-    state.mode = 'normal';
-    await navigate(client, 'http://127.0.0.1:4173/requests');
-    await waitForText(client, consultationRequest.shared_title);
-    await waitForText(client, 'この変更案を確認する');
-    const setTerms = async (value) => evaluate(client, `(() => {
-      const input = document.querySelector('textarea[aria-label="相談メモ"]');
-      if (!input) return false;
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
-      input.dispatchEvent(new Event('input', { bubbles: true })); return true;
-    })()`);
-    assert.equal(await setTerms('園で引き継ぐ\n18時30分なら対応できる'), true);
-    await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この変更案を確認する')?.disabled === true`), { label: 'unsent terms cannot confirm saved version' });
-    assert.equal(consultationCommands.length, 0);
-    await setTerms('玄関で引き継ぐ');
-    await waitFor(() => evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この変更案を確認する')?.disabled === false`), { label: 'saved terms can be confirmed' });
-    await evaluate(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'この変更案を確認する').scrollIntoView({ block: 'center', behavior: 'instant' })`);
-    const point = await waitFor(() => evaluate(client, `(() => {
-      const button = [...document.querySelectorAll('button')].find(b => b.textContent === 'この変更案を確認する');
-      const rect = button.getBoundingClientRect();
-      const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
-      return button.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
-    })()`), { label: 'sender confirmation is reachable without fixed-navigation obstruction' });
-    const consultationScreenshot = await screenshot(client, 'request-sender-consultation.png', false);
-    await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
-    await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
-    await waitFor(() => consultationCommands.length === 1, { label: 'sender canonical confirmation HTTP' });
-    const command = consultationCommands[0];
-    assert.equal(command.request_id, consultationRequest.id);
-    assert.equal(command.attempt_id, consultationAttempt.id);
-    assert.equal(command.action, 'confirm_terms');
-    assert.equal(command.expected_revision, 4);
-    assert.equal(command.expected_terms_revision, 2);
-    await waitForText(client, '履歴 1');
-    scenarios.push({
-      scenarioId: 'CF14-REQUEST-SENDER-CONSULTATION-REAL-BROWSER',
-      entryBoundary: 'authenticated Requests route → sender consultation → canonical confirmation HTTP → refreshed history',
-      visibleAssertion: 'Unsent edited terms cannot be confirmed; saved revision 2 can be confirmed by the sender and canonical reload updates the request bucket.',
-      screenshot: consultationScreenshot,
-    });
+    state.mode = 'consultation';
+    partnerBrowser = await startChrome();
+    partnerClient = new CdpClient(partnerBrowser.page.webSocketDebuggerUrl);
+    await partnerClient.connect();
+    await partnerClient.send('Page.enable');
+    await seedMobileSession(partnerClient, partner);
+    scenarios.push(await runRequestJourney(client, partnerClient));
 
     const evidence = {
       status: 'F1_AUTHORING_EVIDENCE_ONLY', cf14Status: 'FAIL/PENDING', sourceHead: SOURCE_HEAD,
@@ -771,6 +958,9 @@ async function main() {
       error: error instanceof Error ? error.stack ?? error.message : String(error),
       url: client ? await evaluate(client, 'window.location.href').catch(() => null) : null,
       bodyText: client ? await evaluate(client, 'document.body?.innerText ?? ""').catch(() => null) : null,
+      partnerUrl: partnerClient ? await evaluate(partnerClient, 'window.location.href').catch(() => null) : null,
+      partnerBodyText: partnerClient ? await evaluate(partnerClient, 'document.body?.innerText ?? ""').catch(() => null) : null,
+      requestCommands,
       requestLog: state.requestLog,
       browserEvents: state.browserEvents,
       networkEvents: state.networkEvents,
@@ -781,12 +971,13 @@ async function main() {
     throw error;
   } finally {
     client?.close();
-    await stopChild(chrome?.child);
+    partnerClient?.close();
+    await Promise.all([stopChild(chrome?.child), stopChild(partnerBrowser?.child)]);
     await stopChild(vite);
     await stopServer(mockSupabase);
-    if (chrome?.userDataDir) {
+    for (const browser of [chrome, partnerBrowser].filter(Boolean)) {
       try {
-        await rm(chrome.userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+        await rm(browser.userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       } catch (error) {
         console.warn(`[cf14-browser] Chrome profile cleanup did not complete: ${error.message}`);
       }
