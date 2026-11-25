@@ -6,10 +6,10 @@ import { FamilyOpsApiError } from '../../lib/apiClient';
 import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import type { PendingAction } from '../../lib/types';
 
-const api = vi.hoisted(() => ({ callEdgeFunction: vi.fn(), user: { id: 'user-1' }, household: { id: 'household-1' } }));
+const api = vi.hoisted(() => ({ callEdgeFunction: vi.fn(), user: { id: 'user-1' }, household: { id: 'household-1' }, partnerRole: undefined as 'papa' | 'mama' | undefined }));
 vi.mock('../../app/AuthContext', () => ({ useAuth: () => ({ user: api.user }) }));
 vi.mock('../../app/HouseholdContext', () => ({
-  useHousehold: () => ({ household: api.household, partner: { user_id: 'user-2', profile: { display_name: 'はる' } } }),
+  useHousehold: () => ({ household: api.household, partner: { user_id: 'user-2', family_role: api.partnerRole, profile: { display_name: 'はる' } } }),
 }));
 vi.mock('../../lib/supabaseClient', async () => {
   const { createSupabaseFromMock } = await import('../../test/supabaseMock');
@@ -23,6 +23,7 @@ vi.mock('../../lib/apiClient', async (importOriginal) => ({
 describe('request composer from a LINE pending draft', () => {
   beforeEach(() => {
     api.callEdgeFunction.mockReset();
+    api.partnerRole = undefined;
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
   });
 
@@ -95,10 +96,12 @@ describe('request composer confirmation', () => {
 
   beforeEach(() => {
     api.callEdgeFunction.mockReset();
+    api.partnerRole = undefined;
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
   });
 
   it('uses the one message for preview and sending without AI, with both deadlines in Tokyo time', async () => {
+    api.partnerRole = 'mama';
     api.callEdgeFunction.mockResolvedValue({ request_id: 'request-1' });
     openDirectComposer();
     const message = await startDirectComposer();
@@ -107,14 +110,14 @@ describe('request composer confirmation', () => {
     fireEvent.change(screen.getByLabelText('返事がほしい期限（任意・日本時間）'), { target: { value: '2026-10-11T13:00' } });
     fireEvent.change(screen.getByLabelText('作業期限（任意・日本時間）'), { target: { value: '2026-10-11T18:00' } });
     fireEvent.click(screen.getByRole('button', { name: '送信内容を確認' }));
-    expect(screen.getByRole('region', { name: '送信内容の確認' })).toHaveTextContent('宛先 はるさん');
+    expect(screen.getByRole('region', { name: '送信内容の確認' })).toHaveTextContent('宛先 ママ');
     expect(screen.getByRole('heading', { name: 'お迎え' })).toBeInTheDocument();
     expect(screen.getByText(/作業期限.*18:00（日本時間）/)).toBeInTheDocument();
     expect(screen.getByText('今日のお迎えをお願いできますか？')).toBeInTheDocument();
     expect(api.callEdgeFunction).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'この内容でお願いを送る' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('はるさんへのお願いを送りました。');
+    expect(await screen.findByRole('status')).toHaveTextContent('ママへのお願いを送りました。');
     expect(api.callEdgeFunction).toHaveBeenCalledExactlyOnceWith(EDGE_FUNCTIONS.sendRequest, {
       operation_id: expect.any(String),
       recipient_user_id: 'user-2',
@@ -152,7 +155,7 @@ describe('request composer confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: '送信内容を確認' }));
     expect(screen.queryByText('個人的な事情')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'この内容でお願いを送る' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('はるさんへのお願いを送りました。');
+    expect(await screen.findByRole('status')).toHaveTextContent('はるへのお願いを送りました。');
     expect(api.callEdgeFunction).toHaveBeenNthCalledWith(3, EDGE_FUNCTIONS.confirmRequestDraft, {
       operation_id: expect.any(String),
       recipient_user_id: 'user-2',
@@ -186,7 +189,7 @@ describe('request composer confirmation', () => {
     expect(screen.queryByRole('button', { name: '編集に戻る' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '送信結果を確認' }));
-    expect(await screen.findByText(/はるさんへのお願いを送りました。/)).toHaveAttribute('role', 'status');
+    expect(await screen.findByText(/はるへのお願いを送りました。/)).toHaveAttribute('role', 'status');
     expect(api.callEdgeFunction.mock.calls).toEqual(Array(3).fill(api.callEdgeFunction.mock.calls[0]));
   });
 });

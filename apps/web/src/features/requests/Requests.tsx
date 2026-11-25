@@ -93,6 +93,9 @@ export function Requests() {
   const { user } = useAuth();
   const { household, partner } = useHousehold();
   const { requests, attempts, loading, error, refresh } = useRequests(household?.id ?? null);
+  const recipientName = partner?.family_role === 'papa'
+    ? 'パパ'
+    : partner?.family_role === 'mama' ? 'ママ' : partner?.profile?.display_name.trim() || 'パートナー';
   const location = useLocation();
   const navigate = useNavigate();
   const restoreScrollY = typeof (location.state as { restoreScrollY?: unknown } | null)?.restoreScrollY === 'number'
@@ -184,7 +187,7 @@ export function Requests() {
         <SendRequestForm
           key={`${partner.user_id}:${pendingId ?? 'direct'}`}
           recipientId={partner.user_id}
-          recipientName={partner.profile?.display_name.trim() ? `${partner.profile.display_name.trim()}さん` : 'パートナー'}
+          recipientName={recipientName}
           initialRawMessage={String(pendingAction?.normalized_payload.raw_text ?? pendingActionRawText)}
           initialMessage={String(pendingAction?.normalized_payload.shared_message ?? '')}
           initialTitle={String(pendingAction?.normalized_payload.title ?? '')}
