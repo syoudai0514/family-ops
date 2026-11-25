@@ -9,7 +9,7 @@ import { EDGE_FUNCTIONS } from '../../lib/edgeFunctions';
 import { newOperationId } from '../../lib/id';
 import { useCommandAttempt } from '../../lib/useCommandAttempt';
 import { loadStableCommandAttempt, type CommandAttempt } from '../../lib/commandAttempt';
-import { formatDateTimeJa } from '../../lib/date';
+import { formatDateTimeJa, tokyoDateTimeInputToIso } from '../../lib/date';
 import type { PendingAction, RequestRow } from '../../lib/types';
 
 interface RequestAttempt {
@@ -106,6 +106,7 @@ export function Requests() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [pendingLoadError, setPendingLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(() => Boolean(pendingId) || new URLSearchParams(location.search).has('date') || Boolean(pendingActionRawText));
+  const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [bucketFilter, setBucketFilter] = useState<RequestBucket>(() => {
     const raw = new URLSearchParams(location.search).get('bucket');
     return raw === 'expired' || raw === 'history' ? raw : 'active';
@@ -168,7 +169,7 @@ export function Requests() {
     <div className="app-shell">
       <div className="today-header">
         <h1>お願い</h1>
-        {partner && <button type="button" onClick={() => { setShowForm((v) => !v); if (showForm) clearPrivatePrefill(); }}>{showForm ? '閉じる' : '+ お願いを送る'}</button>}
+        {partner && <button type="button" onClick={() => { setShowForm((v) => !v); setSendStatus(null); if (showForm) clearPrivatePrefill(); }}>{showForm ? '閉じる' : '+ お願いを送る'}</button>}
       </div>
       <div className="request-bucket-tabs" role="tablist" aria-label="お願いの状態">
         <button type="button" className={bucketFilter === 'active' ? 'active' : 'secondary-button'} onClick={() => setBucketFilter('active')}>対応中 {counts.active}</button>
@@ -178,7 +179,26 @@ export function Requests() {
       {error && <section className="card state-card" role="alert"><b>お願いを読み込めませんでした</b><p>{error}</p><button type="button" onClick={() => void refresh()}>再読み込み</button></section>}
       {pendingLoadError && <p role="alert" className="error-text">{pendingLoadError}</p>}
       {showForm && pendingId && pendingAction?.id !== pendingId && !pendingLoadError && <p role="status">LINEの下書きを読み込み中…</p>}
-      {showForm && partner && (!pendingId || pendingAction?.id === pendingId) && <SendRequestForm key={pendingId ?? 'direct'} recipientId={partner.user_id} initialRawMessage={String(pendingAction?.normalized_payload.raw_text ?? pendingActionRawText)} initialMessage={String(pendingAction?.normalized_payload.shared_message ?? '')} initialTitle={String(pendingAction?.normalized_payload.title ?? '')} initialDueDate={pendingAction ? toDateTimeLocal(pendingAction.normalized_payload.due_at) : ''} pendingActionId={pendingAction?.id ?? null} onSent={() => { setShowForm(false); clearPrivatePrefill(); void rowRefresh(); }} />}
+      {sendStatus && <p role="status">{sendStatus}</p>}
+      {showForm && partner && (!pendingId || pendingAction?.id === pendingId) && (
+        <SendRequestForm
+          key={`${partner.user_id}:${pendingId ?? 'direct'}`}
+          recipientId={partner.user_id}
+          recipientName={partner.profile?.display_name.trim() ? `${partner.profile.display_name.trim()}さん` : 'パートナー'}
+          initialRawMessage={String(pendingAction?.normalized_payload.raw_text ?? pendingActionRawText)}
+          initialMessage={String(pendingAction?.normalized_payload.shared_message ?? '')}
+          initialTitle={String(pendingAction?.normalized_payload.title ?? '')}
+          initialDueDate={pendingAction ? toDateTimeLocal(pendingAction.normalized_payload.due_at) : ''}
+          pendingActionId={pendingAction?.id ?? null}
+          onSent={(status) => {
+            setShowForm(false);
+            setSendStatus(status);
+            setBucketFilter('active');
+            clearPrivatePrefill();
+            void rowRefresh();
+          }}
+        />
+      )}
 
       <section className="card">
         <h2>受け取ったお願い</h2>
@@ -347,36 +367,83 @@ function AcceptedRequestFollowup({ request, onChanged }: { request: RequestRow; 
 
 function toDateTimeLocal(value: unknown): string { if (typeof value !== 'string' || !value) return ''; const date = new Date(value); if (Number.isNaN(date.getTime())) return ''; const parts = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date).reduce<Record<string, string>>((result, part) => ({ ...result, [part.type]: part.value }), {}); return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`; }
 
-function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage = '', initialTitle = '', initialDueDate = '', pendingActionId = null, onSent }: { recipientId: string; initialRawMessage?: string; initialMessage?: string; initialTitle?: string; initialDueDate?: string; pendingActionId?: string | null; onSent: () => void }) {
+function SendRequestForm({
+  recipientId, recipientName, initialRawMessage = '', initialMessage = '', initialTitle = '',
+  initialDueDate = '', pendingActionId = null, onSent,
+}: {
+  recipientId: string;
+  recipientName: string;
+  initialRawMessage?: string;
+  initialMessage?: string;
+  initialTitle?: string;
+  initialDueDate?: string;
+  pendingActionId?: string | null;
+  onSent: (status: string) => void;
+}) {
   const { user } = useAuth();
   const { household } = useHousehold();
   const runCommand = useCommandAttempt();
   const logicalKey = `request:send:${recipientId}:${pendingActionId ?? 'direct'}`;
-  const [resumingAttempt, setResumingAttempt] = useState<CommandAttempt | null>(null);
-  const [title, setTitle] = useState(initialTitle); const [rawMessage, setRawMessage] = useState(initialRawMessage); const [message, setMessage] = useState(initialMessage); const [replyDueDate, setReplyDueDate] = useState(''); const [dueDate, setDueDate] = useState(initialDueDate); const [submitting, setSubmitting] = useState(false); const [rewriting, setRewriting] = useState(false); const [rawInputId, setRawInputId] = useState<string | null>(null); const [previewing, setPreviewing] = useState(false); const [error, setError] = useState<string | null>(null);
-  const lockedAttempt = resumingAttempt && ['prepared', 'sending', 'unknown'].includes(resumingAttempt.state) ? resumingAttempt : null;
+  const [lockedAttempt, setLockedAttempt] = useState<CommandAttempt | null>(null);
+  const [title, setTitle] = useState(initialTitle);
+  const [message, setMessage] = useState(initialMessage);
+  const [replyDueDate, setReplyDueDate] = useState('');
+  const [dueDate, setDueDate] = useState(initialDueDate);
+  const [submitting, setSubmitting] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
+  const [rawInputId, setRawInputId] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const sharedTitle = title.trim() || 'お願い';
+  const sharedMessage = message.trim();
+  const dueAt = dueDate ? tokyoDateTimeInputToIso(dueDate) : undefined;
+  const replyDueAt = replyDueDate ? tokyoDateTimeInputToIso(replyDueDate) : undefined;
+  const rewriteSource = sharedMessage || initialRawMessage.trim();
 
   useEffect(() => {
     if (!user || !household) return;
     const attempt = loadStableCommandAttempt(user.id, household.id, logicalKey);
     if (!attempt || !['prepared', 'sending', 'unknown'].includes(attempt.state)) return;
-    setResumingAttempt(attempt);
+    setLockedAttempt(attempt);
     const payload = attempt.payload;
-    if (typeof payload.shared_title === 'string') setTitle(payload.shared_title);
-    const confirmedMessage = typeof payload.confirmed_message === 'string'
-      ? payload.confirmed_message
-      : typeof payload.shared_message === 'string' ? payload.shared_message : '';
-    if (confirmedMessage) setMessage(confirmedMessage);
+    setTitle(typeof payload.shared_title === 'string' ? payload.shared_title : '');
+    setMessage(String(payload.confirmed_message ?? payload.shared_message ?? ''));
     setReplyDueDate(toDateTimeLocal(payload.reply_due_at));
     setDueDate(toDateTimeLocal(payload.due_at));
     setRawInputId(typeof payload.raw_input_id === 'string' ? payload.raw_input_id : null);
     setPreviewing(true);
   }, [household, logicalKey, user]);
-  async function rewriteMessageWithAi() { const rawText = rawMessage.trim(); if (!rawText) { setError('言い換えたいメッセージを入力してください。'); return; } setError(null); setRewriting(true); try { const proposal = await callEdgeFunction<{ raw_input_id: string; proposed_text: string }>(EDGE_FUNCTIONS.proposeAiDraft, { operation_id: newOperationId(), raw_text: rawText, target_type: 'request' }); setMessage(proposal.proposed_text); setRawInputId(proposal.raw_input_id); } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : 'AIによる言い換えに失敗しました。'); } finally { setRewriting(false); } }
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault(); setError(null); setSubmitting(true);
+
+  async function rewriteMessageWithAi() {
+    if (!rewriteSource || rewriting || lockedAttempt) return;
+    setError(null);
+    setRewriting(true);
     try {
-      if (!message.trim()) { setError('相手へ共有する文面を入力してください。'); return; }
+      const proposal = await callEdgeFunction<{ raw_input_id: string; proposed_text: string }>(
+        EDGE_FUNCTIONS.proposeAiDraft,
+        { operation_id: newOperationId(), raw_text: rewriteSource, target_type: 'request' },
+      );
+      setMessage(proposal.proposed_text);
+      setRawInputId(proposal.raw_input_id);
+    } catch {
+      setError('AIで言い換えられませんでした。自分で文面を整えて送れます。');
+    } finally {
+      setRewriting(false);
+    }
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (submitting || rewriting || (!sharedMessage && !lockedAttempt)) return;
+    setError(null);
+    if (!previewing) {
+      setPreviewing(true);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
       const endpoint = lockedAttempt?.endpoint ?? (rawInputId ? EDGE_FUNCTIONS.confirmRequestDraft : EDGE_FUNCTIONS.sendRequest);
       await runCommand(
         logicalKey,
@@ -386,31 +453,83 @@ function SendRequestForm({ recipientId, initialRawMessage = '', initialMessage =
           : {
               operation_id: operationId,
               recipient_user_id: recipientId,
-              shared_title: title.trim() || 'お願い',
-              due_at: dueDate ? new Date(dueDate).toISOString() : undefined,
-              reply_due_at: replyDueDate ? new Date(replyDueDate).toISOString() : undefined,
+              shared_title: sharedTitle,
+              due_at: dueAt,
+              reply_due_at: replyDueAt,
               ...(rawInputId
-                ? { raw_input_id: rawInputId, confirmed_message: message.trim() }
-                : { shared_message: message.trim() }),
+                ? { raw_input_id: rawInputId, confirmed_message: sharedMessage }
+                : { shared_message: sharedMessage }),
             },
       );
+      let status = `${recipientName}へのお願いを送りました。「送ったお願い」で返事を確認できます。`;
       if (pendingActionId) {
         try {
           await callEdgeFunction(EDGE_FUNCTIONS.cancelPendingAction, { pending_action_id: pendingActionId });
         } catch {
-          setError('お願いは送信済みです。LINE下書きの整理だけ再読み込み後に確認してください。');
+          status += ' LINEの下書きは残っている場合があります。';
         }
       }
-      onSent();
+      onSent(status);
     } catch (err) {
       if (err instanceof FamilyOpsApiError && err.outcome === 'unknown' && user && household) {
-        setResumingAttempt(loadStableCommandAttempt(user.id, household.id, logicalKey));
-        setPreviewing(true);
-      } else if (err instanceof FamilyOpsApiError) {
-        setResumingAttempt(null);
+        setLockedAttempt(loadStableCommandAttempt(user.id, household.id, logicalKey));
+        setError('送信結果を確認できませんでした。同じ内容で送信結果を確認できます。');
+      } else {
+        setLockedAttempt(null);
+        setError('お願いを送れませんでした。内容を確認して、もう一度お試しください。');
       }
-      setError(err instanceof FamilyOpsApiError ? err.message : '送信結果を確認できませんでした。入力内容はこの画面に残っています。');
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   }
-  return <form onSubmit={handleSubmit} className="stack-form card request-composer"><div className="composer-steps" aria-label="お願い作成の手順"><span className={!previewing ? 'active' : ''}>1 作成</span><span className={previewing ? 'active' : ''}>2 確認</span><span>3 送信</span></div><p className="eyebrow">相手に見えるのは、確認した文面だけです</p><label>タイトル<input value={title} onChange={(e) => setTitle(e.target.value)} disabled={Boolean(lockedAttempt)} placeholder="未入力なら「お願い」" /></label><label>まずはそのまま入力<textarea value={rawMessage} onChange={(e) => { setRawMessage(e.target.value); setRawInputId(null); }} disabled={Boolean(lockedAttempt)} placeholder="今日ちょっと遅くなるから、迎えをお願いしたい" /></label><button type="button" className="secondary-button" onClick={rewriteMessageWithAi} disabled={Boolean(lockedAttempt) || submitting || rewriting || rawMessage.trim().length === 0}>{rewriting ? 'AIが言い換え中…' : 'AIでやわらかく言い換える'}</button><label>相手へ送る文面（確認・編集できます）<textarea value={message} onChange={(e) => setMessage(e.target.value)} disabled={Boolean(lockedAttempt)} required placeholder="AIで言い換えるか、直接入力してください" /></label><div className="request-deadline-grid"><label>返事がほしい期限（任意）<input type="datetime-local" value={replyDueDate} onChange={(e) => setReplyDueDate(e.target.value)} disabled={Boolean(lockedAttempt)} /></label><label>作業期限（任意）<input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} disabled={Boolean(lockedAttempt)} /></label></div><p className="request-scope"><strong>返事期限</strong>は「いつまでに返事がほしいか」、<strong>作業期限</strong>は「いつまでにやるか」です。別々に設定できます。返事期限を空欄にした場合は、送信時にシステムが返事期限を自動提案します。</p><p className="request-scope">📅 今回だけのお願いです。担当変更の「今週だけ」は週画面から選べます。</p>{lockedAttempt && <p className="request-scope" role="status">送信結果がまだ確定していないため、内容を固定しています。二重送信せず、送信結果を確認します。</p>}{error && <p role="alert" className="error-text">{error}</p>}{!previewing ? <button type="button" disabled={submitting || !message.trim()} onClick={() => setPreviewing(true)}>送信内容を確認</button> : <section className="line-sender-preview" aria-label="LINE送信プレビュー"><p className="line-preview-kicker">LINE · 送る側の確認</p><h3>この内容で送りますか？</h3><p className="line-preview-message">{message}</p><p className="line-preview-meta">{replyDueDate ? `返事期限: ${new Date(replyDueDate).toLocaleString('ja-JP')}` : '返事期限: 自動提案（送信時に確定）'} / {dueDate ? `作業期限: ${new Date(dueDate).toLocaleString('ja-JP')}` : '作業期限なし'} / 今回だけ</p><p className="empty-hint">送るまでは、相手に通知されません。</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={Boolean(lockedAttempt) || submitting}>編集</button><button type="submit" disabled={submitting}>{submitting ? '確認中…' : lockedAttempt ? '送信結果を確認' : 'LINEで送る'}</button></div></section>}</form>;
+
+  return (
+    <form onSubmit={handleSubmit} className="stack-form card request-composer">
+      {!previewing ? (
+        <>
+          <h2>お願いを作る</h2>
+          <p>宛先は{recipientName}です。</p>
+          <label>タイトル<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="未入力なら「お願い」" /></label>
+          <label>相手へ送る文面<textarea value={message} onChange={(e) => setMessage(e.target.value)} required disabled={rewriting} placeholder="今日18時のお迎えをお願いできますか？" /></label>
+          {initialRawMessage && (
+            <details>
+              <summary>下書きの原文（相手には表示されません）</summary>
+              <p className="line-preview-message">{initialRawMessage}</p>
+            </details>
+          )}
+          <div>
+            <button type="button" className="secondary-button" onClick={() => void rewriteMessageWithAi()} disabled={rewriting || !rewriteSource}>
+              {rewriting ? 'AIが言い換え中…' : sharedMessage || !initialRawMessage ? 'AIでやわらかく言い換える' : '下書きの原文からAIで文面を作る'}
+            </button>
+            <p className="empty-hint">AIの言い換えは任意です。送る前に文面を編集できます。</p>
+          </div>
+          <div className="request-deadline-grid">
+            <label>返事がほしい期限（任意・日本時間）<input type="datetime-local" value={replyDueDate} onChange={(e) => setReplyDueDate(e.target.value)} /></label>
+            <label>作業期限（任意・日本時間）<input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
+          </div>
+          <p className="request-scope">返事の期限を空欄にすると、送信時に自動で設定されます。今回だけのお願いです。</p>
+          <button type="submit" disabled={rewriting || !sharedMessage}>送信内容を確認</button>
+        </>
+      ) : (
+        <section className="line-sender-preview" aria-label="送信内容の確認">
+          <h2>この内容で送りますか？</h2>
+          <p>宛先　{recipientName}</p>
+          <h3>{sharedTitle}</h3>
+          <p className="line-preview-message">{sharedMessage}</p>
+          <p className="line-preview-meta">
+            {replyDueAt ? `返事がほしい期限　${formatDateTimeJa(replyDueAt)}（日本時間）` : '返事がほしい期限　送信時に自動で設定'}
+          </p>
+          <p className="line-preview-meta">
+            {dueAt ? `作業期限　${formatDateTimeJa(dueAt)}（日本時間）` : '作業期限なし'} ／ 今回だけ
+          </p>
+          {lockedAttempt && <p className="request-scope" role="status">前回の送信結果を確認するため、内容を固定しています。</p>}
+          <div className="modal-actions">
+            {!lockedAttempt && <button type="button" className="secondary-button" onClick={() => setPreviewing(false)} disabled={submitting}>編集に戻る</button>}
+            <button type="submit" disabled={submitting}>{submitting ? '確認中…' : lockedAttempt ? '送信結果を確認' : 'この内容でお願いを送る'}</button>
+          </div>
+        </section>
+      )}
+      {error && <p role="alert" className="error-text">{error}</p>}
+    </form>
+  );
 }
