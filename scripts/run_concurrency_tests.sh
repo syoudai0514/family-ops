@@ -10,6 +10,8 @@ export PGPORT="${PGPORT:-5544}"
 export PGUSER="${PGUSER:-postgres}"
 TEST_DB="${1:-family_ops_sql_test}"
 
+bash "$REPO_ROOT/scripts/test_unrecorded_archive_race.sh" "$TEST_DB"
+
 psql_svc() {
   psql -v ON_ERROR_STOP=1 -d "$TEST_DB" -q -t -A -c "set role service_role; $1"
 }

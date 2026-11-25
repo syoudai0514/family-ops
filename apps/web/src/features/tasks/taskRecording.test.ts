@@ -52,6 +52,16 @@ describe('date-specific recording', () => {
       ),
     ).toBe('すべて記録済み');
   });
+  it('does not count auto-closed unrecorded work as completed, failed, or still owed', () => {
+    const onlyUnrecorded = summarizeTaskRecording([task('skipped', 'unrecorded')], date);
+    expect(onlyUnrecorded).toMatchObject({ total: 0, completed: 0, missed: 0, recorded: 0, pending: 0, unrecorded: 1, state: 'unrecorded' });
+    expect(taskRecordingLabel(onlyUnrecorded)).toBe('記録なし');
+    const mixed = summarizeTaskRecording([task('completed'), task('skipped', 'unrecorded')], date);
+    expect(mixed).toMatchObject({ total: 1, completed: 1, pending: 0, unrecorded: 1, state: 'unrecorded' });
+    expect(taskRecordingLabel(mixed)).toBe('一部は記録なし');
+    const optional = { ...task('skipped', 'unrecorded'), expectation: 'optional' };
+    expect(summarizeTaskRecording([task('completed'), optional], date)).toMatchObject({ state: 'completed', unrecorded: 0 });
+  });
 });
 
 describe('summarizeTaskRecording for one person (owner 2026-10-09)', () => {

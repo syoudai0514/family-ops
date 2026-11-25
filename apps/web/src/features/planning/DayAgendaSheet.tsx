@@ -16,7 +16,7 @@ import {
 import { usePlanningData } from './usePlanningData';
 import './DayAgendaSheet.css';
 import { ScheduleEventCard } from './ScheduleEventCard';
-import { isTaskRecorded, summarizeTaskRecording } from '../tasks/taskRecording';
+import { isAutoClosedUnrecorded, isTaskRecorded, summarizeTaskRecording } from '../tasks/taskRecording';
 import { groupTasksByOwner } from '../tasks/taskOwnerGroups';
 import { TaskRecordingBadge } from '../tasks/TaskRecordingBadge';
 import { RemoveDayTransport } from './RemoveDayTransport';
@@ -202,11 +202,12 @@ export function DayAgendaSheet({
   const partnerLabel = roleLabel(partner?.family_role, '相手');
   const renderOwnerGroup = (kind: 'mine' | 'shared' | 'partner', title: string, list: PlanningTask[], folded = false) => {
     if (list.length === 0) return null;
-    const open = list.filter((task) => !isTaskRecorded(task)).length;
+    const open = list.filter((task) => !isTaskRecorded(task) && !isAutoClosedUnrecorded(task)).length;
+    const hasUnrecorded = list.some(isAutoClosedUnrecorded);
     const summary = (
       <>
         <strong>{title}</strong>
-        <span>{list.length}件{open > 0 ? `・未記録${open}` : '・すべて記録済み'}</span>
+        <span>{list.length}件{open > 0 ? `・未記録${open}` : hasUnrecorded ? '・記録なしあり' : '・すべて記録済み'}</span>
       </>
     );
     const items = <ul className="task-list day-agenda-task-list">{list.map((task) => renderTask(task))}</ul>;

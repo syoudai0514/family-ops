@@ -8,7 +8,7 @@ import type { TaskInstance, TaskSubtaskInstance } from '../../lib/types';
 import type { HouseholdMemberWithProfile } from '../../app/HouseholdContext';
 import { assignmentDecisionCommand, type AssignmentDecision } from './assignmentDecision';
 import type { TaskCompletionPrerequisite } from '../today/codmonReadiness';
-import { isTaskRecorded } from './taskRecording';
+import { isAutoClosedUnrecorded, isTaskRecorded } from './taskRecording';
 import { isPartnersTask } from './taskOwnerGroups';
 import { TaskWorkUpdate } from './TaskWorkUpdate';
 import { getTaskDisplay } from './taskDisplay';
@@ -131,9 +131,12 @@ export function TaskChecklistItem({
 }: TaskChecklistItemProps) {
   const taskTitle = getTaskDisplay(task).displayTitle;
   const completed = task.status === 'completed';
+  const archivedUnrecorded = isAutoClosedUnrecorded(task);
   // An explicit missed result closes the occurrence without claiming completion.
   const couldNotDo = task.status === 'skipped' && task.outcome_reason === 'could_not_do';
-  const finished = isTaskRecorded(task);
+  // An auto-closed occurrence is not a recorded result. Keep editing disabled
+  // until the explicit historical-correction command is available.
+  const finished = isTaskRecorded(task) || archivedUnrecorded;
   const editable = task.origin === 'manual' && !finished;
   const subtaskTotal = subtasks.length;
   const subtaskDone = subtasks.filter((item) => item.is_completed).length;
@@ -509,7 +512,7 @@ export function TaskChecklistItem({
     }
   }
 
-  const resultLabel = completed ? '' : couldNotDo ? '今日はなし（実施せず）' : finished ? '記録済み' : '';
+  const resultLabel = completed ? '' : archivedUnrecorded ? '記録なし' : couldNotDo ? '今日はなし（実施せず）' : finished ? '記録済み' : '';
   const taskContent = <>
     <strong>{taskTitle}</strong>{specialToday && <span className="status-chip">⭐ 今日だけの予定</span>}
     <span className="task-item-meta">
@@ -538,8 +541,8 @@ export function TaskChecklistItem({
           </label>
         ) : (
           <span className="task-result-icon" role="img"
-            aria-label={`${taskTitle}：${completed ? '完了済み' : couldNotDo ? '今日はなし・実施せず記録済み' : finished ? '記録済み' : '未記録'}`}>
-            {completed ? '✓' : finished ? '−' : '○'}
+            aria-label={`${taskTitle}：${completed ? '完了済み' : archivedUnrecorded ? '記録なし' : couldNotDo ? '今日はなし・実施せず記録済み' : finished ? '記録済み' : '未記録'}`}>
+            {completed ? '✓' : archivedUnrecorded ? '·' : finished ? '−' : '○'}
           </span>
         )}
 
@@ -556,7 +559,7 @@ export function TaskChecklistItem({
           </button>
         ) : <div className="task-checklist-content">{taskContent}</div>}
 
-        <details className="task-overflow">
+        {!archivedUnrecorded && <details className="task-overflow">
           <summary aria-label="その他の操作">•••</summary>
           <div>
             {compact && !finished && <button type="button" className="task-action task-action-missed" disabled={busy} onClick={() => handleCouldNotDo()} aria-label={`${taskTitle}を今日はなし（実施せず）として記録`}>今日はなし（実施せず）</button>}
@@ -649,7 +652,7 @@ export function TaskChecklistItem({
               </button>
             )}
           </div>
-        </details>
+        </details>}
 
         {/* The same explicit completion button for whole tasks and checklists. */}
         <div className="task-actions">

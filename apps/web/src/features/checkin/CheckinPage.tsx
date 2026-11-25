@@ -27,7 +27,7 @@ interface SessionItem {
   status: 'todo' | 'in_progress' | 'completed' | 'skipped' | 'cancelled';
   completion_mode: 'whole' | 'subtasks';
   actual_completed_by_id: string | null;
-  outcome_reason?: 'could_not_do' | 'not_needed_this_occurrence' | 'expired_occurrence' | 'rescheduled' | 'unknown' | null;
+  outcome_reason?: 'unrecorded' | 'could_not_do' | 'not_needed_this_occurrence' | 'expired_occurrence' | 'rescheduled' | 'unknown' | null;
   rescheduled_to?: string | null;
   expectation?: TaskExpectation;
   revision?: number;
@@ -92,6 +92,7 @@ function itemStatusLabel(item: SessionItem): string {
   if (item.status === 'completed') return '完了';
   if (item.status === 'cancelled') return '中止';
   if (item.status === 'skipped') {
+    if (item.outcome_reason === 'unrecorded') return '記録なし';
     if (item.outcome_reason === 'could_not_do') return '今日はなし（実施せず）';
     if (item.outcome_reason === 'not_needed_this_occurrence') return '今回は不要';
     if (item.outcome_reason === 'rescheduled') return item.rescheduled_to ? `再予定: ${item.rescheduled_to}` : '再予定';
