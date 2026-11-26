@@ -42,7 +42,7 @@ Deno.test(
     assertStringIncludes(raw, 'action=confirm_pending&pending_action_id=pending-1');
     assertEquals(raw.includes('data=迎えお願い'), false);
     assertStringIncludes(raw, 'action=edit_pending&pending_action_id=pending-1');
-    assertEquals(raw.includes('https://example.test/requests'), false);
+    assertStringIncludes(raw, 'action=mc_request&request_id=request-2&attempt_id=attempt-1&request_action=decline&revision=1&terms_revision=1');
   },
 );
 
@@ -207,9 +207,8 @@ Deno.test(
 
 Deno.test('general request other response stays in LINE with the selected request', () => {
   const card = buildGeneralRequestFlex({ title: '迎えお願い', message: 'お願いできますか',
-    acceptPendingActionId: 'accept-1', declinePendingActionId: 'decline-1', requestId: 'request-2',
-    otherResponseUrl: 'https://example.test/requests?request=request-2' });
+    requestId: 'request-2', attemptId: 'attempt-1', revision: 1, termsRevision: 1 });
   const raw = JSON.stringify(card);
   assertStringIncludes(raw, 'action=mc_request_open&request_id=request-2');
-  assertEquals(raw.includes('https://example.test/requests'), false);
+  assertStringIncludes(raw, 'action=mc_request&request_id=request-2&attempt_id=attempt-1&request_action=decline&revision=1&terms_revision=1');
 });

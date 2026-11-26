@@ -44,8 +44,16 @@ import { logLineTurn } from '../process-line-inbox/lineRouterWiring.ts';
 import {
   buildAssignmentRequestFlex,
   buildGeneralRequestFlex,
+  buildOpenRequestFlex,
 } from '../_shared/lineMessageBuilders.ts';
-import { findRequestReceivedItem } from './requestNotificationPayload.ts';
+import {
+  findRequestReceivedItem,
+  formatJstMinute,
+  isRequestReceivedType,
+  requestOpenTargets,
+  requestReceivedContent,
+  type RequestNotificationItem,
+} from './requestNotificationPayload.ts';
 import { resolveVapidConfig } from '../_shared/webPush.ts';
 import { processWebPushOutbox, type PushRunSummary } from './webPushWorker.ts';
 
@@ -67,12 +75,9 @@ const LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
 const LINE_QUOTA_URL = 'https://api.line.me/v2/bot/message/quota';
 const LINE_QUOTA_CONSUMPTION_URL = 'https://api.line.me/v2/bot/message/quota/consumption';
 
-type OutboxItem = {
+type OutboxItem = RequestNotificationItem & {
   quiet_mode?: boolean;
   user_notification_id?: string;
-  type?: string;
-  title?: string;
-  body?: string;
   dedup_key?: string;
   // P1-3 fix (docs/adr/0009): only ever present on notification_outbox.type
   // === 'routine' items, attached by
@@ -82,19 +87,6 @@ type OutboxItem = {
   // Opaque canonical id only -- no bearer credential.
   session_id?: string;
   session_type?: string;
-  payload?: {
-    request_id?: string;
-    attempt_id?: string;
-    revision?: number;
-    terms_revision?: number;
-    reply_due_at?: string | null;
-    request_kind?: string;
-    scope?: 'once' | 'this_week';
-    due_at?: string | null;
-    accept_pending_action_id?: string;
-    decline_pending_action_id?: string;
-    recipient_label?: string;
-  };
 };
 
 type ClaimedNotification = {
@@ -128,93 +120,86 @@ type RunSummary = {
   web_push: PushRunSummary | null;
 };
 
-async function enrichRequestOutcomeItems(
+async function enrichRequestItems(
   serviceClient: SupabaseClient,
-  payload: ClaimedNotification['payload'],
+  notification: ClaimedNotification,
 ): Promise<void> {
-  const items = payload?.items ?? [];
-  for (const item of items) {
-    if (item.type !== 'request.accepted' || !item.payload?.request_id) continue;
-    const { data: request, error } = await serviceClient.from('requests')
-      .select('household_id,request_kind,assignment_scope,due_at,recipient_id')
+  for (const item of notification.payload?.items ?? []) {
+    if (!item.payload?.request_id) continue;
+    const received = isRequestReceivedType(item.type);
+    const needsSharedContent = received && !item.payload.shared_title;
+    const acceptedAssignmentOrLegacy = item.type === 'request.accepted' &&
+      (!item.payload.request_kind || item.payload.request_kind === 'assignment_change') &&
+      item.payload.confirmation_mode !== 'mutual';
+    if (!needsSharedContent && !acceptedAssignmentOrLegacy) continue;
+    let query = serviceClient.from('requests')
+      .select(needsSharedContent
+        ? 'request_kind,shared_title,shared_message,assignment_scope,due_at,recipient_id'
+        : 'request_kind,assignment_scope,due_at,recipient_id')
       .eq('id', item.payload.request_id)
-      .maybeSingle();
+      .eq('household_id', notification.household_id)
+      .is('test_context_id', null);
+    if (received) query = query.eq('recipient_id', notification.recipient_user_id);
+    else query = query.or(`requester_id.eq.${notification.recipient_user_id},recipient_id.eq.${notification.recipient_user_id}`);
+    const { data: request, error } = await query.maybeSingle();
     if (error || !request) continue;
 
-    let recipientLabel = '依頼相手';
-    if (request.recipient_id) {
+    if (needsSharedContent) {
+      // Older queued rows carried the heading and only one content field.
+      item.payload.shared_title = request.shared_title;
+      item.payload.shared_message = request.shared_message;
+    }
+    item.payload.request_kind ??= request.request_kind;
+    if (item.payload.request_kind !== 'assignment_change' || received) continue;
+
+    item.payload.scope ??= request.assignment_scope === 'this_week' ? 'this_week' : 'once';
+    item.payload.due_at ??= request.due_at;
+    if (request.recipient_id === notification.recipient_user_id) {
+      item.payload.recipient_label = 'あなた';
+    } else if (request.recipient_id) {
       const { data: member } = await serviceClient.from('household_members')
         .select('family_role')
-        .eq('household_id', request.household_id)
+        .eq('household_id', notification.household_id)
         .eq('user_id', request.recipient_id)
         .maybeSingle();
-      if (member?.family_role === 'mama') recipientLabel = 'ママ';
-      else if (member?.family_role === 'papa') recipientLabel = 'パパ';
+      if (member?.family_role === 'mama') item.payload.recipient_label = 'ママ';
+      if (member?.family_role === 'papa') item.payload.recipient_label = 'パパ';
     }
-
-    item.payload = {
-      ...item.payload,
-      request_kind: request.request_kind ?? item.payload.request_kind,
-      scope: request.assignment_scope === 'this_week' ? 'this_week' : 'once',
-      due_at: request.due_at ?? item.payload.due_at ?? null,
-      recipient_label: recipientLabel,
-    };
   }
 }
 
 function buildRichRequestMessage(
-  payload: ClaimedNotification['payload'],
+  item: OutboxItem | undefined,
 ): Record<string, unknown> | null {
-  if (payload?.rich_message) return payload.rich_message;
-  const items = payload?.items ?? [];
-  const item = findRequestReceivedItem(items);
-  if (!item?.payload?.request_id) return null;
-  const appBaseUrl = (Deno.env.get('APP_BASE_URL') ?? '').replace(/\/$/, '');
-  const otherResponseUrl = appBaseUrl ? `${appBaseUrl}/requests?request=${encodeURIComponent(item.payload.request_id)}&response=other` : undefined;
+  const payload = item?.payload;
+  if (!item || !payload?.request_id || !payload.attempt_id ||
+      !payload.revision || !payload.terms_revision ||
+      !Number.isSafeInteger(payload.revision) || !Number.isSafeInteger(payload.terms_revision)) return null;
+  const { title, message, assignment } = requestReceivedContent(item);
+  const requestSnapshot = {
+    requestId: payload.request_id,
+    attemptId: payload.attempt_id,
+    revision: payload.revision,
+    termsRevision: payload.terms_revision,
+  };
 
-  if (item.payload.request_kind === 'assignment_change') {
+  if (assignment) {
     return buildAssignmentRequestFlex({
-      requestId: item.payload.request_id,
-      attemptId: item.payload.attempt_id,
-      revision: item.payload.revision,
-      termsRevision: item.payload.terms_revision,
-      replyDueAt: item.payload.reply_due_at,
-      workDueAt: item.payload.due_at,
-      title: item.title ?? '担当変更',
-      message: item.body ?? '',
-      scope: item.payload.scope ?? 'once',
-      otherResponseUrl,
+      ...requestSnapshot,
+      replyDueAt: payload.reply_due_at,
+      workDueAt: payload.due_at,
+      title,
+      message,
+      scope: payload.scope ?? 'once',
     });
   }
 
-  let label: string | undefined;
-  if (item.payload.due_at) {
-    const due = new Date(item.payload.due_at);
-    if (!Number.isNaN(due.getTime()))
-      label = new Intl.DateTimeFormat('ja-JP', {
-        timeZone: 'Asia/Tokyo',
-        month: 'numeric',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(due);
-  }
-  const acceptPendingActionId = item.payload.accept_pending_action_id;
-  const declinePendingActionId = item.payload.decline_pending_action_id;
-  // Older request notifications do not carry recipient-owned pending action
-  // IDs. They remain plain text; never emit a Flex card with unusable
-  // postbacks.
-  if (typeof acceptPendingActionId !== 'string' || typeof declinePendingActionId !== 'string') {
-    return null;
-  }
+  const due = formatJstMinute(payload.due_at);
   return buildGeneralRequestFlex({
-    title: item.title ?? 'お願い',
-    message: item.body ?? '',
-    acceptPendingActionId,
-    declinePendingActionId,
-    requestId: item.payload.request_id,
-    scheduleLabel: label,
-    otherResponseUrl,
+    title,
+    message,
+    ...requestSnapshot,
+    scheduleLabel: due ? `作業期限：${due}` : undefined,
   });
 }
 
@@ -398,8 +383,21 @@ async function sendOne(
     );
   }
 
-  await enrichRequestOutcomeItems(serviceClient, item.payload);
-  const richMessage = buildRichRequestMessage(item.payload);
+  await enrichRequestItems(serviceClient, item);
+  const entries = item.payload?.items ?? [];
+  const requestEntry = findRequestReceivedItem(entries);
+  const requestCard = buildRichRequestMessage(requestEntry);
+  let richMessage = requestCard ?? item.payload?.rich_message;
+  const requestTargets = requestOpenTargets(entries, requestCard ? requestEntry?.payload?.request_id : undefined);
+  // A permanent Flex button stays available after later messages hide LINE quick replies.
+  if (!richMessage && requestTargets.length === 1) {
+    const { title, action } = requestTargets[0];
+    richMessage = buildOpenRequestFlex(title, action);
+    requestTargets.length = 0;
+  }
+  const requestActions = requestTargets.map(({ title, action }) =>
+    requestTargets.length === 1 ? action : { ...action, label: `${action.label} ${title.replace(/\s+/gu, ' ').slice(0, 10)}` }
+  );
   const morning = item.type === 'daily_brief.v2' && (item.payload?.items ?? []).some((entry) => entry.title === '朝のおうちノート');
   const quiet = (item.payload?.items ?? []).some((entry) => entry.quiet_mode === true &&
     (entry.type === 'daily_brief.v2' || (item.type === 'daily_brief.v2' && entry.title === '朝のおうちノート')));
@@ -422,7 +420,7 @@ async function sendOne(
   // LINE allows up to five messages per push. Keep routine/handover content
   // and append the Flex action card, rather than losing its buttons when an
   // outbox row was bundled with another notification.
-  let messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
+  let messages = buildLinePushMessages(text, [...requestActions, ...(quickReply ?? [])].slice(0, 13), richMessage);
   // Never show a thank-you action without the text identifying its recipient
   // and reason: a very long brief may have been truncated by LINE limits.
   const hasThanksContext = !thanksLine || messages.some((message) => typeof message.text === 'string' && message.text.includes(thanksLine));
@@ -430,7 +428,7 @@ async function sendOne(
   if (!hasThanksContext || !hasBulkContext) {
     quickReply = buildBriefQuickReply(item.type, { evening, previousDay, consultDate,
       thanks: hasThanksContext ? thanks : null, bulk: hasBulkContext ? bulk : null });
-    messages = buildLinePushMessages(text, quickReply ?? undefined, richMessage);
+    messages = buildLinePushMessages(text, [...requestActions, ...(quickReply ?? [])].slice(0, 13), richMessage);
   }
   // Ask only when the whole note and its existing actions fit alongside the
   // cards. Reserving the week before checking this would silently lose it.
