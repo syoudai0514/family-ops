@@ -5,6 +5,11 @@ import { callEdgeFunction } from '../../lib/apiClient';
 import type { RequestRow } from '../../lib/types';
 
 vi.mock('../../lib/apiClient', () => ({ callEdgeFunction: vi.fn(), FamilyOpsApiError: class extends Error {} }));
+vi.mock('../../lib/useCommandAttempt', () => ({
+  useCommandAttempt: () => (
+    _key: string, endpoint: string, payload: (operationId: string) => Record<string, unknown>,
+  ) => callEdgeFunction(endpoint, payload('operation-test')),
+}));
 
 const request = { id: 'request-1', requester_id: 'papa', recipient_id: 'mama', requester_actor_ref_id: 'actor-papa', recipient_actor_ref_id: 'actor-mama', shared_title: 'お迎え', status: 'pending' } as RequestRow;
 const attempt = { id: 'attempt-1', request_id: request.id, state: 'awaiting_confirmation' as const, revision: 4, terms_revision: 2, terms: { candidate: '玄関で引き継ぐ' }, request_attempt_confirmations: [{ actor_ref_id: 'actor-mama', terms_revision: 2 }] };
