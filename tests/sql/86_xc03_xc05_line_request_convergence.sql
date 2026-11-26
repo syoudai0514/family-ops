@@ -37,7 +37,7 @@ begin
   req:=(c->>'request_id')::uuid;
   attempt:=(c->>'attempt_id')::uuid;
   r:=public.server_tx_transition_request_v2(
-    v,gen_random_uuid(),req,attempt,'checking',null,1,1,'line'
+    v,gen_random_uuid(),req,attempt,'begin_assignment_accept',null,1,1,'line'
   );
   if r->>'state'<>'checking' then
     raise exception 'FAIL checking transition did not persist';
