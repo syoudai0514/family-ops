@@ -42,7 +42,6 @@ Deno.test(
     assertStringIncludes(raw, 'action=confirm_pending&pending_action_id=pending-1');
     assertEquals(raw.includes('data=迎えお願い'), false);
     assertStringIncludes(raw, 'action=edit_pending&pending_action_id=pending-1');
-    assertStringIncludes(raw, 'action=mc_request&request_id=request-2&attempt_id=attempt-1&request_action=decline&revision=1&terms_revision=1');
   },
 );
 

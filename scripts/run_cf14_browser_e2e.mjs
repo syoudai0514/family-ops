@@ -277,7 +277,7 @@ async function handleMockSupabaseRequest(request, response) {
     writeJsonResponse(response, [], 200, request.headers);
   } else if (pathname === '/functions/v1/list-pending-actions') {
     writeJsonResponse(response, [], 200, request.headers);
-  } else if (pathname === '/functions/v1/family-setup') {
+  } else if (pathname === '/functions/v1/complete-onboarding-step' && JSON.parse(requestBody).action === 'read') {
     writeEdgeJsonResponse(response, { members: [], children: [], contexts: [] });
   } else if (pathname === '/functions/v1/get-current-routine-sessions') {
     writeJsonResponse(response, { sessions: [] }, 200, request.headers);
