@@ -65,7 +65,7 @@ describe('requester consultation from the actual PWA row', () => {
     fireEvent.click(screen.getByRole('button', { name: '戻る' }));
     expect(screen.queryByText('このお願いを取り下げますか？')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'お願いを取り下げる' }));
-    fireEvent.click(screen.getByRole('button', { name: '取り下げる', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: '取り下げる' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('cancel-request', expect.objectContaining({
       request_id: request.id, attempt_id: attempt.id, expected_revision: 4, expected_terms_revision: 2,
     })));
