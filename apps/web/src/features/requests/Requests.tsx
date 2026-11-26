@@ -385,6 +385,7 @@ function ConsultationTerms({ request, attempt, actorRefId, busy, onAction }: { r
   const awaitingConfirmation = attempt.state === 'awaiting_confirmation';
   const followup = attempt.attempt_kind === 'change' || attempt.attempt_kind === 'cancel';
   const confirmLabel = attempt.attempt_kind === 'cancel' ? '取り消しに同意する' : 'この案に同意する';
+  const hasProposal = Boolean(savedMemo || savedWorkDue || awaitingConfirmation);
 
   function propose() {
     const nextTerms: Record<string, unknown> = { ...attempt.terms, candidate: memo.trim() };
@@ -416,26 +417,27 @@ function ConsultationTerms({ request, attempt, actorRefId, busy, onAction }: { r
     </div>}
     <p className="task-item-meta">二人が同じ案に同意すると反映されます。</p>
     {awaitingConfirmation && <p role="status">{alreadyConfirmed ? 'あなたは同意済みです。相手の返事を待っています。' : partnerConfirmed ? '相手は同意済みです。内容を見て返事をしてください。' : '同意の状況を確認中です。'}</p>}
-    {!followup && <details className="request-private-draft">
-      <summary>AIで相談文を整える</summary>
-      <label>気持ちや事情のメモ（相手には送りません）<textarea value={privateMemo} disabled={busy || rewriting} onChange={event => setPrivateMemo(event.target.value)} placeholder="何が難しいか、どうなら引き受けられるか" /></label>
-      <button type="button" className="secondary-button" disabled={busy || rewriting || !privateMemo.trim()} onClick={() => void softenProposal()}>{rewriting ? '相談文を作成中…' : 'AIで相談文を作る'}</button>
-      {rewriteError && <p role="alert">{rewriteError}</p>}
-    </details>}
-    {!followup && <>
-      <label>相手へ送る相談文<textarea rows={3} value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：18時半ならお迎えに行けそう" /></label>
-      {weeklyAssignment ? <p className="task-item-meta">時刻を変えたい日は、その日の予定から相談できます。</p>
-        : <label>変更後の作業期限（任意）<input type="datetime-local" value={workDue} disabled={busy || rewriting} onChange={(event) => setWorkDue(event.target.value)} /></label>}
-    </>}
     <div className="task-item-actions">
       {!alreadyConfirmed && <button type="button" disabled={busy || rewriting || dirty} onClick={() => onAction('confirm_terms')}>{confirmLabel}</button>}
-      {!followup && <button type="button" className="secondary-button" disabled={busy || rewriting || !dirty} onClick={propose}>相談案を送る</button>}
     </div>
     {actorRefId && (followup
       ? attempt.created_by_actor_ref_id && actorRefId !== attempt.created_by_actor_ref_id
       : actorRefId === request.recipient_actor_ref_id) && (
       <ConsultationDecline key={attempt.revision} busy={busy} followup={followup} onDecline={() => onAction('decline_consultation')} />
     )}
+    {!followup && <details className="request-proposal-editor" open={!hasProposal}>
+      <summary>{hasProposal ? '別の案を出す' : '相談案を書く'}</summary>
+      <label>相手へ送る相談文<textarea rows={3} value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：18時半ならお迎えに行けそう" /></label>
+      {weeklyAssignment ? <p className="task-item-meta">時刻を変えたい日は、その日の予定から相談できます。</p>
+        : <label>変更後の作業期限（任意）<input aria-label="変更後の作業期限（任意）" type="datetime-local" value={workDue} disabled={busy || rewriting} onChange={(event) => setWorkDue(event.target.value)} /></label>}
+      <details className="request-private-draft">
+        <summary>AIで相談文を整える</summary>
+        <label>気持ちや事情のメモ（相手には送りません）<textarea value={privateMemo} disabled={busy || rewriting} onChange={event => setPrivateMemo(event.target.value)} placeholder="何が難しいか、どうなら引き受けられるか" /></label>
+        <button type="button" className="secondary-button" disabled={busy || rewriting || !privateMemo.trim()} onClick={() => void softenProposal()}>{rewriting ? '相談文を作成中…' : 'AIで相談文を作る'}</button>
+        {rewriteError && <p role="alert">{rewriteError}</p>}
+      </details>
+      <button type="button" className="secondary-button" disabled={busy || rewriting || !dirty} onClick={propose}>相談案を送る</button>
+    </details>}
   </div>;
 }
 

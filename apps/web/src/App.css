@@ -1678,6 +1678,7 @@ input[type="time"]::-webkit-date-and-time-value, input[type="date"]::-webkit-dat
 
 .request-response-options,
 .request-consultation,
+.request-proposal-editor[open],
 .request-private-draft[open],
 .request-comment-row {
   display: grid;
