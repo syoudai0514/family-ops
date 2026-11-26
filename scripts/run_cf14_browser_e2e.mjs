@@ -337,7 +337,9 @@ async function handleMockSupabaseRequest(request, response) {
         break;
       }
       case 'decline':
+      case 'decline_consultation':
         assert.equal(actor.user_id, partner.user_id);
+        if (action === 'decline_consultation') assert.equal(attempt.state, 'consulting');
         attempt.state = 'declined';
         row.status = 'declined';
         break;
@@ -641,7 +643,13 @@ async function runRequestJourney(sender, recipient) {
   await waitForText(recipient, '引き受け済み');
   assert.equal(await evaluate(recipient, `(${buttonWithText('履歴 1')})?.classList.contains('active')`), true);
   await tapButton(recipient, '対応中 1');
-  await tapButton(recipient, '難しい', requestRow(otherRequest.shared_title));
+  const otherRow = requestRow(otherRequest.shared_title);
+  await tapButton(recipient, 'その他の返答', otherRow);
+  await tapButton(recipient, '相談する', otherRow);
+  await tapButton(recipient, '今回は難しい', otherRow);
+  await waitForText(recipient, '「今回は難しい」と相手に伝えますか？');
+  assert.equal(requestCommands.at(-1).command.action, 'consult');
+  await tapButton(recipient, '難しいと伝える', otherRow);
   await waitForText(recipient, '履歴 2');
 
   assert.deepEqual(requestCommands.map(({ actor, endpoint, command }) => [actor, command.action ?? command.response_action ?? endpoint]), [
@@ -650,12 +658,14 @@ async function runRequestJourney(sender, recipient) {
     [partner.user_id, 'edit_terms'],
     [partner.user_id, 'confirm_terms'],
     [membership.user_id, 'confirm_terms'],
-    [partner.user_id, 'decline-request'],
+    [partner.user_id, 'consult'],
+    [partner.user_id, 'decline_consultation'],
   ]);
   assert.equal(requestCommands[2].command.terms.candidate, consultationMemo);
   assert.equal(requestCommands[3].command.expected_terms_revision, 2);
   assert.equal(requestCommands[4].command.expected_terms_revision, 2);
-  assert.equal(requestCommands[5].command.request_id, otherRequest.id);
+  assert.equal(requestCommands[6].command.request_id, otherRequest.id);
+  assert.equal(requestCommands[6].command.expected_revision, 2);
 
   assert.ok(state.requestLog.filter(({ url }) => url.includes('/functions/v1/')).every(({ url }) =>
     !url.endsWith('/propose-ai-draft') && !url.endsWith('/confirm-request-draft'),
