@@ -263,7 +263,7 @@ describe('Today', () => {
     vi.mocked(callEdgeFunction).mockClear();
     render(<MemoryRouter><Today /></MemoryRouter>);
     expect(await screen.findByText('迎えをお願い')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'やる' }));
+    fireEvent.click(screen.getByRole('button', { name: '引き受ける' }));
     await waitFor(() => {
       expect(callEdgeFunction).toHaveBeenCalledWith(
         EDGE_FUNCTIONS.acceptRequest,

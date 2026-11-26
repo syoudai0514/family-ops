@@ -135,6 +135,8 @@ export interface RequestRow {
   household_id: string;
   requester_id: string;
   recipient_id: string;
+  requester_actor_ref_id?: string | null;
+  recipient_actor_ref_id?: string | null;
   shared_title: string;
   shared_message: string | null;
   due_at: string | null;

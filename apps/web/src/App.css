@@ -1675,3 +1675,49 @@ input[type="time"]::-webkit-date-and-time-value, input[type="date"]::-webkit-dat
   cursor: pointer;
 }
 .today-routine-group .section-heading button { min-height: 2.75rem; }
+
+.request-response-options,
+.request-consultation,
+.request-private-draft[open],
+.request-comment-row {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.request-response-options,
+.request-consultation {
+  padding-top: 0.75rem;
+}
+
+.request-consultation label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.request-consultation input,
+.request-consultation textarea,
+.request-comment-row input {
+  min-width: 0;
+  width: 100%;
+}
+
+.request-consultation-summary {
+  padding: 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+}
+
+.request-consultation p,
+.request-response-options p {
+  margin: 0;
+}
+
+.request-consultation-summary p {
+  margin-top: 0.25rem;
+}
+
+.request-shared-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

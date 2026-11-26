@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type Ref } from 'react';
 import { AssignmentPreview } from './AssignmentPreview';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/AuthContext';
@@ -12,12 +12,16 @@ import { loadStableCommandAttempt, type CommandAttempt } from '../../lib/command
 import { formatDateTimeJa, tokyoDateTimeInputToIso } from '../../lib/date';
 import type { PendingAction, RequestRow } from '../../lib/types';
 
+export const REQUEST_ATTEMPT_SELECT = 'id,request_id,attempt_kind,state,revision,terms_revision,terms,reply_due_at,request_attempt_confirmations(actor_ref_id,terms_revision)';
+
 interface RequestAttempt {
   id: string;
   request_id: string;
   state: 'pending' | 'checking' | 'consulting' | 'awaiting_confirmation' | 'accepted' | 'declined' | 'expired' | 'cancelled';
+  attempt_kind?: 'initial' | 'reproposal' | 'change' | 'cancel';
   revision: number;
   terms_revision: number;
+  request_attempt_confirmations?: { actor_ref_id: string; terms_revision: number }[];
   terms: Record<string, unknown> | null;
   reply_due_at?: string | null;
 }
@@ -35,58 +39,84 @@ export function responseDeadline(attempt?: RequestAttempt): string | null {
   return attempt?.reply_due_at ?? null;
 }
 
+function bucketForRequest(request: RequestRow, attempt?: RequestAttempt): RequestBucket {
+  if (request.status === 'completed') return 'history';
+  return requestBucket(attempt?.state ?? request.status, responseDeadline(attempt));
+}
+
 function useRequests(householdId: string | null) {
-  const [requests, setRequests] = useState<RequestRow[]>([]);
-  const [attempts, setAttempts] = useState<Map<string, RequestAttempt>>(new Map());
+  const [snapshot, setSnapshot] = useState<{ requests: RequestRow[]; attempts: Map<string, RequestAttempt> }>({
+    requests: [],
+    attempts: new Map(),
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     if (!householdId) {
+      setSnapshot({ requests: [], attempts: new Map() });
       setLoading(false);
       return;
     }
+
     setError(null);
-    const { data, error: fetchError } = await supabase
-      .from('requests')
-      .select('*')
-      .eq('household_id', householdId)
-      .order('due_at', { ascending: true, nullsFirst: false });
-    if (fetchError) setError(fetchError.message);
-    else {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('requests')
+        .select('*')
+        .eq('household_id', householdId)
+        .order('due_at', { ascending: true, nullsFirst: false });
+      if (fetchError) throw fetchError;
+
       const rows = (data ?? []) as RequestRow[];
       const taskIds = rows.map((row) => row.linked_task_instance_id).filter((id): id is string => Boolean(id));
       const requestIds = rows.map((row) => row.id);
-      if (requestIds.length > 0) {
-        const { data: attemptRows, error: attemptError } = await supabase
-          .from('request_attempts').select('id, request_id, state, revision, terms_revision, terms, reply_due_at')
-          .in('request_id', requestIds).is('test_context_id', null)
-          .order('created_at', { ascending: false });
-        if (attemptError) setError(attemptError.message);
-        else {
-          const latest = new Map<string, RequestAttempt>();
-          for (const attempt of (attemptRows ?? []) as RequestAttempt[]) {
-            if (!latest.has(attempt.request_id)) latest.set(attempt.request_id, attempt);
-          }
-          setAttempts(latest);
-        }
-      } else setAttempts(new Map());
-      if (taskIds.length > 0) {
-        const { data: tasks, error: taskError } = await supabase
-          .from('task_instances').select('id, revision, title, due_at').in('id', taskIds);
-        if (taskError) setError(taskError.message);
-        const byId = new Map((tasks ?? []).map((task) => [task.id, task]));
-        setRequests(rows.map((row) => {
-          const task = row.linked_task_instance_id ? byId.get(row.linked_task_instance_id) : undefined;
-          return task ? { ...row, linked_task_revision: task.revision, linked_task_title: task.title, linked_task_due_at: task.due_at } : row;
-        }));
-      } else setRequests(rows);
+      const [attemptsResult, tasksResult] = await Promise.all([
+        requestIds.length ? supabase.from('request_attempts').select(REQUEST_ATTEMPT_SELECT)
+          .in('request_id', requestIds).is('test_context_id', null).order('created_at', { ascending: false })
+          : { data: [], error: null },
+        taskIds.length ? supabase.from('task_instances').select('id, revision, title, due_at').in('id', taskIds)
+          : { data: [], error: null },
+      ]);
+      if (sequence !== loadSequence.current) return;
+      if (attemptsResult.error) throw attemptsResult.error;
+      if (tasksResult.error) setError(tasksResult.error.message);
+
+      const attempts = new Map<string, RequestAttempt>();
+      for (const attempt of (attemptsResult.data ?? []) as RequestAttempt[]) {
+        if (!attempts.has(attempt.request_id)) attempts.set(attempt.request_id, attempt);
+      }
+      const tasks = new Map((tasksResult.data ?? []).map((task) => [task.id, task]));
+      const requests = rows.map((row) => {
+        const task = row.linked_task_instance_id ? tasks.get(row.linked_task_instance_id) : undefined;
+        return task ? { ...row, linked_task_revision: task.revision, linked_task_title: task.title, linked_task_due_at: task.due_at } : row;
+      });
+      setSnapshot({ requests, attempts });
+    } catch (err) {
+      if (sequence !== loadSequence.current) return;
+      const message = typeof err === 'object' && err && 'message' in err && typeof err.message === 'string'
+        ? err.message
+        : '時間をおいてもう一度お試しください。';
+      setError(message);
+    } finally {
+      if (sequence === loadSequence.current) setLoading(false);
     }
-    setLoading(false);
   }, [householdId]);
 
-  useEffect(() => { void load(); }, [load]);
-  return { requests, attempts, loading, error, refresh: load };
+  useEffect(() => {
+    void load();
+    function refreshOnReturn() {
+      if (document.visibilityState === 'visible') void load();
+    }
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    return () => {
+      loadSequence.current += 1;
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+    };
+  }, [load]);
+  return { ...snapshot, loading, error, refresh: load };
 }
 
 export function Requests() {
@@ -103,43 +133,57 @@ export function Requests() {
   const pendingActionRawText = typeof (location.state as { pendingActionRawText?: unknown } | null)?.pendingActionRawText === 'string'
     ? (location.state as { pendingActionRawText: string }).pendingActionRawText
     : '';
-  const pendingId = new URLSearchParams(location.search).get('pending');
-  const otherResponseRequestId = new URLSearchParams(location.search).get('response') === 'other'
-    ? new URLSearchParams(location.search).get('request') : null;
+  const params = new URLSearchParams(location.search);
+  const pendingId = params.get('pending');
+  const targetRequestId = params.get('request');
+  const otherResponseRequestId = params.get('response') === 'other' ? targetRequestId : null;
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [pendingLoadError, setPendingLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(() => Boolean(pendingId) || new URLSearchParams(location.search).has('date') || Boolean(pendingActionRawText));
   const [sendStatus, setSendStatus] = useState<string | null>(null);
-  const [bucketFilter, setBucketFilter] = useState<RequestBucket>(() => {
-    const raw = new URLSearchParams(location.search).get('bucket');
-    return raw === 'expired' || raw === 'history' ? raw : 'active';
-  });
+  const rawBucket = params.get('bucket');
   const restoredRef = useRef(false);
+  const targetRowRef = useRef<HTMLLIElement | null>(null);
   const incoming = requests.filter((r) => r.recipient_id === user?.id);
   const outgoing = requests.filter((r) => r.requester_id === user?.id);
-  const bucketedIncoming = incoming.filter((r) => requestBucket(attempts.get(r.id)?.state ?? r.status, responseDeadline(attempts.get(r.id))) === bucketFilter);
-  const bucketedOutgoing = outgoing.filter((r) => requestBucket(attempts.get(r.id)?.state ?? r.status, responseDeadline(attempts.get(r.id))) === bucketFilter);
+  const targetRequest = incoming.find((r) => r.id === targetRequestId) ?? outgoing.find((r) => r.id === targetRequestId);
+  const targetAttempt = targetRequest && attempts.get(targetRequest.id);
+  const hasTarget = Boolean(targetRequest);
+  const bucketFilter = targetRequest
+    ? bucketForRequest(targetRequest, targetAttempt)
+    : rawBucket === 'expired' || rawBucket === 'history' ? rawBucket : 'active';
+
+  function selectBucket(bucket: RequestBucket) {
+    const next = new URLSearchParams(location.search);
+    next.set('bucket', bucket);
+    next.delete('request');
+    next.delete('response');
+    navigate(`${location.pathname}?${next.toString()}`, { replace: true, state: location.state });
+  }
+  const bucketedIncoming = incoming.filter((r) => bucketForRequest(r, attempts.get(r.id)) === bucketFilter);
+  const bucketedOutgoing = outgoing.filter((r) => bucketForRequest(r, attempts.get(r.id)) === bucketFilter);
   const counts = useMemo(() => (['active', 'expired', 'history'] as RequestBucket[]).reduce<Record<RequestBucket, number>>((acc, bucket) => {
-    acc[bucket] = requests.filter((r) => requestBucket(attempts.get(r.id)?.state ?? r.status, responseDeadline(attempts.get(r.id))) === bucket).length;
+    acc[bucket] = requests.filter((r) => bucketForRequest(r, attempts.get(r.id)) === bucket).length;
     return acc;
   }, { active: 0, expired: 0, history: 0 }), [requests, attempts]);
   const rowRefresh = useCallback(async () => {
     const scrollY = window.scrollY;
     await refresh();
-    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: 'auto' }));
-  }, [refresh]);
+    if (!targetRequestId) requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: 'auto' }));
+  }, [refresh, targetRequestId]);
 
   useEffect(() => {
-    if (restoredRef.current || restoreScrollY == null) return;
+    if (restoredRef.current || restoreScrollY == null || targetRequestId) return;
     restoredRef.current = true;
     requestAnimationFrame(() => window.scrollTo({ top: restoreScrollY, behavior: 'auto' }));
-  }, [restoreScrollY]);
+  }, [restoreScrollY, targetRequestId]);
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    params.set('bucket', bucketFilter);
-    navigate(`${location.pathname}?${params.toString()}`, { replace: true, state: location.state });
-  }, [bucketFilter, location.pathname, location.search, location.state, navigate]);
+    const row = targetRowRef.current;
+    if (!targetRequestId || !row) return;
+    row.focus({ preventScroll: true });
+    row.scrollIntoView?.({ block: 'center' });
+  }, [targetRequestId, bucketFilter, hasTarget, otherResponseRequestId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,11 +218,12 @@ export function Requests() {
         <h1>お願い</h1>
         {partner && <button type="button" onClick={() => { setShowForm((v) => !v); setSendStatus(null); if (showForm) clearPrivatePrefill(); }}>{showForm ? '閉じる' : '+ お願いを送る'}</button>}
       </div>
-      <div className="request-bucket-tabs" role="tablist" aria-label="お願いの状態">
-        <button type="button" className={bucketFilter === 'active' ? 'active' : 'secondary-button'} onClick={() => setBucketFilter('active')}>対応中 {counts.active}</button>
-        <button type="button" className={bucketFilter === 'expired' ? 'active' : 'secondary-button'} onClick={() => setBucketFilter('expired')}>期限切れ {counts.expired}</button>
-        <button type="button" className={bucketFilter === 'history' ? 'active' : 'secondary-button'} onClick={() => setBucketFilter('history')}>履歴 {counts.history}</button>
+      <div className="request-bucket-tabs" role="group" aria-label="お願いの状態">
+        <button type="button" className={bucketFilter === 'active' ? 'active' : 'secondary-button'} aria-pressed={bucketFilter === 'active'} onClick={() => selectBucket('active')}>対応中 {counts.active}</button>
+        <button type="button" className={bucketFilter === 'expired' ? 'active' : 'secondary-button'} aria-pressed={bucketFilter === 'expired'} onClick={() => selectBucket('expired')}>期限切れ {counts.expired}</button>
+        <button type="button" className={bucketFilter === 'history' ? 'active' : 'secondary-button'} aria-pressed={bucketFilter === 'history'} onClick={() => selectBucket('history')}>履歴 {counts.history}</button>
       </div>
+      {targetRequestId && !targetRequest && !error && <p role="status">このお願いは見つかりませんでした。</p>}
       {error && <section className="card state-card" role="alert"><b>お願いを読み込めませんでした</b><p>{error}</p><button type="button" onClick={() => void refresh()}>再読み込み</button></section>}
       {pendingLoadError && <p role="alert" className="error-text">{pendingLoadError}</p>}
       {showForm && pendingId && pendingAction?.id !== pendingId && !pendingLoadError && <p role="status">LINEの下書きを読み込み中…</p>}
@@ -205,29 +250,44 @@ export function Requests() {
 
       <section className="card">
         <h2>受け取ったお願い</h2>
-        {bucketedIncoming.length === 0 ? <p className="empty-hint">この状態のお願いはありません。</p> : <ul className="request-list">{bucketedIncoming.map((r) => <IncomingRequestRow key={r.id} request={r} attempt={attempts.get(r.id)} onChanged={rowRefresh} initialShowOther={r.id === otherResponseRequestId} />)}</ul>}
+        {bucketedIncoming.length === 0 ? <p className="empty-hint">この状態のお願いはありません。</p> : <ul className="request-list">{bucketedIncoming.map((r) => <IncomingRequestRow key={r.id} request={r} attempt={attempts.get(r.id)} onChanged={rowRefresh} showOtherFromLink={r.id === otherResponseRequestId} rowRef={r.id === targetRequestId ? targetRowRef : undefined} />)}</ul>}
       </section>
       <section className="card">
         <h2>送ったお願い</h2>
-        {bucketedOutgoing.length === 0 ? <p className="empty-hint">この状態のお願いはありません。</p> : <ul className="request-list">{bucketedOutgoing.map((r) => <OutgoingRequestRow key={r.id} request={r} attempt={attempts.get(r.id)} onChanged={rowRefresh} />)}</ul>}
+        {bucketedOutgoing.length === 0 ? <p className="empty-hint">この状態のお願いはありません。</p> : <ul className="request-list">{bucketedOutgoing.map((r) => <OutgoingRequestRow key={r.id} request={r} attempt={attempts.get(r.id)} onChanged={rowRefresh} rowRef={r.id === targetRequestId ? targetRowRef : undefined} />)}</ul>}
       </section>
     </div>
   );
 }
 
-function statusLabel(status: RequestRow['status']): string {
-  switch (status) { case 'pending': return '保留中'; case 'accepted': return '引き受け済み'; case 'declined': return '難しい'; case 'completed': return '完了'; case 'cancelled': return 'キャンセル済み'; default: return status; }
+function requestStatusLabel(request: RequestRow, attempt?: RequestAttempt): string {
+  if (request.status === 'completed') return '完了';
+  const followup = attempt?.attempt_kind === 'change' ? '変更案' : attempt?.attempt_kind === 'cancel' ? '取り消し案' : null;
+  const state = attempt?.state ?? request.status;
+  if (attempt && requestBucket(state, responseDeadline(attempt)) === 'expired') {
+    return followup ? `${followup}の返事期限切れ` : '返事期限切れ';
+  }
+  switch (state) {
+    case 'pending': return '返事待ち';
+    case 'checking': return '引き受けられるか確認中';
+    case 'consulting': return '相談中';
+    case 'awaiting_confirmation': return followup ? `${followup}の確認中` : '変更案の確認中';
+    case 'accepted': return followup ? `${followup}を反映済み` : '引き受け済み';
+    case 'declined': return followup ? `${followup}は見送り` : '引き受けは難しい';
+    case 'cancelled': return followup ? `${followup}を取り下げ済み` : '取り下げ済み';
+    default: return '返事期限切れ';
+  }
 }
 
-export function IncomingRequestRow({ request, attempt, onChanged, initialShowOther = false }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; initialShowOther?: boolean }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [showOther, setShowOther] = useState(initialShowOther); const [confirmAccept, setConfirmAccept] = useState(false); const [previewReady, setPreviewReady] = useState(false); const run = useCommandAttempt();
+export function IncomingRequestRow({ request, attempt, onChanged, showOtherFromLink = false, rowRef }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; showOtherFromLink?: boolean; rowRef?: Ref<HTMLLIElement> }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [otherOverride, setOtherOverride] = useState<boolean>(); const [confirmAccept, setConfirmAccept] = useState(false); const [previewReady, setPreviewReady] = useState(false); const run = useCommandAttempt();
   async function respond(kind: 'accept' | 'decline' | 'checking' | 'consult') {
     if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
     setBusy(true); setError(null);
     try {
       const functionName = kind === 'checking' || kind === 'consult' ? EDGE_FUNCTIONS.respondRequest : kind === 'accept' && request.assignment_task_instance_id ? EDGE_FUNCTIONS.acceptAssignmentChangeRequest : kind === 'accept' ? EDGE_FUNCTIONS.acceptRequest : EDGE_FUNCTIONS.declineRequest;
       const result = await run<{ reproposal_required?: boolean }>(`request:${attempt.id}:${kind}:r${attempt.revision}:terms${attempt.terms_revision}`, functionName, operation_id => ({ operation_id, request_id: request.id, attempt_id: attempt.id, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision, ...(kind === 'checking' || kind === 'consult' ? { response_action: kind } : {}) }));
-      if (result.reproposal_required) setError('この依頼は期限切れです。新しい担当変更のお願いを作成してください。');
+      if (result.reproposal_required) setError('返事の期限が過ぎました。もう一度お願いする場合は、新しく送ってください。');
       if (kind === 'accept') setConfirmAccept(false);
       await onChanged();
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
@@ -236,32 +296,36 @@ export function IncomingRequestRow({ request, attempt, onChanged, initialShowOth
     if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
     setBusy(true); setError(null);
     try {
-      await run(`request:${attempt.id}:${action}:r${attempt.revision}:${JSON.stringify(terms ?? {})}`, EDGE_FUNCTIONS.negotiateRequest, operation_id => ({ operation_id, request_id: request.id, attempt_id: attempt.id, action, terms, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision }));
+      const result = await run<{ reproposal_required?: boolean }>(`request:${attempt.id}:${action}:r${attempt.revision}:${JSON.stringify(terms ?? {})}`, EDGE_FUNCTIONS.negotiateRequest, operation_id => ({ operation_id, request_id: request.id, attempt_id: attempt.id, action, terms, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision }));
+      if (result.reproposal_required) setError('返事の期限が過ぎました。もう一度お願いする場合は、新しく送ってください。');
       await onChanged();
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
   const replyDueAt = responseDeadline(attempt);
   const isAssignmentChange = Boolean(request.assignment_task_instance_id);
   const isActive = Boolean(attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active');
-  return <li className="request-item">
+  const showOther = otherOverride ?? showOtherFromLink;
+  const canReply = isActive && (attempt?.state === 'pending' || attempt?.state === 'checking');
+  return <li className="request-item" ref={rowRef} tabIndex={rowRef ? -1 : undefined}>
     <div>
-      <strong>{request.shared_title}</strong> — {isAssignmentChange ? `${request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更` : statusLabel(request.status)}
-      {request.shared_message && <p>{request.shared_message}</p>}
+      <strong>{request.shared_title}</strong> — {requestStatusLabel(request, attempt)}
+      {isAssignmentChange && <div className="task-item-meta">{request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更</div>}
+      {request.shared_message && <p className="request-shared-message">{request.shared_message}</p>}
       {replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}
       {request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}
     </div>
-    {isActive && attempt?.state !== 'consulting' && attempt?.state !== 'awaiting_confirmation' && !confirmAccept && (
+    {canReply && !confirmAccept && (
       <div className="task-item-actions">
         {isAssignmentChange
           ? <button type="button" disabled={busy} onClick={() => { setPreviewReady(false); setConfirmAccept(true); }}>引き受ける</button>
-          : <button type="button" disabled={busy} onClick={() => respond('accept')}>やる</button>}
+          : <button type="button" disabled={busy} onClick={() => respond('accept')}>引き受ける</button>}
         <button type="button" disabled={busy} onClick={() => respond('decline')}>難しい</button>
         {isAssignmentChange
           ? <button type="button" className="text-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button>
-          : <button type="button" className="text-button" disabled={busy} onClick={() => setShowOther((value) => !value)}>その他の返答</button>}
+          : <button type="button" className="text-button" aria-expanded={showOther} disabled={busy} onClick={() => setOtherOverride(!showOther)}>その他の返答</button>}
       </div>
     )}
-    {isActive && isAssignmentChange && confirmAccept && (
+    {canReply && isAssignmentChange && confirmAccept && (
       <div className="request-other-actions" aria-label="担当変更の最終確認">
         <p><strong>この担当変更を引き受けますか？</strong></p>
         <p className="task-item-meta">{request.due_at ? `${formatDateTimeJa(request.due_at)} / ` : ''}{request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}</p>
@@ -272,14 +336,20 @@ export function IncomingRequestRow({ request, attempt, onChanged, initialShowOth
         </div>
       </div>
     )}
-    {isActive && !isAssignmentChange && showOther && <div className="request-other-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してみる</button><CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} /><button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button><p className="task-item-meta">相談を選んでも担当は変わりません。条件を確認して二人が同じ内容に同意してから確定します。</p></div>}
-    {isActive && attempt && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms key={attempt.terms_revision} request={request} attempt={attempt} busy={busy} onAction={negotiate} />}
+    {canReply && !isAssignmentChange && showOther && <div className="request-response-options">
+      {attempt?.state === 'pending' && <button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('checking')}>確認してから返事する</button>}
+      <button type="button" className="secondary-button" disabled={busy} onClick={() => negotiate('consult')}>相談する</button>
+      <CommentedDecline busy={busy} onSubmit={(comment) => negotiate('decline', { comment })} />
+    </div>}
+    {isActive && attempt && ['consulting', 'awaiting_confirmation'].includes(attempt.state) &&
+      <ConsultationTerms key={`${attempt.id}:${attempt.terms_revision}`} request={request} attempt={attempt} actorRefId={request.recipient_actor_ref_id} busy={busy} onAction={negotiate} />}
+    {attempt?.state === 'accepted' && <AgreedProposal request={request} attempt={attempt} />}
     {error && <p role="alert" className="error-text">{error}</p>}
   </li>;
 }
 
 function CommentedDecline({ busy, onSubmit }: { busy: boolean; onSubmit: (comment: string) => void }) { const [comment, setComment] = useState(''); return <div className="request-comment-row"><input aria-label="難しい理由（任意）" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="コメント付きで難しい" /><button type="button" className="secondary-button" disabled={busy} onClick={() => onSubmit(comment)}>コメント付きで難しい</button></div>; }
-function ConsultationTerms({ request, attempt, busy, onAction }: { request: RequestRow; attempt: RequestAttempt; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) {
+function ConsultationTerms({ request, attempt, actorRefId, busy, onAction }: { request: RequestRow; attempt: RequestAttempt; actorRefId?: string | null; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) {
   const savedMemo = typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : '';
   const savedPatch = attempt.terms?.material_patch && typeof attempt.terms.material_patch === 'object' ? attempt.terms.material_patch as Record<string, unknown> : null;
   const savedWorkDue = typeof savedPatch?.work_due_at === 'string' ? toDateTimeLocal(savedPatch.work_due_at) : '';
@@ -298,52 +368,124 @@ function ConsultationTerms({ request, attempt, busy, onAction }: { request: Requ
   }
   const [workDue, setWorkDue] = useState(savedWorkDue);
   const weeklyAssignment = Boolean(request.assignment_task_instance_id && request.assignment_scope === 'this_week');
-  const dirty = memo.trim() !== savedMemo || workDue !== savedWorkDue;
+  const dirty = memo.trim() !== savedMemo.trim() || workDue !== savedWorkDue;
   const savedAssignment = savedPatch?.assignment && typeof savedPatch.assignment === 'object' ? savedPatch.assignment as Record<string, unknown> : null;
   const assignmentIsExplicit = savedAssignment?.mode === 'request_recipient';
+  const confirmations = attempt.request_attempt_confirmations?.filter(confirmation =>
+    confirmation.terms_revision === attempt.terms_revision,
+  );
+  const alreadyConfirmed = confirmations?.some(confirmation => confirmation.actor_ref_id === actorRefId);
+  const partnerConfirmed = Boolean(actorRefId && confirmations?.some(confirmation => confirmation.actor_ref_id !== actorRefId));
+  const awaitingConfirmation = attempt.state === 'awaiting_confirmation';
+  const followup = attempt.attempt_kind === 'change' || attempt.attempt_kind === 'cancel';
+  const confirmLabel = attempt.attempt_kind === 'cancel' ? '取り消しに同意する' : 'この案に同意する';
 
   function propose() {
     const nextTerms: Record<string, unknown> = { ...attempt.terms, candidate: memo.trim() };
-    if (workDue) {
-      const materialPatch: Record<string, unknown> = {
-        version: 1,
-        work_due_at: new Date(workDue).toISOString(),
-        scheduled_date: workDue.slice(0, 10),
-      };
-      if (request.assignment_task_instance_id) {
-        materialPatch.assignment = { mode: 'request_recipient', targets: attempt.terms?.assignment_targets };
+    if (workDue !== savedWorkDue) {
+      if (workDue) {
+        const materialPatch: Record<string, unknown> = {
+          version: 1,
+          work_due_at: tokyoDateTimeInputToIso(workDue),
+          scheduled_date: workDue.slice(0, 10),
+        };
+        if (request.assignment_task_instance_id) {
+          materialPatch.assignment = { mode: 'request_recipient', targets: attempt.terms?.assignment_targets };
+        }
+        nextTerms.material_patch = materialPatch;
+      } else {
+        delete nextTerms.material_patch;
       }
-      nextTerms.material_patch = materialPatch;
-    } else {
-      delete nextTerms.material_patch;
     }
     onAction('edit_terms', nextTerms);
   }
 
-  return <div className="request-other-actions" aria-label="相談の条件">
-    <p><strong>相談中</strong> — まだ担当や予定は変わりません。変更したい内容を提案し、二人が同じ内容を確認してから確定します。</p>
-    <label>まずは気持ちも含めて入力（相手には送りません）<textarea value={privateMemo} disabled={busy || rewriting} onChange={event => setPrivateMemo(event.target.value)} placeholder="何が難しいか、どうなら引き受けられるか" /></label>
-    <button type="button" className="secondary-button" disabled={busy || rewriting || !privateMemo.trim()} onClick={() => void softenProposal()}>{rewriting ? 'AIが伝え方を整理中…' : 'AIで揉めにくい伝え方を考える'}</button>
-    {rewriteError && <p role="alert">{rewriteError}</p>}
-    <label>相手へ送る相談文（確認・編集できます）<textarea aria-label="相談メモ" rows={4} value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：時間なら調整できそう" /></label>
-    <label>変更後の作業期限（具体条件）<input aria-label="変更後の作業期限" type="datetime-local" value={workDue} disabled={weeklyAssignment || busy || rewriting} onChange={(event) => setWorkDue(event.target.value)} /></label>
-    {weeklyAssignment && <p className="task-item-meta">「今週だけ」は担当をまとめて変更します。時刻の変更は、それぞれの日の予定から相談してください。</p>}
-    {request.assignment_task_instance_id && <p className="task-item-meta">担当の変更: このお願いの対象を、依頼された人へ変更します。別の作業を頼む場合は新しいお願いを作ってください。</p>}
-    <button type="button" className="secondary-button" disabled={busy || rewriting || !dirty} onClick={propose}>この文面・条件で提案する</button>
-    <button type="button" disabled={busy || rewriting || dirty} onClick={() => onAction('confirm_terms')}>この変更案を確認する</button>
-    <div className="task-item-meta" aria-label="反映される具体条件">
-      <strong>この変更案で変わること</strong>
-      <div>作業期限: {savedWorkDue ? `${request.due_at ? formatDateTimeJa(request.due_at) : '未設定'} → ${formatDateTimeJa(String(savedPatch?.work_due_at))}` : '変更なし'}</div>
-      <div>担当: {request.assignment_task_instance_id ? (assignmentIsExplicit ? 'このお願いの対象 → 依頼された人' : '既存の担当変更条件') : '変更なし'}</div>
-      <div>相談メモ: {savedMemo || 'なし（メモだけでは担当や予定は変わりません）'}</div>
+  return <div className="request-consultation" aria-label="相談の条件">
+    {followup ? <FollowupProposal request={request} attempt={attempt} /> : <div className="request-consultation-summary">
+      <strong>いまの相談案</strong>
+      {savedMemo && <p className="request-shared-message">{savedMemo}</p>}
+      {savedWorkDue && <p>作業期限を {formatDateTimeJa(String(savedPatch?.work_due_at))} に変更</p>}
+      {request.assignment_task_instance_id && <p>{assignmentIsExplicit ? 'この作業をお願いされた人に変更' : '元の担当変更の内容を引き継ぎます。'}</p>}
+      {!savedMemo && !savedWorkDue && !request.assignment_task_instance_id && <p>新しい案はまだありません。</p>}
+    </div>}
+    <p className="task-item-meta">二人が同じ案に同意すると反映されます。</p>
+    {awaitingConfirmation && <p role="status">{alreadyConfirmed ? 'あなたは同意済みです。相手の返事を待っています。' : partnerConfirmed ? '相手は同意済みです。内容を見て返事をしてください。' : '同意の状況を確認中です。'}</p>}
+    {!followup && <details className="request-private-draft">
+      <summary>AIで相談文を整える</summary>
+      <label>気持ちや事情のメモ（相手には送りません）<textarea value={privateMemo} disabled={busy || rewriting} onChange={event => setPrivateMemo(event.target.value)} placeholder="何が難しいか、どうなら引き受けられるか" /></label>
+      <button type="button" className="secondary-button" disabled={busy || rewriting || !privateMemo.trim()} onClick={() => void softenProposal()}>{rewriting ? '相談文を作成中…' : 'AIで相談文を作る'}</button>
+      {rewriteError && <p role="alert">{rewriteError}</p>}
+    </details>}
+    {!followup && <>
+      <label>相手へ送る相談文<textarea rows={3} value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：18時半ならお迎えに行けそう" /></label>
+      {weeklyAssignment ? <p className="task-item-meta">時刻を変えたい日は、その日の予定から相談できます。</p>
+        : <label>変更後の作業期限（任意）<input type="datetime-local" value={workDue} disabled={busy || rewriting} onChange={(event) => setWorkDue(event.target.value)} /></label>}
+    </>}
+    <div className="task-item-actions">
+      {!alreadyConfirmed && <button type="button" disabled={busy || rewriting || dirty} onClick={() => onAction('confirm_terms')}>{confirmLabel}</button>}
+      {!followup && <button type="button" className="secondary-button" disabled={busy || rewriting || !dirty} onClick={propose}>相談案を送る</button>}
     </div>
-    <p className="task-item-meta">現在: {attempt.state === 'awaiting_confirmation' ? 'もう一人の確認待ち' : '条件の提案・確認待ち'}</p>
   </div>;
 }
 
-export function OutgoingRequestRow({ request, attempt, onChanged }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
-  async function cancel() { if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; } setBusy(true); setError(null); try { await callEdgeFunction(EDGE_FUNCTIONS.cancelRequest, { operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision }); await onChanged(); } catch (err) { if (err instanceof FamilyOpsApiError && err.code === 'REQUEST_CANCEL_NOT_ALLOWED') setError('すでに引き受けられているため、キャンセルできません。'); else setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); } }
+function AgreedProposal({ request, attempt }: { request: RequestRow; attempt: RequestAttempt }) {
+  if (attempt.attempt_kind === 'change' || attempt.attempt_kind === 'cancel') {
+    return <FollowupProposal request={request} attempt={attempt} />;
+  }
+  const memo = typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : '';
+  const patch = attempt.terms?.material_patch as Record<string, unknown> | undefined;
+  const workDue = typeof patch?.work_due_at === 'string' ? formatDateTimeJa(patch.work_due_at) : '';
+  if (!memo && !workDue) return null;
+  return <div className="request-consultation-summary">
+    <strong>二人が同意した内容</strong>
+    {memo && <p className="request-shared-message">{memo}</p>}
+    {workDue && <p>作業期限を {workDue} に変更</p>}
+  </div>;
+}
+
+function FollowupProposal({ request, attempt }: { request: RequestRow; attempt: RequestAttempt }) {
+  const patch = attempt.terms?.task_patch as Record<string, unknown> | undefined;
+  const reason = typeof attempt.terms?.reason === 'string' ? attempt.terms.reason : null;
+  const title = typeof patch?.title === 'string' ? patch.title : null;
+  const scheduledDate = typeof patch?.scheduled_date === 'string' ? patch.scheduled_date : null;
+  const workDue = typeof patch?.due_at === 'string' ? formatDateTimeJa(patch.due_at) : null;
+  return <div className="request-consultation-summary">
+    <strong>{attempt.attempt_kind === 'cancel' ? '引き受けた作業を取り消す案' : '引き受けた作業の変更案'}</strong>
+    {reason && <p className="request-shared-message">{reason}</p>}
+    {title && <p>内容を「{title}」に変更</p>}
+    {scheduledDate && <p>作業日を {scheduledDate} に変更</p>}
+    {workDue && <p>作業期限を {workDue} に変更</p>}
+    {patch?.due_at === null && <p>作業期限を外す</p>}
+    {patch?.assignment_mode === 'anyone' && <p>担当を「誰でも」に変更</p>}
+    {patch?.assignment_mode === 'unassigned' && <p>担当を外す</p>}
+    {patch?.assignment_mode === 'person' && <p>担当を{patch.assignee_actor_ref_id === request.requester_actor_ref_id ? 'お願いした人' : patch.assignee_actor_ref_id === request.recipient_actor_ref_id ? '引き受けた人' : '指定された人'}に変更</p>}
+  </div>;
+}
+
+export function OutgoingRequestRow({ request, attempt, onChanged, rowRef }: { request: RequestRow; attempt?: RequestAttempt; onChanged: () => Promise<void> | void; rowRef?: Ref<HTMLLIElement> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [withdrawSnapshot, setWithdrawSnapshot] = useState<string | null>(null);
+
+  async function cancel() {
+    if (!attempt) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await callEdgeFunction<{ reproposal_required?: boolean }>(EDGE_FUNCTIONS.cancelRequest, {
+        operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id,
+        expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision,
+      });
+      if (result.reproposal_required) setError('返事の期限が過ぎました。');
+      setWithdrawSnapshot(null);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof FamilyOpsApiError ? err.message : '取り下げられませんでした。お願いの最新の状態を確認してください。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function negotiate(action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) {
     if (!attempt) return;
     setBusy(true); setError(null);
@@ -358,12 +500,37 @@ export function OutgoingRequestRow({ request, attempt, onChanged }: { request: R
     finally { setBusy(false); }
   }
   const replyDueAt = responseDeadline(attempt);
-  return <li className="request-item"><div><strong>{request.shared_title}</strong> — {statusLabel(request.status)}{request.shared_message && <p>{request.shared_message}</p>}{replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}{request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}</div>{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && <div className="task-item-actions"><button type="button" disabled={busy} onClick={cancel}>キャンセル</button></div>}{attempt && requestBucket(attempt.state, responseDeadline(attempt)) === 'active' && ['consulting', 'awaiting_confirmation'].includes(attempt.state) && <ConsultationTerms key={attempt.terms_revision} request={request} attempt={attempt} busy={busy} onAction={negotiate} />}{request.status === 'accepted' && <AcceptedRequestFollowup request={request} onChanged={onChanged} />}{error && <p role="alert" className="error-text">{error}</p>}</li>;
+  const isActive = Boolean(attempt && requestBucket(attempt.state, replyDueAt) === 'active');
+  const isFollowup = attempt?.attempt_kind === 'change' || attempt?.attempt_kind === 'cancel';
+  const attemptSnapshot = attempt ? `${attempt.id}:${attempt.revision}` : null;
+  return <li className="request-item" ref={rowRef} tabIndex={rowRef ? -1 : undefined}>
+    <div>
+      <strong>{request.shared_title}</strong> — {requestStatusLabel(request, attempt)}
+      {request.assignment_task_instance_id && <div className="task-item-meta">{request.assignment_scope === 'this_week' ? '今週だけ' : '今回だけ'}の担当変更</div>}
+      {request.shared_message && <p className="request-shared-message">{request.shared_message}</p>}
+      {replyDueAt && <span className="task-item-meta">返事期限: {formatDateTimeJa(replyDueAt)}</span>}
+      {request.due_at && <span className="task-item-meta">作業期限: {formatDateTimeJa(request.due_at)}</span>}
+    </div>
+    {isActive && attempt && ['consulting', 'awaiting_confirmation'].includes(attempt.state) &&
+      <ConsultationTerms key={`${attempt.id}:${attempt.terms_revision}`} request={request} attempt={attempt} actorRefId={request.requester_actor_ref_id} busy={busy} onAction={negotiate} />}
+    {isActive && attempt && (withdrawSnapshot === attemptSnapshot
+      ? <div className="request-response-options" aria-label="取り下げの確認">
+        <p>{isFollowup ? 'この相談案を取り下げますか？' : 'このお願いを取り下げますか？'}</p>
+        <div className="task-item-actions">
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => setWithdrawSnapshot(null)}>戻る</button>
+          <button type="button" disabled={busy} onClick={() => void cancel()}>取り下げる</button>
+        </div>
+      </div>
+      : <button type="button" className="text-button" disabled={busy} onClick={() => setWithdrawSnapshot(attemptSnapshot)}>{isFollowup ? '相談案を取り下げる' : 'お願いを取り下げる'}</button>)}
+    {request.status === 'accepted' && !isActive && <AcceptedRequestFollowup key={request.revision} request={request} onChanged={onChanged} />}
+    {attempt?.state === 'accepted' && <AgreedProposal request={request} attempt={attempt} />}
+    {error && <p role="alert" className="error-text">{error}</p>}
+  </li>;
 }
 
 function AcceptedRequestFollowup({ request, onChanged }: { request: RequestRow; onChanged: () => Promise<void> | void }) {
   const [mode, setMode] = useState<'change' | 'cancel' | null>(null); const [title, setTitle] = useState(request.linked_task_title ?? request.shared_title); const [replyDueAt, setReplyDueAt] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const canPropose = typeof request.revision === 'number' && typeof request.linked_task_revision === 'number';
-  async function submit() { if (!mode || !canPropose) return; if (mode === 'change' && !title.trim()) { setError('変更後の内容を入力してください。'); return; } setBusy(true); setError(null); try { await callEdgeFunction(EDGE_FUNCTIONS.startRequestFollowup, { operation_id: newOperationId(), request_id: request.id, attempt_kind: mode, task_patch: mode === 'change' ? { title: title.trim() } : undefined, reply_due_at: replyDueAt ? new Date(replyDueAt).toISOString() : undefined, expected_request_revision: request.revision, expected_task_revision: request.linked_task_revision }); setMode(null); await onChanged(); } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '提案を送れませんでした。最新の状態を確認してください。'); } finally { setBusy(false); } }
+  async function submit() { if (!mode || !canPropose) return; if (mode === 'change' && !title.trim()) { setError('変更後の内容を入力してください。'); return; } setBusy(true); setError(null); try { await callEdgeFunction(EDGE_FUNCTIONS.startRequestFollowup, { operation_id: newOperationId(), request_id: request.id, attempt_kind: mode, task_patch: mode === 'change' ? { title: title.trim() } : undefined, reply_due_at: replyDueAt ? tokyoDateTimeInputToIso(replyDueAt) : undefined, expected_request_revision: request.revision, expected_task_revision: request.linked_task_revision }); setMode(null); await onChanged(); } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '提案を送れませんでした。最新の状態を確認してください。'); } finally { setBusy(false); } }
   if (!request.linked_task_instance_id) return null;
   return <div className="request-followup">{!mode ? <div className="task-item-actions"><button type="button" className="secondary-button" disabled={!canPropose} onClick={() => setMode('change')}>変更を相談</button><button type="button" className="text-button" disabled={!canPropose} onClick={() => setMode('cancel')}>取消を相談</button></div> : <div className="stack-form request-followup-form"><p className="task-item-meta">{mode === 'change' ? '変更案を二人で確認してから反映します。' : '取消は相手の確認後にだけ反映します。'}</p>{mode === 'change' && <label>変更後の内容<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>}<label>返事がほしい期限（任意）<input type="datetime-local" value={replyDueAt} onChange={(event) => setReplyDueAt(event.target.value)} /></label><div className="task-item-actions"><button type="button" disabled={busy} onClick={() => void submit()}>{busy ? '送信中…' : '確認をお願いする'}</button><button type="button" className="text-button" disabled={busy} onClick={() => setMode(null)}>やめる</button></div></div>}{!canPropose && <p className="task-item-meta">このお願いは最新情報を読み直してから変更・取消できます。</p>}{error && <p role="alert" className="error-text">{error}</p>}</div>;
 }

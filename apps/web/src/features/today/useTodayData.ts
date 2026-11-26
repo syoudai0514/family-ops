@@ -14,6 +14,7 @@ import { withTaskActualParticipants } from '../../lib/taskActualParticipants';
 import { TASK_PROGRESS_SELECT } from '../../lib/taskProgress';
 import type { CodmonReadiness } from './codmonReadiness';
 import { partnerTransportItems } from './partnerTransport';
+import { REQUEST_ATTEMPT_SELECT } from '../requests/Requests';
 
 export interface TaskExecutionTarget {
   id: string;
@@ -37,6 +38,8 @@ export interface TodayRequestAttempt {
   id: string;
   request_id: string;
   state: 'pending' | 'checking' | 'consulting' | 'awaiting_confirmation' | 'accepted' | 'declined' | 'expired' | 'cancelled';
+  attempt_kind?: 'initial' | 'reproposal' | 'change' | 'cancel';
+  request_attempt_confirmations?: { actor_ref_id: string; terms_revision: number }[];
   revision: number;
   terms_revision: number;
   reply_due_at: string | null;
@@ -371,7 +374,7 @@ export function useTodayData(householdId: string | null, userId: string | null):
           ? supabase.from('shopping_items').select('*').in('id', shoppingIds)
           : Promise.resolve({ data: [] as ShoppingItem[], error: null }),
         requestIds.length
-          ? supabase.from('request_attempts').select('id,request_id,state,revision,terms_revision,terms,reply_due_at').in('id', requestActions.map(action => action.attempt_id).filter(Boolean))
+          ? supabase.from('request_attempts').select(REQUEST_ATTEMPT_SELECT).in('id', requestActions.map(action => action.attempt_id).filter(Boolean))
           : Promise.resolve({ data: [] as TodayRequestAttempt[], error: null }),
       ]), 12_000, '今日の詳細情報の読み込みに時間がかかっています。');
 
