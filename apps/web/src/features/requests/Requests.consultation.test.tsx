@@ -137,3 +137,24 @@ it('keeps unsent feelings private when AI is unavailable', async () => {
   expect(screen.getByDisplayValue('玄関で引き継ぐ')).toBeInTheDocument();
   expect(vi.mocked(callEdgeFunction).mock.calls.every(([name]) => name !== 'negotiate-request')).toBe(true);
 });
+
+it('lets the recipient decline without a reason after confirming the exact consultation', async () => {
+  vi.mocked(callEdgeFunction).mockClear();
+  vi.mocked(callEdgeFunction).mockResolvedValue({ state: 'declined' });
+  render(<ul><IncomingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
+  fireEvent.click(screen.getByRole('button', { name: '今回は難しい' }));
+  expect(callEdgeFunction).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '難しいと伝える' }));
+  await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('negotiate-request', expect.objectContaining({
+    request_id: request.id, attempt_id: attempt.id, action: 'decline_consultation', expected_revision: 4, expected_terms_revision: 2,
+  })));
+});
+
+it('allows only the other party to decline an accepted-task change', () => {
+  const change = { ...attempt, attempt_kind: 'change' as const, created_by_actor_ref_id: 'actor-papa' };
+  const { rerender } = render(<ul><OutgoingRequestRow request={request} attempt={change} onChanged={vi.fn()} /></ul>);
+  expect(screen.queryByRole('button', { name: 'この案を見送る' })).not.toBeInTheDocument();
+  rerender(<ul><IncomingRequestRow request={request} attempt={change} onChanged={vi.fn()} /></ul>);
+  fireEvent.click(screen.getByRole('button', { name: 'この案を見送る' }));
+  expect(screen.getByText('この案を見送りますか？ 元の約束はそのままです。')).toBeInTheDocument();
+});

@@ -40,6 +40,8 @@ type RequestView = {
 type AttemptView = {
   id: string;
   request_id: string;
+  attempt_kind: string | null;
+  created_by_actor_ref_id: string | null;
   state: string;
   revision: number;
   terms_revision: number;
@@ -580,7 +582,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
     ? ["pending", "checking", "consulting", "awaiting_confirmation", "expired"]
     : ["pending", "checking", "consulting", "awaiting_confirmation"];
   const { data: attemptData, error: attemptError } = await ctx.client.from("request_attempts")
-    .select("id,request_id,state,revision,terms_revision,terms,reply_due_at,created_at")
+    .select("id,request_id,attempt_kind,created_by_actor_ref_id,state,revision,terms_revision,terms,reply_due_at,created_at")
     .in("request_id", ids)
     .eq("household_id", ctx.householdId)
     .is("test_context_id", null)
@@ -608,6 +610,8 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
     const attempt: AttemptView = {
       id: str(attemptRow.id) ?? "",
       request_id: id,
+      attempt_kind: str(attemptRow.attempt_kind),
+      created_by_actor_ref_id: str(attemptRow.created_by_actor_ref_id),
       state: str(attemptRow.state) ?? "",
       revision: num(attemptRow.revision) ?? 1,
       terms_revision: num(attemptRow.terms_revision) ?? 1,
@@ -643,6 +647,17 @@ function requestActionData(view: { request: RequestView; attempt: AttemptView },
     revision: view.attempt.revision,
     terms_revision: view.attempt.terms_revision,
   });
+}
+
+function isRequestFollowup(attemptKind: string | null): boolean {
+  return attemptKind === "change" || attemptKind === "cancel";
+}
+
+function canDeclineConsultation({ request, attempt, party }: RequestWorkspaceView): boolean {
+  if (!["consulting", "awaiting_confirmation"].includes(attempt.state)) return false;
+  if (!isRequestFollowup(attempt.attempt_kind)) return party === "recipient";
+  const self = party === "requester" ? request.requester_actor_ref_id : request.recipient_actor_ref_id;
+  return Boolean(attempt.created_by_actor_ref_id && attempt.created_by_actor_ref_id !== self);
 }
 
 type RequestWorkspaceView = { request: RequestView; attempt: AttemptView; party: "requester" | "recipient" };
@@ -747,9 +762,15 @@ async function openRequests(ctx: LineMustCompleteContext, selected?: string, pag
         quick.push(postback("この条件で確認", requestActionData(view, "confirm_terms")));
       }
     }
-    quick.push({ type: "datetimepicker", label: "作業期限を変更", mode: "datetime",
-      data: encodeFields("mc_request_due", requestFields(view)) });
-    quick.push(postback("相談メモを書く", encodeFields("mc_request_memo", requestFields(view))));
+    if (!isRequestFollowup(attempt.attempt_kind)) {
+      quick.push({ type: "datetimepicker", label: "作業期限を変更", mode: "datetime",
+        data: encodeFields("mc_request_due", requestFields(view)) });
+      quick.push(postback("相談メモを書く", encodeFields("mc_request_memo", requestFields(view))));
+    }
+    if (canDeclineConsultation(view)) {
+      quick.push(postback(isRequestFollowup(attempt.attempt_kind) ? "この案を見送る" : "今回は難しい",
+        encodeFields("mc_request_decline_consultation", requestFields(view))));
+    }
   }
   if (views.length > 1) quick.push(postback("ほかのお願い", encodeFields("mc_request_list", { page: 0 })));
   let selectedForText = false;
@@ -763,6 +784,20 @@ async function openRequests(ctx: LineMustCompleteContext, selected?: string, pag
     ? "\n\n二人が同じ条件を確認するまで、担当や期限は変わりません。"
     : "";
   await ctx.reply(`${summary}${confirmationStatus}${agreement}${guidance}`, quick);
+}
+
+async function promptConsultationDecline(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
+  const view = await selectedConsultation(ctx, fields);
+  if (!view) return;
+  if (!canDeclineConsultation(view)) {
+    await ctx.reply("この相談に返事できるのは、お願いを受け取った人です。");
+    return;
+  }
+  const followup = isRequestFollowup(view.attempt.attempt_kind);
+  await ctx.reply(`「${view.request.shared_title}」\n${followup ? "この案を見送りますか？ 元の約束はそのままです。" : "「今回は難しい」と相手に伝えますか？"}`, [
+    postback(followup ? "見送ると伝える" : "難しいと伝える", requestActionData(view, "decline_consultation")),
+    postback("戻る", encodeFields("mc_request_open", { request_id: view.request.id })),
+  ]);
 }
 
 async function selectedConsultation(ctx: LineMustCompleteContext, explicit?: JsonObject): Promise<RequestWorkspaceView | null> {
@@ -871,7 +906,7 @@ async function transitionRequest(ctx: LineMustCompleteContext, fields: Record<st
     await ctx.reply("このボタンでは返事できません。「お願いの返事」で最新の内容を確認してください。", [message("お願いを確認", "お願いの返事")]);
     return;
   }
-  if (!["accept", "decline", "checking", "consult", "confirm_terms"].includes(action)) return;
+  if (!["accept", "decline", "decline_consultation", "checking", "consult", "confirm_terms"].includes(action)) return;
   if (action === "consult") await clearLineRequestContext(ctx);
   if (action === "accept") {
     const views = await readRequestWorkspace(ctx);
@@ -913,7 +948,10 @@ async function transitionRequest(ctx: LineMustCompleteContext, fields: Record<st
   } else if (state === "expired") {
     await ctx.reply("返事の期限を過ぎています。お願いした人に、もう一度送ってもらってください。", [message("お願いを確認", "お願いの返事")]);
   } else if (state === "declined") {
-    await ctx.reply("今回は難しいと相手に返しました。", [message("お願いを確認", "お願いの返事")]);
+    if (action === "decline_consultation") await clearLineRequestContext(ctx);
+    await ctx.reply(isRequestFollowup(str(root?.attempt_kind))
+      ? "この案を見送ると相手に伝えました。元の約束はそのままです。"
+      : "今回は難しいと相手に返しました。", [message("お願いを確認", "お願いの返事")]);
   } else if (action === "checking" && state === "checking") {
     await ctx.reply("確認中にしました。「お願いの返事」からあとで返事できます。", [postback("お願いを確認", encodeFields("mc_request_open", { request_id: requestId }))]);
   } else {
@@ -1409,6 +1447,10 @@ export async function tryHandleLineMustCompletePostback(
   }
   if (action === "mc_request_decline_memo") {
     await promptDeclineComment(ctx, fields);
+    return true;
+  }
+  if (action === "mc_request_decline_consultation") {
+    await promptConsultationDecline(ctx, fields);
     return true;
   }
   if (action === "mc_request_decline_comment") {
