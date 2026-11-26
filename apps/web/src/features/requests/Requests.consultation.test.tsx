@@ -7,7 +7,7 @@ import type { RequestRow } from '../../lib/types';
 vi.mock('../../lib/apiClient', () => ({ callEdgeFunction: vi.fn(), FamilyOpsApiError: class extends Error {} }));
 vi.mock('../../lib/useCommandAttempt', () => ({
   useCommandAttempt: () => (
-    _key: string, endpoint: string, payload: (operationId: string) => Record<string, unknown>,
+    _key: string, endpoint: Parameters<typeof callEdgeFunction>[0], payload: (operationId: string) => Record<string, unknown>,
   ) => callEdgeFunction(endpoint, payload('operation-test')),
 }));
 
