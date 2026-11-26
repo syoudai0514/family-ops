@@ -144,7 +144,10 @@ export async function executeCommandAttempt<T>(
     remove(attempt);
     return value;
   } catch (error) {
-    if (error instanceof FamilyOpsApiError && error.outcome === 'unknown') {
+    const alreadyUncertain = attempt.state === 'sending' || attempt.state === 'unknown';
+    if (error instanceof FamilyOpsApiError && (
+      error.outcome === 'unknown' || (alreadyUncertain && error.outcome === 'not_sent')
+    )) {
       persist({ ...attempt, state: 'unknown' });
     } else {
       remove(attempt);

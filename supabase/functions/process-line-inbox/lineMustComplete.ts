@@ -29,6 +29,7 @@ type RequestView = {
   id: string;
   request_kind: string;
   shared_title: string;
+  shared_message: string | null;
   due_at: string | null;
   assignment_scope: string | null;
   requester_actor_ref_id: string;
@@ -170,7 +171,15 @@ function isAnyoneTaskText(text: string): boolean {
 }
 
 function isRequestText(text: string): boolean {
-  return /^(お願いの返事|お願い確認|返事|相談中|相談を確認)$/u.test(text.normalize("NFKC").trim());
+  return /^(お願いの返事|お願い確認|返事|相談中|相談を確認|(?:届いた|相手からの)?お願い(?:を確認(?:したい)?|を見せて(?:ください)?))\s*[。!?]?$/u.test(text.normalize("NFKC").trim());
+}
+
+const consultationMemoPattern = /^相談(?:の)?メモ(?:[：:\s]+([\s\S]*))?$/u;
+
+export function preservesRequestTopic(rawText: string): boolean {
+  const text = rawText.normalize("NFKC").trim();
+  return isRequestText(text) || consultationMemoPattern.test(text)
+    || /^(?:辞退コメント)(?:[：:\s]|$)|^条件期限(?:\s|$)/u.test(text);
 }
 
 function isSimulationText(text: string): boolean {
@@ -558,7 +567,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
   const selfActorRef = await actorRefId(ctx);
   if (!selfActorRef) return [];
   const { data: requestData, error: requestError } = await ctx.client.from("requests")
-    .select("id,request_kind,shared_title,due_at,assignment_scope,requester_actor_ref_id,recipient_actor_ref_id,revision,created_at")
+    .select("id,request_kind,shared_title,shared_message,due_at,assignment_scope,requester_actor_ref_id,recipient_actor_ref_id,revision,created_at")
     .eq("household_id", ctx.householdId)
     .is("test_context_id", null)
     .or(`requester_actor_ref_id.eq.${selfActorRef},recipient_actor_ref_id.eq.${selfActorRef}`)
@@ -612,6 +621,7 @@ async function activeRequests(ctx: LineMustCompleteContext, includeExpired = fal
         id,
         request_kind: str(row.request_kind) ?? "light",
         shared_title: str(row.shared_title) ?? "お願い",
+        shared_message: str(row.shared_message),
         due_at: str(row.due_at),
         assignment_scope: str(row.assignment_scope),
         requester_actor_ref_id: requester,
@@ -674,7 +684,7 @@ function requestStateLabel(state: string): string {
   return ({ pending: "返事待ち", checking: "確認中", consulting: "相談中", awaiting_confirmation: "条件の確認待ち", expired: "返事期限切れ", accepted: "合意済み", declined: "難しいと返答済み" } as Record<string, string>)[state] ?? "最新の状態を確認してください";
 }
 
-async function openRequests(ctx: LineMustCompleteContext, selected?: string, page = 0): Promise<void> {
+async function openRequests(ctx: LineMustCompleteContext, selected?: string, page = 0, startedConsultation?: JsonObject): Promise<void> {
   const views = await readRequestWorkspace(ctx, true);
   if (!views) return;
   if (views.length === 0) {
@@ -683,6 +693,10 @@ async function openRequests(ctx: LineMustCompleteContext, selected?: string, pag
     return;
   }
   const view = selected ? views.find((item) => item.request.id === selected) : views.length === 1 ? views[0] : undefined;
+  if (startedConsultation && (!view || view.attempt.state !== "consulting" || !matchesRequest(view, startedConsultation))) {
+    await ctx.reply("お願いの内容が更新されました。開き直して最新の内容を確認してください。", [message("お願いを確認", "お願いの返事")]);
+    return;
+  }
   if (!view) {
     await clearLineRequestContext(ctx);
     const start = Math.max(0, Math.min(Math.floor(page) || 0, Math.ceil(views.length / 5) - 1)) * 5;
@@ -696,29 +710,59 @@ async function openRequests(ctx: LineMustCompleteContext, selected?: string, pag
   const { request, attempt, party } = view;
   const proposedDue = str(record(attempt.terms.material_patch)?.work_due_at);
   const memo = str(attempt.terms.candidate);
-  const summary = `${request.shared_title}\n${party === "requester" ? "相手へのお願い" : "自分へのお願い"}\n返事期限: ${formatJst(attempt.reply_due_at)}\n作業期限: ${formatJst(request.due_at)}${proposedDue ? `\n提案中の作業期限: ${formatJst(proposedDue)}` : ""}\n状態: ${requestStateLabel(attempt.state)}${memo ? `\n相談メモ: ${memo}` : ""}`;
+  const summary = `${request.shared_title}${request.shared_message ? `\n${request.shared_message}` : ""}\n${party === "requester" ? "相手へのお願い" : "自分へのお願い"}\n返事期限: ${formatJst(attempt.reply_due_at)}\n作業期限: ${formatJst(request.due_at)}${proposedDue ? `\n提案中の作業期限: ${formatJst(proposedDue)}` : ""}\n状態: ${requestStateLabel(attempt.state)}${memo ? `\n相談メモ: ${memo}` : ""}`;
   const quick: LineQuickReplyAction[] = [];
+  let confirmationStatus = "";
   if (attempt.state === "expired") {
     if (party === "requester") quick.push(postback("再提案する", encodeFields("mc_request_repropose", { request_id: request.id, request_revision: request.revision })));
   } else if (party === "recipient" && ["pending", "checking"].includes(attempt.state)) {
     if (request.request_kind === "assignment_change") {
-      quick.push(postback("引き受ける", encodeFields("mc_request_prompt_accept", requestFields(view))));
+      quick.push(postback("引き受ける", encodeFields("prompt_accept_assignment_change", requestFields(view))));
     } else quick.push(postback("やる", requestActionData(view, "accept")));
     quick.push(postback("難しい", requestActionData(view, "decline")));
     quick.push(postback("コメント付きで難しい", encodeFields("mc_request_decline_memo", requestFields(view))));
-    if (attempt.state === "pending") quick.push(postback("確認中", requestActionData(view, "checking")));
+    if (attempt.state === "pending") quick.push(postback("あとで返事する", requestActionData(view, "checking")));
     quick.push(postback("相談する", requestActionData(view, "consult")));
   } else if (["consulting", "awaiting_confirmation"].includes(attempt.state)) {
-    quick.push(postback("この条件で確認", requestActionData(view, "confirm_terms")));
+    const { data: confirmations, error } = await ctx.client.from("request_attempt_confirmations")
+      .select("actor_ref_id")
+      .eq("household_id", ctx.householdId)
+      .eq("attempt_id", attempt.id)
+      .eq("terms_revision", attempt.terms_revision)
+      .is("test_context_id", null);
+    if (error) {
+      confirmationStatus = "\n確認状況を読み込めませんでした。お願いを開き直してください。";
+    } else {
+      const confirmed = new Set(records(confirmations).map((row) => row.actor_ref_id));
+      const ownRef = party === "requester" ? request.requester_actor_ref_id : request.recipient_actor_ref_id;
+      const otherRef = party === "requester" ? request.recipient_actor_ref_id : request.requester_actor_ref_id;
+      if (confirmed.has(ownRef) && confirmed.has(otherRef)) {
+        confirmationStatus = "\n二人とも確認済みです。お願いを開き直すと最新の状態を確認できます。";
+      } else if (confirmed.has(ownRef)) {
+        confirmationStatus = "\nあなたは確認済みです。相手の確認を待っています。";
+      } else {
+        confirmationStatus = confirmed.has(otherRef)
+          ? "\n相手は確認済みです。あなたの確認を待っています。"
+          : "\n二人とも、この条件はまだ確認していません。";
+        quick.push(postback("この条件で確認", requestActionData(view, "confirm_terms")));
+      }
+    }
     quick.push({ type: "datetimepicker", label: "作業期限を変更", mode: "datetime",
       data: encodeFields("mc_request_due", requestFields(view)) });
     quick.push(postback("相談メモを書く", encodeFields("mc_request_memo", requestFields(view))));
   }
-  quick.push(postback("ほかのお願い", encodeFields("mc_request_list", { page: 0 })));
-  try { await requestContext(ctx, "set", view); } catch {
+  if (views.length > 1) quick.push(postback("ほかのお願い", encodeFields("mc_request_list", { page: 0 })));
+  let selectedForText = false;
+  try { selectedForText = Boolean(await requestContext(ctx, "set", view)); } catch {
     // Buttons carry their exact target even when selection persistence is unavailable.
   }
-  await ctx.reply(`${summary}\n\n相談中の変更は、二人が同じ条件を確認するまで反映されません。`, quick);
+  const guidance = startedConsultation && selectedForText
+    ? "\n「相談メモ：18時半なら行けます」のように送ると、このお願いにメモが付き、相手に届きます。"
+    : "";
+  const agreement = ["consulting", "awaiting_confirmation"].includes(attempt.state)
+    ? "\n\n二人が同じ条件を確認するまで、担当や期限は変わりません。"
+    : "";
+  await ctx.reply(`${summary}${confirmationStatus}${agreement}${guidance}`, quick);
 }
 
 async function selectedConsultation(ctx: LineMustCompleteContext, explicit?: JsonObject): Promise<RequestWorkspaceView | null> {
@@ -748,7 +792,7 @@ async function promptConsultationMemo(ctx: LineMustCompleteContext, fields: Reco
     await ctx.reply("相談メモの入力を開始できませんでした。お願いを開き直してください。");
     return;
   }
-  await ctx.reply(`「${view.request.shared_title}」の相談メモを入力します。\n「相談メモ：」に続けて送ってください。\nメモだけでは担当や作業期限は変わりません。`, [postback("お願いに戻る", encodeFields("mc_request_open", { request_id: view.request.id }))]);
+  await ctx.reply(`「${view.request.shared_title}」の相談メモを相手に送ります。\n「相談メモ：」に続けて入力してください。`, [postback("お願いに戻る", encodeFields("mc_request_open", { request_id: view.request.id }))]);
 }
 
 async function editRequestDueFromPicker(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
@@ -816,49 +860,28 @@ async function sendDeclineComment(ctx: LineMustCompleteContext, fields: Record<s
   await ctx.reply("✓ コメントを添えて「難しい」と返しました。お願いは成立していません。", [message("今日を見る", "今日")]);
 }
 
-async function promptAssignmentRequestAccept(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
-  const requestId = fields.request_id;
-  const attemptId = fields.attempt_id;
-  const revision = Number(fields.revision);
-  const termsRevision = Number(fields.terms_revision);
-  if (!requestId || !attemptId || !Number.isFinite(revision) || !Number.isFinite(termsRevision)) return;
-  const views = await readRequestWorkspace(ctx, true);
-  if (!views) return;
-  const view = views.find((candidate) =>
-    candidate.party === "recipient"
-    && candidate.request.id === requestId
-    && candidate.request.request_kind === "assignment_change"
-    && candidate.attempt.id === attemptId
-    && candidate.attempt.revision === revision
-    && candidate.attempt.terms_revision === termsRevision
-    && ["pending", "checking"].includes(candidate.attempt.state)
-  );
-  if (!view) {
-    await ctx.reply("内容が更新されています。お願いの返事から最新の内容を確認してください。", [message("お願いを確認", "お願いの返事")]);
-    return;
-  }
-  const scopeLabel = view.request.assignment_scope === "this_week" ? "今週だけ" : "今回だけ";
-  const summary = [
-    "この担当変更を引き受けますか？",
-    `${formatJst(view.request.due_at)} ${view.request.shared_title}`,
-    scopeLabel,
-    "確定すると、この担当があなたに変わります。",
-    "送り/お迎えに連動する当日の家事がある場合は、同日のルールどおり担当も切り替わります。",
-  ].join("\n");
-  await ctx.reply(summary, [
-    postback("引き受ける", requestActionData(view, "accept")),
-    message("戻る", "お願いの返事"),
-  ]);
-}
-
 async function transitionRequest(ctx: LineMustCompleteContext, fields: Record<string, string>): Promise<void> {
   const requestId = fields.request_id;
   const attemptId = fields.attempt_id;
   const action = fields.request_action;
   const revision = Number(fields.revision);
   const termsRevision = Number(fields.terms_revision);
-  if (!requestId || !attemptId || !action || !Number.isFinite(revision) || !Number.isFinite(termsRevision)) return;
+  if (!requestId || !attemptId || !action || !Number.isSafeInteger(revision) || revision < 1
+    || !Number.isSafeInteger(termsRevision) || termsRevision < 1) {
+    await ctx.reply("このボタンでは返事できません。「お願いの返事」で最新の内容を確認してください。", [message("お願いを確認", "お願いの返事")]);
+    return;
+  }
   if (!["accept", "decline", "checking", "consult", "confirm_terms"].includes(action)) return;
+  if (action === "consult") await clearLineRequestContext(ctx);
+  if (action === "accept") {
+    const views = await readRequestWorkspace(ctx);
+    if (!views) return;
+    const view = views.find((candidate) => matchesRequest(candidate, fields) && candidate.party === "recipient");
+    if (view?.request.request_kind !== "light") {
+      await ctx.reply("「お願いの返事」で最新の内容を開いてから返事してください。", [message("お願いを確認", "お願いの返事")]);
+      return;
+    }
+  }
   const operationId = await deterministicOperationId("line-request", ctx.eventId, requestId, attemptId, action, String(revision), String(termsRevision));
   const { data, error } = await ctx.client.rpc("server_tx_transition_request_v2", {
     p_actor_id: ctx.actorId,
@@ -881,12 +904,18 @@ async function transitionRequest(ctx: LineMustCompleteContext, fields: Record<st
     await replyMutationError(ctx, { message: "UNKNOWN_RESULT" });
     return;
   }
-  if (state === "awaiting_confirmation") {
-    await ctx.reply("✓ この条件版を確認しました。もう一人が同じ条件版を確認すると確定します。", [postback("条件を確認", encodeFields("mc_request_open", { request_id: requestId }))]);
+  if (action === "consult" && state === "consulting") {
+    await openRequests(ctx, requestId, 0, root ?? {});
+  } else if (state === "awaiting_confirmation") {
+    await ctx.reply("✓ この条件を確認しました。相手も同じ条件を確認すると確定します。", [postback("条件を確認", encodeFields("mc_request_open", { request_id: requestId }))]);
   } else if (state === "accepted") {
     await ctx.reply("✓ 合意が成立し、お願いを反映しました。今日の表示から確認できます。", [message("今日を確認", "今日")]);
   } else if (state === "expired") {
-    await ctx.reply("返事期限を過ぎています。依頼した側から再提案してください。", [message("お願いを確認", "お願いの返事")]);
+    await ctx.reply("返事の期限を過ぎています。お願いした人に、もう一度送ってもらってください。", [message("お願いを確認", "お願いの返事")]);
+  } else if (state === "declined") {
+    await ctx.reply("今回は難しいと相手に返しました。", [message("お願いを確認", "お願いの返事")]);
+  } else if (action === "checking" && state === "checking") {
+    await ctx.reply("確認中にしました。「お願いの返事」からあとで返事できます。", [postback("お願いを確認", encodeFields("mc_request_open", { request_id: requestId }))]);
   } else {
     await ctx.reply(`✓ お願いを「${requestStateLabel(state)}」に更新しました。`, [postback("お願いを確認", encodeFields("mc_request_open", { request_id: requestId }))]);
   }
@@ -1269,7 +1298,7 @@ export async function tryHandleLineMustCompleteText(ctx: LineMustCompleteContext
     else await prepareDeclineComment(ctx, comment);
     return true;
   }
-  const memoMatch = text.match(/^相談メモ(?:[：:\s]+([\s\S]*))?$/u);
+  const memoMatch = rawText.trim().match(consultationMemoPattern);
   if (memoMatch) {
     const memo = memoMatch[1]?.trim() ?? "";
     if (!memo || [...memo].length > 500) await ctx.reply("相談メモは1〜500文字で入力してください。まだ変更していません。");
@@ -1388,10 +1417,6 @@ export async function tryHandleLineMustCompletePostback(
   }
   if (action === "mc_request_memo") {
     await promptConsultationMemo(ctx, fields);
-    return true;
-  }
-  if (action === "mc_request_prompt_accept") {
-    await promptAssignmentRequestAccept(ctx, fields);
     return true;
   }
   if (action === "mc_request") {

@@ -39,6 +39,16 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
   let transportAssignee = partnerId;
   let transportAssigneeRef = "actor-ref";
   let consultPending: Record<string, unknown> | null = null;
+  const receivedId = "70000000-0000-4000-8000-000000000001";
+  const attemptId = "80000000-0000-4000-8000-000000000001";
+  let receivedState = "pending";
+  let receivedKind = "assignment_change";
+  let receiverPendingPayload: Record<string, unknown> | null = null;
+  let receivedRevision = 1;
+  let termsRevision = 1;
+  let checkingIntent: string | null = null;
+  let selectedRequest: Record<string, unknown> | null = null;
+  let confirmationActors: string[] = [];
   let eventNumber = 0;
   const calls: Array<{ rpc: string; args: Record<string, unknown> }> = [];
   const replies: Array<Record<string, unknown>> = [];
@@ -74,7 +84,28 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
             source_external_user_id: "test-line-user", attempts: 1, lease_token: "test-lease", payload: {
               type: postback ? "postback" : "message", ...(postback ? { postback: { data: postback } } : { message: { type: "text", text } }), replyToken: "test-reply",
             } }]; break;
-          case "server_tx_line_request_context": return Promise.resolve(Response.json(null));
+          case "server_tx_line_request_context":
+            if (body.p_action === "set") selectedRequest = body.p_context;
+            if (body.p_action === "clear") selectedRequest = null;
+            data = selectedRequest;
+            break;
+          case "server_tx_transition_request_v2":
+            assertEquals(body.p_request_id, receivedId);
+            assertEquals(body.p_attempt_id, attemptId);
+            assertEquals(body.p_expected_revision, receivedRevision);
+            assertEquals(body.p_expected_terms_revision, termsRevision);
+            if (body.p_action === "consult") receivedState = "consulting";
+            else if (body.p_action === "edit_terms") {
+              receivedState = "consulting";
+              termsRevision++;
+            } else if (body.p_action === "begin_assignment_accept" || body.p_action === "checking") {
+              receivedState = "checking";
+              if (body.p_action === "begin_assignment_accept") checkingIntent = "assignment_accept";
+            } else if (body.p_action === "accept") receivedState = "accepted";
+            else throw new Error("unexpected request action");
+            receivedRevision++;
+            data = { request_id: receivedId, attempt_id: attemptId, state: receivedState, revision: receivedRevision, terms_revision: termsRevision };
+            break;
           case "server_read_line_saved_task_v1": return Promise.resolve(Response.json(null));
           case "server_tx_resolve_line_actor": data = { user_id: actorId, household_id: householdId }; break;
           case "server_tx_get_line_conversation_pending": data = { id: closedId, status: "succeeded", action_type: "task_create_once",
@@ -95,6 +126,10 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
             expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
           }; break;
           case "server_tx_get_pending_action":
+            if (receiverPendingPayload && body.p_pending_action_id === closedId) {
+              data = { id: closedId, status: "draft", action_type: "request_accept", revision: 0, normalized_payload: receiverPendingPayload };
+              break;
+            }
             if (consultPending && body.p_pending_action_id === "40000000-0000-4000-8000-000000000002") {
               data = { id: body.p_pending_action_id, status: "draft", action_type: "assignment_change_request", revision: 0, normalized_payload: consultPending };
               break;
@@ -130,6 +165,20 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
         return Promise.resolve(Response.json([{ id: "transport-definition", household_id: householdId, code: transportCode }]));
       }
       if (table === "domain_actor_refs") return Promise.resolve(Response.json([{ id: "actor-ref" }]));
+      if (table === "requests") return Promise.resolve(Response.json([{
+        id: receivedId, request_kind: receivedKind, shared_title: "お迎え",
+        shared_message: "会議があるのでお迎えをお願いできますか？", status: "pending",
+        requester_actor_ref_id: "partner-ref", recipient_actor_ref_id: "actor-ref", recipient_id: actorId,
+        due_at: `${tomorrow}T18:00:00+09:00`, assignment_scope: "once", revision: receivedRevision,
+      }]));
+      if (table === "request_attempts") return Promise.resolve(Response.json([{
+        id: attemptId, request_id: receivedId, state: receivedState, revision: receivedRevision,
+        terms_revision: termsRevision, checking_intent: checkingIntent, created_at: `${today}T09:00:00Z`,
+      }]));
+      if (table === "request_attempt_confirmations") {
+        assertEquals(url.searchParams.get("terms_revision"), `eq.${termsRevision}`);
+        return Promise.resolve(Response.json(confirmationActors.map((actor_ref_id) => ({ actor_ref_id }))));
+      }
       if (table === "task_instances" && url.searchParams.get("task_definition_id") === "eq.transport-definition") {
         taskReadDates.push(url.searchParams.get("scheduled_date") ?? "");
         return Promise.resolve(Response.json([{ id: "60000000-0000-4000-8000-000000000001", household_id: householdId, task_definition_id: "transport-definition",
@@ -264,7 +313,94 @@ Deno.test("LINE worker HTTP keeps closed input history separate from new request
       postback = "action=confirm_pending&pending_action_id=40000000-0000-4000-8000-000000000002";
       await run("");
       assertEquals(calls.filter((call) => call.rpc === "server_tx_confirm_pending_action").length, 1);
-      assertStringIncludes(rendered(), "相手の返事を待っています");
+      assertStringIncludes(rendered(), "お願いの送信を受け付けました");
+    });
+    await t.step("request card starts the exact consultation and a natural memo bypasses generic transport routing", async () => {
+      postback = `action=consult_assignment_change&request_id=${receivedId}&attempt_id=${attemptId}&revision=1&terms_revision=1`;
+      await run("");
+      assertStringIncludes(rendered(), "会議があるのでお迎えをお願いできますか？");
+      assertStringIncludes(rendered(), "相談メモ：18時半なら行けます");
+      assertEquals(selectedRequest?.request_id, receivedId);
+      assertEquals(selectedRequest?.revision, 2);
+      postback = null;
+      await run("相談のメモ：お迎えは１８時半なら行けます");
+      const memo = calls.find((call) => call.rpc === "server_tx_transition_request_v2");
+      assertEquals(memo?.args.p_request_id, receivedId);
+      assertEquals(memo?.args.p_terms, { candidate: "お迎えは１８時半なら行けます" });
+      assertEquals(prompts.length, 0);
+      assertStringIncludes(rendered(), "相談メモを保存");
+    });
+    await t.step("consultation shows which household member has confirmed the current terms", async () => {
+      confirmationActors = ["actor-ref"];
+      await run("届いたお願いを見せてください。");
+      assertStringIncludes(rendered(), "あなたは確認済みです。相手の確認を待っています。");
+      assert(!rendered().includes("この条件で確認"));
+      confirmationActors = ["partner-ref"];
+      await run("お願いの返事");
+      assertStringIncludes(rendered(), "相手は確認済みです。あなたの確認を待っています。");
+      assertStringIncludes(rendered(), "この条件で確認");
+    });
+    await t.step("assignment workspace separates responding later from explicit acceptance and can resume confirmation", async () => {
+      receivedState = "pending";
+      receivedRevision = 1;
+      termsRevision = 1;
+      const fields = (revision: number) => `request_id=${receivedId}&attempt_id=${attemptId}&revision=${revision}&terms_revision=1`;
+      postback = `action=mc_request&request_action=checking&${fields(1)}`;
+      await run("");
+      assertEquals(checkingIntent, null);
+      postback = `action=mc_request&request_action=accept&${fields(2)}`;
+      await run("");
+      assert(!calls.some((call) => call.rpc === "server_tx_transition_request_v2"));
+      postback = `action=mc_request_prompt_accept&${fields(2)}`;
+      await run("");
+      assertEquals(calls.find((call) => call.rpc === "server_tx_transition_request_v2")?.args.p_action, "begin_assignment_accept");
+      assertStringIncludes(rendered(), `action=accept_assignment_change&${fields(3)}`);
+      postback = `action=prompt_accept_assignment_change&${fields(3)}`;
+      await run("");
+      assert(!calls.some((call) => call.rpc === "server_tx_transition_request_v2"));
+      assertStringIncludes(rendered(), `action=accept_assignment_change&${fields(3)}`);
+      postback = `action=accept_assignment_change&${fields(3)}`;
+      await run("");
+      assertEquals(calls.find((call) => call.rpc === "server_tx_transition_request_v2")?.args.p_action, "accept");
+      assertStringIncludes(rendered(), "引き受けました");
+    });
+    await t.step("old assignment final cards retain exact checking-snapshot compatibility", async () => {
+      receivedState = "checking";
+      receivedRevision = 2;
+      checkingIntent = null; // Produced by the original LINE checking action.
+      const fields = `request_id=${receivedId}&attempt_id=${attemptId}&terms_revision=1`;
+      postback = `action=accept_assignment_change&${fields}&revision=1`;
+      await run("");
+      assert(!calls.some((call) => call.rpc === "server_tx_transition_request_v2"));
+      assertStringIncludes(rendered(), "最終確認が必要です");
+      postback = `action=accept_assignment_change&${fields}&revision=2`;
+      await run("");
+      assertEquals(calls.find((call) => call.rpc === "server_tx_transition_request_v2")?.args.p_action, "accept");
+      assertStringIncludes(rendered(), "引き受けました");
+    });
+    await t.step("regular request cards never reinterpret an old action as agreement to unseen terms", async () => {
+      receivedKind = "light";
+      receivedState = "consulting";
+      receivedRevision = 4;
+      termsRevision = 2;
+      postback = `action=accept_request&request_id=${receivedId}`;
+      await run("");
+      assertStringIncludes(rendered(), "相談中");
+      assert(!calls.some((call) => /accept_request|transition_request/.test(call.rpc)));
+      receiverPendingPayload = { request_id: receivedId };
+      postback = `action=confirm_pending&pending_action_id=${closedId}`;
+      await run("");
+      assertStringIncludes(rendered(), "相談中");
+      assert(!calls.some((call) => /accept_request|transition_request|confirm_pending_action/.test(call.rpc)));
+      receivedState = "pending";
+      receiverPendingPayload = { request_id: receivedId, attempt_id: attemptId, expected_revision: 4, expected_terms_revision: 2 };
+      await run("");
+      const accept = calls.find((call) => call.rpc === "server_tx_transition_request_v2");
+      assertEquals(accept?.args.p_action, "accept");
+      assertEquals(accept?.args.p_expected_terms_revision, 2);
+      assert(!calls.some((call) => call.rpc === "server_tx_confirm_pending_action"));
+      assertStringIncludes(rendered(), "合意が成立");
+      receiverPendingPayload = null;
     });
     await t.step("stale buttons and someone else's task never create a draft", async () => {
       postback = "action=transport_consult&date=2000-01-01";

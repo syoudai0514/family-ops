@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useFamilySetup } from '../settings/useFamilySetup';
 import { useAuth } from '../../app/AuthContext';
 import { useHousehold } from '../../app/HouseholdContext';
@@ -81,12 +82,11 @@ export function Notifications() {
       <LineLinkSection />
       <PreferencesSection householdId={household?.id ?? null} userId={user?.id ?? null} />
       <section className="card">
-        <h2>LINEで送った内容（控え）</h2>
-        <p className="empty-hint">LINEに届いたものと同じ内容です。読んだかどうかはLINEで分かるので、ここで既読にする必要はありません。</p>
+        <h2>最近の通知</h2>
         {loading ? (
           <p role="status">読み込み中…</p>
         ) : notifications.length === 0 ? (
-          <p className="empty-hint">まだ送った内容はありません。</p>
+          <p className="empty-hint">まだ通知はありません。</p>
         ) : (
           <ul className="notification-list">
             {notifications.map((n) => (
@@ -275,9 +275,22 @@ export function LineLinkSection() {
   );
 }
 
-// A copy of what was sent on LINE. Read state is not tracked here: LINE already shows it, and
-// nothing else used the in-app 既読 (owner 2026-10-10).
+const REQUEST_NOTIFICATION_TYPES = new Set([
+  'request.received', 'request_received', 'request.checking', 'request.consulting',
+  'request.awaiting_confirmation', 'request.accepted', 'request_accepted', 'request.declined',
+  'request_declined', 'request.cancelled', 'request.reproposed', 'request.expired',
+  'request.followup_requested', 'request.followup_declined',
+]);
+
+export function requestNotificationHref(notification: Pick<UserNotification, 'type' | 'payload'>): string | null {
+  if (!REQUEST_NOTIFICATION_TYPES.has(notification.type)) return null;
+  const requestId = (notification.payload as { request_id?: unknown } | null)?.request_id;
+  if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestId)) return null;
+  return `/requests?request=${encodeURIComponent(requestId)}`;
+}
+
 function NotificationRow({ notification }: { notification: UserNotification }) {
+  const requestHref = requestNotificationHref(notification);
   const body = notification.body?.startsWith(notification.title)
     ? notification.body.slice(notification.title.length).trimStart()
     : notification.body;
@@ -289,6 +302,7 @@ function NotificationRow({ notification }: { notification: UserNotification }) {
           <span className="task-item-meta">{formatDateTimeJa(notification.created_at)}</span>
         </summary>
         {body && <p>{body}</p>}
+        {requestHref && <Link to={requestHref}>お願いを開く</Link>}
       </details>
     </li>
   );

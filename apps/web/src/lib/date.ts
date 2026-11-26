@@ -32,3 +32,8 @@ export function formatTimeJa(iso: string | null): string {
   if (!iso) return '';
   return new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
 }
+
+// A datetime-local input in household time does not carry its own time zone.
+export function tokyoDateTimeInputToIso(value: string): string {
+  return new Date(`${value}+09:00`).toISOString();
+}

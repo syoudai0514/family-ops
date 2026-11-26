@@ -320,15 +320,38 @@ export function buildAssignmentSenderPreviewFlex(data: {
   };
 }
 
+export function buildOpenRequestFlex(
+  title: string,
+  action: { label: string; data: string },
+): Record<string, unknown> {
+  return {
+    type: "flex",
+    altText: `${action.label}：${title}`.slice(0, 400),
+    contents: {
+      type: "bubble",
+      body: compactBody([{ type: "text", text: title, weight: "bold", wrap: true }]),
+      footer: compactActionFooter([{ ...action, primary: true }]),
+    },
+  };
+}
+
 export function buildGeneralRequestFlex(data: {
   title: string;
   message: string;
-  acceptPendingActionId: string;
-  declinePendingActionId: string;
-  requestId?: string;
+  requestId: string;
+  attemptId: string;
+  revision: number;
+  termsRevision: number;
   scheduleLabel?: string;
-  otherResponseUrl?: string;
 }): Record<string, unknown> {
+  const response = (action: "accept" | "decline") => new URLSearchParams({
+    action: "mc_request",
+    request_id: data.requestId,
+    attempt_id: data.attemptId,
+    request_action: action,
+    revision: String(data.revision),
+    terms_revision: String(data.termsRevision),
+  }).toString();
   return {
     type: "flex",
     altText: `お願い: ${data.title}`,
@@ -377,16 +400,17 @@ export function buildGeneralRequestFlex(data: {
       footer: compactActionFooter([
         {
           label: "やる",
-          data:
-            `action=confirm_pending&pending_action_id=${data.acceptPendingActionId}`,
+          data: response("accept"),
           primary: true,
         },
         {
           label: "難しい",
-          data:
-            `action=confirm_pending&pending_action_id=${data.declinePendingActionId}`,
+          data: response("decline"),
         },
-        ...(data.requestId ? [{ label: "その他の返答", data: `action=mc_request_open&request_id=${data.requestId}` }] : []),
+        {
+          label: "その他の返答",
+          data: new URLSearchParams({ action: "mc_request_open", request_id: data.requestId }).toString(),
+        },
       ]),
     },
   };
