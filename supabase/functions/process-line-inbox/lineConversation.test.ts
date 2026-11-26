@@ -166,11 +166,11 @@ Deno.test("schedule reply remains compact", () => {
 Deno.test("pending confirmation copy preserves request negotiation state", () => {
   assertEquals(
     pendingConfirmationMessage("assignment_change_request"),
-    "✓ お願いを送りました。\n相手の返事を待っています。担当はまだ変わっていません。",
+    "✓ お願いの送信を受け付けました。担当は、相手が引き受けると変わります。",
   );
   assertEquals(
     pendingConfirmationMessage("request_create"),
-    "✓ お願いを送りました。\n相手の返事を待っています。",
+    "✓ お願いの送信を受け付けました。",
   );
   assertEquals(pendingConfirmationMessage("task_create_once"), "✓ 登録しました。");
 });

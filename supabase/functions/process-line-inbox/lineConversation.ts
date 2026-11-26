@@ -402,8 +402,8 @@ export function eventCalendarChoiceReply(pendingActionId: string, visibility: "s
 }
 
 export function pendingConfirmationMessage(actionType: string): string {
-  if (actionType === "assignment_change_request") return "✓ お願いを送りました。\n相手の返事を待っています。担当はまだ変わっていません。";
-  if (actionType === "request_create") return "✓ お願いを送りました。\n相手の返事を待っています。";
+  if (actionType === "assignment_change_request") return "✓ お願いの送信を受け付けました。担当は、相手が引き受けると変わります。";
+  if (actionType === "request_create") return "✓ お願いの送信を受け付けました。";
   return "✓ 登録しました。";
 }
 

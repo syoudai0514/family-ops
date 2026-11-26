@@ -109,6 +109,7 @@ import {
 } from "./lineAssistantConversation.ts";
 import {
   clearLineRequestContext,
+  preservesRequestTopic,
   tryHandleLineMustCompletePostback,
   tryHandleLineMustCompleteText,
 } from "./lineMustComplete.ts";
@@ -1577,10 +1578,6 @@ function mustCompleteContext(client: SupabaseClient, item: WebhookInboxItem, act
   };
 }
 
-function preservesRequestTopic(text: string): boolean {
-  return /^(?:お願いの返事|お願い確認|返事|相談中|相談を確認)$|^(?:相談メモ|辞退コメント)(?:[：:\s]|$)|^条件期限(?:\s|$)/u.test(text.normalize("NFKC").trim());
-}
-
 function lineEventClock(item: WebhookInboxItem): Date {
   const timestamp = item.payload.timestamp;
   return Number.isSafeInteger(timestamp) && (timestamp ?? 0) > 0 &&
@@ -1610,6 +1607,11 @@ async function handlePostback(
   const data = item.payload.postback?.data;
   if (!data || !actor) return;
   const fields = parsePostbackData(data);
+  if (fields.action === "consult_assignment_change") {
+    fields.action = "mc_request";
+    fields.request_action = "consult";
+  }
+  if (fields.action === "mc_request_prompt_accept") fields.action = "prompt_accept_assignment_change";
   // datetimepicker sends its value separately; never let a query field replace
   // the action/resource IDs or impersonate the provider's selected datetime.
   delete fields.datetime;
@@ -1965,6 +1967,23 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       await sendConfirmation(client, item, actor, "この下書きはすでに確定・期限切れです。");
       return;
     }
+    if (pending.action_type === "request_accept" || pending.action_type === "request_decline") {
+      const { request_id, attempt_id, expected_revision, expected_terms_revision } = pending.normalized_payload;
+      if (typeof request_id !== "string") {
+        await sendConfirmation(client, item, actor, "このボタンでは返事できません。「お願いの返事」で最新の内容を確認してください。", menuQuickReplies());
+        return;
+      }
+      const response = typeof attempt_id === "string" && Number.isSafeInteger(expected_revision)
+          && Number(expected_revision) > 0 && Number.isSafeInteger(expected_terms_revision)
+          && Number(expected_terms_revision) > 0
+        ? {
+          action: "mc_request", request_id, attempt_id, revision: String(expected_revision),
+          terms_revision: String(expected_terms_revision), request_action: pending.action_type === "request_accept" ? "accept" : "decline",
+        }
+        : { action: "mc_request_open", request_id };
+      await tryHandleLineMustCompletePostback(mustCompleteContext(client, item, actor), response);
+      return;
+    }
     // A generic card cannot change transport. Its model-filled title/date are
     // classification evidence only, including old cards with an invented year.
     if (detectTransportAssignmentPending(pending.action_type, pending.normalized_payload, lineEventClock(item))) {
@@ -1975,6 +1994,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     const { error } = await client.rpc("server_tx_confirm_pending_action", { p_actor_id: actor.user_id, p_pending_action_id: fields.pending_action_id });
     if (error) {
       console.error("process-line-inbox: confirm_pending failed", error.message);
+      await sendConfirmation(client, item, actor, "確定できたか確認できませんでした。元の確認カードからもう一度お試しください。", menuQuickReplies());
       return;
     }
     if (pending.action_type === "task_create_once" && pending.normalized_payload?.calendar_visibility === "special") {
@@ -2094,41 +2114,46 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
       .eq("recipient_id", actor.user_id)
       .maybeSingle();
     const { data: attempt } = await client.from("request_attempts")
-      .select("id,state,revision,terms_revision")
+      .select("id,state,revision,terms_revision,checking_intent")
       .eq("household_id", actor.household_id)
       .eq("request_id", fields.request_id)
       .eq("id", fields.attempt_id)
       .maybeSingle();
     if (!request || request.request_kind !== "assignment_change" || request.status !== "pending"
-      || !attempt || attempt.state !== "pending"
+      || !attempt || !["pending", "checking"].includes(attempt.state)
       || Number(attempt.revision) !== expectedRevision
       || Number(attempt.terms_revision) !== expectedTermsRevision) {
       await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
       return;
     }
 
-    // First-stage acceptance is a real canonical transition. This makes the
-    // final confirmation card depend on a fresh attempt revision, so a
-    // duplicate/late tap on the original request card cannot confirm it.
-    const checkingOperationId = await deterministicOperationId("line-request-checking", item.provider_event_id);
-    const { data: checking, error: checkingError } = await client.rpc(
-      "server_tx_transition_request_v2",
-      requestTransitionArgs(actor.user_id, checkingOperationId, {
-        request_id: fields.request_id,
-        attempt_id: fields.attempt_id,
-        action: "checking",
-        expected_revision: expectedRevision,
-        expected_terms_revision: expectedTermsRevision,
-      }, "line"),
-    );
-    if (checkingError || checking?.state !== "checking"
-      || !Number.isSafeInteger(Number(checking?.revision))
-      || !Number.isSafeInteger(Number(checking?.terms_revision))) {
-      await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
-      return;
+    let confirmationRevision = expectedRevision;
+    let confirmationTermsRevision = expectedTermsRevision;
+    if (attempt.checking_intent !== "assignment_accept") {
+      const checkingOperationId = await deterministicOperationId("line-request-checking", item.provider_event_id);
+      const { data: checking, error: checkingError } = await client.rpc(
+        "server_tx_transition_request_v2",
+        requestTransitionArgs(actor.user_id, checkingOperationId, {
+          request_id: fields.request_id,
+          attempt_id: fields.attempt_id,
+          action: "begin_assignment_accept",
+          expected_revision: expectedRevision,
+          expected_terms_revision: expectedTermsRevision,
+        }, "line"),
+      );
+      if (checking?.state === "expired") {
+        await sendConfirmation(client, item, actor, "返事の期限を過ぎています。お願いした人に、もう一度送ってもらってください。", menuQuickReplies());
+        return;
+      }
+      if (checkingError || checking?.state !== "checking"
+        || !Number.isSafeInteger(Number(checking?.revision))
+        || !Number.isSafeInteger(Number(checking?.terms_revision))) {
+        await sendConfirmation(client, item, actor, "お願いの内容が変わりました。「お願いの返事」で最新の内容を確認してください。", menuQuickReplies());
+        return;
+      }
+      confirmationRevision = Number(checking.revision);
+      confirmationTermsRevision = Number(checking.terms_revision);
     }
-    const confirmationRevision = Number(checking.revision);
-    const confirmationTermsRevision = Number(checking.terms_revision);
 
     let hasDependentChanges = false;
     if (request.assignment_task_instance_id) {
@@ -2189,35 +2214,9 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
   }
 
   if (fields.action === "cancel_accept_assignment_change") {
-    await sendConfirmation(client, item, actor, "戻りました。担当は変更していません。", [
+    await sendConfirmation(client, item, actor, "担当は確定していません。「お願いの返事」から確認を再開できます。", [
       { type: "message", label: "お願いを確認", text: "お願いの返事" },
     ]);
-    return;
-  }
-
-  if (fields.action === "consult_assignment_change" && fields.request_id) {
-    if (!fields.attempt_id || !fields.revision || !fields.terms_revision) {
-      await sendConfirmation(client, item, actor, "このボタンは古い内容です。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
-      return;
-    }
-    const operationId = await deterministicOperationId("line-request-transition", item.provider_event_id);
-    const { data, error } = await client.rpc("server_tx_transition_request_v2", requestTransitionArgs(actor.user_id, operationId, {
-      request_id: fields.request_id,
-      attempt_id: fields.attempt_id,
-      action: "consult",
-      expected_revision: Number(fields.revision),
-      expected_terms_revision: Number(fields.terms_revision),
-    }, "line"));
-    if (error) {
-      await sendConfirmation(client, item, actor, "内容が更新されています。お願い一覧から最新の内容を確認してください。", menuQuickReplies());
-      return;
-    }
-    await sendConfirmation(client, item, actor,
-      data?.state === "consulting"
-        ? "相談中にしました。担当はまだ変わっていません。\n条件や懸念は「相談メモ: 18:30なら行けます」のように、このトークへそのまま送れます。"
-        : "お願いの状態を更新しました。最新の内容を確認してください。",
-      [{ type: "message", label: "条件を確認", text: "お願いの返事" }],
-    );
     return;
   }
 
@@ -2274,39 +2273,16 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
     }
     await sendConfirmation(client, item, actor, data?.reproposal_required
       ? "この依頼は期限切れです。新しい担当変更のお願いとして再提案してください。"
-      : data?.state === "accepted" ? acceptedText : "変更はありません。", menuQuickReplies());
+      : data?.state === "accepted" ? acceptedText
+        : data?.state === "declined" ? "今回は難しいと相手に返しました。担当はそのままです。"
+        : "お願いの最新の状態を確認してください。", menuQuickReplies());
     return;
   }
 
-  if (fields.action === "accept_request" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-request-accept", item.provider_event_id);
-    const { error } = await client.rpc("server_tx_accept_request", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_request_id: fields.request_id,
+  if ((fields.action === "accept_request" || fields.action === "decline_request") && fields.request_id) {
+    await tryHandleLineMustCompletePostback(mustCompleteContext(client, item, actor), {
+      action: "mc_request_open", request_id: fields.request_id,
     });
-    if (error) {
-      if (/REQUEST_NOT_PENDING|REQUEST_ACCEPT_NOT_ALLOWED/.test(error.message)) await sendConfirmation(client, item, actor, "このお願いはすでに処理済みです。");
-      else console.error("process-line-inbox: accept request failed", error.message);
-      return;
-    }
-    await sendConfirmation(client, item, actor, completionHint("✓ 引き受けました。タスクに追加しました。"), menuQuickReplies());
-    return;
-  }
-
-  if (fields.action === "decline_request" && fields.request_id) {
-    const operationId = await deterministicOperationId("line-request-decline", item.provider_event_id);
-    const { error } = await client.rpc("server_tx_decline_request", {
-      p_actor_id: actor.user_id,
-      p_operation_id: operationId,
-      p_request_id: fields.request_id,
-    });
-    if (error) {
-      if (/REQUEST_NOT_PENDING|REQUEST_DECLINE_NOT_ALLOWED/.test(error.message)) await sendConfirmation(client, item, actor, "このお願いはすでに処理済みです。");
-      else console.error("process-line-inbox: decline request failed", error.message);
-      return;
-    }
-    await sendConfirmation(client, item, actor, "今回は難しいとして返しました。");
     return;
   }
 
@@ -2460,7 +2436,11 @@ async function handleText(
       return;
     }
   }
-  if (!preservesRequestTopic(text)) await clearLineRequestContext(mustCompleteContext(client, item, actor));
+  if (preservesRequestTopic(text)) {
+    await logLineTurn(client, actor.user_id, "user", text);
+    if (await tryHandleLineMustCompleteText(mustCompleteContext(client, item, actor), text)) return;
+  }
+  await clearLineRequestContext(mustCompleteContext(client, item, actor));
 
   const inputText = text;
   const eventClock = lineEventClock(item);
