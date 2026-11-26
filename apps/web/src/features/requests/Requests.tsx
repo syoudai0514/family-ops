@@ -203,9 +203,15 @@ export function Requests() {
     return () => { cancelled = true; };
   }, [pendingId]);
 
-  function clearPrivatePrefill() {
+  function clearPrivatePrefill(showSentRequest = false) {
     const params = new URLSearchParams(location.search);
     params.delete('pending');
+    params.delete('date');
+    if (showSentRequest) {
+      params.set('bucket', 'active');
+      params.delete('request');
+      params.delete('response');
+    }
     const search = params.toString();
     navigate(`${location.pathname}${search ? `?${search}` : ''}`, { replace: true, state: null });
   }
@@ -241,8 +247,7 @@ export function Requests() {
           onSent={(status) => {
             setShowForm(false);
             setSendStatus(status);
-            setBucketFilter('active');
-            clearPrivatePrefill();
+            clearPrivatePrefill(true);
             void rowRefresh();
           }}
         />

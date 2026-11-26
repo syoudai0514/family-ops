@@ -1973,7 +1973,7 @@ if (fields.action === "resolve_multi_duplicate" && fields.pending_action_id && f
         await sendConfirmation(client, item, actor, "このボタンでは返事できません。「お願いの返事」で最新の内容を確認してください。", menuQuickReplies());
         return;
       }
-      const response = typeof attempt_id === "string" && Number.isSafeInteger(expected_revision)
+      const response: Record<string, string> = typeof attempt_id === "string" && Number.isSafeInteger(expected_revision)
           && Number(expected_revision) > 0 && Number.isSafeInteger(expected_terms_revision)
           && Number(expected_terms_revision) > 0
         ? {

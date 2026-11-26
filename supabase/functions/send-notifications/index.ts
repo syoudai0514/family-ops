@@ -133,9 +133,7 @@ async function enrichRequestItems(
       item.payload.confirmation_mode !== 'mutual';
     if (!needsSharedContent && !acceptedAssignmentOrLegacy) continue;
     let query = serviceClient.from('requests')
-      .select(needsSharedContent
-        ? 'request_kind,shared_title,shared_message,assignment_scope,due_at,recipient_id'
-        : 'request_kind,assignment_scope,due_at,recipient_id')
+      .select('request_kind,shared_title,shared_message,assignment_scope,due_at,recipient_id')
       .eq('id', item.payload.request_id)
       .eq('household_id', notification.household_id)
       .is('test_context_id', null);

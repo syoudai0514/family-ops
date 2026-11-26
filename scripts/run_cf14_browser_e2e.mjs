@@ -596,11 +596,11 @@ async function runRequestJourney(sender, recipient) {
   await tapButton(sender, '送信内容を確認');
   await waitForText(sender, 'この内容で送りますか？');
   await waitForText(sender, consultationMessage);
-  await waitForText(sender, 'ママさん');
+  await waitForText(sender, '宛先　ママ');
   await assertNoHorizontalOverflow(sender, '.request-composer');
   assert.equal(requestCommands.length, 0, 'Opening the preview must not send the request');
   await tapButton(sender, 'この内容でお願いを送る');
-  await waitForText(sender, 'ママさんへのお願いを送りました。');
+  await waitForText(sender, 'ママへのお願いを送りました。');
   await waitForText(sender, consultationTitle);
 
   await openFocusedRequest(recipient, targetUrl, consultationTitle);
