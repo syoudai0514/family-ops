@@ -55,7 +55,8 @@ function fixture(count = 3) {
         attempt.terms_revision = Number(attempt.terms_revision) + 1;
         attempt.state = "awaiting_confirmation";
       }
-      const data = { state: attempt.state };
+      if (!expireOnWrite && args.p_action === "decline_consultation") attempt.state = "declined";
+      const data = { state: attempt.state, attempt_kind: attempt.attempt_kind };
       receipts.set(args.p_operation_id, data);
       return Promise.resolve({ data, error: null });
     },
@@ -210,4 +211,16 @@ Deno.test("LINE consultation deadline crossed during memo or deadline save repor
   await g.click("作業期限を変更", { datetime: "2027-02-06T18:30" });
   assertEquals((g.attempts[0].terms as Row).material_patch, undefined);
   assertStringIncludes(g.replies.at(-1)!.text, "返事期限を過ぎています");
+});
+
+Deno.test("recipient can close the exact consultation without writing a reason", async () => {
+  const f = fixture(1);
+  await tryHandleLineMustCompleteText(f.ctx, "お願いの返事");
+  await f.click("今回は難しい");
+  assertStringIncludes(f.replies.at(-1)!.text, "お願い1");
+  assertEquals(f.writes.length, 0);
+  await f.click("難しいと伝える");
+  assertEquals(f.writes.map((row) => [row.p_action, row.p_request_id, row.p_expected_revision, row.p_expected_terms_revision]),
+    [["decline_consultation", "request-1", 4, 2]]);
+  assertStringIncludes(f.replies.at(-1)!.text, "今回は難しいと相手に返しました");
 });

@@ -12,13 +12,14 @@ import { loadStableCommandAttempt, type CommandAttempt } from '../../lib/command
 import { formatDateTimeJa, tokyoDateTimeInputToIso } from '../../lib/date';
 import type { PendingAction, RequestRow } from '../../lib/types';
 
-export const REQUEST_ATTEMPT_SELECT = 'id,request_id,attempt_kind,state,revision,terms_revision,terms,reply_due_at,request_attempt_confirmations(actor_ref_id,terms_revision)';
+export const REQUEST_ATTEMPT_SELECT = 'id,request_id,attempt_kind,created_by_actor_ref_id,state,revision,terms_revision,terms,reply_due_at,request_attempt_confirmations(actor_ref_id,terms_revision)';
 
 interface RequestAttempt {
   id: string;
   request_id: string;
   state: 'pending' | 'checking' | 'consulting' | 'awaiting_confirmation' | 'accepted' | 'declined' | 'expired' | 'cancelled';
   attempt_kind?: 'initial' | 'reproposal' | 'change' | 'cancel';
+  created_by_actor_ref_id?: string | null;
   revision: number;
   terms_revision: number;
   request_attempt_confirmations?: { actor_ref_id: string; terms_revision: number }[];
@@ -297,7 +298,7 @@ export function IncomingRequestRow({ request, attempt, onChanged, showOtherFromL
       await onChanged();
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '操作に失敗しました。最新状態を読み直してください。'); } finally { setBusy(false); }
   }
-  async function negotiate(action: 'checking' | 'consult' | 'edit_terms' | 'confirm_terms' | 'decline', terms?: Record<string, unknown>) {
+  async function negotiate(action: 'checking' | 'consult' | 'edit_terms' | 'confirm_terms' | 'decline' | 'decline_consultation', terms?: Record<string, unknown>) {
     if (!attempt) { setError('このお願いは最新状態に更新してください。'); return; }
     setBusy(true); setError(null);
     try {
@@ -354,7 +355,7 @@ export function IncomingRequestRow({ request, attempt, onChanged, showOtherFromL
 }
 
 function CommentedDecline({ busy, onSubmit }: { busy: boolean; onSubmit: (comment: string) => void }) { const [comment, setComment] = useState(''); return <div className="request-comment-row"><input aria-label="難しい理由（任意）" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="コメント付きで難しい" /><button type="button" className="secondary-button" disabled={busy} onClick={() => onSubmit(comment)}>コメント付きで難しい</button></div>; }
-function ConsultationTerms({ request, attempt, actorRefId, busy, onAction }: { request: RequestRow; attempt: RequestAttempt; actorRefId?: string | null; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) => void }) {
+function ConsultationTerms({ request, attempt, actorRefId, busy, onAction }: { request: RequestRow; attempt: RequestAttempt; actorRefId?: string | null; busy: boolean; onAction: (action: 'edit_terms' | 'confirm_terms' | 'decline_consultation', terms?: Record<string, unknown>) => void }) {
   const savedMemo = typeof attempt.terms?.candidate === 'string' ? attempt.terms.candidate : '';
   const savedPatch = attempt.terms?.material_patch && typeof attempt.terms.material_patch === 'object' ? attempt.terms.material_patch as Record<string, unknown> : null;
   const savedWorkDue = typeof savedPatch?.work_due_at === 'string' ? toDateTimeLocal(savedPatch.work_due_at) : '';
@@ -384,6 +385,7 @@ function ConsultationTerms({ request, attempt, actorRefId, busy, onAction }: { r
   const awaitingConfirmation = attempt.state === 'awaiting_confirmation';
   const followup = attempt.attempt_kind === 'change' || attempt.attempt_kind === 'cancel';
   const confirmLabel = attempt.attempt_kind === 'cancel' ? '取り消しに同意する' : 'この案に同意する';
+  const hasProposal = Boolean(savedMemo || savedWorkDue || awaitingConfirmation);
 
   function propose() {
     const nextTerms: Record<string, unknown> = { ...attempt.terms, candidate: memo.trim() };
@@ -415,20 +417,40 @@ function ConsultationTerms({ request, attempt, actorRefId, busy, onAction }: { r
     </div>}
     <p className="task-item-meta">二人が同じ案に同意すると反映されます。</p>
     {awaitingConfirmation && <p role="status">{alreadyConfirmed ? 'あなたは同意済みです。相手の返事を待っています。' : partnerConfirmed ? '相手は同意済みです。内容を見て返事をしてください。' : '同意の状況を確認中です。'}</p>}
-    {!followup && <details className="request-private-draft">
-      <summary>AIで相談文を整える</summary>
-      <label>気持ちや事情のメモ（相手には送りません）<textarea value={privateMemo} disabled={busy || rewriting} onChange={event => setPrivateMemo(event.target.value)} placeholder="何が難しいか、どうなら引き受けられるか" /></label>
-      <button type="button" className="secondary-button" disabled={busy || rewriting || !privateMemo.trim()} onClick={() => void softenProposal()}>{rewriting ? '相談文を作成中…' : 'AIで相談文を作る'}</button>
-      {rewriteError && <p role="alert">{rewriteError}</p>}
-    </details>}
-    {!followup && <>
-      <label>相手へ送る相談文<textarea rows={3} value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：18時半ならお迎えに行けそう" /></label>
-      {weeklyAssignment ? <p className="task-item-meta">時刻を変えたい日は、その日の予定から相談できます。</p>
-        : <label>変更後の作業期限（任意）<input type="datetime-local" value={workDue} disabled={busy || rewriting} onChange={(event) => setWorkDue(event.target.value)} /></label>}
-    </>}
     <div className="task-item-actions">
       {!alreadyConfirmed && <button type="button" disabled={busy || rewriting || dirty} onClick={() => onAction('confirm_terms')}>{confirmLabel}</button>}
-      {!followup && <button type="button" className="secondary-button" disabled={busy || rewriting || !dirty} onClick={propose}>相談案を送る</button>}
+    </div>
+    {actorRefId && (followup
+      ? attempt.created_by_actor_ref_id && actorRefId !== attempt.created_by_actor_ref_id
+      : actorRefId === request.recipient_actor_ref_id) && (
+      <ConsultationDecline key={attempt.revision} busy={busy} followup={followup} onDecline={() => onAction('decline_consultation')} />
+    )}
+    {!followup && <details className="request-proposal-editor" open={!hasProposal}>
+      <summary>{hasProposal ? '別の案を出す' : '相談案を書く'}</summary>
+      <label>相手へ送る相談文<textarea rows={3} value={memo} disabled={busy || rewriting} onChange={(event) => setMemo(event.target.value)} placeholder="例：18時半ならお迎えに行けそう" /></label>
+      {weeklyAssignment ? <p className="task-item-meta">時刻を変えたい日は、その日の予定から相談できます。</p>
+        : <label>変更後の作業期限（任意）<input aria-label="変更後の作業期限（任意）" type="datetime-local" value={workDue} disabled={busy || rewriting} onChange={(event) => setWorkDue(event.target.value)} /></label>}
+      <details className="request-private-draft">
+        <summary>AIで相談文を整える</summary>
+        <label>気持ちや事情のメモ（相手には送りません）<textarea value={privateMemo} disabled={busy || rewriting} onChange={event => setPrivateMemo(event.target.value)} placeholder="何が難しいか、どうなら引き受けられるか" /></label>
+        <button type="button" className="secondary-button" disabled={busy || rewriting || !privateMemo.trim()} onClick={() => void softenProposal()}>{rewriting ? '相談文を作成中…' : 'AIで相談文を作る'}</button>
+        {rewriteError && <p role="alert">{rewriteError}</p>}
+      </details>
+      <button type="button" className="secondary-button" disabled={busy || rewriting || !dirty} onClick={propose}>相談案を送る</button>
+    </details>}
+  </div>;
+}
+
+function ConsultationDecline({ busy, followup, onDecline }: { busy: boolean; followup: boolean; onDecline: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return <button type="button" className="text-button" disabled={busy} onClick={() => setConfirming(true)}>{followup ? 'この案を見送る' : '今回は難しい'}</button>;
+  }
+  return <div className="request-response-options" aria-label="返事の確認">
+    <p>{followup ? 'この案を見送りますか？ 元の約束はそのままです。' : '「今回は難しい」と相手に伝えますか？'}</p>
+    <div className="task-item-actions">
+      <button type="button" className="secondary-button" disabled={busy} onClick={() => setConfirming(false)}>戻る</button>
+      <button type="button" disabled={busy} onClick={onDecline}>{followup ? '見送ると伝える' : '難しいと伝える'}</button>
     </div>
   </div>;
 }
@@ -471,6 +493,7 @@ export function OutgoingRequestRow({ request, attempt, onChanged, rowRef }: { re
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [withdrawSnapshot, setWithdrawSnapshot] = useState<string | null>(null);
+  const run = useCommandAttempt();
 
   async function cancel() {
     if (!attempt) return;
@@ -491,14 +514,14 @@ export function OutgoingRequestRow({ request, attempt, onChanged, rowRef }: { re
     }
   }
 
-  async function negotiate(action: 'edit_terms' | 'confirm_terms', terms?: Record<string, unknown>) {
+  async function negotiate(action: 'edit_terms' | 'confirm_terms' | 'decline_consultation', terms?: Record<string, unknown>) {
     if (!attempt) return;
     setBusy(true); setError(null);
     try {
-      const result = await callEdgeFunction<{ reproposal_required?: boolean }>(EDGE_FUNCTIONS.negotiateRequest, {
-        operation_id: newOperationId(), request_id: request.id, attempt_id: attempt.id,
+      const result = await run<{ reproposal_required?: boolean }>(`request:${attempt.id}:${action}:r${attempt.revision}:${JSON.stringify(terms ?? {})}`, EDGE_FUNCTIONS.negotiateRequest, operation_id => ({
+        operation_id, request_id: request.id, attempt_id: attempt.id,
         action, terms, expected_revision: attempt.revision, expected_terms_revision: attempt.terms_revision,
-      });
+      }));
       if (result.reproposal_required) setError('返事期限を過ぎています。新しいお願いとして再提案してください。');
       await onChanged();
     } catch (err) { setError(err instanceof FamilyOpsApiError ? err.message : '条件を確認できませんでした。最新状態を確認してください。'); }

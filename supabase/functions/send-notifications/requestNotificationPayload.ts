@@ -7,6 +7,7 @@ export type RequestPayload = {
   terms_revision?: number;
   reply_due_at?: string | null;
   request_kind?: string;
+  attempt_kind?: string;
   scope?: 'once' | 'this_week';
   due_at?: string | null;
   recipient_label?: string;
@@ -111,6 +112,10 @@ export function requestOutcomeText(item: RequestNotificationItem): string | null
   const subject = item.payload?.shared_title?.trim() || item.body?.trim() || item.title?.trim() || "お願い";
   if (item.type === "request.accepted") {
     if (item.payload?.confirmation_mode === 'mutual') {
+      if (item.payload.attempt_kind === 'change' || item.payload.attempt_kind === 'cancel') {
+        const action = item.payload.attempt_kind === 'cancel' ? '取り消し' : '変更';
+        return `二人が同じ案に同意しました。\n${subject}\n${action}を反映しました。`;
+      }
       const result = item.payload.request_kind === 'assignment_change'
         ? '担当変更が確定しました。'
         : 'お願いが成立しました。';
@@ -128,6 +133,9 @@ export function requestOutcomeText(item: RequestNotificationItem): string | null
       ].join("\n");
     }
     return `お願いが引き受けられました。\n${subject}`;
+  }
+  if (item.type === 'request.followup_declined') {
+    return `相手はこの案を見送りました。\n${subject}\n元の約束はそのままです。`;
   }
   if (item.type === "request.declined") {
     return `お願いは「難しい」と返されました。\n${subject}\nお願いは成立していません。`;
@@ -148,7 +156,9 @@ export function requestOutcomeText(item: RequestNotificationItem): string | null
       ? '相手が相談内容を更新しました。'
       : '相手が相談を始めました。';
     const due = formatJstMinute(item.payload?.proposed_due_at);
-    const status = item.payload?.request_kind === 'assignment_change'
+    const status = item.payload?.attempt_kind === 'change' || item.payload?.attempt_kind === 'cancel'
+      ? '二人が同じ案に同意するまで、元の約束のままです。'
+      : item.payload?.request_kind === 'assignment_change'
       ? '二人が同じ条件を確認するまで担当は変わりません。'
       : '二人が同じ条件を確認するまでお願いは成立しません。';
     return [heading, subject, due ? `提案中の作業期限：${due}` : '', status, '「相談を開く」から内容を確認できます。']

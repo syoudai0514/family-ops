@@ -78,6 +78,7 @@ describe('requester consultation from the actual PWA row', () => {
 
   it('cannot confirm unsaved prose as if it were the saved agreement', () => {
     render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
+    fireEvent.click(screen.getByText('別の案を出す'));
     fireEvent.change(screen.getByLabelText('相手へ送る相談文'), { target: { value: '園で引き継ぐ' } });
     const confirm = screen.getByRole('button', { name: 'この案に同意する' });
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
@@ -87,6 +88,7 @@ describe('requester consultation from the actual PWA row', () => {
 
   it('sends work-date changes only as an explicit structured material patch', async () => {
     render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
+    fireEvent.click(screen.getByText('別の案を出す'));
     fireEvent.change(screen.getByLabelText('変更後の作業期限（任意）'), { target: { value: '2026-09-11T18:30' } });
     fireEvent.click(screen.getByRole('button', { name: '相談案を送る' }));
     await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('negotiate-request', expect.objectContaining({
@@ -111,6 +113,8 @@ it('keeps feelings private, previews the AI wording, and shares only the reviewe
   vi.mocked(callEdgeFunction).mockReset();
   vi.mocked(callEdgeFunction).mockResolvedValue({ proposed_text: '今日は帰宅が遅いので、時間を調整できると助かります。' });
   render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
+  fireEvent.click(screen.getByText('別の案を出す'));
+  fireEvent.click(screen.getByText('AIで相談文を整える'));
   fireEvent.change(screen.getByLabelText('気持ちや事情のメモ（相手には送りません）'), { target: { value: '私ばかりで腹が立つ。今日は帰宅が遅い' } });
   fireEvent.click(screen.getByRole('button', { name: 'AIで相談文を作る' }));
   expect(await screen.findByDisplayValue('今日は帰宅が遅いので、時間を調整できると助かります。')).toBeInTheDocument();
@@ -131,9 +135,32 @@ it('keeps unsent feelings private when AI is unavailable', async () => {
   vi.mocked(callEdgeFunction).mockReset();
   vi.mocked(callEdgeFunction).mockRejectedValueOnce(new Error('AI unavailable'));
   render(<ul><OutgoingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
+  fireEvent.click(screen.getByText('別の案を出す'));
+  fireEvent.click(screen.getByText('AIで相談文を整える'));
   fireEvent.change(screen.getByLabelText('気持ちや事情のメモ（相手には送りません）'), { target: { value: '送らない気持ち' } });
   fireEvent.click(screen.getByRole('button', { name: 'AIで相談文を作る' }));
   expect(await screen.findByRole('alert')).toBeInTheDocument();
   expect(screen.getByDisplayValue('玄関で引き継ぐ')).toBeInTheDocument();
   expect(vi.mocked(callEdgeFunction).mock.calls.every(([name]) => name !== 'negotiate-request')).toBe(true);
+});
+
+it('lets the recipient decline without a reason after confirming the exact consultation', async () => {
+  vi.mocked(callEdgeFunction).mockClear();
+  vi.mocked(callEdgeFunction).mockResolvedValue({ state: 'declined' });
+  render(<ul><IncomingRequestRow request={request} attempt={attempt} onChanged={vi.fn()} /></ul>);
+  fireEvent.click(screen.getByRole('button', { name: '今回は難しい' }));
+  expect(callEdgeFunction).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '難しいと伝える' }));
+  await waitFor(() => expect(callEdgeFunction).toHaveBeenCalledWith('negotiate-request', expect.objectContaining({
+    request_id: request.id, attempt_id: attempt.id, action: 'decline_consultation', expected_revision: 4, expected_terms_revision: 2,
+  })));
+});
+
+it('allows only the other party to decline an accepted-task change', () => {
+  const change = { ...attempt, attempt_kind: 'change' as const, created_by_actor_ref_id: 'actor-papa' };
+  const { rerender } = render(<ul><OutgoingRequestRow request={request} attempt={change} onChanged={vi.fn()} /></ul>);
+  expect(screen.queryByRole('button', { name: 'この案を見送る' })).not.toBeInTheDocument();
+  rerender(<ul><IncomingRequestRow request={request} attempt={change} onChanged={vi.fn()} /></ul>);
+  fireEvent.click(screen.getByRole('button', { name: 'この案を見送る' }));
+  expect(screen.getByText('この案を見送りますか？ 元の約束はそのままです。')).toBeInTheDocument();
 });

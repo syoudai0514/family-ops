@@ -1,4 +1,4 @@
-import { assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import { findRequestReceivedItem, isRequestReceivedType, requestOutcomeText } from './requestNotificationPayload.ts';
 
 Deno.test('canonical request.received is recognized at LINE worker boundary', () => {
@@ -56,4 +56,10 @@ Deno.test('request outcome notifications state the actual result', () => {
     requestOutcomeText({ type: 'request.checking', title: '確認中です', body: 'お迎え' }),
     '相手が確認中です。\nお迎え\nまだ成立していません。',
   );
+});
+
+Deno.test('declining a follow-up says the original agreement remains in place', () => {
+  const text = requestOutcomeText({ type: 'request.followup_declined', body: '牛乳', payload: { attempt_kind: 'change' } });
+  assertStringIncludes(text ?? '', '相手はこの案を見送りました。');
+  assertStringIncludes(text ?? '', '元の約束はそのままです。');
 });

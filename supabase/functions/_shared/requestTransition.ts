@@ -4,7 +4,7 @@ import { FamilyOpsError } from './errors.ts';
 // Never fetch a newer revision to make an old user action succeed.
 export function requestTransitionArgs(actorId: string, operationId: string,
   body: Record<string, unknown>, source: 'pwa' | 'line') {
-  const actions = ['accept', 'decline', 'checking', 'begin_assignment_accept', 'consult', 'edit_terms', 'confirm_terms', 'cancel'];
+  const actions = ['accept', 'decline', 'decline_consultation', 'checking', 'begin_assignment_accept', 'consult', 'edit_terms', 'confirm_terms', 'cancel'];
   if (typeof body.request_id !== 'string' || typeof body.attempt_id !== 'string'
     || !Number.isSafeInteger(body.expected_revision) || Number(body.expected_revision) < 1
     || !Number.isSafeInteger(body.expected_terms_revision) || Number(body.expected_terms_revision) < 1
